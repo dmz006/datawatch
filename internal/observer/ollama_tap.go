@@ -38,17 +38,29 @@ type OllamaTap struct {
 }
 
 type ollamaLoadedModel struct {
-	Name      string `json:"name"`
-	Model     string `json:"model"`
-	Size      int64  `json:"size"`
-	SizeVRAM  int64  `json:"size_vram"`
+	Name     string `json:"name"`
+	Model    string `json:"model"`
+	Size     int64  `json:"size"`
+	SizeVRAM int64  `json:"size_vram"`
 	// ExpiresAt is when ollama will unload if idle. We don't act on
 	// it here; just surface in the envelope for operator visibility.
 	ExpiresAt time.Time `json:"expires_at"`
+	// Details carries Ollama's manifest details for the loaded model;
+	// the field is optional — servers that omit it leave it zero.
+	Details struct {
+		// NumCtx is the context length (in tokens) the model is
+		// loaded with, when the server reports it.
+		NumCtx int64 `json:"num_ctx"`
+	} `json:"details"`
 }
 
 // HeldBytes is the total memory the model holds (RAM+VRAM).
 func (m ollamaLoadedModel) HeldBytes() int64 { return m.Size + m.SizeVRAM }
+
+// ContextTokens is the context length (in tokens) the model is loaded
+// with, from /api/ps's details.num_ctx; zero when the server does not
+// report it.
+func (m ollamaLoadedModel) ContextTokens() int64 { return m.Details.NumCtx }
 
 // LoadedName is the operator-visible model name: Name, falling back to
 // Model when ollama only filled one of the two.
@@ -171,13 +183,13 @@ func (t *OllamaTap) Snapshot() ([]Envelope, error) {
 			name = m.Model
 		}
 		env := Envelope{
-			ID:         "ollama_model:" + name,
-			Kind:       EnvelopeBackend,
-			Label:      "ollama / " + name,
-			RSSBytes:   uint64(m.Size),
-			GPUMemBytes: uint64(m.SizeVRAM),
-			Caller:     name,
-			CallerKind: "ollama_model",
+			ID:                 "ollama_model:" + name,
+			Kind:               EnvelopeBackend,
+			Label:              "ollama / " + name,
+			RSSBytes:           uint64(m.Size),
+			GPUMemBytes:        uint64(m.SizeVRAM),
+			Caller:             name,
+			CallerKind:         "ollama_model",
 			LastActivityUnixMs: time.Now().UnixMilli(),
 		}
 		out = append(out, env)

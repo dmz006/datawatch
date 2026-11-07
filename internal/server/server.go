@@ -583,7 +583,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/automation/requirements-report", api.handleRequirementsReport)
 	apiMux.HandleFunc("/api/automation/model-consent", api.handleModelConsent)
 	apiMux.HandleFunc("/api/compute/nodes/{name}/versions", api.handleNodeBackendVersions) // the compute node's backend name and version, with the recorded time
-	apiMux.HandleFunc("/api/autonomous/protected-paths", api.handleProtectedPaths)              // protected-paths holds: action, rules source, effective list, held tasks, authorised Automata
+	apiMux.HandleFunc("/api/autonomous/protected-paths", api.handleProtectedPaths)         // protected-paths holds: action, rules source, effective list, held tasks, authorised Automata
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
@@ -1324,6 +1324,19 @@ func (s *HTTPServer) SetAlertRulesAPI(api AlertRulesAPI) {
 // Nil disables /api/plugins/* (handlers return 503).
 func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
 	s.api.SetPluginsAPI(api)
+}
+
+// SetModelNodeRecorder wires the model-node recorder (see
+// Server.SetModelNodeRecorder).
+func (s *HTTPServer) SetModelNodeRecorder(rec *plugins.ServiceEventRecorder) {
+	s.api.SetModelNodeRecorder(rec)
+}
+
+// StartModelNodeEvents starts the background model-node events task (see
+// Server.StartModelNodeEvents); it owns the model_node_unreachable
+// raise and clear, once per transition.
+func (s *HTTPServer) StartModelNodeEvents(ctx context.Context, servicePlugins func() []string) {
+	s.api.StartModelNodeEvents(ctx, servicePlugins)
 }
 
 // SetPluginWidgets (BL403) wires plugin widget values: manifest lookup,

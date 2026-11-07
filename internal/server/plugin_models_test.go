@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/compute"
@@ -72,13 +73,33 @@ func newModelUseRecorder(t *testing.T) (*plugins.ServiceEventRecorder, *recorder
 
 func pluginModelsServer(t *testing.T, src PluginModelsSource) (*Server, http.Handler) {
 	t.Helper()
-	s := bl90Server(t)
-	s.token = pluginTokenAdmin
-	s.SetPluginsAPI(&fakePluginsAPI{known: map[string]bool{"imap-mcp": true}})
+	s := pluginModelsServerBare(t)
 	if src != nil {
 		s.SetPluginModels(src)
 	}
 	return s, s.fedAuthMiddleware(http.HandlerFunc(s.handlePlugins))
+}
+
+// pluginModelsServerBare returns a *Server ready for model-use endpoint
+// tests: operator token, known service plugin.
+func pluginModelsServerBare(t *testing.T) *Server {
+	t.Helper()
+	s := bl90Server(t)
+	s.token = pluginTokenAdmin
+	s.SetPluginsAPI(&fakePluginsAPI{known: map[string]bool{"imap-mcp": true}})
+	return s
+}
+
+// waitFor polls ok until true or times out.
+func waitFor(t *testing.T, d time.Duration, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func pluginModelsDo(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
@@ -107,7 +128,7 @@ func TestPluginModels_Report(t *testing.T) {
 		Nodes: []plugins.ModelNode{{
 			Name: "johnnyjohnny",
 			Loaded: []plugins.LoadedModel{
-				{Name: "qwen3:1.7b", RAMBytes: 512 << 20, VRAMBytes: 512 << 20},
+				{Name: "qwen3:1.7b", RAMBytes: 512 << 20, VRAMBytes: 512 << 20, ContextTokens: 32768},
 			},
 		}},
 		Service: plugins.ServiceUsage{Documented: true, Models: []plugins.ServiceModel{
@@ -165,28 +186,37 @@ func TestPluginModels_UndocumentedCounts(t *testing.T) {
 		t.Errorf("notes do not say counts are undocumented: %q", joined)
 	}
 	if len(got.Findings) != 0 {
-		t.Errorf("no call-count finding may fire without documented counts: %+v", got.Findings)
+		t.Errorf("findings must not fire off these inputs: %+v", got.Findings)
 	}
 }
 
 // TestPluginModels_NodeUnreachable — a node that does not answer is
-// marked in the report, noted, and raises model_node_unreachable through
-// the recorder exactly once; when it answers again the condition clears
-// without re-raising.
+// marked in the report and noted by the request; the
+// model_node_unreachable condition itself is raised (and cleared) by
+// the background events task through the recorder, once per transition,
+// not by requests to the endpoint.
 func TestPluginModels_NodeUnreachable(t *testing.T) {
 	bad := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
 		Nodes: []plugins.ModelNode{{Name: "johnnyjohnny", Error: "connection refused"}},
 	}, plugins.ModelUseThresholds{})
+
 	good := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
 		Nodes: []plugins.ModelNode{{Name: "johnnyjohnny", Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 1 << 20}}}},
 	}, plugins.ModelUseThresholds{})
 
-	s, h := pluginModelsServer(t, nil)
 	rec, cap := newModelUseRecorder(t)
+	reports := map[string]*plugins.ModelUseReport{"imap-mcp": bad}
+	s := pluginModelsServerBare(t)
 	s.SetModelNodeRecorder(rec)
+	s.SetPluginModels(fakeModelUseSource{reports: reports})
+	// The events task raises from the background at a short interval.
+	s.SetModelNodeEventInterval(50 * time.Millisecond)
+	s.StartModelNodeEvents(context.Background(), func() []string { return []string{"imap-mcp"} })
 
-	src := fakeModelUseSource{reports: map[string]*plugins.ModelUseReport{"imap-mcp": bad}}
-	s.SetPluginModels(src)
+	h := s.fedAuthMiddleware(http.HandlerFunc(s.handlePlugins))
+
+	// A request to the endpoint names + notes the down node and raises
+	// nothing itself.
 	rr := pluginModelsDo(t, h, "/api/plugins/imap-mcp/models")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %q", rr.Code, rr.Body)
@@ -196,23 +226,16 @@ func TestPluginModels_NodeUnreachable(t *testing.T) {
 	if !strings.Contains(joined, "johnnyjohnny") || !strings.Contains(joined, "did not answer") {
 		t.Errorf("notes do not name the node that did not answer: %q", joined)
 	}
-	rr = pluginModelsDo(t, h, "/api/plugins/imap-mcp/models")
-	if rr.Code != http.StatusOK {
-		t.Fatalf("second call status = %d", rr.Code)
-	}
-	if n := cap.count(); n != 2 {
-		t.Fatalf("saw %d sink calls after two failing reports (want alert + audit = 1 raise): %s", n, cap.joined())
-	}
 
-	// Node answers again → the condition clears, no re-raise.
-	s.SetPluginModels(fakeModelUseSource{reports: map[string]*plugins.ModelUseReport{"imap-mcp": good}})
-	rr = pluginModelsDo(t, h, "/api/plugins/imap-mcp/models")
-	if rr.Code != http.StatusOK {
-		t.Fatalf("recovered call status = %d", rr.Code)
-	}
-	if n := cap.count(); n != 4 {
-		t.Fatalf("saw %d sink calls after recovery (want 2 raise + 2 clear): %s", n, cap.joined())
-	}
+	// The background task raises once (alert + audit), and a second
+	// failing pass must not re-raise.
+	waitFor(t, 5*time.Second, "task to raise", func() bool { return cap.count() >= 2 })
+	waitFor(t, 5*time.Second, "second failing pass to settle", func() bool { return cap.count() == 2 })
+
+	// The node answers again → the task clears the condition (1 clear)
+	// without re-raising.
+	reports["imap-mcp"] = good
+	waitFor(t, 5*time.Second, "task to clear after recovery", func() bool { return cap.count() >= 4 })
 	if !strings.Contains(cap.joined(), "reachable again") {
 		t.Errorf("no clear recorded: %s", cap.joined())
 	}
@@ -306,7 +329,7 @@ func TestPluginModels_DefaultSource(t *testing.T) {
 			w.Write([]byte(`{"models":[{"name":"qwen3:1.7b"}]}`))
 		case "/api/ps":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"models":[{"name":"qwen3:1.7b","size":0,"size_vram":536870912}]}`))
+			w.Write([]byte(`{"models":[{"name":"qwen3:1.7b","size":0,"size_vram":536870912,"details":{"num_ctx":131072}}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -347,7 +370,7 @@ func TestPluginModels_DefaultSource(t *testing.T) {
 	}})
 	s.secretsStore = fakeSecretStore{names: map[string]bool{"imapmcp_token": true}}
 
-	reg, err := compute.NewRegistry(t.TempDir()+"/nodes.json")
+	reg, err := compute.NewRegistry(t.TempDir() + "/nodes.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,6 +396,9 @@ func TestPluginModels_DefaultSource(t *testing.T) {
 	if e.Model != "qwen3:1.7b" || e.Node != "fake-node" || e.HeldBytes != 512<<20 {
 		t.Errorf("entry = %+v", e)
 	}
+	if e.ContextTokens != 131072 {
+		t.Errorf("entry.ContextTokens = %d, want 131072 from the Ollama reader: %+v", e.ContextTokens, e)
+	}
 	if !e.UsedByService || !e.CallsDocumented || e.Calls != 7 {
 		t.Errorf("entry = %+v, want service-documented 7 calls", e)
 	}
@@ -382,7 +408,8 @@ func TestPluginModels_DefaultSource(t *testing.T) {
 }
 
 // TestPluginModels_DefaultSourceNodeDown — the default source marks a
-// node that does not answer and the recorder raises.
+// node that does not answer and notes it; the model_node_unreachable
+// raise is owned by the events task, not by this request.
 func TestPluginModels_DefaultSourceNodeDown(t *testing.T) {
 	s := bl90Server(t)
 	s.token = pluginTokenAdmin
@@ -395,7 +422,7 @@ func TestPluginModels_DefaultSourceNodeDown(t *testing.T) {
 			BaseURL: "http://127.0.0.1:1",
 		},
 	}})
-	reg, err := compute.NewRegistry(t.TempDir()+"/nodes.json")
+	reg, err := compute.NewRegistry(t.TempDir() + "/nodes.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +453,7 @@ func TestPluginModels_DefaultSourceNodeDown(t *testing.T) {
 	if len(got.Findings) != 0 {
 		t.Errorf("no finding may fire from a node that did not answer: %+v", got.Findings)
 	}
-	if n := cap.count(); n != 2 {
-		t.Fatalf("saw %d sink calls (want alert + audit = 1 raise): %s", n, cap.joined())
+	if n := cap.count(); n != 0 {
+		t.Fatalf("saw %d sink calls for a mere request (the model_node_unreachable raise is owned by the events task): %s", n, cap.joined())
 	}
 }

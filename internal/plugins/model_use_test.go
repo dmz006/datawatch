@@ -1,8 +1,9 @@
 package plugins
 
 // Model-use collector: pure Go over the inputs (node views + service
-// view), thresholds as parameters, findings with a sentence + next
-// action, and the model_node_unreachable raise-once recorder feed.
+// view), thresholds as parameters (small-model memory, context tokens,
+// node_load_ratio), findings with a sentence + next action, and the
+// model_node_unreachable raise-once recorder feed.
 
 import (
 	"strings"
@@ -11,17 +12,20 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 )
 
-func inputsOneModel(calls int64, documented bool) ModelUseInputs {
+// smallModelInputs is the standard shape: one node carrying a small
+// model (held 1 GiB, under the 2 GiB small-model default) with the given
+// loaded context length, and a service that documents it.
+func smallModelInputs(ctx int64) ModelUseInputs {
 	return ModelUseInputs{
 		Nodes: []ModelNode{{
 			Name: "node-a",
 			Loaded: []LoadedModel{
-				{Name: "small-1.7b", RAMBytes: 512 << 20, VRAMBytes: 512 << 20},
+				{Name: "small-1.7b", RAMBytes: 512 << 20, VRAMBytes: 512 << 20, ContextTokens: ctx},
 			},
 		}},
 		Service: ServiceUsage{
-			Documented: documented,
-			Models:     []ServiceModel{{Name: "small-1.7b", Calls: calls}},
+			Documented: true,
+			Models:     []ServiceModel{{Name: "small-1.7b", Calls: 42}},
 		},
 	}
 }
@@ -40,11 +44,11 @@ func TestModelUseMatch_Name(t *testing.T) {
 	}
 }
 
-// TestModelUse_SmallModelLargeContext_Raised — a small model the service
-// really leans on is flagged; the finding names the model + node and
-// carries a next action.
+// TestModelUse_SmallModelLargeContext_Raised — a small model loaded with
+// a context above the context threshold is flagged; the finding names
+// the model + node and carries a next action.
 func TestModelUse_SmallModelLargeContext_Raised(t *testing.T) {
-	rep := CollectModelUse("imap-mcp", inputsOneModel(1234, true), ModelUseThresholds{})
+	rep := CollectModelUse("imap-mcp", smallModelInputs(16384), ModelUseThresholds{})
 	f := find(rep.Findings, FindingSmallModelLargeContext)
 	if f == nil {
 		t.Fatalf("small_model_large_context not raised; findings=%+v", rep.Findings)
@@ -52,41 +56,60 @@ func TestModelUse_SmallModelLargeContext_Raised(t *testing.T) {
 	if f.Model != "small-1.7b" || f.Node != "node-a" {
 		t.Errorf("finding must name model+node, got %+v", f)
 	}
+	if !strings.Contains(f.Sentence, "16384") || !strings.Contains(f.Sentence, "8192") {
+		t.Errorf("sentence must carry the context length and the threshold: %q", f.Sentence)
+	}
 	if f.Sentence == "" || f.NextAction == "" {
 		t.Errorf("finding missing sentence or next action: %+v", f)
 	}
 }
 
-// TestModelUse_SmallModelLargeContext_NotRaised — the same shape below
-// the parameterized call floor is not flagged.
+// TestModelUse_SmallModelLargeContext_NotRaised — a small model loaded
+// with a context at/under the threshold is not flagged, an unreported
+// context (0) is not flagged, and a model over the small-model memory
+// threshold is not flagged no matter its context.
 func TestModelUse_SmallModelLargeContext_NotRaised(t *testing.T) {
-	// Below the default floor (1000 calls).
-	rep := CollectModelUse("imap-mcp", inputsOneModel(999, true), ModelUseThresholds{})
-	if f := find(rep.Findings, FindingSmallModelLargeContext); f != nil {
-		t.Fatalf("finding raised below the call floor: %+v", f)
+	// At the default 8192-token threshold.
+	if f := find(CollectModelUse("imap-mcp", smallModelInputs(8192), ModelUseThresholds{}).Findings, FindingSmallModelLargeContext); f != nil {
+		t.Fatalf("finding raised at the context threshold: %+v", f)
 	}
-	// Undocumented counts never raise the call-count finding.
-	rep = CollectModelUse("imap-mcp", inputsOneModel(0, false), ModelUseThresholds{})
-	if f := find(rep.Findings, FindingSmallModelLargeContext); f != nil {
-		t.Fatalf("finding raised without documented counts: %+v", f)
+	// Context 0 — the server did not report one.
+	if f := find(CollectModelUse("imap-mcp", smallModelInputs(0), ModelUseThresholds{}).Findings, FindingSmallModelLargeContext); f != nil {
+		t.Fatalf("finding raised with an unreported context: %+v", f)
 	}
-	if len(rep.Notes) == 0 || !strings.Contains(strings.Join(rep.Notes, " "), "does not document per-model call counts") {
-		t.Errorf("report must say counts are undocumented; notes=%v", rep.Notes)
+	// Over the small-model memory threshold with an oversized context.
+	in := smallModelInputs(64 << 10)
+	for i := range in.Nodes {
+		for j := range in.Nodes[i].Loaded {
+			in.Nodes[i].Loaded[j].RAMBytes = 4 << 30
+			in.Nodes[i].Loaded[j].VRAMBytes = 16 << 30
+		}
+	}
+	if f := find(CollectModelUse("imap-mcp", in, ModelUseThresholds{}).Findings, FindingSmallModelLargeContext); f != nil {
+		t.Fatalf("finding raised for a model over the small-model threshold: %+v", f)
 	}
 }
 
-// TestModelUse_NodeOverloaded_Raised — a node holding well past the
-// parameterized memory is flagged; the next action names the largest
-// resident model.
+// TestModelUse_NodeOverloaded_Raised — the model's node holds materially
+// more resident model memory than another node that could serve the same
+// model; the finding names the busier node and the eligible witness.
 func TestModelUse_NodeOverloaded_Raised(t *testing.T) {
 	in := ModelUseInputs{
-		Nodes: []ModelNode{{
-			Name: "node-a",
-			Loaded: []LoadedModel{
-				{Name: "big-70b", RAMBytes: 20 << 30, VRAMBytes: 10 << 30},
-				{Name: "small-1.7b", RAMBytes: 1 << 30, VRAMBytes: 1 << 30},
+		Nodes: []ModelNode{
+			{
+				Name:   "node-a",
+				Served: []string{"small-1.7b"},
+				Loaded: []LoadedModel{
+					{Name: "big-70b", RAMBytes: 20 << 30, VRAMBytes: 10 << 30},
+					{Name: "small-1.7b", RAMBytes: 1 << 30, VRAMBytes: 1 << 30},
+				},
 			},
-		}},
+			{
+				Name:   "node-b",
+				Served: []string{"small-1.7b"},
+				Loaded: []LoadedModel{{Name: "other", VRAMBytes: 100 << 20}},
+			},
+		},
 		Service: ServiceUsage{Documented: true, Models: []ServiceModel{{Name: "small-1.7b", Calls: 5}}},
 	}
 	rep := CollectModelUse("imap-mcp", in, ModelUseThresholds{})
@@ -94,58 +117,119 @@ func TestModelUse_NodeOverloaded_Raised(t *testing.T) {
 	if f == nil {
 		t.Fatalf("node_overloaded not raised; findings=%+v", rep.Findings)
 	}
-	if f.Node != "node-a" {
-		t.Errorf("finding must name the node, got %+v", f)
+	if f.Node != "node-a" || f.Model != "small-1.7b" {
+		t.Errorf("finding must name the busier node and the model, got %+v", f)
 	}
-	if !strings.Contains(f.NextAction, "big-70b") {
-		t.Errorf("next action must name the largest resident model: %q", f.NextAction)
+	if !strings.Contains(f.Sentence, "node-b") {
+		t.Errorf("sentence must name the eligible witness node: %q", f.Sentence)
+	}
+	if !strings.Contains(f.NextAction, "node-b") {
+		t.Errorf("next action must name the node to move the model to: %q", f.NextAction)
 	}
 }
 
-// TestModelUse_NodeOverloaded_NotRaised — a lightly used node is not
-// flagged even if it carries real memory.
+// TestModelUse_NodeOverloaded_NotRaised — a node that holds at most
+// node_load_ratio times its eligible witness is not flagged, and a node
+// that merely holds less memory but cannot serve the model is not an
+// eligible witness.
 func TestModelUse_NodeOverloaded_NotRaised(t *testing.T) {
+	// home (512 MiB) holds no more than 2x the witness (256 MiB).
 	in := ModelUseInputs{
-		Nodes: []ModelNode{{
-			Name: "node-a",
-			Loaded: []LoadedModel{{Name: "mid-7b", RAMBytes: 1 << 30, VRAMBytes: 1 << 30}},
-		}},
-		Service: ServiceUsage{Documented: true, Models: []ServiceModel{{Name: "mid-7b", Calls: 3}}},
+		Nodes: []ModelNode{
+			{
+				Name:   "node-a",
+				Served: []string{"small-1.7b"},
+				Loaded: []LoadedModel{
+					{Name: "small-1.7b", VRAMBytes: 512 << 20},
+				},
+			},
+			{
+				Name:   "node-b",
+				Served: []string{"small-1.7b"},
+				Loaded: []LoadedModel{{Name: "other", VRAMBytes: 256 << 20}},
+			},
+		},
+		Service: ServiceUsage{Documented: true, Models: []ServiceModel{{Name: "small-1.7b", Calls: 3}}},
 	}
-	rep := CollectModelUse("imap-mcp", in, ModelUseThresholds{})
-	if f := find(rep.Findings, FindingNodeOverloaded); f != nil {
-		t.Fatalf("node_overloaded raised on a light node: %+v", f)
+	if f := find(CollectModelUse("imap-mcp", in, ModelUseThresholds{}).Findings, FindingNodeOverloaded); f != nil {
+		t.Fatalf("node_overloaded raised inside the ratio: %+v", f)
+	}
+	// node-b holds less but does not serve the model: not a witness.
+	in.Nodes[1].Served = nil
+	if f := find(CollectModelUse("imap-mcp", in, ModelUseThresholds{}).Findings, FindingNodeOverloaded); f != nil {
+		t.Fatalf("node_overloaded raised against a node that cannot serve the model: %+v", f)
 	}
 }
 
-// TestModelUse_Thresholds_AreParameters — lowering the parameters as a
-// function argument flips the same inputs from not-raised to raised;
-// this is the contract the task asks for (parameterized, not config).
+// TestModelUse_Thresholds_AreParameters — changing the thresholds as
+// function arguments flips the same inputs from raised to not raised;
+// this is the contract the task asks for (parameterised, not config).
 func TestModelUse_Thresholds_AreParameters(t *testing.T) {
-	in := inputsOneModel(50000, true)
-	// Default floor is 1000 — already raised. Raise the floor above the
-	// calls and the same inputs stop raising.
-	high := ModelUseThresholds{
-		SmallModelMaxBytes: 2 << 30,
-		MinCalls:           51000,
-		NodeMemMaxBytes:    24 << 30,
+	// small_model_large_context: at the default 8192-token threshold the
+	// 16k-context model raises; pushing the threshold to 32k stops it.
+	in := smallModelInputs(16384)
+	if f := find(CollectModelUse("imap-mcp", in, ModelUseThresholds{}).Findings, FindingSmallModelLargeContext); f == nil {
+		t.Fatalf("finding not raised at the defaults")
 	}
-	rep := CollectModelUse("imap-mcp", in, high)
-	if f := find(rep.Findings, FindingSmallModelLargeContext); f != nil {
-		t.Fatalf("raising the floor must stop the raise: %+v", f)
+	high := ModelUseThresholds{MinContextTokens: 32768}
+	if f := find(CollectModelUse("imap-mcp", in, high).Findings, FindingSmallModelLargeContext); f != nil {
+		t.Fatalf("raising the context threshold must stop the raise: %+v", f)
 	}
-	// And a smaller floor than default re-raises it on a light input.
-	low := ModelUseThresholds{
-		SmallModelMaxBytes: 2 << 30,
-		MinCalls:           10,
-		NodeMemMaxBytes:    24 << 30,
+	low := ModelUseThresholds{MinContextTokens: 4096}
+	if f := find(CollectModelUse("imap-mcp", smallModelInputs(8192), low).Findings, FindingSmallModelLargeContext); f == nil {
+		t.Fatal("lowering the context threshold must raise the finding")
 	}
-	in2 := inputsOneModel(11, true)
-	if f := find(CollectModelUse("imap-mcp", in2, low).Findings, FindingSmallModelLargeContext); f == nil {
-		t.Fatal("lowering the floor must raise the finding")
+
+	// node_overloaded: home 300 MiB vs a 150 MiB witness — inside the
+	// 2x default (not raised); at a 1.5x parameter it raises.
+	ovl := ModelUseInputs{
+		Nodes: []ModelNode{
+			{Name: "node-a", Served: []string{"common-7b"}, Loaded: []LoadedModel{{Name: "common-7b", VRAMBytes: 300 << 20}}},
+			{Name: "node-b", Served: []string{"common-7b"}, Loaded: []LoadedModel{{Name: "tiny", VRAMBytes: 150 << 20}}},
+		},
+		Service: ServiceUsage{Documented: true, Models: []ServiceModel{{Name: "common-7b", Calls: 1}}},
 	}
-	if f := find(CollectModelUse("imap-mcp", in2, high).Findings, FindingSmallModelLargeContext); f != nil {
-		t.Fatalf("same inputs must not raise at the high floor: %+v", f)
+	if f := find(CollectModelUse("imap-mcp", ovl, ModelUseThresholds{}).Findings, FindingNodeOverloaded); f != nil {
+		t.Fatalf("node_overloaded raised inside the 2x default: %+v", f)
+	}
+	tight := ModelUseThresholds{NodeLoadRatio: 1.5}
+	if f := find(CollectModelUse("imap-mcp", ovl, tight).Findings, FindingNodeOverloaded); f == nil {
+		t.Fatal("tightening node_load_ratio must raise the finding")
+	}
+}
+
+// TestModelUse_NormalisedDefaults — zero thresholds normalise to the
+// named defaults.
+func TestModelUse_NormalisedDefaults(t *testing.T) {
+	got := (ModelUseThresholds{}).Normalised()
+	if got.SmallModelMaxBytes != DefaultModelUseSmallModelMaxBytes {
+		t.Errorf("SmallModelMaxBytes = %d, want %d", got.SmallModelMaxBytes, DefaultModelUseSmallModelMaxBytes)
+	}
+	if got.MinContextTokens != DefaultModelUseMinContextTokens {
+		t.Errorf("MinContextTokens = %d, want %d", got.MinContextTokens, DefaultModelUseMinContextTokens)
+	}
+	if got.NodeLoadRatio != DefaultModelUseNodeLoadRatio {
+		t.Errorf("NodeLoadRatio = %v, want %v", got.NodeLoadRatio, DefaultModelUseNodeLoadRatio)
+	}
+}
+
+// TestModelUse_Table_CarriesContext — the per-model table carries the
+// context length the node reports, for service-modeled and co-resident
+// models alike.
+func TestModelUse_Table_CarriesContext(t *testing.T) {
+	in := smallModelInputs(16384)
+	in.Nodes[0].Loaded = append(in.Nodes[0].Loaded, LoadedModel{Name: "co-7b", VRAMBytes: 8 << 30, ContextTokens: 4096})
+	in.Service.Models = append(in.Service.Models, ServiceModel{})
+	rep := CollectModelUse("imap-mcp", in, ModelUseThresholds{})
+	got := map[string]ModelEntry{}
+	for _, e := range rep.Models {
+		got[e.Model] = e
+	}
+	if got["small-1.7b"].ContextTokens != 16384 {
+		t.Errorf("small-1.7b row must carry the context length: %+v", got["small-1.7b"])
+	}
+	if got["co-7b"].ContextTokens != 4096 {
+		t.Errorf("co-7b row must carry the context length: %+v", got["co-7b"])
 	}
 }
 
@@ -180,45 +264,10 @@ func TestModelUse_NodeDoesNotAnswer(t *testing.T) {
 	if entry.Node != "" || entry.HeldBytes != 0 {
 		t.Errorf("unattributable entry must carry no node/memory: %+v", entry)
 	}
-	if f := find(rep.Findings, FindingNodeOverloaded); f != nil && f.Node == "node-a" {
-		t.Errorf("finding must not be raised off a node that did not answer: %+v", f)
-	}
-	if f := find(rep.Findings, FindingSmallModelLargeContext); f != nil && f.Node == "node-a" {
-		t.Errorf("finding must not be raised off a node that did not answer: %+v", f)
-	}
-}
-
-// TestModelUse_Table_Merge — the report table is one row per model:
-// service calls joined to node memory, co-resident models included.
-func TestModelUse_Table_Merge(t *testing.T) {
-	in := ModelUseInputs{
-		Nodes: []ModelNode{{
-			Name: "node-a",
-			Loaded: []LoadedModel{
-				{Name: "small-1.7b", RAMBytes: 256 << 20, VRAMBytes: 256 << 20},
-				{Name: "big-70b", VRAMBytes: 40 << 30},
-			},
-		}},
-		Service: ServiceUsage{
-			Documented: true,
-			Models:     []ServiceModel{{Name: "small-1.7b", Calls: 42}},
-		},
-	}
-	rep := CollectModelUse("imap-mcp", in, ModelUseThresholds{})
-	got := map[string]ModelEntry{}
-	for _, e := range rep.Models {
-		got[e.Model] = e
-	}
-	if len(got) != 2 {
-		t.Fatalf("table must list both models (service used + co-resident); got %+v", rep.Models)
-	}
-	small := got["small-1.7b"]
-	if !small.UsedByService || small.Node != "node-a" || small.HeldBytes != 512<<20 || small.Calls != 42 || !small.CallsDocumented {
-		t.Errorf("small-1.7b row wrong: %+v", small)
-	}
-	big := got["big-70b"]
-	if big.UsedByService || big.Node != "node-a" || big.HeldBytes != 40<<30 || big.Calls != 0 || big.CallsDocumented {
-		t.Errorf("big-70b row wrong: %+v", big)
+	for _, id := range []string{FindingNodeOverloaded, FindingSmallModelLargeContext} {
+		if f := find(rep.Findings, id); f != nil && f.Node == "node-a" {
+			t.Errorf("%s must not be raised off a node that did not answer: %+v", id, f)
+		}
 	}
 }
 

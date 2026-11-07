@@ -5,20 +5,23 @@
 // says the model holds), how many calls the service documents per model
 // over its window, and two findings with parameterised thresholds:
 //
-//   - small_model_large_context — a model that is small relative to its
-//     node's memory carries a heavy documented call load;
-//   - node_overloaded — the node holds more resident model memory than
-//     the limit.
+//   - small_model_large_context — a small model (below the small-model
+//     memory threshold) is pinned with a context length above the context
+//     threshold, from the Ollama reader's reported context;
+//   - node_overloaded — the model's node holds materially more resident
+//     model memory than another node that could serve the same model
+//     (ratio parameter node_load_ratio).
 //
 // Finding thresholds are function parameters (ModelUseThresholds; zero
 // values normalise to the named defaults) and are never read from config.
 // When the service's contract does not document per-model call counts the
 // report carries only what the nodes report and says so (ServiceUsage.
 // Documented is false, and a note records that fact). When a node does
-// not answer the report marks it (ModelNode.Error) and
-// RecordModelUseNodes raises model_node_unreachable through the shared
-// ServiceEventRecorder — once per transition, with a clear when the node
-// answers again.
+// not answer the report marks it (ModelNode.Error) and findings come
+// only from answering nodes. The model_node_unreachable condition itself
+// is raised (and cleared) by the events task (ModelNodeEvents /
+// RecordModelUseNodes) through the shared ServiceEventRecorder — once
+// per transition — not by a request to the model-use endpoint.
 package plugins
 
 import (
@@ -29,12 +32,13 @@ import (
 
 // Finding identifiers for the two parameterised findings.
 const (
-	// FindingSmallModelLargeContext — a small model (memory below
-	// ModelUseThresholds.SmallModelMaxBytes) carries at least
-	// ModelUseThresholds.MinCalls documented calls.
+	// FindingSmallModelLargeContext — a small model (held memory below
+	// ModelUseThresholds.SmallModelMaxBytes) is pinned with a context
+	// length above ModelUseThresholds.MinContextTokens.
 	FindingSmallModelLargeContext = "small_model_large_context"
-	// FindingNodeOverloaded — the node's total resident model memory is
-	// at least ModelUseThresholds.NodeMemMaxBytes.
+	// FindingNodeOverloaded — the model's node holds more resident model
+	// memory than ModelUseThresholds.NodeLoadRatio times another node
+	// that could serve the same model.
 	FindingNodeOverloaded = "node_overloaded"
 )
 
@@ -46,20 +50,21 @@ const (
 	// DefaultModelUseSmallModelMaxBytes — a model holding at most this
 	// much memory (RAM+VRAM) counts as "small".
 	DefaultModelUseSmallModelMaxBytes = 2 * gib
-	// DefaultModelUseMinCalls — the documented call load on a small
-	// model that counts as a "large context".
-	DefaultModelUseMinCalls = 1000
-	// DefaultModelUseNodeMemMaxBytes — the node's total resident model
-	// memory that counts as "overloaded".
-	DefaultModelUseNodeMemMaxBytes = 24 * gib
+	// DefaultModelUseMinContextTokens — the context threshold: a small
+	// model pinned with a context above this many tokens is flagged.
+	DefaultModelUseMinContextTokens = 8192
+	// DefaultModelUseNodeLoadRatio — the node_load_ratio parameter:
+	// the model's node holds more than this multiple of another
+	// eligible node's resident model memory.
+	DefaultModelUseNodeLoadRatio = 2.0
 )
 
 // ModelUseThresholds are the finding thresholds as function parameters.
 // Zero or negative fields normalise to the named defaults above.
 type ModelUseThresholds struct {
 	SmallModelMaxBytes int64
-	MinCalls           int64
-	NodeMemMaxBytes    int64
+	MinContextTokens   int64
+	NodeLoadRatio      float64
 }
 
 // Normalised returns t with zero or negative thresholds replaced by the
@@ -68,11 +73,11 @@ func (t ModelUseThresholds) Normalised() ModelUseThresholds {
 	if t.SmallModelMaxBytes <= 0 {
 		t.SmallModelMaxBytes = DefaultModelUseSmallModelMaxBytes
 	}
-	if t.MinCalls <= 0 {
-		t.MinCalls = DefaultModelUseMinCalls
+	if t.MinContextTokens <= 0 {
+		t.MinContextTokens = DefaultModelUseMinContextTokens
 	}
-	if t.NodeMemMaxBytes <= 0 {
-		t.NodeMemMaxBytes = DefaultModelUseNodeMemMaxBytes
+	if t.NodeLoadRatio <= 0 {
+		t.NodeLoadRatio = DefaultModelUseNodeLoadRatio
 	}
 	return t
 }
@@ -82,6 +87,10 @@ type LoadedModel struct {
 	Name      string `json:"name"`
 	RAMBytes  int64  `json:"ram_bytes"`
 	VRAMBytes int64  `json:"vram_bytes"`
+	// ContextTokens is the context length (in tokens) the model is
+	// loaded with, from the Ollama reader (/api/ps details.num_ctx);
+	// zero when the server does not report it.
+	ContextTokens int64 `json:"context_tokens"`
 }
 
 // HeldBytes is the total memory the model holds on its node (RAM+VRAM).
@@ -125,14 +134,18 @@ type ModelUseInputs struct {
 // node it is resident on ("" when it is on no answering node), the memory
 // it holds, and the calls the service documented for it.
 type ModelEntry struct {
-	Model           string `json:"model"`
-	Node            string `json:"node,omitempty"`
-	RAMBytes        int64  `json:"ram_bytes"`
-	VRAMBytes       int64  `json:"vram_bytes"`
-	HeldBytes       int64  `json:"held_bytes"`
-	Calls           int64  `json:"calls"`
-	CallsDocumented bool   `json:"calls_documented"`
-	UsedByService   bool   `json:"used_by_service"`
+	Model     string `json:"model"`
+	Node      string `json:"node,omitempty"`
+	RAMBytes  int64  `json:"ram_bytes"`
+	VRAMBytes int64  `json:"vram_bytes"`
+	HeldBytes int64  `json:"held_bytes"`
+	// ContextTokens is the context length (in tokens) the model is
+	// loaded with, as the node's Ollama reader reports it; zero when the
+	// server does not report one.
+	ContextTokens   int64 `json:"context_tokens"`
+	Calls           int64 `json:"calls"`
+	CallsDocumented bool  `json:"calls_documented"`
+	UsedByService   bool  `json:"used_by_service"`
 }
 
 // Finding is one raised finding: a plain sentence plus the next action.
@@ -146,11 +159,11 @@ type Finding struct {
 
 // ModelUseReport is the full per-service report.
 type ModelUseReport struct {
-	Plugin   string    `json:"plugin"`
-	Nodes    []ModelNode `json:"nodes"`
+	Plugin   string       `json:"plugin"`
+	Nodes    []ModelNode  `json:"nodes"`
 	Models   []ModelEntry `json:"models"`
-	Findings []Finding   `json:"findings"`
-	Notes    []string    `json:"notes,omitempty"`
+	Findings []Finding    `json:"findings"`
+	Notes    []string     `json:"notes,omitempty"`
 }
 
 // MatchModelName reports whether a service-side model name (possibly
@@ -215,6 +228,7 @@ func CollectModelUse(plugin string, in ModelUseInputs, t ModelUseThresholds) *Mo
 			RAMBytes:        lm.RAMBytes,
 			VRAMBytes:       lm.VRAMBytes,
 			HeldBytes:       lm.HeldBytes(),
+			ContextTokens:   lm.ContextTokens,
 			Calls:           sm.Calls,
 			CallsDocumented: in.Service.Documented,
 			UsedByService:   true,
@@ -236,11 +250,12 @@ func CollectModelUse(plugin string, in ModelUseInputs, t ModelUseThresholds) *Mo
 			}
 			added[lm.Name] = true
 			rep.Models = append(rep.Models, ModelEntry{
-				Model:       lm.Name,
-				Node:        n.Name,
-				RAMBytes:    lm.RAMBytes,
-				VRAMBytes:   lm.VRAMBytes,
-				HeldBytes:   lm.HeldBytes(),
+				Model:         lm.Name,
+				Node:          n.Name,
+				RAMBytes:      lm.RAMBytes,
+				VRAMBytes:     lm.VRAMBytes,
+				HeldBytes:     lm.HeldBytes(),
+				ContextTokens: lm.ContextTokens,
 				UsedByService: false,
 			})
 		}
@@ -284,61 +299,93 @@ func loadedNamed(n ModelNode, model string) (LoadedModel, bool) {
 }
 
 // EvaluateModelUseFindings raises the two parameterised findings over the
-// report's table. Exposed separately so callers and tests can vary the
-// thresholds without re-building inputs.
+// report's table and node views: for each of the service's models that an
+// answering node reports as resident.
 func EvaluateModelUseFindings(nodes []ModelNode, models []ModelEntry, t ModelUseThresholds) []Finding {
 	t = t.Normalised()
 	out := []Finding{}
 
+	// small_model_large_context — a model under the small-model memory
+	// threshold, resident on an answering node and used by the service,
+	// loaded with a context above the context threshold.
 	for _, e := range models {
-		if !e.CallsDocumented || e.HeldBytes <= 0 {
+		if !e.UsedByService || e.HeldBytes <= 0 {
 			continue
 		}
 		if e.HeldBytes > t.SmallModelMaxBytes {
 			continue
 		}
-		if e.Calls < t.MinCalls {
-			continue
+		if e.ContextTokens <= t.MinContextTokens {
+			continue // at/under the threshold; 0 means unreported
 		}
 		out = append(out, Finding{
-			ID:     FindingSmallModelLargeContext,
-			Model:  e.Model,
-			Node:   e.Node,
+			ID:    FindingSmallModelLargeContext,
+			Model: e.Model,
+			Node:  e.Node,
 			Sentence: fmt.Sprintf(
-				"%s holds only %s on %s yet the service documented %d calls over the window",
-				e.Model, formatBytes(e.HeldBytes), e.Node, e.Calls),
+				"%s holds only %s on %s yet is loaded with a context of %d tokens — above the %d-token context threshold for a model this small",
+				e.Model, formatBytes(e.HeldBytes), e.Node, e.ContextTokens, t.MinContextTokens),
 			NextAction: fmt.Sprintf(
-				"cap the context length routed to %s or move it to a dedicated node so co-located models keep their memory",
+				"give %s a context the small model can hold, or route this workload to a larger model on another node",
 				e.Model),
 		})
 	}
 
+	// node_overloaded — the model's node holds more resident model
+	// memory than NodeLoadRatio times another node that could also serve
+	// the model. Only answering nodes can hold a resident model, and
+	// only answering nodes that serve it are eligible candidates.
+	totalLoaded := func(n ModelNode) int64 {
+		var total int64
+		for _, lm := range n.Loaded {
+			total += lm.HeldBytes()
+		}
+		return total
+	}
+	nodeByName := map[string]ModelNode{}
 	for _, n := range nodes {
-		if n.Error != "" || len(n.Loaded) == 0 {
+		nodeByName[n.Name] = n
+	}
+	for _, e := range models {
+		if !e.UsedByService || e.Node == "" {
 			continue
 		}
-		var total int64
-		largestName := ""
-		var largest int64 = -1
-		for _, lm := range n.Loaded {
-			h := lm.HeldBytes()
-			total += h
-			if h > largest {
-				largest, largestName = h, lm.Name
+		home, ok := nodeByName[e.Node]
+		if !ok || home.Error != "" {
+			continue
+		}
+		homeTotal := totalLoaded(home)
+
+		best := ""
+		var bestTotal int64 = -1
+		for _, n := range nodes {
+			if n.Error != "" || n.Name == e.Node {
+				continue
+			}
+			if !nodeServes(e.Model, n.Served) {
+				continue // cannot serve the model: not an eligible node
+			}
+			candTotal := totalLoaded(n)
+			if float64(homeTotal) > float64(candTotal)*t.NodeLoadRatio {
+				if bestTotal < 0 || candTotal < bestTotal {
+					best, bestTotal = n.Name, candTotal // strongest witness
+				}
 			}
 		}
-		if total < t.NodeMemMaxBytes {
+		if best == "" {
 			continue
 		}
 		out = append(out, Finding{
-			ID:     FindingNodeOverloaded,
-			Node:   n.Name,
+			ID:    FindingNodeOverloaded,
+			Model: e.Model,
+			Node:  e.Node,
 			Sentence: fmt.Sprintf(
-				"%s holds %s across %d resident models, more than the %s limit",
-				n.Name, formatBytes(total), len(n.Loaded), formatBytes(t.NodeMemMaxBytes)),
+				"%s holds %s of resident models — more than %sx the %s on %s, which also serves %s",
+				e.Node, formatBytes(homeTotal), formatRatio(t.NodeLoadRatio),
+				formatBytes(bestTotal), best, e.Model),
 			NextAction: fmt.Sprintf(
-				"unload or relocate %s — the largest resident model on %s — to another node",
-				largestName, n.Name),
+				"move %s from %s to %s to relieve the busier node",
+				e.Model, e.Node, best),
 		})
 	}
 
@@ -353,6 +400,28 @@ func EvaluateModelUseFindings(nodes []ModelNode, models []ModelEntry, t ModelUse
 		return out[i].Node < out[j].Node
 	})
 	return out
+}
+
+// nodeServes reports whether the node's served list includes model.
+func nodeServes(model string, served []string) bool {
+	for _, s := range served {
+		if MatchModelName(s, model) {
+			return true
+		}
+	}
+	return false
+}
+
+// formatRatio renders a ratio compactly ("2", "2.5").
+func formatRatio(r float64) string {
+	if r == float64(int64(r)) {
+		return fmt.Sprintf("%d", int64(r))
+	}
+	s := fmt.Sprintf("%.1f", r)
+	if strings.HasSuffix(s, "0") {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // RecordModelUseNodes feeds the report's per-node reachability to the

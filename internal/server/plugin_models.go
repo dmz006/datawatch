@@ -2,15 +2,21 @@
 //
 // For a registered service-kind plugin the endpoint reports, per model:
 // the Ollama node it is resident on, the RAM/VRAM that node says the
-// model holds, the calls the service documents for it over its window,
-// and two findings raised with parameterised thresholds
+// model holds, the context length the node's Ollama reader reports for
+// it, and the two findings raised with parameterised thresholds
 // (plugins.ModelUseThresholds, zero values normalise to the named
-// defaults) — small_model_large_context and node_overloaded. When the
-// service's contract does not document per-model call counts the report
-// carries only what the nodes report and says so (a note in the report).
-// When a node does not answer the report marks it and the request
-// raises model_node_unreachable through the plugins ServiceEventRecorder
-// — once per transition, cleared when the node answers again.
+// defaults). small_model_large_context fires when a model under the
+// small-model memory threshold is pinned above the context threshold;
+// node_overloaded fires when the model's node holds more than the
+// node_load_ratio times another node that could serve the same model.
+// When the service's contract does not document per-model call counts
+// the report carries only what the nodes report and says so (a note in
+// the report). The endpoint reports node reachability in the report
+// only:
+// model_node_unreachable is raised (and cleared) by the background
+// model-node events task (StartModelNodeEvents, plugins.ModelNodeEvents)
+// through the plugins ServiceEventRecorder — once per transition — not
+// by this request.
 //
 // The endpoint reuses the existing readers, it does not call Ollama on
 // its own terms: served models come from compute.HTTPModelLister (or the
@@ -40,6 +46,9 @@ import (
 var (
 	defaultModelNodeRec     *plugins.ServiceEventRecorder
 	defaultModelNodeRecOnce sync.Once
+	// modelNodeEventsOnce guards the process-wide model-node events
+	// task so StartModelNodeEvents is idempotent even if wired twice.
+	modelNodeEventsOnce sync.Once
 )
 
 // PluginModelsSource produces one service's model-use report. The
@@ -138,9 +147,10 @@ func (d *defaultModelUseSource) nodeModels(ctx context.Context, n *compute.Node)
 		if err == nil {
 			for _, lm := range loaded {
 				out.Loaded = append(out.Loaded, plugins.LoadedModel{
-					Name:      lm.LoadedName(),
-					RAMBytes:  lm.Size,
-					VRAMBytes: lm.SizeVRAM,
+					Name:          lm.LoadedName(),
+					RAMBytes:      lm.Size,
+					VRAMBytes:     lm.SizeVRAM,
+					ContextTokens: lm.ContextTokens(),
 				})
 			}
 		} else if out.Error == "" {
@@ -303,8 +313,11 @@ func (d *defaultModelUseSource) httpGet(ctx context.Context, url, token string) 
 
 // handlePluginModels serves GET /api/plugins/{name}/models — one
 // service's model-use report: per model, the Ollama node it runs on,
-// the memory it holds, the calls the service documented, and the
+// the memory it holds, the context the node reports for it, and the
 // parameterised findings (small_model_large_context, node_overloaded).
+// Node reachability is reported in the body only; the
+// model_node_unreachable raise is owned by the background model-node
+// events task (StartModelNodeEvents), not by this request.
 func (s *Server) handlePluginModels(w http.ResponseWriter, r *http.Request, name string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -334,14 +347,54 @@ func (s *Server) handlePluginModels(w http.ResponseWriter, r *http.Request, name
 		}
 		return
 	}
-	// A node that did not answer raises model_node_unreachable (once per
-	// transition); a node that answered clears it.
-	rec := s.pluginModelNodeRec
-	if rec == nil {
-		rec = s.defaultModelNodeRecorder()
-	}
-	plugins.RecordModelUseNodes(rec, rep)
+	// Node reachability is reported in the body (ModelNode.Error for
+	// nodes that did not answer). Raising model_node_unreachable is
+	// owned by the background model-node events task (see
+	// StartModelNodeEvents), not by this request.
 	writeJSONOK(w, rep)
+}
+
+// StartModelNodeEvents starts the process-wide model-node events task:
+// on each interval pass it resolves every service plugin's model-use
+// report from the source and feeds node reachability to the model-node
+// recorder — raising model_node_unreachable for every node that did not
+// answer and clearing it for every node that did, once per transition.
+// This is where model_node_unreachable is raised; a request to the
+// model-use endpoint no longer raises it. servicePlugins supplies the
+// current service-kind plugin roster and is re-invoked on every pass, so
+// it tracks what is registered then; an empty list is a no-op pass. A
+// nil recorder (the usual wiring) uses the process-wide default.
+// Idempotent: a second call starts nothing.
+func (s *Server) StartModelNodeEvents(ctx context.Context, servicePlugins func() []string) {
+	modelNodeEventsOnce.Do(func() {
+		rec := s.pluginModelNodeRec
+		if rec == nil {
+			rec = s.defaultModelNodeRecorder()
+		}
+		events := &plugins.ModelNodeEvents{Recorder: rec, Source: s.pluginModelsSrcIfConfigured(s.defaultModelUseSource())}
+		events.Plugins = func(context.Context) []string { return servicePlugins() }
+		if s.modelNodeEventInterval > 0 {
+			events.Interval = s.modelNodeEventInterval
+		}
+		s.modelNodeEvents = events
+		go events.Run(ctx)
+	})
+}
+
+// SetModelNodeEventInterval sets the model-node events task pass
+// interval (zero keeps DefaultModelNodeEventInterval, 15 s). It is read
+// when the task starts, not after.
+func (s *Server) SetModelNodeEventInterval(d time.Duration) {
+	s.modelNodeEventInterval = d
+}
+
+// pluginModelsSrcIfConfigured returns the explicitly wired source, or
+// def to when none (an explicit source may be a test fake).
+func (s *Server) pluginModelsSrcIfConfigured(def PluginModelsSource) PluginModelsSource {
+	if s.pluginModelsSrc != nil {
+		return s.pluginModelsSrc
+	}
+	return def
 }
 
 // defaultModelNodeRecorder is the recorder used when none is wired:

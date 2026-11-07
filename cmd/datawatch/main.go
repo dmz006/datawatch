@@ -7892,6 +7892,22 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// launched for these; the probes are read-only HTTP.
 			reg.StartAttachProbes(ctx)
 			defer reg.StopAttachProbes()
+			// Model-node events task: on every interval pass it resolves
+			// each service plugin's model-use report and feeds node
+			// reachability to the shared recorder, so
+			// model_node_unreachable is raised from a background task —
+			// not by a request to the model-use endpoint — and cleared
+			// when the node answers again. The endpoint now reports node
+			// reachability in its body only.
+			httpServer.StartModelNodeEvents(ctx, func() []string {
+				var names []string
+				for _, p := range reg.List() {
+					if p.Kind == pluginspkg.KindService {
+						names = append(names, p.Name)
+					}
+				}
+				return names
+			})
 			// Deferred so it runs on every return from runStart — signal
 			// shutdown (ctx cancelled) and normal exit alike — reaping the
 			// supervised children before the process exits.
