@@ -1,4 +1,4 @@
-# [sync] Inherited tags cache setting: one new number field in the Autonomous settings (datawatch next release)
+Filed: https://github.com/dmz006/datawatch-app/issues/387
 
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened when
 the operator files it. Filing the issue does not change a line of this repo.
