@@ -45,6 +45,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
@@ -279,6 +280,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
 		return false, nil, err
 	}
+	m.recordJudgeOutcomeKind(prd.ID, v)
 	if v.Outcome != "block" {
 		return false, nil, nil
 	}
@@ -293,6 +295,42 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	}
 	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 	return true, nil, nil
+}
+
+// judgeOutcomeWording is the plain-language wording of a judge outcome kind,
+// used in the daemon log line and as the Events headline. "" for no judge
+// problem.
+func judgeOutcomeWording(kind string) string {
+	switch kind {
+	case JudgeKindCouldNotStart:
+		return "judge could not start"
+	case JudgeKindTimedOut:
+		return "judge timed out"
+	case JudgeKindFoundProblem:
+		return "judge found a problem"
+	}
+	return ""
+}
+
+// recordJudgeOutcomeKind writes the outcome kind of a recorded judge result
+// into the daemon log and into the Events entry for the Automaton. A result
+// that is not one of the three kinds writes nothing.
+func (m *Manager) recordJudgeOutcomeKind(prdID string, v GuardrailVerdict) {
+	wording := judgeOutcomeWording(judgeOutcomeKind(v))
+	if wording == "" {
+		return
+	}
+	log.Printf("[autonomous] automaton=%s: %s", prdID, wording)
+	m.mu.Lock()
+	fn := m.auditFn
+	m.mu.Unlock()
+	if fn != nil {
+		fn(audit.ActionJudgeOutcome, map[string]any{
+			"prd_id":   prdID,
+			"kind":     judgeOutcomeKind(v),
+			"headline": wording,
+		})
+	}
 }
 
 // judgeCouldNotStartTryKey is the judge-tries key of the could-not-start
