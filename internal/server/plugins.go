@@ -8,6 +8,23 @@
 //   POST   /api/plugins/{name}/disable
 //   POST   /api/plugins/{name}/test        body: {hook, payload}
 //   /api/plugins/{name}/widgets/...         BL403, see plugin_widgets.go
+//   GET    /api/plugins/{name}/tokens        secret-ref usage + service
+//                                           token names, see plugin_tokens.go
+//   POST   /api/plugins/{name}/tokens/{secret}/rotate  rotate the
+//                                           referenced secret, never
+//                                           echoes the value, see
+//                                           plugin_tokens.go
+//   DELETE /api/plugins/{name}/tokens/{secret}         delete the
+//                                           referenced secret
+//   GET    /api/plugins/{name}/models        per-service model-use
+//                                           report: models used,
+//                                           Ollama node + memory
+//                                           per model, documented
+//                                           call counts, findings
+//                                           (small_model_large_
+//                                           context,
+//                                           node_overloaded), see
+//                                           plugin_models.go
 
 package server
 
@@ -193,6 +210,37 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	action := ""
 	if len(parts) == 2 {
 		action = parts[1]
+	}
+	// Per-plugin token usage (operator auth only, never a value): the
+	// secret refs the manifest uses + the service token names minted
+	// for the service. See plugin_tokens.go.
+	if action == "tokens" {
+		s.handlePluginTokens(w, r, name)
+		return
+	}
+	// Per-service model-use report: which models the service calls, the
+	// Ollama node each runs on, the memory each holds, the calls the
+	// service documents, and the parameterised findings. See
+	// plugin_models.go.
+	if action == "models" {
+		s.handlePluginModels(w, r, name)
+		return
+	}
+	// Per-secret rotate + delete (operator auth only): the named secret
+	// must be one the plugin's manifest actually references. See
+	// plugin_tokens.go.
+	if strings.HasPrefix(action, "tokens/") {
+		sub := strings.TrimPrefix(action, "tokens/")
+		if secret, ok := strings.CutSuffix(sub, "/rotate"); ok && secret != "" {
+			s.handlePluginTokenRotate(w, r, name, secret)
+			return
+		}
+		if sub == "" {
+			http.Error(w, "secret name required", http.StatusBadRequest)
+			return
+		}
+		s.handlePluginTokenRemove(w, r, name, sub)
+		return
 	}
 	if action == "widgets" || strings.HasPrefix(action, "widgets/") {
 		s.handlePluginWidgets(w, r, name, strings.TrimPrefix(strings.TrimPrefix(action, "widgets"), "/"))

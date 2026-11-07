@@ -261,7 +261,8 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
 | Observer | `observer_stats`, `observer_envelopes`, `observer_envelopes_all_peers` (BL180 cross-host), `observer_envelope`, `observer_peers_list/get/register/delete`, `observer_peer_stats`, `observer_agent_list/stats`, `observer_config_get/set`, `ollama_stats` |
 | Agents | `agent_list/get/spawn/terminate/logs/audit` |
-| Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable` |
+| Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
+| Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
@@ -1926,6 +1927,193 @@ already empty changes nothing and makes no backup.
 
 The tools need the same federation capabilities as the routes they call: the
 read tools `config:read`, the write tools `config:write`.
+
+---
+
+## Plugin service reads
+
+Four read-only tools expose the plugin service surfaces the REST layer already serves: one plugin's service status, its declared widgets with their latest values, and the token usage listing. All four take the plugin's `name`; only `plugin_widget_get` takes an extra argument. Each tool proxies the same REST handler it mirrors, so the response body is the handler's verbatim — including its error codes (unknown plugin is a 404 surfaced as a tool error, a plugin without widget or token wiring is a 503).
+
+All four are read-only and change nothing. Because the tools only read, they hold the plugin read gate — the same `plugin:read` a federation peer needs to fetch the corresponding REST endpoints — not the config capabilities the other plugin tools (list, enable, disable, install) carry.
+
+### `plugin_service_status`
+
+Read one plugin's service object: its lifecycle mode (`managed` or `attach_only`), state, address, version, uptime in seconds, and the last health check — the `service` object of `GET /api/plugins/{name}`. A non-service plugin still gets its manifest; it simply has no `service` object. Fields with no value (no health data yet, service not up) are omitted rather than sent as placeholders, exactly as the REST endpoint sends them.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+
+**Example response:**
+```json
+{
+  "name": "embeddings",
+  "kind": "service",
+  "enabled": true,
+  "service": {
+    "mode": "managed",
+    "state": "healthy",
+    "address": "http://127.0.0.1:9",
+    "version": "1.2.3",
+    "uptime_seconds": 42,
+    "last_health_check": "2026-11-01T01:00:00Z",
+    "last_health_status": "up"
+  }
+}
+```
+
+### `plugin_widget_list`
+
+List one plugin's declared widgets with each widget's latest stored value (the value is null until the service has pushed one). Same body as `GET /api/plugins/{name}/widgets`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+
+**Example response:**
+```json
+{
+  "plugin": "embeddings",
+  "widgets": [
+    {
+      "id": "queue_depth",
+      "surface": "dashboard",
+      "kind": "stat_tile",
+      "data_mode": "push",
+      "value": {
+        "plugin": "embeddings",
+        "widget_id": "queue_depth",
+        "data": 0,
+        "updated_at": "2026-11-01T01:00:00Z",
+        "source": "push"
+      }
+    },
+    { "id": "pending", "surface": "dashboard", "kind": "stat_tile", "data_mode": "push", "value": null }
+  ]
+}
+```
+
+### `plugin_widget_get`
+
+Fetch one widget as declared plus its latest value, same body as `GET /api/plugins/{name}/widgets/{widget_id}`. An unknown widget id surfaces the REST 404.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+| `widget_id` | string | Yes | Widget id as declared in the plugin's manifest |
+
+**Example response:**
+```json
+{
+  "id": "queue_depth",
+  "surface": "dashboard",
+  "kind": "stat_tile",
+  "data_mode": "push",
+  "value": {
+    "plugin": "embeddings",
+    "widget_id": "queue_depth",
+    "data": 0,
+    "updated_at": "2026-11-01T01:00:00Z",
+    "source": "push"
+  }
+}
+```
+
+### `plugin_token_list`
+
+List one plugin's token usage: the secret names its manifest references (with the manifest fields that carry the reference — `connection.auth.token`, `env.<KEY>` — and whether each secret exists in the store), and the service token names minted for the service with their creation times. Same body as `GET /api/plugins/{name}/tokens`, and like that route it **never returns a secret value or a service token value**; it is also operator-token-only, so a federation peer calling the tool through `POST /api/mcp/call` is refused with the REST 403.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+
+**Example response:**
+```json
+{
+  "plugin": "embeddings",
+  "secrets": [
+    { "name": "embeddings_api_key", "fields": ["connection.auth.token"], "exists": true }
+  ],
+  "service_tokens": [
+    { "name": "embeddings_api_key", "created_at": "2026-10-25T00:00:00Z" }
+  ]
+}
+```
+
+### `plugin_service_start`
+
+Start the managed service of a plugin: `POST /api/plugins/{name}/enable` with `{"managed": true}` — datawatch launches the plugin's `lifecycle.command` under its supervisor (health checks, backoff restarts per the manifest's `lifecycle` policy). The plugin is enabled as part of the same call (it is an `enable` route). A plugin that does not declare the `managed` mode — attach-only or non-service plugins — is refused with a clear error: attach-only services are run and stopped by their owner, never by datawatch.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+
+**Example response:**
+```json
+{ "action": "enabled", "managed": true, "previous_managed": false }
+```
+
+### `plugin_service_stop`
+
+Stop the managed service of a plugin: `POST /api/plugins/{name}/enable` with `{"managed": false}` — the daemon terminates the supervised child (per its `stop_timeout_ms`) and drops health checking; the plugin stays enabled so `plugin_service_start` brings it straight back. Refused with the same clear error as `plugin_service_start` when the plugin is attach-only or does not declare managed lifecycle support. (Use `plugin_disable` to stop and disable in one go — that is the disable route, not this one.)
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+
+**Example response:**
+```json
+{ "action": "disabled", "managed": false, "previous_managed": true }
+```
+
+### `plugin_service_restart`
+
+Restart the managed service of a plugin: the two calls in order — `POST /api/plugins/{name}/enable` with `{"managed": false}` (stop the supervised child), then the same route with `{"managed": true}` (start it again). If the stop leg is refused (attach-only plugin), the start leg is never attempted and the refusal is surfaced. The response carries both legs.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+
+**Example response:**
+```json
+{
+  "stop": { "action": "disabled", "managed": false, "previous_managed": true },
+  "start": { "action": "enabled", "managed": true, "previous_managed": false }
+}
+```
+
+### `plugin_token_rotate`
+
+Rotate one secret a plugin's manifest references: `POST /api/plugins/{name}/tokens/{secret}/rotate` with `value`. The new value is stored through the same secrets-store write every other secret write uses, and when the name is also registered as a service token the old token is revoked and a fresh one minted under the same name — no other token or secret is touched. The rotation lands in the audit log. The new value is sent to the server and **never returned**: the response carries only `status`, `plugin` and `secret` names (the tool re-emits exactly those fields even if the upstream sent more).
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Plugin name |
+| `secret` | string | Yes | Secret name as referenced by the plugin's manifest (e.g. `connection.auth.token`, `env.<KEY>`); a secret the plugin does not reference is refused by the upstream route (400) |
+| `new_value` | string | Yes | The new secret value; sent to the server, never echoed back |
+
+**Example response:**
+```json
+{ "status": "rotated", "plugin": "embeddings", "secret": "embeddings_api_key" }
+```
+
+> The four tools are MCP-only: the agent calls the existing operator-facing REST routes over the loopback proxy, and the daemon's REST API is unchanged. All four hold the federation `plugin:write` capability (in no built-in group). `plugin_token_rotate` is additionally operator-token-only, because its upstream route is: a federation peer gets the same 403 the REST route gives.
 
 ---
 

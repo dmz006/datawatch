@@ -230,6 +230,34 @@ func cefSignature(action string) (int, string, int) {
 		return 68, "SecretScanShadow", 4
 	case ActionQuestionUpdated:
 		return 69, "QuestionUpdated", 3
+	case ActionPluginServiceDown:
+		return 70, "PluginServiceDown", 4
+	case ActionPluginServiceTokenRejected:
+		return 71, "PluginServiceTokenRejected", 5
+	case ActionPluginServiceEnrichmentBacklog:
+		return 72, "PluginServiceBacklog", 4
+	case ActionPluginServiceModelNodeUnreachable:
+		return 73, "PluginModelNodeUnreachable", 4
+	case ActionPluginServiceStart:
+		return 74, "PluginServiceStart", 2
+	case ActionPluginServiceStop:
+		return 75, "PluginServiceStop", 2
+	case ActionPluginServiceRestart:
+		return 76, "PluginServiceRestart", 4
+	case ActionPluginServiceHealthFail:
+		return 77, "PluginServiceHealthFail", 4
+	case ActionPluginWidgetRegistered:
+		return 78, "PluginWidgetRegistered", 2
+	case ActionPluginWidgetPush:
+		return 79, "PluginWidgetPush", 2
+	case ActionPluginWidgetTokenIssue:
+		return 80, "PluginWidgetTokenIssue", 2
+	case ActionPluginTokenRotate:
+		return 81, "PluginTokenRotate", 2
+	case ActionPluginTokenRemove:
+		return 82, "PluginTokenRemove", 2
+	case ActionPluginWidgetPullFailed:
+		return 83, "PluginWidgetPullFailed", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

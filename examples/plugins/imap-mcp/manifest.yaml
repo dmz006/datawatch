@@ -1,0 +1,60 @@
+# imap-mcp runs standalone without datawatch. Datawatch attaching to an
+# already-running instance, or launching this same binary under
+# supervision, is one more way to run imap-mcp — never a mode inside
+# imap-mcp.
+#
+# Example plugin — service kind, imap-mcp (manifest v3).
+#
+# The connection block alone is enough for datawatch to attach to a
+# standalone imap-mcp instance as a client; the lifecycle block declares
+# the supervision modes the author built and tested.
+#
+# Evidence: the imap-mcp REST contract report (.datawatch/reports/imap-mcp-rest-contract.md).
+# - health path: GET /api/health, the one endpoint exempt from the
+#   bearer token (docs/config-reference.yaml:532-533,
+#   internal/messaging/backends/imapmcp/backend.go:49-50).
+# - start command: "Operator must run imap-mcp serve independently"
+#   (internal/config/config.go:1851, quoted in the contract report).
+# - accounts: GET /api/accounts returns [{name, default}]
+#   (internal/messaging/backends/imapmcp/backend.go:166-170) — the only
+#   endpoint the contract report confirms for pull-mode rendering.
+# - Enrichment status/counts (pending/processing), anomalies and the
+#   active rule count are NOT documented in this repository — those
+#   widgets are push-mode and carry no pull_path.
+kind: service
+name: imap-mcp
+description: "imap-mcp is a standalone tool that datawatch can attach to or launch."
+connection:
+  base_url: "http://127.0.0.1:8765" # default placeholder for a standalone run
+  health_path: /api/health
+  auth:
+    type: bearer
+    token: "${secret:imap-mcp-token}"
+lifecycle:
+  supported_modes: [attach_only, managed]
+  entry: imap-mcp # resolved on PATH; never an absolute path
+  args: ["serve"]
+  restart_policy: on-failure
+  stop_timeout_ms: 5000
+widgets:
+  - id: pending_count
+    surface: dashboard
+    kind: stat_tile
+    data_mode: push # not documented in this repository — no pull_path
+  - id: processing_count
+    surface: dashboard
+    kind: stat_tile
+    data_mode: push # not documented in this repository — no pull_path
+  - id: anomalies
+    surface: dashboard
+    kind: list
+    data_mode: push # not documented in this repository — no pull_path
+  - id: accounts
+    surface: dashboard
+    kind: status_badge
+    data_mode: pull
+    pull_path: /api/accounts
+  - id: active_rules
+    surface: dashboard
+    kind: stat_tile
+    data_mode: push # not documented in this repository — no pull_path

@@ -55,6 +55,18 @@ func (r *Registry) isManagedLocked(p *Plugin) bool {
 	return declaresManaged(p) && p.Enabled && r.managed[p.Name]
 }
 
+// IsManaged reports whether the operator has opted the named plugin in
+// for managed supervision and the plugin is currently eligible for it.
+func (r *Registry) IsManaged(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.byName[name]
+	if !ok {
+		return false
+	}
+	return r.isManagedLocked(p)
+}
+
 // SetServiceEventFn sets the sink that receives every managed service's
 // lifecycle events. fn must not block for long and must not call back into
 // methods that start or stop services.
@@ -71,6 +83,27 @@ func (r *Registry) emitServiceEvent(ev ServiceEvent) {
 	r.mu.Unlock()
 	if fn != nil {
 		fn(ev)
+	}
+}
+
+// SetHealthObserver wires an observer that receives every attach or
+// managed health probe result for a plugin: healthy outcome and the HTTP
+// status code (0 when the request never completed). It is invoked once
+// per completed check, never while a registry or probe lock is held;
+// it must not block for long. Probes created afterwards pick it up.
+func (r *Registry) SetHealthObserver(fn func(plugin string, healthy bool, statusCode int)) {
+	r.mu.Lock()
+	r.healthObserver = fn
+	r.mu.Unlock()
+}
+
+// observeHealth forwards one probe outcome to the configured observer.
+func (r *Registry) observeHealth(plugin string, healthy bool, statusCode int) {
+	r.mu.Lock()
+	fn := r.healthObserver
+	r.mu.Unlock()
+	if fn != nil {
+		fn(plugin, healthy, statusCode)
 	}
 }
 
@@ -98,6 +131,9 @@ func (r *Registry) SetManaged(name string, on bool) bool {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	// The mode flip changes attach eligibility: a plugin that went managed
+	// loses its attach probe, one that left managed may gain one.
+	r.syncAttachProbes()
 	return true
 }
 
@@ -177,6 +213,7 @@ func (r *Registry) reconcileServicesLocked(restartIdle bool) (start, stop []*Ser
 			continue
 		}
 		s.OnEvent = r.emitServiceEvent
+		s.OnProbe = func(healthy bool) { r.observeHealth(p.Name, healthy, 0) }
 		r.supervisors[name] = s
 		start = append(start, s)
 	}

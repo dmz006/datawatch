@@ -73,6 +73,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/failure-escalation.md](howto/failure-escalation.md) | Failure escalation: worker ladder, failure count, the review-needed hold, the five operator actions and the override order |
 | [howto/codeql-local-scan.md](howto/codeql-local-scan.md) | CodeQL local scan: run the default suite offline for all four languages, compare with GitHub alerts and dismissals, check bundle pin drift, optional pre-push and pre-ship steps |
 | [howto/multi-servers.md](howto/multi-servers.md) | Multi-server PWA — register remote instances, per-tab picker, all-servers aggregation (v7.2.0) |
+| [howto/imap-mcp-service.md](howto/imap-mcp-service.md) | Plugin services end-to-end with imap-mcp: run standalone, attach or let the daemon manage, mint the service token, rotation, the status card, acting on each event, troubleshooting |
 | [api/openapi.yaml](api/openapi.yaml) | OpenAPI 3.0 REST API specification |
 
 ## Memory & Intelligence
@@ -99,6 +100,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [channel-testing.md](channel-testing.md) | MCP channel testing guide — manual test procedures for bidirectional flow |
 | [config-reference.yaml](config-reference.yaml) | Complete annotated config file reference (all fields, defaults, comments) |
 | [addons.md](addons.md) | Optional add-ons and integrations |
+| [plugins.md](plugins.md) | Plugin services: attach_only vs managed, the manifest, widget kinds and data modes, tokens and rotation, the four events and their “Next” actions, thresholds, and the surfaces | 
 | [uninstall.md](uninstall.md) | Manual uninstall instructions for all installation methods |
 | [testing-tracker.md](testing-tracker.md) | Interface validation status for all backends |
 | [testing.md](testing.md) | Bug test procedures and results log (28 tests, all PASS) |

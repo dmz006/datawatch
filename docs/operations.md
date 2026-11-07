@@ -6734,3 +6734,56 @@ Planning routing chooses the planner for each Automaton decompose by rule. It is
 | MCP | `planning_routing_get`, `planning_routing_set`, `planning_routing_test`, `planning_scorecard` |
 
 **Roll out in shadow mode first.** Set `enabled: true` and `shadow: true`; the routed decision is recorded for every decompose and the planner does not change. Read the would-route counts in the scorecard, compare them with what you expect, then set `shadow: false`. The scorecard and its gate report carry counts, planner names and rule and class names only, never plan or finding text. The full guide is [howto/automata-planning-routing.md](howto/automata-planning-routing.md).
+
+## Plugin services: lifecycle semantics
+
+The [plugins guide](plugins.md) is the concept reference for service-kind plugins; this section is the operations contract for them — who owns the process, what the daemon does and never does.
+
+### Who owns the process
+
+- **attach_only (the default stance).** You own the process: systemd, Docker, or a shell started it, and only you can stop it. datawatch owns *observation* — the health probe against the manifest's `health_path`, the widget pulls, the events. A probe failure never sends a signal to the process; it raises an event and waits for you.
+- **managed.** datawatch owns the process as a supervised child of the daemon: it starts the manifest's `entry` with its `args`, injects the connection auth, probes health, restarts per `restart_policy` (bounded by the restart budget), and stops it on request. A clean exit (0) under `on-failure` is read as *you stopped it on purpose* — a state that is "stopped", not "crashed".
+
+The manifest's `lifecycle.supported_modes` is the **ceiling**: the operator's choice (`plugins.managed` or `plugins.services.per_service.<name>.lifecycle_mode`) can never force a mode the manifest did not declare. A manifest without a `lifecycle` block, or with only `attach_only`, can be attached to but is never spawned.
+
+### States and transitions you will see on the card
+
+| | attach_only | managed |
+|---|---|---|
+| states | `up` / `down` (last probe) | `stopped`, `starting`, `healthy`, `unhealthy`, `restarting`, `crashed`, `stopping`, `failed` |
+| "down" means | the health path is not answering 2xx | the child is not running and (per policy) no restart is in flight |
+| who brings it back | **you** — the daemon's alert tells you to confirm the service | the daemon — per the manifest policy, until the budget is spent, then `failed` |
+
+### The daemon's hard limits (operations contract)
+
+1. datawatch **never** kills a managed child on the operator's behalf in attach_only mode — it reports.
+2. datawatch **never** hot-loops a crashing service: a streak of failures without reaching healthy spends the restart budget → `failed` + event; the operator re-starts after fixing the cause.
+3. datawatch **never** echoes a service token or vault secret value: all read surfaces (PWA, REST, MCP, CLI) show names only.
+4. datawatch **never** requires the service to know it exists — attach_only is pure out-bound probing; managed is spawn + supervise, nothing more special inside the process.
+5. datawatch **never** keeps widget history — only the latest value per widget is stored and shown.
+
+### Secrets and tokens in operation
+
+- The **connection bearer** is a named vault secret: the manifest references it as `${secret:<name>}` (a literal credential in the manifest is refused), and the daemon resolves the reference on every probe, so a vault-side rotation is picked up on the next probe without a manifest edit.
+- **Service tokens** — the credential a service *presents to the daemon* (e.g. imap-mcp resolving a scoped secret) — are minted by the operator in a real terminal (`datawatch secrets mint-service-token <name> --desc "…"`), never via an agent or a transcript-capturing shell: the printed line is the only plaintext. `list-service-tokens` shows names only; `revoke-service-token <name>` drops the credential.
+- **Widget push tokens** are separate again: minted against the plugin (`/api/plugins/<name>/widgets/token`), returned once, and verified only on that plugin's push route.
+- Read surfaces (PWA, REST, MCP) show the *names* of every family — values are never echoed.
+
+The how-to in [docs/howto/imap-mcp-service.md](howto/imap-mcp-service.md) walks the store → attach → rotate loop.
+
+### Events and the operator's next action
+
+Four conditions (each one alert + one audit entry per **transition**, never per probe):
+
+| Condition | Raised | Operator's move (the alert's "Next") |
+|---|---|---|
+| `service_down` | health probe fails N in a row | confirm the service is running and reachable *from the daemon's host*; wait for the "back up" cleared alert |
+| `token_rejected` | a probe or a widget pull answers 401/403 | check the service token in Settings; re-mint/rotate and point the service at the new value |
+| `enrichment_backlog_growing` | the reported backlog rises N consecutive pulls by ≥ the minimum rise | open the service, read its rate/queue, raise its worker count; clears on a flat/falling pull |
+| `model_node_unreachable` | an Ollama node the service depends on stops answering | confirm that node is up and the model is loaded; wait for the "reachable again" alert |
+
+### Threshold knobs
+
+All under `plugins.services` (YAML / `PUT /api/config` / PWA Settings / CLI), with defaults and floors as in [plugins.md](plugins.md#thresholds-the-settings-that-matter): probe interval (default 60 s, minimum 5 — below is refused at load), backlog streak, node-load ratio, and the small-model boundaries. Per-plugin overrides exist for the lifecycle mode only (`per_service.<name>.lifecycle_mode`) and the `plugins.managed` opt-in list; both sit beside these keys in the same config surface.
+
+**Related:** [plugins.md](plugins.md) · [howto/imap-mcp-service.md](howto/imap-mcp-service.md) · [mcp.md](mcp.md) — `plugin_service_*`, `plugin_widget_*`, `plugin_token_*` tools

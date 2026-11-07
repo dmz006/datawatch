@@ -608,6 +608,25 @@ type Server struct {
 	widgetStore     *plugins.WidgetStore
 	pluginTokens    PluginTokensAPI
 
+	// Per-plugin token-usage listing (GET /api/plugins/{name}/tokens):
+	// manifest secret-ref scan + service-token names. Nil until main.go
+	// wires it; the handler returns 503 in that case.
+	pluginTokensSrc PluginTokensSource
+
+	// Per-service model-use report (GET /api/plugins/{name}/models):
+	// models used, Ollama node + memory + context per model, and the
+	// two parameterised findings (small_model_large_context,
+	// node_overloaded). pluginModelsSrc is a test/override injection;
+	// nil uses the default source built from pluginTokensSrc + computeReg
+	// + secretsStore. The model-node events task starts in
+	// StartModelNodeEvents and owns the model_node_unreachable raise via
+	// its recorder (pluginModelNodeRec when wired, else the process
+	// default).
+	pluginModelsSrc        PluginModelsSource
+	pluginModelNodeRec     *plugins.ServiceEventRecorder
+	modelNodeEvents        *plugins.ModelNodeEvents
+	modelNodeEventInterval time.Duration
+
 	// BL117 — PRD-DAG orchestrator (Sprint S8, v4.0.0). Wired from
 	// main.go; nil when orchestrator.enabled=false. Handlers return
 	// 503 in that case.
@@ -6641,6 +6660,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"dir":        s.cfg.Plugins.Dir,
 			"timeout_ms": s.cfg.Plugins.TimeoutMs,
 			"disabled":   s.cfg.Plugins.Disabled,
+			// plugins.services — service-plugin watch settings; each field is
+			// its stored value (0 = unset; the Effective* accessors apply the
+			// documented defaults).
+			"services": pluginServicesSurface(s.cfg),
 		},
 		"orchestrator": map[string]interface{}{
 			"enabled":              s.cfg.Orchestrator.Enabled,
@@ -7586,6 +7609,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// plugins.services.* validates as a block (every value is also checked
+	// on its own, but the combined state is what Load re-validates at the
+	// next startup), so the patch is simulated onto the stored block and the
+	// load-time validator is run over the result before anything is applied.
+	if err := validatePluginServicesPatch(s.cfg.Plugins.Services, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
@@ -7922,6 +7953,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 					cfg.Autonomous.Requirements.MinOllama = map[string]string{}
 				}
 				cfg.Autonomous.Requirements.MinOllama[capability] = version
+			}
+			continue
+		}
+		// plugins.services.per_service.<name> — the dynamic per-plugin map,
+		// handled before the switch like its sibling dynamic map above; the
+		// lifecycle mode is validated by validatePluginServicesPatch (the
+		// shared load-time rule) before anything is applied here.
+		if service, ok := strings.CutPrefix(k, "plugins.services.per_service."); ok && service != "" {
+			if ov, verr := normalizePluginServiceOverride(service, v); verr == nil {
+				applyPluginServiceOverride(cfg, service, ov)
 			}
 			continue
 		}
@@ -10061,6 +10102,39 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Plugins.TimeoutMs = n
 			}
+			// plugins.services.* — the service-plugin watch settings (the attach-only
+			// probe cadence, the backlog-growth streak, the model-use thresholds),
+			// validated as a block in handlePutConfig so a PUT can never store a
+			// state Load would reject at next startup; the guards below are the
+			// same rules applied key by key.
+		case "plugins.services.health_interval_seconds":
+			if n, ok := toInt(v); ok && n >= config.MinPluginServicesHealthInterval {
+				cfg.Plugins.Services.HealthIntervalSeconds = n
+			}
+		case "plugins.services.backlog_growth_pulls":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Plugins.Services.BacklogGrowthPulls = n
+			}
+		case "plugins.services.node_load_ratio":
+			if f, err := configPatchFloat(v); err == nil && f > 0 {
+				cfg.Plugins.Services.NodeLoadRatio = f
+			}
+		case "plugins.services.small_model_max_params_billions":
+			if f, err := configPatchFloat(v); err == nil && f > 0 {
+				cfg.Plugins.Services.SmallModelMaxParamsBillions = f
+			}
+		case "plugins.services.small_model_context_tokens":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Plugins.Services.SmallModelContextTokens = n
+			}
+		case "plugins.services.per_service":
+			if obj, ok := v.(map[string]interface{}); ok {
+				for name, raw := range obj {
+					if ov, verr := normalizePluginServiceOverride(name, raw); verr == nil {
+						applyPluginServiceOverride(cfg, name, ov)
+					}
+				}
+			}
 		case "orchestrator.enabled":
 			cfg.Orchestrator.Enabled = toBool(v)
 		case "orchestrator.guardrail_backend":
@@ -10363,6 +10437,121 @@ func judgePolicyForDisplay(backends []string) []string {
 // number and a numeric string (the CLI and comm channel commonly send
 // strings); booleans and unparseable values are errors. NaN/±Inf are
 // rejected because they would defeat the (0,1] clamping.
+// pluginServicesSurface renders plugins.services for GET /api/config: each
+// field as stored (0 when unset; the Effective* accessors apply the
+// documented defaults on the reading side, and the reference documents the
+// defaults themselves).
+func pluginServicesSurface(cfg *config.Config) map[string]interface{} {
+	svc := cfg.Plugins.Services
+	per := map[string]interface{}{}
+	for name, ov := range svc.PerService {
+		per[name] = map[string]interface{}{"lifecycle_mode": ov.LifecycleMode}
+	}
+	return map[string]interface{}{
+		"health_interval_seconds":         svc.HealthIntervalSeconds,
+		"backlog_growth_pulls":            svc.BacklogGrowthPulls,
+		"node_load_ratio":                 svc.NodeLoadRatio,
+		"small_model_max_params_billions": svc.SmallModelMaxParamsBillions,
+		"small_model_context_tokens":      svc.SmallModelContextTokens,
+		"per_service":                     per,
+	}
+}
+
+// applyPluginServiceOverride merges one validated per-service entry into the
+// config (the map is created on first write, like the other dynamic maps).
+func applyPluginServiceOverride(cfg *config.Config, service string, ov config.PluginServiceOverride) {
+	if cfg.Plugins.Services.PerService == nil {
+		cfg.Plugins.Services.PerService = map[string]config.PluginServiceOverride{}
+	}
+	cfg.Plugins.Services.PerService[service] = ov
+}
+
+// normalizePluginServiceOverride accepts a per_service value as a mode
+// string or as an object with a lifecycle_mode member, lower-cases and
+// trims it, and checks it against the load-time rule: "" (unset = the only
+// supported mode, or attach_only when the manifest supports both),
+// attach_only, or managed. A mis-spelled mode is rejected naming the
+// service and listing the valid values.
+func normalizePluginServiceOverride(service string, v interface{}) (config.PluginServiceOverride, error) {
+	mode := ""
+	switch t := v.(type) {
+	case string:
+		mode = t
+	case map[string]interface{}:
+		if raw, ok := t["lifecycle_mode"]; ok {
+			mode = toString(raw)
+		}
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "" && mode != config.PluginServiceLifecycleAttachOnly && mode != config.PluginServiceLifecycleManaged {
+		return config.PluginServiceOverride{}, config.ValidatePluginServiceMode(service, mode)
+	}
+	return config.PluginServiceOverride{LifecycleMode: mode}, nil
+}
+
+// validatePluginServicesPatch simulates the patch's plugins.services.* keys
+// on a copy of the stored block and runs the same validator Load runs
+// (config.PluginServicesConfig.Validate) over the result — so a single PUT
+// cannot store a block the next startup would reject. Reports the first
+// violation; keys are visited in sorted order.
+func validatePluginServicesPatch(current config.PluginServicesConfig, patch map[string]interface{}) error {
+	next := current
+	if next.PerService == nil {
+		next.PerService = map[string]config.PluginServiceOverride{}
+	}
+	keys := make([]string, 0, len(patch))
+	for k := range patch {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := patch[k]
+		switch {
+		case k == "plugins.services.health_interval_seconds":
+			if n, ok := toInt(v); ok {
+				next.HealthIntervalSeconds = n
+			}
+		case k == "plugins.services.backlog_growth_pulls":
+			if n, ok := toInt(v); ok {
+				next.BacklogGrowthPulls = n
+			}
+		case k == "plugins.services.node_load_ratio":
+			if f, err := configPatchFloat(v); err == nil {
+				next.NodeLoadRatio = f
+			}
+		case k == "plugins.services.small_model_max_params_billions":
+			if f, err := configPatchFloat(v); err == nil {
+				next.SmallModelMaxParamsBillions = f
+			}
+		case k == "plugins.services.small_model_context_tokens":
+			if n, ok := toInt(v); ok {
+				next.SmallModelContextTokens = n
+			}
+		case k == "plugins.services.per_service":
+			if obj, ok := v.(map[string]interface{}); ok {
+				for name, raw := range obj {
+					ov, verr := normalizePluginServiceOverride(name, raw)
+					if verr != nil {
+						return fmt.Errorf("plugins.services: %v", verr)
+					}
+					next.PerService[name] = ov
+				}
+			}
+		case strings.HasPrefix(k, "plugins.services.per_service."): 
+			name, _ := strings.CutPrefix(k, "plugins.services.per_service.")
+			if name == "" {
+				continue
+			}
+			ov, verr := normalizePluginServiceOverride(name, v)
+			if verr != nil {
+				return fmt.Errorf("plugins.services: %v", verr)
+			}
+			next.PerService[name] = ov
+		}
+	}
+	return next.Validate()
+}
+
 func configPatchFloat(v interface{}) (float64, error) {
 	rejectNonFinite := func(f float64, lit string) error {
 		if math.IsNaN(f) || math.IsInf(f, 0) {

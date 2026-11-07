@@ -5077,6 +5077,47 @@ paths:
                 hook: {type: string}
                 payload: {type: object}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/plugins/{name}/tokens:
+    get:
+      summary: The secrets a plugin references and the service tokens minted for it
+      description: |
+        Operator auth only — a federation peer (even full control) and a
+        session-scoped credential are refused (403). Per secret the manifest
+        references: the manifest fields that carry the reference
+        (connection.auth.token, env.<KEY>) and whether the secret exists in
+        the store. Plus the names and creation times of the service tokens
+        minted for the service. Never returns a secret value or a token value.
+      operationId: pluginTokensList
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plugin: {type: string}
+                  secrets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        fields: {type: array, items: {type: string}}
+                        exists: {type: boolean}
+                  service_tokens:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        created_at: {type: string, format: date-time}
+        "403": {description: Not an operator token (peer or session-scoped credential)}
+        "404": {description: Unknown plugin}
+        "405": {description: Method not allowed (GET only)}
+        "503": {description: Plugin source not wired}
   # Plugin widgets (BL403). "token" is a reserved widget id: manifests may
   # not declare it, so the token path never collides with {widget_id}.
   /api/plugins/{name}/widgets:

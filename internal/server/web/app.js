@@ -9394,6 +9394,7 @@ const DOCS_LINKS_BY_KEY = {
   // Settings -> Plugins
   gc_plugins: 'api/plugins.md',
   plugins_list: DOCS_DEFINITIONS + '#plugin-manager',
+  plugins_services: 'plugins.md',
   community_plugins: 'api/plugins.md',
   // Settings -> About
   about: DOCS_DEFINITIONS + '#settings-about',
@@ -10857,6 +10858,23 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- Plugin services card (Settings → Plugins): one field per key of
+             the plugins.services config block (attach-only health-probe
+             cadence, backlog-growth streak, small-model-use threshold) plus
+             a lifecycle_mode select per installed service plugin, each
+             select's options limited to the modes that plugin's manifest
+             declares in lifecycle.supported_modes. Every field carries a
+             '?' docs pill linking to docs/plugins.md. Reads GET /api/config
+             (and GET /api/plugins for the service list) and saves through
+             the shared saveGeneralConfigPut → PUT /api/config only — no
+             other write path. -->
+        <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
+          ${settingsSectionHeader('plugins_services', t('settings_plugin_services_title')||'Plugin services', 'plugins.md')}
+          <div id="settings-sec-plugins_services" style="${secContent('plugins_services')}">
+            <div id="pluginServiceSettingsBody" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock(t('settings_plugin_services_loading'))}</div>
+          </div>
+        </div>
+
         <!-- v6.12.4 — Proxy Resilience now appears AFTER Communication
              Configuration per operator request. -->
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
@@ -11039,6 +11057,7 @@ function renderSettingsView() {
   loadClusterProfiles();
   loadAgentsConfig();
   loadPluginsPanel();
+  loadPluginServiceSettings(); // Plugins → Plugin services card
   loadCommunityPluginsPanel(); // GH#191
   loadRoutingPanel();
   loadChannelRoutingPanel(); // BL331 parity
@@ -45740,6 +45759,398 @@ window.deleteSecret = function(name) {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
+// ── Plugin service status card ──────────────────────────────────────────────
+// One status card per kind:service plugin, under its Plugin Manager row.
+// Pure (data in → escaped HTML out): it renders exactly what the plugin's
+// `service` object (internal/plugins serviceView) carries — name, state
+// (up/down/unknown), lifecycle mode, address, version, uptime, last health
+// check time, last error, a next-action line and the open service events
+// as a link to the Events entry. Every row renders only when it has a
+// value: an "off", "none", "never" or empty row is omitted outright, and
+// open service events are never rendered as a status strip. No service
+// object → '' so the card hides itself.
+
+// _pluginServiceStateOf normalizes the two service views (managed
+// supervisor states; the attach-only probe status) to up/down/unknown.
+function _pluginServiceStateOf(svc) {
+  svc = (svc && typeof svc === 'object') ? svc : {};
+  if (svc.state) {
+    switch (svc.state) {
+      case 'healthy': return 'up';
+      case 'unhealthy':
+      case 'crashed':
+      case 'failed':
+      case 'stopped': return 'down';
+      case 'starting':
+      case 'restarting':
+      case 'stopping':
+      default: return 'unknown'; // in transition, or a value we do not map
+    }
+  }
+  // Attach-only view carries no state — the last probe result is the state.
+  if (svc.last_health_status === 'up') return 'up';
+  if (svc.last_health_status === 'down') return 'down';
+  return 'unknown';
+}
+
+// pluginServiceUptimeLabel — seconds → compact "1h 1m" / "12m 30s" / "40s".
+function pluginServiceUptimeLabel(secs) {
+  const s = Math.max(0, Math.floor(Number(secs) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  if (h) return h + 'h ' + m + 'm';
+  if (m) return m + 'm ' + r + 's';
+  return r + 's';
+}
+
+window.pluginServiceCardHtml = function(name, svc) {
+  if (!svc || typeof svc !== 'object') return '';
+  const state = _pluginServiceStateOf(svc);
+  const stateKey = state === 'up' ? 'plugin_service_up' : (state === 'down' ? 'plugin_service_down' : 'plugin_service_unknown');
+  const stateStyle = state === 'up'
+    ? { color: 'var(--success,#10b981)', bg: 'rgba(16,185,129,0.12)' }
+    : state === 'down'
+      ? { color: 'var(--error,#ef4444)', bg: 'rgba(239,68,68,0.12)' }
+      : { color: 'var(--text2)', bg: 'rgba(148,163,184,0.15)' };
+  const managed = svc.mode === 'managed';
+  const label = (key, fb) => escHtml(_pluginServiceLocaleKey(key, fb));
+  const row = (lab, valueHtml) => `<div style="display:flex;gap:8px;font-size:12px;margin-top:3px;"><span style="opacity:0.65;min-width:96px;flex-shrink:0;">${lab}</span><span style="color:var(--text);word-break:break-word;">${valueHtml}</span></div>`;
+
+  const addressRow = svc.address ? row(label('plugin_service_address', 'Address'), escHtml(svc.address)) : '';
+  const versionRow = svc.version ? row(label('plugin_service_version', 'Version'), escHtml(svc.version)) : '';
+  const uptimeRow = (typeof svc.uptime_seconds === 'number') ? row(label('plugin_service_uptime', 'Uptime'), escHtml(pluginServiceUptimeLabel(svc.uptime_seconds))) : '';
+  const checkRow = svc.last_health_check ? row(label('plugin_service_last_check', 'Last health check'), escHtml(budgetTime(svc.last_health_check))) : '';
+  const lastError = (managed ? (svc.last_error || svc.last_health_error) : (svc.last_health_error || svc.last_error));
+  const errorRow = lastError ? row(label('plugin_service_last_error', 'Last error'), `<span style="color:var(--error,#ef4444);">${escHtml(lastError)}</span>`) : '';
+
+  // Next action: a managed service that is not up is started from here
+  // (the enable route with the managed opt-in); an attach-only service
+  // that is down (or cannot be verified) gets the plain "check it is
+  // running" hint. A service that is up has no next action to show, so
+  // the row is omitted.
+  let action = '';
+  if (state !== 'up') {
+    if (managed) {
+      const esc = escJsAttr(String(name));
+      action = `<div style="margin-top:6px;"><a onclick="pluginServiceStart('${esc}')" style="color:var(--accent2,#60a5fa);cursor:pointer;text-decoration:underline;font-size:12px;">${label('plugin_service_action_start', 'Start it from here')} →</a></div>`;
+    } else {
+      action = `<div style="margin-top:6px;font-size:12px;color:var(--warning,#f59e0b);">${label('plugin_service_action_check_running', 'Check that the service is running')}</div>`;
+    }
+  }
+
+  // Open service events (active service event conditions reported by the
+  // backend on the plugin's service object) are a link to the Events
+  // entry (the dashboard Live Events feed) — never a status strip inside
+  // the card.
+  let events = '';
+  const openEvents = Number(svc.open_events) > 0 ? Number(svc.open_events) : 0;
+  if (openEvents > 0) {
+    const evKey = 'plugin_service_events_link';
+    const evLabel = t(evKey, [openEvents]) !== evKey
+      ? t(evKey, [openEvents])
+      : openEvents + ' open service events — Events →';
+    events = `<div style="margin-top:4px;"><a onclick="navigate('dashboard')" style="color:var(--accent2,#60a5fa);cursor:pointer;text-decoration:underline;font-size:12px;">${escHtml(evLabel)}</a></div>`;
+  }
+
+  return `<div class="plugin-service-card" style="margin:6px 0 0;padding:8px 10px;background:var(--bg3,rgba(0,0,0,0.15));border:1px solid var(--border);border-radius:8px;max-width:520px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><strong style="font-size:12px;">${escHtml(name || '')}</strong><span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;background:${stateStyle.bg};color:${stateStyle.color};">${escHtml(_pluginServiceLocaleKey(stateKey, state))}</span><span style="font-size:11px;opacity:0.65;">${managed ? label('plugin_service_mode_managed', 'managed') : label('plugin_service_mode_attach_only', 'attach-only')}</span></div>
+    ${addressRow}${versionRow}${uptimeRow}${checkRow}${errorRow}${action}${events}
+  </div>`;
+};
+
+// pluginServiceStart — the card's "Start it from here" action: the shared
+// enable route with the managed opt-in (the daemon answers 400 for a
+// service whose manifest declines managed lifecycle support; the error
+// toast surfaces the reason). Refreshes the Plugin Manager list so the
+// card re-renders with the new state.
+window.pluginServiceStart = function(name) {
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/enable', {
+    method: 'POST',
+    body: JSON.stringify({ managed: true }),
+  }).then(() => {
+    showToast('Plugin ' + name + ' service start requested', 'success', 2000);
+    loadPluginsPanel();
+  }).catch(e => showToast(String(e.message || e), 'error'));
+};
+
+// ── Plugin service tokens panel ─────────────────────────────────────────
+// Sits under the service card (loadPluginsPanel, Settings → Plugins):
+// one row per secret the plugin's manifest references — its name, where
+// it is used (the manifest fields that carry the reference) and whether
+// it exists in the secret vault — plus the service tokens minted for
+// the service, by name and creation time. It renders the GET
+// /api/plugins/{name}/tokens payload as-is, and that payload carries no
+// values (the daemon never echoes a secret or a service token), so the
+// panel never displays a value either: a `value` field in the payload
+// is simply not rendered.
+//
+// Rotate opens a type=password input for the new value; Save sends the
+// value ONCE to POST /api/plugins/{name}/tokens/{secret}/rotate and
+// clears the input afterwards (kept clear on failure too — the value
+// already left the DOM exactly once, no lingering copy to leak).
+// Remove calls DELETE /api/plugins/{name}/tokens/{secret} only after
+// the operator confirms a confirm() step.
+
+// _pluginTokSlotOf finds the hidden rotate slot (the type=password input
+// row) that renders immediately after the Rotate button. Whitespace text
+// nodes between the two are skipped.
+function _pluginTokSlotOf(btn) {
+  let node = btn ? btn.nextSibling : null;
+  for (let i = 0; node && i < 8; i++, node = node.nextSibling) {
+    if (node.classList && typeof node.classList.contains === 'function'
+        && node.classList.contains('plugin-token-rotate-slot')) return node;
+  }
+  return null;
+}
+
+// pluginServiceTokensPanelHTML — pure (payload in → escaped HTML out), so
+// the app tests pin the listing, the password input and the escaping
+// against the real renderer. Mirrors the card's style block.
+window.pluginServiceTokensPanelHTML = function(name, data) {
+  data = (data && typeof data === 'object') ? data : {};
+  const label = (key, fb) => escHtml(_pluginServiceLocaleKey(key, fb));
+  const n = String(name);
+  const secrets = Array.isArray(data.secrets) ? data.secrets : [];
+
+  let rows = '';
+  if (!secrets.length) {
+    rows = `<div style="font-size:11px;opacity:0.7;margin-top:4px;">${label('plugin_service_tokens_none', 'This plugin references no vault secrets.')}</div>`;
+  }
+  for (const sec of secrets) {
+    if (!sec || !sec.name) continue;
+    const nm = String(sec.name);
+    const fields = (Array.isArray(sec.fields) ? sec.fields : [])
+      .filter(f => f !== null && f !== undefined && f !== '')
+      .map(f => escHtml(String(f)));
+    const where = fields.length
+      ? `${label('plugin_service_tokens_used_by', 'Used by')}: ${fields.join(', ')}`
+      : label('plugin_service_tokens_none_fields', 'no manifest fields');
+    const badge = sec.exists
+      ? `<span style="display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:600;background:rgba(16,185,129,0.15);color:var(--success,#10b981);">${label('plugin_service_tokens_in_vault', 'in vault')}</span>`
+      : `<span style="display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:600;background:rgba(148,163,184,0.2);color:var(--text2);">${label('plugin_service_tokens_missing', 'missing from vault')}</span>`;
+    // Rotate button's nextSibling IS the rotate slot (no whitespace
+    // between them) so _pluginTokSlotOf / the Save and Cancel buttons
+    // can reach the input without ids or querySelectors on names that
+    // are not valid identifiers.
+    rows += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;">
+      <div style="min-width:0;flex:1 1 180px;">
+        <strong style="font-size:12px;word-break:break-word;">${escHtml(nm)}</strong> ${badge}
+        <div style="font-size:11px;opacity:0.65;word-break:break-word;">${where}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginServiceTokensRotate(this,'${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_rotate', 'Rotate')}</button><div class="plugin-token-rotate-slot" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;width:100%;">
+          <input type="password" autocomplete="new-password" style="width:200px;max-width:100%;" placeholder="${label('plugin_service_tokens_new_value', 'New value')}"/>
+          <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="pluginServiceTokensRotateSave(this,'${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_save', 'Save')}</button>
+          <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="pluginServiceTokensRotateCancel(this,'${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_cancel', 'Cancel')}</button>
+        </div>
+        <span style="font-size:11px;color:var(--error,#ef4444);cursor:pointer;text-decoration:underline;white-space:nowrap;" onclick="pluginServiceTokensRemove('${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_remove', 'Remove')}</span>
+      </div>
+    </div>`;
+  }
+
+  // Service tokens minted for the service: name + creation time only —
+  // the payload (and therefore the panel) never carries the token.
+  const svcs = Array.isArray(data.service_tokens) ? data.service_tokens : [];
+  let svcsHtml = '';
+  const shownSvcs = svcs.filter(s => s && s.name);
+  if (shownSvcs.length) {
+    const lines = shownSvcs.map(s => {
+      const created = s.created_at
+        ? ` <span style="opacity:0.6;">${label('plugin_service_tokens_created', 'Created')} ${escHtml(budgetTime(s.created_at))}</span>`
+        : '';
+      return `<div style="font-size:11px;margin-top:2px;word-break:break-word;"><strong>${escHtml(String(s.name))}</strong>${created}</div>`;
+    }).join('');
+    svcsHtml = `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:5px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_tokens_service', 'Service tokens')}</div>
+      ${lines}
+    </div>`;
+  }
+
+  return `<div class="plugin-service-tokens" style="margin:6px 0 0;padding:8px 10px;background:var(--bg3,rgba(0,0,0,0.15));border:1px solid var(--border);border-radius:8px;max-width:520px;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_tokens_title', 'Tokens')}</div>
+    ${rows}${svcsHtml}
+  </div>`;
+};
+
+// pluginServiceTokensLoad — async glue: GET the listing and render the
+// panel into the anchor div loadPluginsPanel placed under the service
+// card's row. A listing failure leaves the anchor empty — the token
+// panel is auxiliary, an error there must not blank the plugin list.
+window.pluginServiceTokensLoad = function(name, anchorId) {
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/tokens')
+    .then(data => {
+      const el = document.getElementById(anchorId);
+      if (el) el.innerHTML = window.pluginServiceTokensPanelHTML(name, data);
+    })
+    .catch(() => {});
+};
+
+// pluginServiceTokensRotate — the Rotate button: reveal the hidden
+// rotate slot (type=password input + Save/Cancel) and focus the input.
+window.pluginServiceTokensRotate = function(btn, name, secret) {
+  const slot = _pluginTokSlotOf(btn);
+  if (slot) {
+    if (slot.style) slot.style.display = 'flex';
+    const input = (typeof slot.querySelector === 'function') ? slot.querySelector('input[type=password]') : null;
+    if (input && typeof input.focus === 'function') input.focus();
+  }
+};
+
+// pluginServiceTokensRotateCancel — hide the slot again and drop the
+// value from the input (it was never submitted).
+window.pluginServiceTokensRotateCancel = function(btn, name, secret) {
+  const slot = _pluginTokSlotOf(btn);
+  if (slot) {
+    if (slot.style) slot.style.display = 'none';
+    const input = (typeof slot.querySelector === 'function') ? slot.querySelector('input[type=password]') : null;
+    if (input) input.value = '';
+  }
+};
+
+// pluginServiceTokensRotateSubmit — the core of Rotate: sends the new
+// value ONCE to the rotate endpoint, then clears the input regardless of
+// the outcome. Pure enough to test with a bare {value} input object —
+// no DOM required. An empty value is refused locally (the daemon would
+// 400 it) instead of being sent.
+window.pluginServiceTokensRotateSubmit = function(name, secret, input) {
+  input = (input && typeof input === 'object') ? input : {};
+  const value = input.value;
+  if (value === null || value === undefined || value === '') return;
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/tokens/' + encodeURIComponent(secret) + '/rotate', {
+    method: 'POST',
+    body: JSON.stringify({ value: value }),
+  }).then(() => {
+    input.value = '';
+    showToast(_pluginServiceLocaleKey('plugin_service_tokens_rotated', 'Secret rotated'), 'success', 2000);
+    if (typeof loadPluginsPanel === 'function') loadPluginsPanel();
+  }).catch(e => {
+    input.value = '';
+    showToast(String(e.message || e), 'error');
+  });
+};
+
+// pluginServiceTokensRotateSave — DOM wrapper for the Save button:
+// reaches the slot's own input (the button's parent IS the slot) and
+// hands off to the submit core.
+window.pluginServiceTokensRotateSave = function(btn, name, secret) {
+  const slot = (btn && btn.parentElement) ? btn.parentElement : null;
+  let input = null;
+  if (slot && typeof slot.querySelectorAll === 'function') {
+    const list = slot.querySelectorAll('input[type=password]');
+    if (list && list.length) input = list[0];
+  }
+  window.pluginServiceTokensRotateSubmit(name, secret, input);
+};
+
+// pluginServiceTokensRemove — the Remove action: DELETE /api/plugins/
+// {name}/tokens/{secret}, but ONLY after the operator confirms the
+// confirm() step (no confirmation, or a declined one, never leaves the
+// client). confirm() is a browser global; guard for sandboxes that do
+// not provide it so a declined-by-absence case degrades to "do nothing".
+window.pluginServiceTokensRemove = function(name, secret) {
+  const key = 'plugin_service_tokens_remove_confirm';
+  const v = t(key, [String(secret)]);
+  const msg = (v && v !== key)
+    ? v
+    : `Remove "${secret}" from the vault? This cannot be undone.`;
+  let ok = false;
+  if (typeof confirm === 'function') ok = confirm(msg) === true;
+  if (!ok) return;
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/tokens/' + encodeURIComponent(secret), {
+    method: 'DELETE',
+  }).then(() => {
+    showToast(_pluginServiceLocaleKey('plugin_service_tokens_removed', 'Secret removed'), 'success', 2000);
+    if (typeof loadPluginsPanel === 'function') loadPluginsPanel();
+  }).catch(e => showToast(String(e.message || e), 'error'));
+};
+
+// ── Plugin service model-use panel ─────────────────────────────────────
+// Sits under the service card (loadPluginsPanel, Settings → Plugins):
+// each model the service calls with its Ollama node, the call count over
+// the window, and the memory the model holds. Findings are shown as the
+// report's sentence plus its next action (a small model pinned with a
+// large context, a node more loaded than another eligible node); when the
+// report carries no findings the findings area is omitted entirely —
+// the panel never shows "none". Node-unreachable is an Events entry
+// (raised/cleared by the background model-node events task), not a row
+// here: the report's nodes[] reachability and notes are never rendered.
+//
+// window.pluginServiceModelsPanelHTML is pure (payload in → escaped
+// HTML out), so the app tests pin the table, the findings omission and
+// the escaping against the real renderer. Field names are the ones
+// served by GET /api/plugins/{name}/models (plugins.ModelUseReport):
+// models[] (model, node, held_bytes, calls, calls_documented) and
+// findings[] (sentence, next_action).
+window.pluginServiceModelsPanelHTML = function(name, data) {
+  data = (data && typeof data === 'object') ? data : {};
+  const label = (key, fb) => escHtml(_pluginServiceLocaleKey(key, fb));
+  const models = Array.isArray(data.models) ? data.models : [];
+  const findings = Array.isArray(data.findings) ? data.findings : [];
+
+  const grid = 'display:grid;grid-template-columns:1.3fr 0.9fr 0.9fr 1fr;gap:6px;';
+  let table = '';
+  if (!models.length) {
+    table = `<div style="font-size:11px;opacity:0.7;margin-top:4px;">${label('plugin_service_models_none', 'No models reported.')}</div>`;
+  } else {
+    table = `<div style="${grid}font-size:11px;font-weight:600;opacity:0.6;margin-top:2px;">
+      <span>${label('plugin_service_models_model', 'Model')}</span>
+      <span>${label('plugin_service_models_node', 'Node')}</span>
+      <span>${label('plugin_service_models_held', 'Memory held')}</span>
+      <span>${label('plugin_service_models_calls', 'Calls (window)')}</span>
+    </div>`;
+    for (const m of models) {
+      if (!m || !m.model) continue;
+      const node = (m.node && String(m.node).trim())
+        ? escHtml(String(m.node))
+        : '<span style="opacity:0.6;">—</span>';
+      const held = (Number(m.held_bytes) > 0)
+        ? escHtml(fmtBytesCompact(m.held_bytes))
+        : '<span style="opacity:0.6;">—</span>';
+      const calls = m.calls_documented
+        ? escHtml(String(Number(m.calls) || 0))
+        : `<span style="opacity:0.6;">${label('plugin_service_models_calls_undocumented', 'not documented')}</span>`;
+      table += `<div style="${grid}font-size:12px;margin-top:4px;"><span style="word-break:break-word;">${escHtml(String(m.model))}</span><span>${node}</span><span>${held}</span><span>${calls}</span></div>`;
+    }
+  }
+
+  // Findings area: each finding is its report sentence with its next
+  // action. Omitted entirely when there are none — never "none".
+  let findingsHtml = '';
+  if (findings.length) {
+    let items = '';
+    for (const f of findings) {
+      if (!f) continue;
+      const sentence = f.sentence ? escHtml(String(f.sentence)) : '';
+      const action = f.next_action ? escHtml(String(f.next_action)) : '';
+      items += `<div style="margin-top:5px;font-size:12px;color:var(--warning,#f59e0b);">${sentence}${action ? ` <span style="opacity:0.85;">${label('plugin_service_models_next_action', 'Next action')}: ${action}</span>` : ''}</div>`;
+    }
+    if (items) {
+      findingsHtml = `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:5px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_models_findings', 'Findings')}</div>
+        ${items}
+      </div>`;
+    }
+  }
+
+  return `<div class="plugin-service-models" style="margin:6px 0 0;padding:8px 10px;background:var(--bg3,rgba(0,0,0,0.15));border:1px solid var(--border);border-radius:8px;max-width:520px;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_models_title', 'Model use')}</div>
+    ${table}${findingsHtml}
+  </div>`;
+};
+
+// pluginServiceModelsLoad — async glue: GET the model-use report and
+// render the panel into the anchor div loadPluginsPanel placed under
+// the service card's row (mirrors pluginServiceTokensLoad). A report
+// failure leaves the anchor empty — the panel is auxiliary, an error
+// there must not blank the plugin list.
+window.pluginServiceModelsLoad = function(name, anchorId) {
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/models')
+    .then(data => {
+      const el = document.getElementById(anchorId);
+      if (el) el.innerHTML = window.pluginServiceModelsPanelHTML(name, data);
+    })
+    .catch(() => {});
+};
+
 // BL238 — loadPluginsPanel: populates #pluginsPanelBody inside Settings → Plugins sub-tab.
 function loadPluginsPanel() {
   const el = document.getElementById('pluginsPanelBody');
@@ -45750,6 +46161,8 @@ function loadPluginsPanel() {
     if (!panel) return;
     const native = (data && data.native) || [];
     const subs = (data && data.plugins) || [];
+    const serviceTokensAnchors = [];
+    const serviceModelsAnchors = [];
     const renderPlugin = (p, isNative) => {
       const on = !!p.enabled;
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;flex-shrink:0;"></span>`;
@@ -45766,9 +46179,32 @@ function loadPluginsPanel() {
         ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_mobile'))}:</strong> ${p.mobile.endpoints.map(ep=>escHtml(ep.name)).join(', ')}</div>` : '';
       const sessInj = (p.session_injection && p.session_injection.types && p.session_injection.types.length)
         ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_session_injection'))}:</strong> ${p.session_injection.types.map(ty=>escHtml(ty)).join(', ')}</div>` : '';
+      // Status card for service-kind plugins: name, state (up/down/unknown),
+      // lifecycle mode, address, version, uptime, last health check, last
+      // error, the next action and open service events as a link to the
+      // Events entry — every row renders only when it has a value.
+      const svcCard = (p.kind === 'service') ? pluginServiceCardHtml(p.name, p.service) : '';
+      // Tokens panel anchor: rendered under the card, filled
+      // asynchronously by pluginServiceTokensLoad after the list is in
+      // the DOM (the listing is an extra GET per service plugin).
+      let tokensAnchor = '';
+      if (p.kind === 'service' && p.name) {
+        const anchorId = 'pluginTokens' + serviceTokensAnchors.length;
+        serviceTokensAnchors.push({ name: String(p.name), anchorId });
+        tokensAnchor = `<div id="${anchorId}"></div>`;
+      }
+      // Model-use panel anchor: rendered under the card, filled
+      // asynchronously by pluginServiceModelsLoad (one extra GET per
+      // service plugin: GET /api/plugins/{name}/models).
+      let modelsAnchor = '';
+      if (p.kind === 'service' && p.name) {
+        const anchorId = 'pluginModelsPanel' + serviceModelsAnchors.length;
+        serviceModelsAnchors.push({ name: String(p.name), anchorId });
+        modelsAnchor = `<div id="${anchorId}"></div>`;
+      }
       const acts = isNative ? '' : `<button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginAction('${escHtml(p.name)}','${on?'disable':'enable'}')">${on?'Disable':'Enable'}</button>`;
       return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
-        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}</div>
+        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}${svcCard}${modelsAnchor}${tokensAnchor}</div>
         ${acts}
       </div>`;
     };
@@ -45776,12 +46212,168 @@ function loadPluginsPanel() {
       + (native.length ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:4px;">Native</div>${native.map(p=>renderPlugin(p,true)).join('')}` : '')
       + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-top:12px;margin-bottom:4px;">Subprocess</div>`
       + (subs.length ? subs.map(p=>renderPlugin(p,false)).join('') : '<div style="opacity:0.7;">no subprocess plugins installed</div>');
+    // Fill the model-use and tokens panels (one extra GET per service
+    // plugin each) now that the anchors exist in the DOM.
+    for (const mod of serviceModelsAnchors) {
+      window.pluginServiceModelsLoad(mod.name, mod.anchorId);
+    }
+    for (const tok of serviceTokensAnchors) {
+      window.pluginServiceTokensLoad(tok.name, tok.anchorId);
+    }
   }).catch(err => {
     const panel = document.getElementById('pluginsPanelBody');
     if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
   });
 }
 window.loadPluginsPanel = loadPluginsPanel;
+
+// Plugin services card (Settings → Plugins) — the plugins.services config
+// block (v9.0.32+): one field per global key, plus one lifecycle_mode
+// select per installed service-kind plugin. GET-only sources: /api/config
+// (the stored block) and /api/plugins (which services exist and which
+// lifecycle modes their manifests declare). Writes go through the shared
+// saveGeneralConfigPut → PUT /api/config single-key path, which the daemon
+// validates block-level (a PUT can never store a state Load would reject).
+//
+// PLUGIN_SERVICES_FIELDS is the DECLARATIVE field list for the global
+// keys: every plugins.services.* config key gets exactly one entry, in
+// declaration order. The per-service lifecycle_mode rows are derived
+// (one row per service) by pluginServiceLifecycleSelectHTML below; both
+// renderers are pure (no fetch, no DOM) so the app tests can pin the
+// field list, the mode limits and the docs links against real fixtures.
+const PLUGIN_SERVICES_DOCS = 'plugins.md';
+const PLUGIN_SERVICES_FIELDS = [
+  { key: 'plugins.services.health_interval_seconds', label: 'Health probe interval (seconds)', labelKey: 'settings_plugin_services_health_interval', placeholder: '0 (default)' },
+  { key: 'plugins.services.backlog_growth_pulls', label: 'Backlog growth streak (pulls)', labelKey: 'settings_plugin_services_backlog_growth', placeholder: '0 (default)' },
+  { key: 'plugins.services.node_load_ratio', label: 'Node load ratio', labelKey: 'settings_plugin_services_node_load', placeholder: '0 (default)' },
+  { key: 'plugins.services.small_model_max_params_billions', label: 'Small-model max params (billions)', labelKey: 'settings_plugin_services_small_max_params', placeholder: '0 (default)' },
+  { key: 'plugins.services.small_model_context_tokens', label: 'Small-model context (tokens)', labelKey: 'settings_plugin_services_small_context_tokens', placeholder: '0 (default)' },
+];
+
+// _pluginServiceLocaleKey resolves a locale key, falling back to the
+// declarative English text when the bundle lacks the key (t() returns
+// the key string itself on a miss, so a plain (t(k) || fallback) is
+// never reliable).
+function _pluginServiceLocaleKey(key, fallback) {
+  const v = t(key);
+  return (v && v !== key) ? v : fallback;
+}
+
+// pluginServiceDocsPill — the per-field '?' help entry: links to
+// docs/plugins.md in the embedded docs viewer, same style as the other
+// settings "?" pills (hidden when the operator turns off inline docs
+// links, like every pill that goes through docsLink).
+function pluginServiceDocsPill() {
+  return docsLink(PLUGIN_SERVICES_DOCS, '?');
+}
+
+// pluginServiceNumberHTML renders one plugins.services global field
+// (pure: value comes from the GET /api/config block the caller passed
+// in; saving goes through the shared saveGeneralConfigPut → PUT
+// /api/config). Empty input = stored default (the daemon's Effective*
+// accessors apply the documented default).
+function pluginServiceNumberHTML(field, value) {
+  const label = _pluginServiceLocaleKey(field.labelKey, field.label);
+  const v = (value === 0 || value) ? String(value) : '';
+  return `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+    <div class="settings-label">${escHtml(label)}${pluginServiceDocsPill()}</div>
+    <input type="number" min="0" class="form-input general-cfg-input" style="width:130px;" value="${escHtml(v)}" placeholder="${escHtml(field.placeholder || '')}"
+      onchange="saveGeneralField('${field.key}', this.value === '' ? '' : Number(this.value))" />
+  </div>`;
+}
+
+// pluginServiceLifecycleSelectHTML renders the lifecycle_mode select for
+// one service plugin (pure). The options are exactly the modes that
+// service's manifest declares (lifecycle.supported_modes), plus the "" =
+// use-default entry so a wrong mode can be cleared; no other mode is ever
+// offered. `name` is embedded in a single-quoted JS string inside
+// onclick/onchange attributes, so a name containing a quote is neutralized
+// with backslashes the same way the onclick strings in this codebase do
+// (escHtml alone would leave the string literal open).
+function pluginServiceLifecycleSelectHTML(name, modes, currentValue) {
+  const label = _pluginServiceLocaleKey('settings_plugin_services_lifecycle', 'Lifecycle mode');
+  const esc = String(name).replace(/\\/g, '\\\\').replace(/'/g, "'\\'");
+  // No fallback list: a service that declares no modes (invalid for
+  // kind: service — defensive only) is offered no concrete modes, just
+  // the "" = use-default entry. The daemon (normalizePluginServiceOverride)
+  // rejects unknown modes anyway, but the card never offers what the
+  // manifest has not declared.
+  if (!Array.isArray(modes)) modes = [];
+  const defLabel = _pluginServiceLocaleKey('settings_plugin_services_lifecycle_default', '(default)');
+  const cur = String(currentValue || '');
+  const opts = [`<option value=""${cur === '' ? ' selected' : ''}>${escHtml(defLabel)}</option>`].concat(
+    modes.map(m => `<option value="${escHtml(m)}"${m === cur ? ' selected' : ''}>${escHtml(m)}</option>`)
+  ).join('');
+  return `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+    <div class="settings-label" title="${escHtml(name)}">${label} — <strong>${escHtml(name)}</strong>${pluginServiceDocsPill()}</div>
+    <select class="form-select general-cfg-input" style="width:170px;" onchange="savePluginServiceLifecycleMode('${esc}', this.value)">${opts}</select>
+  </div>`;
+}
+
+// pluginServiceSettingsHTML — the full card body: the five declarative
+// globals, then one lifecycle select per service plugin (a service with
+// no declared modes — invalid for kind: service, defensive only —
+// offers only the use-default entry, never a fallback mode list).
+function pluginServiceSettingsHTML(svc, services) {
+  const g = (svc && typeof svc === 'object') ? svc : {};
+  const rows = PLUGIN_SERVICES_FIELDS.map(f =>
+    pluginServiceNumberHTML(f, g[(f.key || '').replace(/^plugins\.services\./, '')])
+  ).join('');
+  const list = (Array.isArray(services) ? services : []).filter(s => s && s.name);
+  let lifecycle = '';
+  if (list.length) {
+    lifecycle = `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(_pluginServiceLocaleKey('settings_plugin_services_per_service', 'Per-plugin lifecycle mode'))}</div>
+    </div>` +
+      list.map(s => {
+        return pluginServiceLifecycleSelectHTML(s.name,
+          (Array.isArray(s.modes) ? s.modes : []).filter(Boolean),
+          (s.perService && s.perService.lifecycle_mode) || '');
+      }).join('');
+  } else {
+    lifecycle = `<div style="opacity:0.6;font-size:12px;margin-top:10px;">${escHtml(_pluginServiceLocaleKey('settings_plugin_services_no_services', 'No service plugins installed.'))}</div>`;
+  }
+  return rows + lifecycle;
+}
+
+// loadPluginServiceSettings populates #pluginServiceSettingsBody. /api/config
+// failing is a hard error (nothing to show); /api/plugins failing degrades
+// to the globals plus the no-service note, since both endpoints are
+// best-effort on a read-only card.
+function loadPluginServiceSettings() {
+  const el = document.getElementById('pluginServiceSettingsBody');
+  if (!el) return;
+  el.innerHTML = loadingEyeBlock();
+  apiFetch('/api/config').catch(() => null)
+    .then(cfg => apiFetch('/api/plugins').catch(() => null).then(plugins => ({ cfg, plugins })))
+    .then(({ cfg, plugins }) => {
+      const panel = document.getElementById('pluginServiceSettingsBody');
+      if (!panel) return;
+      if (!cfg) { showToast(t('settings_plugin_services_error') || 'Could not load plugin service settings.', 'error', 2500); panel.innerHTML = ''; return; }
+      const svc = (cfg.plugins && cfg.plugins.services) || {};
+      const per = (svc.per_service && typeof svc.per_service === 'object') ? svc.per_service : {};
+      const subs = ((plugins && plugins.plugins) || []).filter(p => p && p.kind === 'service' && p.name).map(p => ({
+        name: p.name,
+        modes: (p.lifecycle && Array.isArray(p.lifecycle.supported_modes)) ? p.lifecycle.supported_modes : [],
+        perService: per[p.name] || {},
+      }));
+      panel.innerHTML = pluginServiceSettingsHTML(svc, subs);
+    });
+}
+window.loadPluginServiceSettings = loadPluginServiceSettings;
+
+// savePluginServiceLifecycleMode — the card's single write path: the
+// shared saveGeneralConfigPut PUTs one key ({ key: value }) to
+// /api/config. The daemon's contract (applyConfigPatch /
+// normalizePluginServiceOverride in internal/server, and the router's
+// configure-verb registry) is key 'plugins.services.per_service.<name>'
+// with the mode STRING as the value — not a nested .lifecycle_mode
+// member key. '' clears the override (the daemon's load-time default
+// applies again).
+function savePluginServiceLifecycleMode(name, mode) {
+  saveGeneralField('plugins.services.per_service.' + name, mode);
+}
+window.savePluginServiceLifecycleMode = savePluginServiceLifecycleMode;
 
 // GH#191 — Community Plugins card: browse + install from a connected
 // registry (parity with the Android card). Registries are shared with

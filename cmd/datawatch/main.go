@@ -7864,11 +7864,12 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 		// surface is reachable for opt-in configuration; discovery is
 		// a no-op when plugins.enabled=false.
 		pcfg := pluginspkg.Config{
-			Enabled:   cfg.Plugins.Enabled,
-			Dir:       expandHome(cfg.Plugins.Dir),
-			TimeoutMs: cfg.Plugins.TimeoutMs,
-			Disabled:  cfg.Plugins.Disabled,
-			Managed:   cfg.Plugins.Managed,
+			Enabled:        cfg.Plugins.Enabled,
+			Dir:            expandHome(cfg.Plugins.Dir),
+			TimeoutMs:      cfg.Plugins.TimeoutMs,
+			Disabled:       cfg.Plugins.Disabled,
+			Managed:        cfg.Plugins.Managed,
+			HealthInterval: time.Duration(cfg.Plugins.Services.EffectiveHealthInterval()) * time.Second,
 		}
 		if pcfg.Dir == "" {
 			pcfg.Dir = filepath.Join(expandHome(cfg.DataDir), "plugins")
@@ -7882,7 +7883,44 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if secretsStore != nil {
 				reg.SetSecretsStore(secretsStore) // BL242 Phase 5b — plugin env secret injection
 			}
-			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
+			// Service event recorder for this process: fed by the attach
+			// and managed health probes (via the registry observer) and the
+			// model-node events task; reports the open-conditions count the
+			// plugin service status card's events link renders. Its own
+			// alerts land in the global alerts store and its entries in the
+			// plugin service audit log, once per transition.
+			serviceRec := pluginspkg.NewServiceEventRecorder(pluginspkg.ServiceEventOptions{
+				BacklogRisePulls: cfg.Plugins.Services.EffectiveBacklogGrowthPulls(),
+				Audit: func(action, subject string, details map[string]any) {
+					httpServer.AuditPluginService(subject, action, details)
+				},
+			})
+			httpServer.SetModelNodeRecorder(serviceRec)
+			reg.SetHealthObserver(func(name string, healthy bool, code int) {
+				serviceRec.RecordHealthProbe(name, healthy)
+				if code != 0 {
+					serviceRec.RecordHTTPStatus(name, "probe", code)
+				}
+			})
+			pluginsAPI := pluginspkg.NewAPI(reg)
+			pluginsAPI.SetOpenEventsCounter(func(name string) int {
+				down, token, backlog, node := serviceRec.Active(name, "")
+				open := 0
+				if down {
+					open++
+				}
+				if token {
+					open++
+				}
+				if backlog {
+					open++
+				}
+				if node {
+					open++
+				}
+				return open
+			})
+			httpServer.SetPluginsAPI(pluginsAPI)
 			// v4.0.1 — plugin hot-reload via fsnotify. No-op when
 			// plugins.enabled=false; debounces 500 ms to coalesce
 			// editor-save storms.
@@ -7898,6 +7936,28 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				httpServer.AuditPluginService(ev.Plugin, ev.Action, ev.Details)
 			})
 			reg.StartManaged(ctx)
+			// Attach-only service-kind plugins: health-probe their
+			// endpoints (attach_health.go) so the API can report version,
+			// uptime and the last health check. No process is ever
+			// launched for these; the probes are read-only HTTP.
+			reg.StartAttachProbes(ctx)
+			defer reg.StopAttachProbes()
+			// Model-node events task: on every interval pass it resolves
+			// each service plugin's model-use report and feeds node
+			// reachability to the shared recorder, so
+			// model_node_unreachable is raised from a background task —
+			// not by a request to the model-use endpoint — and cleared
+			// when the node answers again. The endpoint now reports node
+			// reachability in its body only.
+			httpServer.StartModelNodeEvents(ctx, func() []string {
+				var names []string
+				for _, p := range reg.List() {
+					if p.Kind == pluginspkg.KindService {
+						names = append(names, p.Name)
+					}
+				}
+				return names
+			})
 			// Deferred so it runs on every return from runStart — signal
 			// shutdown (ctx cancelled) and normal exit alike — reaping the
 			// supervised children before the process exits.
@@ -7920,6 +7980,10 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// push-token registry and the pull scheduler. Only when plugins
 			// are enabled; otherwise the widget endpoints stay 503.
 			if cfg.Plugins.Enabled {
+				// Per-plugin token usage (GET /api/plugins/{name}/tokens):
+				// secret refs the manifest uses + service token names;
+				// values never.
+				httpServer.SetPluginTokens(pluginspkg.NewAPI(reg))
 				dataDir := expandHome(cfg.DataDir)
 				widgetStore, wsErr := pluginspkg.NewWidgetStore(dataDir)
 				if wsErr != nil {
@@ -11781,7 +11845,12 @@ func newConfigSetCmd() *cobra.Command {
 			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).\n\n" +
 			"Platform context keys: platform_context.enabled (true|false; default true) turns the platform context " +
 			"section delivered to each session on or off, and a project can override it; " +
-			"platform_context.note (text, at most 2000 bytes; empty = none) is operator text appended to that section.",
+			"platform_context.note (text, at most 2000 bytes; empty = none) is operator text appended to that section..\n\n" +
+			"Service-plugin watch keys: plugins.services.health_interval_seconds (whole seconds >= 5), " +
+			"plugins.services.backlog_growth_pulls (>= 1), plugins.services.node_load_ratio (> 0), " +
+			"plugins.services.small_model_max_params_billions (> 0), plugins.services.small_model_context_tokens (>= 1), " +
+			"plugins.services.per_service.<service> (attach_only|managed; empty clears it) — the daemon validates " +
+			"each against the same rules a config load runs and refuses a value that breaks the block.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()

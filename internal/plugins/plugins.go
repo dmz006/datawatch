@@ -404,6 +404,11 @@ type Config struct {
 	// the plugin's author-declared lifecycle.supported_modes includes
 	// "managed" — the opt-in can never exceed what the author declared.
 	Managed []string `yaml:"managed,omitempty" json:"managed,omitempty"`
+	// HealthInterval is the attach-only health-probe cadence the daemon
+	// applies to every eligible attach probe it builds (config
+	// plugins.services.health_interval_seconds). Zero = attach_health's
+	// own package default.
+	HealthInterval time.Duration `yaml:"-" json:"-"`
 }
 
 // DefaultConfig — plugins disabled, conservative timeout.
@@ -427,7 +432,19 @@ type Registry struct {
 	managed        map[string]bool
 	supervisors    map[string]*ServiceSupervisor
 	serviceEventFn func(ServiceEvent)
+	// healthObserver receives every attach or managed health probe result
+	// (plugin, healthy, HTTP code; 0 code = no completed request). Set by
+	// SetHealthObserver; nil-safe. The service event recorder hooks in
+	// here (service_down / token_rejected conditions).
+	healthObserver func(plugin string, healthy bool, statusCode int)
 	started        bool
+
+	// Manifest v3 attach-only health (see registry_attach.go): one health
+	// probe per attach-eligible service plugin, scoped by attachCtx until
+	// StopAttachProbes. Probes run only after StartAttachProbes.
+	attachProbes map[string]*attachProbe
+	attachCtx    context.Context
+	attachCancel context.CancelFunc
 
 	// changeFn is called after every rediscover and enable/disable toggle,
 	// outside r.mu (see SetChangeFn).
@@ -581,6 +598,7 @@ func (r *Registry) SetEnabled(name string, on bool) bool {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	r.syncAttachProbes()
 	r.notifyChange()
 	return true
 }

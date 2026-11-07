@@ -371,6 +371,19 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"plugin_widget_unavailable",
 		"plugin_widget_no_data",
 		"plugin_widget_loading",
+
+		// Plugin services settings card (Settings → Plugins): the card title,
+		// each of the five plugins.services field labels, the lifecycle-mode
+		// labels and the empty-state note.
+		"settings_plugin_services_title",
+		"settings_plugin_services_health_interval",
+		"settings_plugin_services_backlog_growth",
+		"settings_plugin_services_node_load",
+		"settings_plugin_services_small_max_params",
+		"settings_plugin_services_small_context_tokens",
+		"settings_plugin_services_per_service",
+		"settings_plugin_services_lifecycle",
+		"settings_plugin_services_no_services",
 		// v9.5.5 — autonomous settings card field for task_override_statuses.
 		"settings_task_override_statuses",
 		// 2026-10-17 — plan review gate + smoke verification settings card
@@ -622,6 +635,15 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automation_protected_paths",
 		"settings_automation_protected_paths_action",
 		"settings_automation_rules_review_source",
+		// Plugin service status card (kind:service cards in the Plugin Manager):
+		// the card title, the three state labels and the two next-action hints —
+		// all of them are what the operator actually sees on a service plugin.
+		"plugin_service_card_title",
+		"plugin_service_up",
+		"plugin_service_down",
+		"plugin_service_unknown",
+		"plugin_service_action_start",
+		"plugin_service_action_check_running",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

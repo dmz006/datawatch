@@ -210,6 +210,14 @@ Selected core tools:
 | `get_my_scope` | Self-scope confirmation: own identity, per-session MCP server name, mode (host vs container), and every session's name/state (BL463) |
 | `vision_describe` | Describe an image file using the configured vision model (requires `vision.enabled: true`) |
 | `web_search_stats` | Web search configuration and stats — provider, URL, engine, query/error counters (requires `web_search.enabled: true`) |
+| `plugin_service_status` | Read one plugin's service status (lifecycle mode, state, address, version, uptime, last health check) — the `service` object of `GET /api/plugins/{name}`; takes `name`; read-only |
+| `plugin_widget_list` | List a plugin's declared widgets with each widget's latest value (null until one arrived) — same body as `GET /api/plugins/{name}/widgets`; takes `name`; read-only |
+| `plugin_widget_get` | Fetch one widget as declared plus its latest value — same body as `GET /api/plugins/{name}/widgets/{widget_id}`; takes `name` and `widget_id`; read-only |
+| `plugin_token_list` | List a plugin's token usage: the secret names it references (with the manifest fields and whether each exists) and the service token names with creation times — same body as `GET /api/plugins/{name}/tokens`; takes `name`; read-only; never returns a secret or token value; operator-token-only (a federation peer gets the REST 403) |
+| `plugin_service_start` | Start the plugin's managed service (datawatch launches and supervises the lifecycle entry) — `POST /api/plugins/{name}/enable` with `{"managed": true}`; takes `name`; write; attach-only plugins are refused with a clear error |
+| `plugin_service_stop` | Stop the plugin's managed service and leave the plugin enabled — `POST /api/plugins/{name}/enable` with `{"managed": false}`; takes `name`; write; attach-only plugins are refused with a clear error |
+| `plugin_service_restart` | Restart the plugin's managed service: the stop call and then the start call, in order; takes `name`; write; attach-only plugins are refused with a clear error and the start is never attempted |
+| `plugin_token_rotate` | Rotate one secret the plugin's manifest references: stores the new value and, when the name is a service token, revokes + re-mints it; takes `name`, `secret`, `new_value`; write; the new value is sent to the server and never returned (response carries only status, plugin and secret names); a secret the plugin doesn't reference is refused |
 
 ## Example Usage in Cursor
 
