@@ -71,7 +71,8 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"A priority set directly on a PRD (the autonomous_prd_set_priority tool) wins for that PRD no matter what the table says, and every queued entry carries its priority plus priority_source (explicit | kind | default) naming the rule that set it. "+
 			"defect_intake_automation (string, empty by default) names the Automation that new kind:bug defect filings are recorded under; empty means the filing is recorded, not filed into any Automation. "+
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task. "+
-			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set."),
+			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. " +
+			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -205,6 +206,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
+		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
 	}, append(append(append(append(append(verifierPolicyConfigTools(), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -516,6 +518,15 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		for k, v := range entries {
 			allocation[k] = v
 		}
+	}
+	// Inherited tags cache lifetime (autonomous.inherited_tags_cache_seconds) lives
+	// in the daemon config as well, so it rides in the same config PUT. Presence-
+	// aware, so an explicit 0 or a negative value (cache off) is sent as given.
+	if v, ok := req.GetArguments()["inherited_tags_cache_seconds"]; ok {
+		if allocation == nil {
+			allocation = map[string]any{}
+		}
+		allocation["autonomous.inherited_tags_cache_seconds"] = v
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
 	qg := map[string]any{}

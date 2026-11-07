@@ -57,7 +57,25 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 		}
 		// The request_watch member shows the values in effect, with every
 		// default filled in.
-		writeJSONOK(w, withRequestWatchSurface(s.autonomousMgr.Config()))
+		out := withRequestWatchSurface(s.autonomousMgr.Config())
+		// inherited_tags_cache_seconds lives in the daemon config (not the
+		// manager's own), but it is set on the autonomous surfaces, so surface
+		// it here too: the value in effect for the shared cache of tags
+		// inherited from the PRD (0 = the 15-second default, negative = cache
+		// off).
+		if b, err := json.Marshal(out); err == nil {
+			var m map[string]json.RawMessage
+			_ = json.Unmarshal(b, &m) // m stays nil when the manager config is empty
+			if enc, err := json.Marshal(s.cfg.Autonomous.InheritedTagsCacheSeconds); err == nil {
+				if m == nil {
+					m = map[string]json.RawMessage{}
+				}
+				m["inherited_tags_cache_seconds"] = enc
+				writeJSONOK(w, m)
+				return
+			}
+		}
+		writeJSONOK(w, out)
 	case http.MethodPut, http.MethodPost:
 		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
