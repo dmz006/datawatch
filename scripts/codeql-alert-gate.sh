@@ -40,34 +40,70 @@
 #                          /language:javascript-typescript
 #                          /language:python'
 #
+# open-alerts
+#   Reads the open code scanning alerts once for REF and fails when a
+#   high or critical alert is open. It makes one paginated call to
+#   repos/<REPO>/code-scanning/alerts?state=open&ref=<REF>&per_page=100
+#   through CODEQL_GATE_API_COMMAND and keeps only the rows whose
+#   severity level is high or critical: tab-separated level, number,
+#   rule id and path.
+#
+#   Exit statuses:
+#     0  no open high or critical alerts on REF
+#     1  open high or critical alerts (counts plus sorted rows printed),
+#        the rate-limit budget is used up (reported as a rate limit,
+#        never as an open-alerts result), or the read fails for any
+#        other reason (never reported as zero alerts)
+#     2  bad usage or missing required inputs
+#
+#   This is a single read, not a polling loop: the only retry is the
+#   rate-limit retry, which shares wait-analyses' rate-limit detection,
+#   reset lookup and wait machinery. On a rate-limit failure it prints
+#   '::notice title=Rate limited::', waits until the core reset epoch
+#   (WAIT_INITIAL_SECONDS when no reset time is known) and reads again,
+#   while the total budget WAIT_MAX_SECONDS (default 1500) lasts. If
+#   the budget is used up it exits 1 with '::error title=Rate limited::'
+#   and the reset time.
+#
+#   Inputs (environment):
+#     REPO   owner/name of the repository (required)
+#     REF    ref to read alerts for (required)
+#
 #   Test seams and tuning (environment):
 #     CODEQL_GATE_API_COMMAND     command used for API calls through its
 #                                 `api` subcommand (default: gh); tests
 #                                 can substitute a stub
 #     CODEQL_GATE_SLEEP_COMMAND   command used to wait (default: sleep)
-#     WAIT_INITIAL_SECONDS        first wait after the immediate check
+#     WAIT_INITIAL_SECONDS        wait used when no reset time is known
 #                                 (default 60)
-#     WAIT_MAX_INTERVAL_SECONDS   interval cap (default 300)
 #     WAIT_MAX_SECONDS            total budget, incl. rate-limit waits
 #                                 (default 1500)
 #
-# Usage: codeql-alert-gate.sh wait-analyses
+# Usage: codeql-alert-gate.sh wait-analyses | open-alerts
 set -euo pipefail
 
 readonly PROG="codeql-alert-gate"
 
 usage() {
   cat <<'EOF'
-Usage: codeql-alert-gate.sh wait-analyses
+Usage: codeql-alert-gate.sh wait-analyses | open-alerts
 
 wait-analyses  Wait until every category in EXPECTED_CATEGORIES has an
                analysis with commit_sha == SHA on REF.
 
+open-alerts    Read the open code-scanning alerts once for REF and fail
+               when a high or critical alert is open; prints the counts
+               and the sorted rows (level, number, rule id, path).
+
 Exit statuses:
-  0  all expected analyses are present for SHA
+  0  all expected analyses are present for SHA,
+     or no open high or critical alerts on REF
   1  wait budget used up with categories still missing; when the last
      failure was a rate limit, its reset time is reported and the
-     situation is flagged as not a code problem
+     situation is flagged as not a code problem; open high or critical
+     alerts; the rate-limit budget used up on open-alerts (reported as
+     a rate limit, never as an open-alerts result); or any other
+     failure of the open-alerts read (never reported as zero alerts)
   2  bad usage or missing required inputs
 
 Inputs and timing are configured through the environment; see the
@@ -98,11 +134,40 @@ require_env() {
   return 0
 }
 
-# Bump the next interval: double, capped.
+# rate_limit_from_error <err> — true when the error text from a failed
+# API call is a core rate limit (429) failure.
+rate_limit_from_error() {
+  printf '%s\n' "$1" | grep -qiE 'rate limit|HTTP 429'
+}
+
+# lookup_rate_reset <api_command> — one extra call to learn the core
+# rate-limit reset epoch; prints it, or nothing on failure.
+lookup_rate_reset() {
+  local api_command="$1"
+  local errfile out
+  errfile="$(mktemp)"
+  out="$("${api_command}" api rate_limit --jq '.resources.core.reset' 2>"$errfile")" || out=""
+  rm -f "$errfile"
+  case "$out" in
+    ''|*[!0-9]*)
+      ;;
+    *)
+      printf '%s\n' "$out"
+      ;;
+  esac
+  return 0
+}
+
+# Bump the next interval: double, capped. Callers that do not set
+# wait_max_interval (single-read subcommands) keep the interval as-is.
 bump_interval() {
+  local cap="${wait_max_interval:-0}"
+  if [ "$cap" -eq 0 ]; then
+    return 0
+  fi
   interval=$((interval * 2))
-  if [ "$interval" -gt "$wait_max_interval" ]; then
-    interval="$wait_max_interval"
+  if [ "$interval" -gt "$cap" ]; then
+    interval="$cap"
   fi
 }
 
@@ -160,7 +225,6 @@ wait_analyses() {
   # The analyses endpoint ignores a sha query parameter, so filter on
   # commit_sha here.
   local analyses_jq='.[] | select(.commit_sha == env.SHA) | .category'
-  local reset_jq='.resources.core.reset'
 
   local interval="$wait_initial"
   local waited=0
@@ -202,7 +266,7 @@ wait_analyses() {
     fi
 
     local rate_limited=0
-    if printf '%s\n' "$err" | grep -qiE 'rate limit|HTTP 429'; then
+    if rate_limit_from_error "$err"; then
       rate_limited=1
     fi
 
@@ -210,8 +274,7 @@ wait_analyses() {
       last_rate_limited=1
       local reset=""
       # One extra call to learn the core rate-limit reset epoch.
-      reset="$("${api_command}" api rate_limit --jq "$reset_jq" 2>"$errfile")" || reset=""
-      rm -f "$errfile"
+      reset="$(lookup_rate_reset "$api_command")"
       case "$reset" in
         ''|*[!0-9]*)
           reset=""
@@ -251,17 +314,100 @@ wait_analyses() {
   done
 }
 
+open_alerts() {
+  local api_command="${CODEQL_GATE_API_COMMAND:-gh}"
+  local sleep_command="${CODEQL_GATE_SLEEP_COMMAND:-sleep}"
+  local wait_initial="${WAIT_INITIAL_SECONDS:-60}"
+  local wait_max="${WAIT_MAX_SECONDS:-1500}"
+  require_int WAIT_INITIAL_SECONDS "$wait_initial"
+  require_int WAIT_MAX_SECONDS "$wait_max"
+  if [ "$wait_max" -eq 0 ]; then
+    printf '%s: WAIT_MAX_SECONDS must be > 0\n' "$PROG" >&2
+    return 2
+  fi
+
+  local repo="${REPO:-}"
+  local ref="${REF:-}"
+  require_env REPO "$repo"
+  require_env REF "$ref"
+  local alerts_url="repos/${repo}/code-scanning/alerts?state=open&ref=${ref}&per_page=100"
+
+  local alerts_jq='.[] | select(.rule.security_severity_level == "high" or .rule.security_severity_level == "critical") | [.rule.security_severity_level, .number, .rule.id, .most_recent_instance.location.path] | @tsv'
+
+  # No polling of its own: this is a single read, retried only on a
+  # rate-limit failure. interval is the wait used when no reset time is
+  # known; record_wait clamps it to the remaining budget.
+  local interval="$wait_initial"
+  local waited=0
+  local last_reset=""
+
+  while true; do
+    local rc=0
+    local alerts
+    local err=""
+    local errfile
+    errfile="$(mktemp)"
+    alerts="$("${api_command}" api --paginate "$alerts_url" --jq "$alerts_jq" 2>"$errfile")" || rc=$?
+    err="$(<"$errfile")"
+    rm -f "$errfile"
+
+    if [ "$rc" -eq 0 ]; then
+      if [ -z "$alerts" ]; then
+        echo "No open high or critical code-scanning alerts on ${ref}."
+        return 0
+      fi
+      local crit high
+      crit=$(printf '%s\n' "$alerts" | grep -c '^critical' || true)
+      high=$(printf '%s\n' "$alerts" | grep -c '^high' || true)
+      echo "::error title=Open code-scanning alerts::${crit} critical and ${high} high alerts are open on ${ref}. Fix them or dismiss with a registered reason in security/accepted-risks.yml."
+      printf '%s\n' "$alerts" | sort
+      return 1
+    fi
+
+    if ! rate_limit_from_error "$err"; then
+      # A read failure must never be reported as a zero-alert result.
+      err="${err//$'\n'/ }"
+      echo "::error title=Open code-scanning alerts::Failed to read open code-scanning alerts on ${ref}${err:+: ${err}}. This is not a zero-alert result."
+      return 1
+    fi
+
+    local reset=""
+    reset="$(lookup_rate_reset "$api_command")"
+    if [[ "$reset" =~ ^[0-9]+$ ]]; then
+      last_reset="$reset"
+    fi
+
+    if [ "$waited" -ge "$wait_max" ]; then
+      # A rate limit is not an open-alerts result.
+      echo "::error title=Rate limited::Waited ${waited}s while the API kept returning rate limits (core reset epoch: ${last_reset:-unknown}). This is not a code problem, rerun the check after the reset time."
+      return 1
+    fi
+
+    echo "::notice title=Rate limited::API rate limit hit while reading open code-scanning alerts on ${ref}; retrying within the budget."
+    if [ -n "$reset" ]; then
+      local now
+      now="$(date +%s)"
+      record_wait $((reset - now))
+    else
+      record_wait "$interval"
+    fi
+  done
+}
+
 main() {
   local cmd="${1:-}"
   case "$cmd" in
     wait-analyses)
       wait_analyses
       ;;
+    open-alerts)
+      open_alerts
+      ;;
     help|-h|--help)
       usage
       ;;
     *)
-      printf '%s: expected the wait-analyses subcommand\n' "$PROG" >&2
+      printf '%s: unknown subcommand %s\n' "$PROG" "$cmd" >&2
       usage >&2
       return 2
       ;;
