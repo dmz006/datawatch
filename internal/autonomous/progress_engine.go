@@ -187,6 +187,7 @@ type ProgressMetrics struct {
 	UnfiledRows      []BacklogRow             `json:"unfiled_rows"`
 	BacklogAvailable bool                     `json:"backlog_available"`
 	NotMeasured      []string                 `json:"not_measured"`
+	Grouped          ProgressGrouped          `json:"grouped"`
 }
 
 // ProgressSource supplies the Automata the engine counts.
@@ -469,6 +470,47 @@ func firstTaskStart(p *PRD) (time.Time, bool) {
 	return first, found
 }
 
+// accumulateRecord adds one selected record to acc: its status count, its
+// tasks, the worker time of its completed tasks and, for a completed record,
+// its working wall time. ComputeProgress and ProgressGroupTotals share it so
+// every group is counted by the same rules.
+func accumulateRecord(acc *progressAcc, r progressRec) {
+	p := r.prd
+	acc.g.PRDs++
+	switch r.status {
+	case PRDCompleted:
+		acc.g.Done++
+	case PRDRunning, PRDPlanning:
+		acc.g.Running++
+	case PRDBlocked, PRDFailed:
+		acc.g.Blocked++
+	default:
+		acc.g.Waiting++
+	}
+	for _, t := range progressTasks(p) {
+		acc.g.Tasks++
+		if t.Status != TaskCompleted {
+			continue
+		}
+		acc.g.TasksDone++
+		if t.StartedAt != nil && t.CompletedAt != nil && t.CompletedAt.After(*t.StartedAt) {
+			h := Hours(*t.StartedAt, *t.CompletedAt)
+			acc.g.WorkHours += h
+			acc.taskHours = append(acc.taskHours, h)
+		}
+	}
+	if r.status == PRDCompleted {
+		// Time the record was actually being worked: first task start to
+		// last task completion. Approval to last update is wrong: it holds
+		// weeks of waiting and every later edit.
+		s, okS := firstTaskStart(p)
+		e, okE := lastTaskDone(p)
+		if okS && okE && e.After(s) {
+			acc.walls = append(acc.walls, Hours(s, e))
+		}
+	}
+}
+
 // ComputeProgress computes the metrics. It reads only its input.
 func ComputeProgress(in ProgressInput) ProgressMetrics {
 	o := normalizeProgressOptions(in.Options)
@@ -491,22 +533,11 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 		if acc == nil {
 			acc = accs[PRDKindOther]
 		}
-		acc.g.PRDs++
-		switch r.status {
-		case PRDCompleted:
-			acc.g.Done++
-		case PRDRunning, PRDPlanning:
-			acc.g.Running++
-		case PRDBlocked, PRDFailed:
-			acc.g.Blocked++
-		default:
-			acc.g.Waiting++
-		}
+		accumulateRecord(acc, r)
 		if !p.CreatedAt.IsZero() && (!haveFirst || p.CreatedAt.Before(first)) {
 			first, haveFirst = p.CreatedAt, true
 		}
 		for _, t := range progressTasks(p) {
-			acc.g.Tasks++
 			if t.StartedAt != nil {
 				events = append(events, *t.StartedAt)
 			}
@@ -516,27 +547,11 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 			if t.Status != TaskCompleted {
 				continue
 			}
-			acc.g.TasksDone++
 			doneTasks++
 			// The status script counts a completed task with no completion time
 			// as recent, because a missing time reads as "now".
 			if t.CompletedAt == nil || !t.CompletedAt.Before(cut24) {
 				doneTasksLast24h++
-			}
-			if t.StartedAt != nil && t.CompletedAt != nil && t.CompletedAt.After(*t.StartedAt) {
-				h := Hours(*t.StartedAt, *t.CompletedAt)
-				acc.g.WorkHours += h
-				acc.taskHours = append(acc.taskHours, h)
-			}
-		}
-		if r.status == PRDCompleted {
-			// Time the record was actually being worked: first task start to
-			// last task completion. Approval to last update is wrong: it holds
-			// weeks of waiting and every later edit.
-			s, okS := firstTaskStart(p)
-			e, okE := lastTaskDone(p)
-			if okS && okE && e.After(s) {
-				acc.walls = append(acc.walls, Hours(s, e))
 			}
 		}
 	}
@@ -629,6 +644,7 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 	m.LeadTime, m.NotMeasured = computeLeadTime(recs)
 
 	computeRemaining(&m, in, recs)
+	m.Grouped = ProgressGroupTotals(recs)
 	return m
 }
 
