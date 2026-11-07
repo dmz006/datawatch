@@ -19,26 +19,34 @@ func reviewStateStatusLine(body string) string {
 			State  string `json:"state"`
 			Cause  string `json:"cause"`
 			Action string `json:"action"`
+			Text   string `json:"judge_outcome_text"`
 		} `json:"review_state"`
 	}
 	if err := json.Unmarshal([]byte(body), &v); err != nil {
 		return ""
 	}
 	r := v.ReviewState
+	suffix := ""
+	if r.Text != "" {
+		suffix = " (" + r.Text + ")"
+	}
 	switch r.State {
 	case "timed_out":
 		line := "review timed out: " + r.Cause
 		if r.Action != "" {
 			line += " -> " + r.Action
 		}
-		return line
+		return line + suffix
 	case "blocked":
 		line := "review blocked: " + r.Cause
 		if r.Action != "" {
 			line += " -> " + r.Action
 		}
-		return line
+		return line + suffix
 	default:
+		if r.Text != "" {
+			return "review: " + r.Text
+		}
 		return ""
 	}
 }
