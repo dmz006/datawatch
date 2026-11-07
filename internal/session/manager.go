@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
+	"github.com/dmz006/datawatch/internal/platformcontext"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -2440,9 +2441,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		home, _ := os.UserHomeDir()
 		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-guardrails.md")
 	}
-	// Default on until the operator-facing setting exists.
-	guardrailOpts := GuardrailsOptions{PlatformContextEnabled: true}
+	// Default on; platform_context.enabled and the per-project override apply below.
+	guardrailOpts := GuardrailsOptions{PlatformContextEnabled: true, PlatformContextText: platformcontext.PlatformContext}
 	if m.cfg != nil {
+		guardrailOpts.PlatformContextEnabled = m.cfg.PlatformContext.EffectiveEnabled(m.projectPolicyFor(sess.ProjectDir))
+		guardrailOpts.PlatformContextText = m.cfg.PlatformContext.AppendNote(platformcontext.PlatformContext)
 		// Fix: cfg.Memory.SessionAwareness (documented "injects memory
 		// instructions into session guardrails, default true") was never
 		// actually consulted here — only Memory.Enabled was. An operator
@@ -8159,4 +8162,18 @@ func ensureClaudeTUISetting(claudeDir string) error {
 		return err
 	}
 	return os.WriteFile(settingsPath, append(data, '\n'), 0600)
+}
+
+// projectPolicyFor returns the per-project policy for dir, or nil when the
+// project is not registered or has no policy.
+func (m *Manager) projectPolicyFor(dir string) *config.ProjectPolicy {
+	if m.cfg == nil || dir == "" {
+		return nil
+	}
+	for _, entry := range m.cfg.Projects {
+		if entry.Dir == dir {
+			return entry.Policy
+		}
+	}
+	return nil
 }

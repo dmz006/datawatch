@@ -29,9 +29,16 @@ func (m *Manager) prependPlatformContextOnce(sess *Session, family, prompt strin
 	if sess == nil {
 		return prompt
 	}
-	prefix := FirstPromptContext(family, sess.PlatformContextDelivered, !m.platformContextFirstPromptOff)
+	enabled := !m.platformContextFirstPromptOff
+	if m.cfg != nil {
+		enabled = enabled && m.cfg.PlatformContext.EffectiveEnabled(m.projectPolicyFor(sess.ProjectDir))
+	}
+	prefix := FirstPromptContext(family, sess.PlatformContextDelivered, enabled)
 	if prefix == "" {
 		return prompt
+	}
+	if m.cfg != nil {
+		prefix = m.cfg.PlatformContext.AppendNote(prefix)
 	}
 	m.store.Mutate(func() { sess.PlatformContextDelivered = true })
 	return prefix + "\n\n" + prompt

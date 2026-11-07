@@ -219,6 +219,16 @@ type GuardrailsOptions struct {
 	// PlatformContextEnabled upserts the versioned platform context section
 	// into the project's rules file.
 	PlatformContextEnabled bool
+	// PlatformContextText is the section body (text plus optional operator
+	// note). Empty falls back to the bare platform context text.
+	PlatformContextText string
+}
+
+func (o GuardrailsOptions) platformContextBody() string {
+	if o.PlatformContextText != "" {
+		return o.PlatformContextText
+	}
+	return platformcontext.PlatformContext
 }
 
 // WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
@@ -327,7 +337,7 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			}
 
 			if opt.PlatformContextEnabled {
-				upserted := platformcontext.UpsertSection(existingStr, platformcontext.PlatformContext, platformcontext.PlatformContextVersion)
+				upserted := platformcontext.UpsertSection(existingStr, opt.platformContextBody(), platformcontext.PlatformContextVersion)
 				if upserted != existingStr {
 					existingStr = upserted
 					modified = true
@@ -348,7 +358,7 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			// No file exists — write the full template
 			out := content
 			if opt.PlatformContextEnabled {
-				out = platformcontext.UpsertSection(out, platformcontext.PlatformContext, platformcontext.PlatformContextVersion)
+				out = platformcontext.UpsertSection(out, opt.platformContextBody(), platformcontext.PlatformContextVersion)
 			}
 			os.WriteFile(targetFile, []byte(out), 0644) //nolint:errcheck
 		}
