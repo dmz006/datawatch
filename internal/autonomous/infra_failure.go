@@ -24,6 +24,15 @@ import (
 // InfraSpawnFailureReason prefixes the message of an InfraSpawnError.
 const InfraSpawnFailureReason = "worker spawn failed"
 
+// InfraClassJudgeCouldNotStart is the class of a task attempt whose worker
+// (or judge) session never received its main prompt: the daemon reports
+// "task delivery failed: main prompt never appeared within ...".
+const InfraClassJudgeCouldNotStart = "judge_could_not_start"
+
+// judgeCouldNotStartText is the fixed phrase, lower case, of that daemon
+// message.
+const judgeCouldNotStartText = "task delivery failed: main prompt never appeared within"
+
 // daemonRestartText is the message of ErrDaemonRestart.
 const daemonRestartText = "daemon restarted while the task was running"
 
@@ -127,6 +136,8 @@ func ClassifyInfraText(text string) (class string, ok bool) {
 		return config.InfraRetryClassSessionKilled, true
 	case strings.Contains(lower, daemonRestartText):
 		return config.InfraRetryClassDaemonRestart, true
+	case strings.Contains(lower, judgeCouldNotStartText):
+		return InfraClassJudgeCouldNotStart, true
 	}
 	for _, p := range storageWriteTexts {
 		if strings.Contains(lower, p) {
