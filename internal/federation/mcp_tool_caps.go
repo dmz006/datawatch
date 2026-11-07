@@ -192,6 +192,7 @@ var MCPToolCap = map[string]string{
 	"ship_status":                          CapAutonomousRead,
 	"restart_interruptions":                CapAutonomousRead,
 	"rules_context_status":                 CapAutonomousRead,
+	"platform_context_status":              CapConfigRead,
 	"rules_context_set":                    CapAutonomousWrite,
 	"automation_requirements_report":       CapAutonomousRead,
 	"automation_model_pull_consent_get":    CapAutonomousRead,

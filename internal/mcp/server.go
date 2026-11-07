@@ -728,6 +728,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolRestartInterruptions(), tracked(s.handleRestartInterruptions))
 	mcpSrv.AddTool(s.toolRulesContextStatus(), tracked(s.handleRulesContextStatus))
 	mcpSrv.AddTool(s.toolRulesContextSet(), tracked(s.handleRulesContextSet))
+	mcpSrv.AddTool(s.toolPlatformContextStatus(), tracked(s.handlePlatformContextStatus))
 	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
 	mcpSrv.AddTool(s.toolHeldQuestions(), tracked(s.handleHeldQuestions))
 	mcpSrv.AddTool(s.toolDecisionRecordList(), tracked(s.handleDecisionRecordList))
