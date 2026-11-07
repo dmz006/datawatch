@@ -11791,7 +11791,12 @@ func newConfigSetCmd() *cobra.Command {
 			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
-			"an unknown backend or a non-whole-number value is refused).",
+			"an unknown backend or a non-whole-number value is refused).\n\n" +
+			"Service-plugin watch keys: plugins.services.health_interval_seconds (whole seconds >= 5), " +
+			"plugins.services.backlog_growth_pulls (>= 1), plugins.services.node_load_ratio (> 0), " +
+			"plugins.services.small_model_max_params_billions (> 0), plugins.services.small_model_context_tokens (>= 1), " +
+			"plugins.services.per_service.<service> (attach_only|managed; empty clears it) — the daemon validates " +
+			"each against the same rules a config load runs and refuses a value that breaks the block.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
