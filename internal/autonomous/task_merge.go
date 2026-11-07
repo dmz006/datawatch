@@ -196,6 +196,10 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 		return MergeOutcomeDeferred, fmt.Errorf("task merge: PRD worktree %s has uncommitted changes; not merging over them", dir)
 	}
 
+	if cerr := m.cleanTaskBranchDaemonSections(ctx, prd, t); cerr != nil {
+		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", cerr)
+	}
+
 	msg := fmt.Sprintf("Merge task %s: %s", t.ID, t.Title)
 	args := append(gitIdentityArgs(ctx, dir), "merge", "--no-ff", "-m", msg, t.WorktreeBranch)
 	out, mergeErr := runGitInCtx(ctx, dir, args...)
@@ -237,6 +241,39 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 	abortMerge(ctx, dir)
 	m.holdMergeTask(prd, t, summary+"; "+why)
 	return MergeOutcomeHeld, nil
+}
+
+// cleanTaskBranchDaemonSections strips the daemon's own sections from the
+// rules file that t's branch committed, in one cleanup commit on that branch
+// (daemon_sections_merge.go), so the merge never folds them into the PRD
+// branch. It is a no-op with a log line when the task has no worktree of its
+// own (nothing to put the cleanup commit on). An error means the merge must
+// not run.
+func (m *Manager) cleanTaskBranchDaemonSections(ctx context.Context, prd *PRD, t *Task) error {
+	tw := strings.TrimSpace(t.WorktreePath)
+	if tw == "" {
+		log.Printf("[autonomous] %s task %s: no task worktree; skipping the pre-merge daemon-section cleanup", prd.ID, t.ID)
+		return nil
+	}
+	base := ""
+	for _, sha := range []string{t.BaseSHA, t.PreTaskSHA} {
+		if sha = strings.TrimSpace(sha); sha != "" {
+			base = sha
+			break
+		}
+	}
+	if base == "" {
+		base = strings.TrimSpace(gitText(ctx, prd.ProjectDir, "merge-base", t.WorktreeBranch, "HEAD"))
+	}
+	if base == "" {
+		return fmt.Errorf("no base commit to strip the daemon sections of task %s's rules file against", t.ID)
+	}
+	if err := m.cleanDaemonSectionsBeforeMerge(ctx, tw, base); err != nil {
+		log.Printf("[autonomous] %s task %s: pre-merge daemon-section cleanup in %s failed: %v", prd.ID, t.ID, tw, err)
+		return err
+	}
+	log.Printf("[autonomous] %s task %s: pre-merge daemon-section cleanup in %s done (base %s)", prd.ID, t.ID, tw, base)
+	return nil
 }
 
 // resolveConflicts settles every conflicted path in the open merge: purely

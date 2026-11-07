@@ -83,6 +83,13 @@ func (m *Manager) checkProtectedPaths(ctx context.Context, prd *PRD, t *Task) (h
 		return false, nil
 	}
 
+	// A hit whose only change against base is the daemon's own sections (its
+	// rewrites of the rules file) is not a change the task made.
+	hits = m.withoutDaemonOnlyChanges(ctx, dir, base, hits)
+	if len(hits) == 0 {
+		return false, nil
+	}
+
 	var approved []string
 	var existingHold *ProtectedPathHold
 	m.store.WithLock(func() {
