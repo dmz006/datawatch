@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Tag everything that can be tagged, and make the tags carry what the work belongs to.** Machine-managed placement tags now extend from sessions to every object the Automata own — Automata, Automations, tasks, templates, decision records and held questions — each re-derived from its own facts on every save.
+- **Filter by tag or by axis on every list.** `GET /api/sessions` and `GET /api/autonomous/prds` accept repeatable `tag=axis:value` with `tag_match=any` (default) or `all` plus per-axis shortcut parameters; the PWA session list shows the tags in use as chips grouped by axis, and the CLI and the comm channel can list tags and filter by them. `GET /api/sessions/tags` (MCP `session_tag_list`) lists every tag in use with its count.
+- **A tag sweep for what already exists.** `POST /api/autonomous/tags/sweep` (MCP, CLI `datawatch autonomous tags sweep [--dry-run]`, comm `autonomous tags sweep [dry-run]`) re-derives the system tags of existing sessions and records and replies with a per-kind tally; it also runs automatically when the placement settings change or the daemon starts.
+- **Migration.** The project placement axis is now on by default (`autonomous.tags.placement`); run the sweep once — with `dry_run` first to preview — to tag the objects you already have. How-to: [Organise Automata and sessions with nested tags](docs/howto/automata-tags.md).
+
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
 ### Fixed
