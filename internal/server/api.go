@@ -613,6 +613,20 @@ type Server struct {
 	// wires it; the handler returns 503 in that case.
 	pluginTokensSrc PluginTokensSource
 
+	// Per-service model-use report (GET /api/plugins/{name}/models):
+	// models used, Ollama node + memory + context per model, and the
+	// two parameterised findings (small_model_large_context,
+	// node_overloaded). pluginModelsSrc is a test/override injection;
+	// nil uses the default source built from pluginTokensSrc + computeReg
+	// + secretsStore. The model-node events task starts in
+	// StartModelNodeEvents and owns the model_node_unreachable raise via
+	// its recorder (pluginModelNodeRec when wired, else the process
+	// default).
+	pluginModelsSrc        PluginModelsSource
+	pluginModelNodeRec     *plugins.ServiceEventRecorder
+	modelNodeEvents        *plugins.ModelNodeEvents
+	modelNodeEventInterval time.Duration
+
 	// BL117 — PRD-DAG orchestrator (Sprint S8, v4.0.0). Wired from
 	// main.go; nil when orchestrator.enabled=false. Handlers return
 	// 503 in that case.
