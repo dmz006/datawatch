@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,5 +103,97 @@ func TestJudgePromptForDelivery(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(wt, ".datawatch/judge/k-prompt.md"))
 	if err != nil || string(b) != long {
 		t.Fatalf("file not written with full prompt: %v", err)
+	}
+}
+
+// recordingJudgeSession is a fake judge session: it records the one prompt it
+// is sent and never starts a real backend session.
+type recordingJudgeSession struct {
+	prompts []string
+}
+
+func (s *recordingJudgeSession) send(p string) { s.prompts = append(s.prompts, p) }
+
+// deliverJudge mirrors the judge launcher: it picks the delivered prompt with
+// judgePromptForDelivery and hands it to the fake session.
+func deliverJudge(s *recordingJudgeSession, worktree, backend, prompt string, threshold int) {
+	s.send(judgePromptForDelivery(worktree, "task-3000", backend, prompt, threshold))
+}
+
+// build3000LinePrompt returns a judge prompt of exactly 3,000 lines.
+func build3000LinePrompt() string {
+	var b strings.Builder
+	for i := 1; i <= 3000; i++ {
+		fmt.Fprintf(&b, "judge prompt line %d\n", i)
+	}
+	return b.String()
+}
+
+func TestJudgePrompt3000Lines_FileToolBackendGetsShortPrompt(t *testing.T) {
+	wt := newJudgePromptRepo(t)
+	prompt := build3000LinePrompt()
+	if n := judgePromptLineCount(prompt); n != 3000 {
+		t.Fatalf("test prompt has %d lines, want 3000", n)
+	}
+	for _, backend := range []string{"claude-code", "pi", "pi-prompt"} {
+		s := &recordingJudgeSession{}
+		deliverJudge(s, wt, backend, prompt, 500)
+		if len(s.prompts) != 1 {
+			t.Fatalf("%s: session got %d prompts, want 1", backend, len(s.prompts))
+		}
+		got := s.prompts[0]
+		// (1) the session receives a prompt under 20 lines naming the file.
+		if n := judgePromptLineCount(got); n >= 20 {
+			t.Errorf("%s: session prompt has %d lines, want < 20", backend, n)
+		}
+		rel := filepath.ToSlash(filepath.Join(judgePromptDir, "task-3000-prompt.md"))
+		if !strings.Contains(got, rel) {
+			t.Errorf("%s: session prompt does not name %q:\n%s", backend, rel, got)
+		}
+		// (2) the file exists in the worktree with all 3,000 lines.
+		data, err := os.ReadFile(filepath.Join(wt, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("%s: judge file missing: %v", backend, err)
+		}
+		if string(data) != prompt {
+			t.Errorf("%s: judge file content differs from the full prompt", backend)
+		}
+		if n := judgePromptLineCount(string(data)); n != 3000 {
+			t.Errorf("%s: judge file has %d lines, want 3000", backend, n)
+		}
+	}
+}
+
+func TestJudgePrompt3000Lines_NoFileToolsBackendGetsFullPrompt(t *testing.T) {
+	wt := newJudgePromptRepo(t)
+	prompt := build3000LinePrompt()
+	for _, backend := range []string{"ollama", "openai", ""} {
+		s := &recordingJudgeSession{}
+		deliverJudge(s, wt, backend, prompt, 500)
+		if len(s.prompts) != 1 || s.prompts[0] != prompt {
+			t.Errorf("%q: expected the full 3000-line prompt", backend)
+		}
+		if n := judgePromptLineCount(s.prompts[0]); n != 3000 {
+			t.Errorf("%q: session prompt has %d lines, want 3000", backend, n)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(wt, filepath.FromSlash(judgePromptDir))); err == nil {
+		t.Errorf("no judge file should be written for a backend without file tools")
+	}
+}
+
+func TestJudgePrompt3000Lines_ThresholdZeroSendsFullPrompt(t *testing.T) {
+	wt := newJudgePromptRepo(t)
+	prompt := build3000LinePrompt()
+	s := &recordingJudgeSession{}
+	deliverJudge(s, wt, "claude-code", prompt, 0)
+	if len(s.prompts) != 1 || s.prompts[0] != prompt {
+		t.Fatalf("threshold 0 must send the full prompt even with file tools")
+	}
+	if n := judgePromptLineCount(s.prompts[0]); n != 3000 {
+		t.Fatalf("session prompt has %d lines, want 3000", n)
+	}
+	if _, err := os.Stat(filepath.Join(wt, filepath.FromSlash(judgePromptDir))); err == nil {
+		t.Errorf("threshold 0 must not write a judge file")
 	}
 }
