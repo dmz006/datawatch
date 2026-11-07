@@ -371,6 +371,19 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"plugin_widget_unavailable",
 		"plugin_widget_no_data",
 		"plugin_widget_loading",
+
+		// Plugin services settings card (Settings → Plugins): the card title,
+		// each of the five plugins.services field labels, the lifecycle-mode
+		// labels and the empty-state note.
+		"settings_plugin_services_title",
+		"settings_plugin_services_health_interval",
+		"settings_plugin_services_backlog_growth",
+		"settings_plugin_services_node_load",
+		"settings_plugin_services_small_max_params",
+		"settings_plugin_services_small_context_tokens",
+		"settings_plugin_services_per_service",
+		"settings_plugin_services_lifecycle",
+		"settings_plugin_services_no_services",
 		// v9.5.5 — autonomous settings card field for task_override_statuses.
 		"settings_task_override_statuses",
 		// 2026-10-17 — plan review gate + smoke verification settings card
