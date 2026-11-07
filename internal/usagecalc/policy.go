@@ -38,8 +38,18 @@ func normalizePolicy(id string) string {
 
 // adviseByPolicy builds the policy-dependent part of the result from the numbers already
 // in a. It never reads or changes those numbers.
+// leadNote is the first note of every policy's advice. In the auto lane mode the daemon
+// sets the lane count within the operator maximum; otherwise the operator chooses it.
+// Under either wording the calculator never stops or slows a lane.
+func leadNote(cfg settings) string {
+	if cfg.autoLanes {
+		return autoDaemonNote
+	}
+	return operatorChoosesNote
+}
+
 func adviseByPolicy(cfg settings, a *Advice, readAt time.Time, loc *time.Location) PolicyAdvice {
-	pa := PolicyAdvice{Policy: cfg.policy, Notes: []string{operatorChoosesNote}}
+	pa := PolicyAdvice{Policy: cfg.policy, Notes: []string{leadNote(cfg)}}
 	switch cfg.policy {
 	case PolicyPace:
 		adviseTarget(&pa, cfg, a, a.Ceiling-cfg.safety, true)
