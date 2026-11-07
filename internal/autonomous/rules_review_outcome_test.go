@@ -1,7 +1,12 @@
 package autonomous
 
 import (
+	"bytes"
+	"log"
+	"os"
+
 	"encoding/json"
+	"github.com/dmz006/datawatch/internal/audit"
 	"strings"
 	"testing"
 	"time"
@@ -105,5 +110,56 @@ func TestRulesReviewOutcomeJudgeOutcome(t *testing.T) {
 		if has != (c.want != "") {
 			t.Errorf("%s: json %s omitempty wrong", c.name, b)
 		}
+	}
+}
+
+func TestRecordJudgeOutcomeKindWording(t *testing.T) {
+	cases := []struct {
+		name string
+		v    GuardrailVerdict
+		kind string
+		want string
+	}{
+		{"could not start", GuardrailVerdict{Outcome: "block", Category: "infra", Summary: couldNotStartMsg}, JudgeKindCouldNotStart, "judge could not start"},
+		{"timed out", GuardrailVerdict{Outcome: "block", Category: JudgeTimeoutCategory}, JudgeKindTimedOut, "judge timed out"},
+		{"found a problem", GuardrailVerdict{Outcome: "block", Summary: "rule skipped"}, JudgeKindFoundProblem, "judge found a problem"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+			var action string
+			var details map[string]any
+			m.SetAuditFn(func(a string, d map[string]any) { action, details = a, d })
+			var buf bytes.Buffer
+			log.SetOutput(&buf)
+			defer log.SetOutput(os.Stderr)
+
+			m.recordJudgeOutcomeKind("prd1", c.v)
+
+			if got := judgeOutcomeKind(c.v); got != c.kind {
+				t.Fatalf("kind = %q, want %q", got, c.kind)
+			}
+			if !strings.Contains(buf.String(), c.want) {
+				t.Fatalf("log %q lacks %q", buf.String(), c.want)
+			}
+			if action != audit.ActionJudgeOutcome || details["headline"] != c.want || details["kind"] != c.kind {
+				t.Fatalf("events entry = %q %v", action, details)
+			}
+			for _, s := range []string{buf.String(), details["headline"].(string)} {
+				if strings.Contains(s, "PRD") {
+					t.Fatalf("%q must say Automaton, never PRD", s)
+				}
+			}
+		})
+	}
+}
+
+func TestRecordJudgeOutcomeKindSilentForPass(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	called := false
+	m.SetAuditFn(func(string, map[string]any) { called = true })
+	m.recordJudgeOutcomeKind("prd1", GuardrailVerdict{Outcome: "pass"})
+	if called {
+		t.Fatal("a pass must not write an Events entry")
 	}
 }

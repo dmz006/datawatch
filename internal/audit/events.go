@@ -277,4 +277,9 @@ const (
 	// autonomous.model_pull_consent block (its models or publisher list).
 	// Details: the now-current models and publishers lists, and origin.
 	ActionModelPullConsentChanged = "model_pull_consent_changed"
+
+	// ActionJudgeOutcome — a rules-review judge result was recorded for an
+	// Automaton. Details: automaton_id, kind (judge_could_not_start|judge_timed_out|
+	// judge_found_problem), headline (the plain-language wording of the kind).
+	ActionJudgeOutcome = "autonomous_judge_outcome"
 )
