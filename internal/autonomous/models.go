@@ -1678,6 +1678,11 @@ type VerificationResult struct {
 	// is false. Never set in generate mode.
 	Scores *VerdictScores `json:"scores,omitempty"`
 	Route  *VerdictRoute  `json:"route,omitempty"`
+	// CeilingPath records how the verification script was capped: "scope",
+	// "watchdog" or "none". CeilingMB is the resolved ceiling (0 for none).
+	// Recording only; it never changes how the result is judged.
+	CeilingPath string `json:"ceiling_path,omitempty"`
+	CeilingMB   int    `json:"ceiling_mb,omitempty"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved
