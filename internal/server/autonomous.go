@@ -3424,7 +3424,12 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 			if !s.fedCap(w, r, federation.CapAutonomousRead) {
 				return
 			}
-			writeJSONOK(w, map[string]any{"templates": s.autonomousMgr.ListTemplates()})
+			tagSel, terr := objectTagSelectionFromRequest(r)
+			if terr != nil {
+				http.Error(w, terr.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSONOK(w, map[string]any{"templates": filterTemplatesByObjectTag(tagSel, s.autonomousMgr.ListTemplates())})
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
@@ -4301,6 +4306,26 @@ func objectTagSelectionFromRequest(r *http.Request) (autonomous.ObjectTagSelecti
 		return autonomous.ObjectTagSelection{}, fmt.Errorf(`tag_match: must be "any" or "all"`)
 	}
 	return autonomous.ObjectTagSelection{Tags: tags, AllMatch: match == autonomous.TagMatchAll}, nil
+}
+
+// filterTemplatesByObjectTag narrows the template list to the entries the
+// object tag selection matches: the selection's tags are tested against the
+// template's system tags (plus its managed operator tags, the same way the
+// Automaton list tests a row) via autonomous.MatchesObjectTags. A template
+// that is not a *autonomous.Template (undecodable in this shape) is kept,
+// so a bad store row is surfaced rather than silently dropped. An empty
+// selection (no tag, tag_match, project, automation or automaton parameter)
+// keeps the whole list.
+func filterTemplatesByObjectTag(sel autonomous.ObjectTagSelection, templates []any) []any {
+	out := make([]any, 0, len(templates))
+	for _, raw := range templates {
+		t, ok := raw.(*autonomous.Template)
+		if ok && !sel.MatchesObjectTags(t.SystemTags, t.Tags) {
+			continue
+		}
+		out = append(out, raw)
+	}
+	return out
 }
 
 // rawAutomationOf decodes one raw Automation list entry into an Automation

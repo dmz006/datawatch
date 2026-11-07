@@ -351,8 +351,12 @@ type decisionFolderBody struct {
 
 // handleDecisionRecordList implements GET /api/autonomous/decision-records.
 // Filters, all exact and combinable: state (open, answered or withdrawn),
-// prd_id (the record's Automaton link) and limit (a positive whole number,
-// default 100, capped at 1000).
+// prd_id (the record's Automaton link), limit (a positive whole number,
+// default 100, capped at 1000), and the object tag selection — the
+// repeatable tag / tag_id with the tag_match any|all rule and the
+// project / automation / automaton shortcuts — matched against each
+// record's system tags (a record naming no axes carries none and is
+// absent from any tag-filtered result).
 func (s *Server) handleDecisionRecordList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := autonomous.DecisionRecordFilter{AutomatonID: q.Get("prd_id")}
@@ -373,10 +377,18 @@ func (s *Server) handleDecisionRecordList(w http.ResponseWriter, r *http.Request
 		}
 		filter.Limit = n // the store caps it at 1000
 	}
+	tagSel, terr := objectTagSelectionFromRequest(r)
+	if terr != nil {
+		writeJSONError(w, http.StatusBadRequest, map[string]string{"error": terr.Error()})
+		return
+	}
 
 	views := s.decisionRecords.List(filter)
 	rows := make([]decisionRecordView, 0, len(views))
 	for _, v := range views {
+		if !tagSel.MatchesObjectTags(v.SystemTags, nil) {
+			continue
+		}
 		rows = append(rows, newDecisionRecordView(v))
 	}
 	st := s.decisionRecords.FolderStatus()
