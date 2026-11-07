@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.108.1 (2026-11-07).** A read-only task now fails only when it adds new dirt, so dirt that disappears while it runs no longer fails it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.108.2 (2026-11-07).** The protected paths guard now ignores the sections the daemon writes into the rules files, so tasks are no longer held on a false positive, and held tasks are released by a sweep. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
