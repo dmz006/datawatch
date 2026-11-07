@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -71,16 +72,83 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"A priority set directly on a PRD (the autonomous_prd_set_priority tool) wins for that PRD no matter what the table says, and every queued entry carries its priority plus priority_source (explicit | kind | default) naming the rule that set it. "+
 			"defect_intake_automation (string, empty by default) names the Automation that new kind:bug defect filings are recorded under; empty means the filing is recorded, not filed into any Automation. "+
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task. "+
-			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. " +
+			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. "+
 			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// The judge prompt delivery settings live in the daemon config, not in the
+	// manager config /api/autonomous/config returns, so they are merged in
+	// from /api/config (stored values; 0 = file route off / no extra wait).
+	prompt, err := s.judgePromptSettings()
+	if err != nil {
+		return nil, err
+	}
 	out, err := s.proxyGet("/api/autonomous/config", nil)
 	if err != nil {
 		return nil, err
 	}
+	out, err = mergeJudgePromptSettings(out, prompt)
+	if err != nil {
+		return nil, err
+	}
 	return textOK(string(out)), nil
+}
+
+// judgePromptKeys are the two judge prompt delivery settings, each a whole
+// number from 0 to the given maximum.
+var judgePromptKeys = []struct {
+	key string
+	max int
+}{
+	{"judge_prompt_file_threshold_lines", 100000},
+	{"judge_delivery_wait_per_thousand_lines_seconds", 3600},
+}
+
+func (s *Server) judgePromptSettings() (map[string]json.RawMessage, error) {
+	raw, err := s.proxyGet("/api/config", nil)
+	if err != nil {
+		return nil, err
+	}
+	var full struct {
+		Autonomous map[string]json.RawMessage `json:"autonomous"`
+	}
+	if err := json.Unmarshal(raw, &full); err != nil {
+		return nil, fmt.Errorf("decode /api/config: %w", err)
+	}
+	return full.Autonomous, nil
+}
+
+func mergeJudgePromptSettings(autoCfg []byte, prompt map[string]json.RawMessage) ([]byte, error) {
+	merged := map[string]json.RawMessage{}
+	if err := json.Unmarshal(autoCfg, &merged); err != nil {
+		return nil, fmt.Errorf("decode /api/autonomous/config: %w", err)
+	}
+	for _, k := range judgePromptKeys {
+		if v, ok := prompt[k.key]; ok {
+			merged[k.key] = v
+		}
+	}
+	return json.Marshal(merged)
+}
+
+// judgePromptPatch reads the judge prompt delivery arguments, rejecting any
+// that is not a whole number in range, and returns the /api/config patch.
+func judgePromptPatch(req mcpsdk.CallToolRequest) (map[string]any, error) {
+	patch := map[string]any{}
+	args := req.GetArguments()
+	for _, k := range judgePromptKeys {
+		raw, ok := args[k.key]
+		if !ok {
+			continue
+		}
+		f, isNum := raw.(float64)
+		if !isNum || f != math.Trunc(f) || f < 0 || f > float64(k.max) {
+			return nil, fmt.Errorf("%s: %v is invalid; use a whole number from 0 to %d", k.key, raw, k.max)
+		}
+		patch["autonomous."+k.key] = int(f)
+	}
+	return patch, nil
 }
 
 func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
@@ -174,6 +242,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("judge_policy", mcpsdk.Description("Ordered list of LLM backends the judges (Automaton guardrail, plan review and other autonomous judges) try, one attempt per backend in order. Empty list = the judges follow the verifier routing policy, one attempt per backend it offers. A judge moves to the next backend only when its run hits the time limit.")),
 		mcpsdk.WithNumber("judge_timeout_seconds", mcpsdk.Description("Time limit in seconds for one judge run (default 1800 = 30m). It counts the judge run only, not the wait for a capacity slot. 0 or a negative value means the default.")),
 		mcpsdk.WithNumber("judge_size_threshold_lines", mcpsdk.Description("Changed-line count above which the judges route by change size (default 400). 0 turns size-aware routing off. Must be a whole number of 0 or more.")),
+		mcpsdk.WithNumber("judge_prompt_file_threshold_lines", mcpsdk.Description("Judge prompt length in lines above which the prompt is handed to the judge as a file instead of sent in full (default 300). 0 always sends the full prompt. Must be a whole number from 0 to 100000 (autonomous.judge_prompt_file_threshold_lines).")),
+		mcpsdk.WithNumber("judge_delivery_wait_per_thousand_lines_seconds", mcpsdk.Description("Extra seconds the daemon waits for the main prompt to be delivered for every 1000 lines it contains (default 60). 0 adds no extra wait. Must be a whole number from 0 to 3600 (autonomous.judge_delivery_wait_per_thousand_lines_seconds).")),
 		mcpsdk.WithString("judge_strong_backend", mcpsdk.Description("The strong judge backend a large diff is routed to first when the size-aware rule fires. Empty (the default) = the last entry of the judge policy (autonomous.judge_strong_backend).")),
 		mcpsdk.WithBoolean("judge_verdict_cache_enabled", mcpsdk.Description("Per-commit judge verdict cache: pass/block verdicts replay by (commit, judge policy, rules), and a verified commit is held on a judge timeout instead of re-run (default true). Give false to re-judge every verified commit fresh (autonomous.judge_verdict_cache_enabled).")),
 		mcpsdk.WithNumber("verifier_no_progress_timeout_seconds", mcpsdk.Description("Bound in seconds for a verifier session that shows no output file, no pane activity, no live runner process and no held capacity slot before it is ended as an infra failure (default 900 = 15m; 0 or negative means use the default)")),
@@ -211,6 +281,11 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
+	// Validate before anything is written, so a bad value changes nothing.
+	promptPatch, perr := judgePromptPatch(req)
+	if perr != nil {
+		return mcpsdk.NewToolResultError(perr.Error()), nil
+	}
 	for _, k := range []string{"enabled", "security_scan"} {
 		if v := req.GetBool(k, false); v {
 			body[k] = v
@@ -693,6 +768,17 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	// Verifier policy (autonomous.verifier_policy.*), nested under one object.
 	if vp := verifierPolicyConfigBody(req); len(vp) > 0 {
 		body["verifier_policy"] = vp
+	}
+	var promptOut []byte
+	if len(promptPatch) > 0 {
+		o, err := s.proxyJSON(http.MethodPut, "/api/config", promptPatch)
+		if err != nil {
+			return nil, err
+		}
+		promptOut = o
+		if len(body) == 0 && allocation == nil {
+			return textOK(string(promptOut)), nil
+		}
 	}
 	if allocation != nil && len(body) == 0 {
 		out, err := s.putPlanTierAllocation(allocation)
