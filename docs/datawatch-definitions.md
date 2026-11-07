@@ -286,7 +286,7 @@ If `cron_expr` is set, the spawn reschedules automatically after each fire. Canc
 
 Detects when Claude has exited but the shell is still running inside the tmux pane.
 
-**How it works:** A periodic reconciler probes each active session by running `tmux display-message #{pane_current_command}`. If the foreground process is a shell (bash/sh/zsh/fish/dash/ksh/tcsh), `claude_alive` is set to `false` (zombie). Otherwise it stays `true`.
+**How it works:** A periodic reconciler probes each active session by reading the pane's foreground command (`tmux display-message #{pane_current_command}`). If the foreground process is not a shell, the session is alive. If the foreground is a shell (bash/sh/zsh/fish/dash/ksh/tcsh), it is alive only while that shell still has a live child process, and is flagged as a zombie only when the shell has no live child. That is why a one-shot worker running as a shell pipeline is not flagged: tmux reports `bash` as the foreground even while the worker and its `tee` are still alive, but the shell's live children keep the session marked alive until they finish.
 
 **`claude_alive` field:**
 
