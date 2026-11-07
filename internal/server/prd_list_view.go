@@ -111,9 +111,10 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	}
 	active := queryBool(r, "active", false)
 	needle := strings.ToLower(strings.TrimSpace(q.Get("q")))
-	tag := q.Get("tag_id")
-	if tag == "" {
-		tag = q.Get("tag")
+	tagSel, perr := objectTagSelectionFromRequest(r)
+	if perr != nil {
+		http.Error(w, perr.Error(), http.StatusBadRequest)
+		return
 	}
 	// Shipped-state read selection (shipped.go). shipped=true|false wins; the
 	// autonomous.shipped.filter_default view (all/shipped/unshipped) sets the
@@ -131,7 +132,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	}
 	statusShipped := statuses[autonomous.ShippedDisplayStatus]
 	delete(statuses, autonomous.ShippedDisplayStatus)
-	filtered := len(statuses) > 0 || active || needle != "" || tag != "" || shipSet || (statusShipped && shipEnabled)
+	filtered := len(statuses) > 0 || active || needle != "" || len(tagSel.Tags) > 0 || shipSet || (statusShipped && shipEnabled)
 
 	var rows []autonomous.SummaryRow
 	for _, raw := range s.autonomousMgr.ListPRDs() {
@@ -167,7 +168,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 			!strings.Contains(strings.ToLower(row.ID), needle) {
 			continue
 		}
-		if tag != "" && !containsString(row.Tags, tag) {
+		if !tagSel.MatchesObjectTags(row.SystemTags, row.Tags) {
 			continue
 		}
 		rows = append(rows, row)
@@ -223,15 +224,6 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		resp.NextCursor = encodePRDListCursor(prdListCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
 	}
 	writePRDListResponse(w, r, resp)
-}
-
-func containsString(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 // writePRDListResponse marshals resp, sets an ETag built from the body hash

@@ -208,11 +208,12 @@ func (s *Server) prdDetailCap(r *http.Request) int {
 
 // writePRDDetail writes prd at the given detail level. full writes prd with
 // its long text fields cut to textCap bytes each (textCap 0 writes it as it
-// is), summary writes its summary view, and tasks writes its task listing.
-// The stored record is never changed: the cap works on a copy. The tasks
-// listing and the full record carry model_request on every task that has a
-// request-watch observation.
-func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) {
+// is), summary writes its summary view, and tasks writes its task listing
+// narrowed to tagSel (a task is kept when its own system tags satisfy the
+// selection; an empty selection keeps every task). The stored record is never
+// changed: the cap works on a copy. The tasks listing and the full record
+// carry model_request on every task that has a request-watch observation.
+func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int, tagSel autonomous.ObjectTagSelection) {
 	switch detail {
 	case "summary", "tasks":
 		p, err := toPRD(prd)
@@ -227,6 +228,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
+		view = autonomous.FilterTasksView(view, tagSel)
 		s.fillInheritedTags(&view.SummaryView)
 		s.attachTaskObservations(&view)
 		writeJSONOK(w, view)

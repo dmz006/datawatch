@@ -23,6 +23,7 @@ type TaskEntry struct {
 	ID              string            `json:"id"`
 	Title           string            `json:"title"`
 	Status          TaskStatus        `json:"status"`
+	SystemTags      []string          `json:"system_tags,omitempty"`
 	Error           string            `json:"error,omitempty"`
 	Verification    *TaskVerification `json:"verification,omitempty"`
 	FailureCategory string            `json:"failure_category,omitempty"`
@@ -92,6 +93,7 @@ func buildTaskEntry(task *Task) TaskEntry {
 		ID:                task.ID,
 		Title:             task.Title,
 		Status:            task.Status,
+		SystemTags:        task.SystemTags,
 		Error:             task.Error,
 		SessionID:         task.SessionID,
 		Progress:          task.Progress,

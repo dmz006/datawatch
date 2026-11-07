@@ -652,6 +652,18 @@ func (a *API) SessionIDsForPRD(prdID string) []string {
 	return out
 }
 
+// TasksForSelection returns the task listing of prd narrowed to the object
+// tag selection sel: a task is kept when its own system tags (its
+// Automaton's project, Automation and Automaton, and the member slot's
+// stage) carry the requested tag(s), under any-match (the default) or
+// all-match. An empty selection returns every task, so the caller can always
+// invoke this with a zero selection without special-casing. This is the
+// API-layer counterpart of the server's detail=tasks?tag= filter and shares
+// the ObjectTagSelection matcher.
+func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
+	return FilterTasksView(BuildTasksView(prd), sel)
+}
+
 func (a *API) ListPRDs() []any {
 	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }
