@@ -335,6 +335,12 @@ type Session struct {
 	// Persisted so a relaunch or restart never prepends it a second time.
 	PlatformContextDelivered bool `json:"platform_context_delivered,omitempty"`
 
+	// PlatformContextLocalFile — true when the platform context block was
+	// written to the untracked CLAUDE.local.md in the project directory. False
+	// when it was not written (disabled, refused, or no project dir), so the
+	// caller can fall back to another delivery channel.
+	PlatformContextLocalFile bool `json:"platform_context_local_file,omitempty"`
+
 	// PRDID, TaskID, and StoryID link this session to the autonomous executor
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.
