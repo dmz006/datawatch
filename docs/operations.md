@@ -784,11 +784,11 @@ The ceiling is the share of host memory, raised to the floor if it falls below i
 - `enforcement_path`: how it is held: `scope` (a systemd user scope around the worker's shell), `watchdog` (a daemon check of the pane's memory use through `/proc`), or `none`.
 - `share_percent`, `floor_mb` and `cap_mb`: the settings the default comes from.
 
-The status describes a run with no project or task kind override. A worker session also records its own `ceiling_path` and `ceiling_mb`.
+The status describes a run with no project or task kind override, so an opt-out shows only in a worker session's own `ceiling_path` and `ceiling_mb`.
 
 **When a ceiling stops work.** The process group is ended and the task attempt fails with the reason "the process used more memory than the limit". Two things are written: a `resource_ceiling_kill` entry in Events (the task, the process name, the peak and the ceiling, both in MB) and a warning alert, "Task stopped: memory ceiling exceeded". The first such failure is retried like any other. A second failure in a row moves the Automaton task to review instead of retrying a third time; see the [retry policy howto](howto/retry-policy.md#memory-ceiling-failures).
 
-**Hosts without systemd.** With no systemd user scope, the watchdog holds the ceiling if `/proc` is readable. With neither, the run starts with no ceiling. That run still writes a `resource_ceiling_kill` Events entry, with process `none`, peak `0` and ceiling `0`, so the gap is visible; `enforcement_path` reads `none`.
+**Hosts without systemd.** With no systemd user scope, the watchdog holds the ceiling if `/proc` is readable. With neither, the run starts with no ceiling and `enforcement_path` reads `none`. No Events entry is written for that case, so check the worker session's `ceiling_path` to see it.
 
 | Surface | How |
 |---|---|
