@@ -16,6 +16,15 @@
 //                                           plugin_tokens.go
 //   DELETE /api/plugins/{name}/tokens/{secret}         delete the
 //                                           referenced secret
+//   GET    /api/plugins/{name}/models        per-service model-use
+//                                           report: models used,
+//                                           Ollama node + memory
+//                                           per model, documented
+//                                           call counts, findings
+//                                           (small_model_large_
+//                                           context,
+//                                           node_overloaded), see
+//                                           plugin_models.go
 
 package server
 
@@ -207,6 +216,14 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	// for the service. See plugin_tokens.go.
 	if action == "tokens" {
 		s.handlePluginTokens(w, r, name)
+		return
+	}
+	// Per-service model-use report: which models the service calls, the
+	// Ollama node each runs on, the memory each holds, the calls the
+	// service documents, and the parameterised findings. See
+	// plugin_models.go.
+	if action == "models" {
+		s.handlePluginModels(w, r, name)
 		return
 	}
 	// Per-secret rotate + delete (operator auth only): the named secret

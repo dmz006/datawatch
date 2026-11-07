@@ -38,13 +38,25 @@ type OllamaTap struct {
 }
 
 type ollamaLoadedModel struct {
-	Name     string `json:"name"`
-	Model    string `json:"model"`
-	Size     int64  `json:"size"`
-	SizeVRAM int64  `json:"size_vram"`
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	Size      int64  `json:"size"`
+	SizeVRAM  int64  `json:"size_vram"`
 	// ExpiresAt is when ollama will unload if idle. We don't act on
 	// it here; just surface in the envelope for operator visibility.
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// HeldBytes is the total memory the model holds (RAM+VRAM).
+func (m ollamaLoadedModel) HeldBytes() int64 { return m.Size + m.SizeVRAM }
+
+// LoadedName is the operator-visible model name: Name, falling back to
+// Model when ollama only filled one of the two.
+func (m ollamaLoadedModel) LoadedName() string {
+	if m.Name != "" {
+		return m.Name
+	}
+	return m.Model
 }
 
 // NewOllamaTap constructs a tap. endpoint is the base URL (no
@@ -86,33 +98,46 @@ func (t *OllamaTap) poll(ctx context.Context) {
 	if t == nil {
 		return
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.endpoint+"/api/ps", nil)
+	models, err := t.Read(ctx)
 	if err != nil {
 		t.setErr(err)
 		return
+	}
+	t.mu.Lock()
+	t.loaded = models
+	t.lastErr = nil
+	t.lastSeen = time.Now()
+	t.mu.Unlock()
+}
+
+// Read performs a single synchronous /api/ps read and returns the
+// models currently loaded with the memory they hold (RAM and VRAM),
+// without touching the tap's cached state. Background pollers keep
+// using Start/Snapshot; request-driven consumers (e.g. the
+// per-service model-use report) use Read for one bounded read.
+func (t *OllamaTap) Read(ctx context.Context) ([]ollamaLoadedModel, error) {
+	if t == nil {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.endpoint+"/api/ps", nil)
+	if err != nil {
+		return nil, err
 	}
 	resp, err := t.httpc.Do(req)
 	if err != nil {
-		t.setErr(err)
-		return
+		return nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
-		t.setErr(fmt.Errorf("ollama /api/ps: HTTP %d", resp.StatusCode))
-		return
+		return nil, fmt.Errorf("ollama /api/ps: HTTP %d", resp.StatusCode)
 	}
 	var body struct {
 		Models []ollamaLoadedModel `json:"models"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.setErr(fmt.Errorf("ollama /api/ps decode: %w", err))
-		return
+		return nil, fmt.Errorf("ollama /api/ps decode: %w", err)
 	}
-	t.mu.Lock()
-	t.loaded = body.Models
-	t.lastErr = nil
-	t.lastSeen = time.Now()
-	t.mu.Unlock()
+	return body.Models, nil
 }
 
 func (t *OllamaTap) setErr(err error) {
