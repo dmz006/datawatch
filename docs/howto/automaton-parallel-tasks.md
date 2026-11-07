@@ -55,7 +55,7 @@ An explicit `false` is kept; only an absent key reads the default.
 A read-only task still **cannot** make any other filesystem change: after it
 finishes, datawatch re-checks the tree with `git status --porcelain
 --untracked-files=all` and fails the task if it is dirty — unless the change is
-exactly the one report file below.
+exactly the one report file below. Only new dirt fails a read-only task: a path that was already dirty before the task started, or one that disappears while it runs, never counts against it.
 
 ## Allow a read-only task one report file
 

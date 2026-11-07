@@ -106,29 +106,49 @@ func (m *Manager) readOnlyTreeStatus(ctx context.Context, prd *PRD, t *Task) (st
 	return strings.TrimSpace(string(out)), true
 }
 
-// readOnlyViolation returns an error when the tree differs from baseline
-// after a read-only task finished. The baseline keeps dirt that was already
-// there from counting against the task.
+// readOnlyViolation returns an error when the tree gained a status entry
+// that was not in baseline after a read-only task finished. Only new
+// entries fail a read-only task: entries that disappeared since the
+// baseline never count, and the baseline keeps dirt that was already there
+// from counting against the task. When the tree cannot be inspected
+// (readOnlyTreeStatus ok is false), no violation is reported.
 func (m *Manager) readOnlyViolation(ctx context.Context, prd *PRD, t *Task, baseline string) error {
 	now, ok := m.readOnlyTreeStatus(ctx, prd, t)
-	if !ok || now == baseline {
+	if !ok {
 		return nil
 	}
-	return fmt.Errorf("read-only task changed the tree: git status is dirty after it finished (%s)", firstStatusLine(now, baseline))
+	return readOnlyStatusViolation(now, baseline)
 }
 
-// firstStatusLine names one entry that is in now but not in baseline.
-func firstStatusLine(now, baseline string) string {
+// newStatusEntries returns every non-empty line of now that does not appear
+// as an exact line of baseline, in order, with trailing whitespace trimmed
+// from each returned entry. Lines are compared raw (not trimmed), so a
+// status-code change on the same path still counts as a new entry.
+func newStatusEntries(now, baseline string) []string {
 	seen := map[string]bool{}
 	for _, l := range strings.Split(baseline, "\n") {
 		seen[l] = true
 	}
+	var out []string
 	for _, l := range strings.Split(now, "\n") {
-		if !seen[l] {
-			return strings.TrimSpace(l)
+		if l == "" || seen[l] {
+			continue
 		}
+		out = append(out, strings.TrimRight(l, " \t\r"))
 	}
-	return "tree changed"
+	return out
+}
+
+// readOnlyStatusViolation reports whether a read-only task's tree gained
+// any status entry relative to baseline. Only new entries fail a
+// read-only task — entries that disappeared since the baseline never
+// count — so it returns nil when newStatusEntries finds none.
+func readOnlyStatusViolation(now, baseline string) error {
+	entries := newStatusEntries(now, baseline)
+	if len(entries) == 0 {
+		return nil
+	}
+	return fmt.Errorf("read-only task changed the tree: git status is dirty after it finished (%s)", entries[0])
 }
 
 // ReportPathOf is the exported form of reportPathOf: the task's report
