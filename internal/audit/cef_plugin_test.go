@@ -5,7 +5,11 @@
 //
 // pluginAuditCases covers all fourteen plugin actions cefSignature maps:
 // the four service-health actions and the ten managed-service
-// lifecycle, widget and service-token actions. Every case carries a
+// lifecycle, widget and service-token actions. The four cases 70-73
+// were shipped by the earlier emit task and are pinned here at their
+// shipped severities — the spec's keep-existing-cases rule governs
+// them (see the plugin_service_token_rejected case for the one stale
+// severity line in the spec). Every case carries a
 // "poison" detail value holding the CEF special characters (=, \, |,
 // newline) so the escaping is exercised per action, not once globally.
 
@@ -49,6 +53,16 @@ var pluginAuditCases = []pluginAuditCase{
 		poison: "3 = 3|3 \\raise\n",
 	},
 	{
+		// SHIPPED SEVERITY — do not "fix" 71 to medium without a release
+		// note. The task spec's severity sentence lists this pre-existing
+		// action as medium, but the spec also hard-constrains this task
+		// to keep every existing cefSignature case unchanged, so 71
+		// keeps the high severity 5 shipped by the earlier emit task
+		// (a 401/403 token rejection is the most security-relevant of
+		// the four conditions, hence one band above its medium
+		// neighbours). This case pins that shipped truth and is where
+		// the spec's stale "medium" line conflicts with its own
+		// don't-touch rule.
 		action:   "plugin_service_token_rejected",
 		sigID:    71,
 		name:     "PluginServiceTokenRejected",
