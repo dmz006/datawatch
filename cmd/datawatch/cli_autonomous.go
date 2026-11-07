@@ -420,6 +420,20 @@ func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
 		}
 		body["judge_size_threshold_lines"] = n
 	}
+	if cmd.Flags().Changed("judge-prompt-file-threshold-lines") {
+		n, _ := cmd.Flags().GetInt("judge-prompt-file-threshold-lines")
+		if n < 0 || n > 100000 {
+			return fmt.Errorf("--judge-prompt-file-threshold-lines must be a whole number from 0 to 100000")
+		}
+		body["judge_prompt_file_threshold_lines"] = n
+	}
+	if cmd.Flags().Changed("judge-delivery-wait-per-thousand-lines-seconds") {
+		n, _ := cmd.Flags().GetInt("judge-delivery-wait-per-thousand-lines-seconds")
+		if n < 0 || n > 3600 {
+			return fmt.Errorf("--judge-delivery-wait-per-thousand-lines-seconds must be a whole number from 0 to 3600")
+		}
+		body["judge_delivery_wait_per_thousand_lines_seconds"] = n
+	}
 	if cmd.Flags().Changed("judge-strong-backend") {
 		s, _ := cmd.Flags().GetString("judge-strong-backend")
 		body["judge_strong_backend"] = s
@@ -697,6 +711,8 @@ verified commit is held on a judge timeout instead of re-run):
   judge_policy                    ordered judge backends (empty = follow the verifier routing policy)
   judge_timeout_seconds           time limit for one judge run (default 1800)
   judge_size_threshold_lines      changed-line count above which the judges route by change size (default 400; 0 = off)
+  judge_prompt_file_threshold_lines  prompt line count above which the judge prompt is sent as a file (default 300; 0 = always full prompt; 0-100000)
+  judge_delivery_wait_per_thousand_lines_seconds  extra delivery wait per thousand prompt lines (0-3600)
   judge_strong_backend            strong backend large diffs route to first (empty = the last entry of the judge policy)
   judge_verdict_cache_enabled     per-commit verdict cache (default true; false re-judges every verified commit fresh)
 
@@ -787,6 +803,8 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = follow the verifier routing policy)")
 	cmd.Flags().Int("judge-timeout-seconds", 0, "Time limit in seconds for one judge run (0 = default 1800 = 30m)")
 	cmd.Flags().Int("judge-size-threshold-lines", 400, "Changed-line count above which the judges route by change size (whole number; 0 = rule off)")
+	cmd.Flags().Int("judge-prompt-file-threshold-lines", 300, "Judge prompt length in lines above which the prompt is sent as a file (whole number 0-100000; 0 = always send the full prompt)")
+	cmd.Flags().Int("judge-delivery-wait-per-thousand-lines-seconds", 0, "Extra seconds of judge delivery wait per thousand prompt lines (whole number 0-3600)")
 	cmd.Flags().String("judge-strong-backend", "", "Strong judge backend a large diff routes to first when the size rule fires (empty = the last entry of the judge policy)")
 	cmd.Flags().Bool("judge-verdict-cache", true, "Per-commit judge verdict cache, on by default (false re-judges every verified commit fresh)")
 	addVerifierPolicyFlags(cmd)
