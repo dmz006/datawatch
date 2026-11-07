@@ -155,6 +155,12 @@ type Question struct {
 	// about: empty, or a 'dr-' id. It is what lets a restart or a repeated
 	// call find the question that already exists for a record.
 	DecisionRecordID string `json:"decision_record_id,omitempty"`
+	// SystemTags is the placement-derived tag set this held question
+	// carries: the fact of the Automaton its PRDID names (that Automaton's
+	// project, Automation and itself), derived by ObjectTagsForQuestion
+	// under the daemon's tags.placement block. Empty = no Automaton named,
+	// the Automaton gone, not yet derived, or the tags disabled.
+	SystemTags []string `json:"system_tags,omitempty"`
 }
 
 // Answer is an immutable reply to a question, stored with the operator's

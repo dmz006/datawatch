@@ -874,6 +874,16 @@ type Template struct {
 	UpdatedAt   time.Time     `json:"updated_at"`
 	LastUsedAt  *time.Time    `json:"last_used_at,omitempty"`
 	UseCount    int           `json:"use_count,omitempty"`
+	// SourcePRDID is the Automaton this template was cloned from ('pr-' id).
+	// Empty = none recorded (a hand-written or built-in template), and
+	// object-tag derivation then names no axes and derives no tags.
+	SourcePRDID string `json:"source_prd_id,omitempty"`
+	// SystemTags is the placement-derived tag set this template carries:
+	// the fact of the Automaton it was cloned from (that Automaton's
+	// project, Automation and itself), derived by ObjectTagsForTemplate
+	// under the daemon's tags.placement block. Empty = no source Automaton
+	// recorded, the Automaton gone, not yet derived, or the tags disabled.
+	SystemTags []string `json:"system_tags,omitempty"`
 }
 
 // ExtractVars scans spec for {{var_name}} placeholders and returns

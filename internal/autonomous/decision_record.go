@@ -165,14 +165,25 @@ type DecisionRecord struct {
 	Links          DecisionLinks           `json:"links"`
 	State          DecisionRecordState     `json:"state"`
 	QuestionID     string                  `json:"question_id,omitempty"`
-	Source         string                  `json:"source,omitempty"`
-	SourceRef      string                  `json:"source_ref,omitempty"`
-	ContentSHA256  string                  `json:"content_hash"`
-	Answer         *DecisionAnswer         `json:"answer,omitempty"`
-	DocChange      *DecisionDocChange      `json:"doc_change,omitempty"`
-	FollowUp       *DecisionFollowUp       `json:"follow_up,omitempty"`
-	CreatedAt      *time.Time              `json:"created_at,omitempty"`
-	UpdatedAt      *time.Time              `json:"updated_at,omitempty"`
+	// PRDID is the Automaton this decision is about ('pr-' id; the same id the
+	// record's question carries when it asks about an Automaton). Empty = the
+	// decision targets no Automaton (a registry row or document), and object-
+	// tag derivation then names no axes and derives no tags.
+	PRDID  string `json:"prd_id,omitempty"`
+	Source string `json:"source,omitempty"`
+	// SystemTags is the placement-derived tag set this decision record
+	// carries: the fact of the Automaton it names (its project, its
+	// Automation and itself), derived by ObjectTagsForDecisionRecord
+	// under the daemon's tags.placement block. Empty = no Automaton named,
+	// the Automaton gone, not yet derived, or the tags disabled.
+	SystemTags    []string           `json:"system_tags,omitempty"`
+	SourceRef     string             `json:"source_ref,omitempty"`
+	ContentSHA256 string             `json:"content_hash"`
+	Answer        *DecisionAnswer    `json:"answer,omitempty"`
+	DocChange     *DecisionDocChange `json:"doc_change,omitempty"`
+	FollowUp      *DecisionFollowUp  `json:"follow_up,omitempty"`
+	CreatedAt     *time.Time         `json:"created_at,omitempty"`
+	UpdatedAt     *time.Time         `json:"updated_at,omitempty"`
 }
 
 // decisionIDReader is where record ids draw their randomness; a test swaps it
