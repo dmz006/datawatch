@@ -326,9 +326,9 @@ func (m *Manager) recordJudgeOutcomeKind(prdID string, v GuardrailVerdict) {
 	m.mu.Unlock()
 	if fn != nil {
 		fn(audit.ActionJudgeOutcome, map[string]any{
-			"prd_id":   prdID,
-			"kind":     judgeOutcomeKind(v),
-			"headline": wording,
+			"automaton_id": prdID,
+			"kind":         judgeOutcomeKind(v),
+			"headline":     wording,
 		})
 	}
 }

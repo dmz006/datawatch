@@ -279,7 +279,7 @@ const (
 	ActionModelPullConsentChanged = "model_pull_consent_changed"
 
 	// ActionJudgeOutcome — a rules-review judge result was recorded for an
-	// Automaton. Details: prd_id, kind (judge_could_not_start|judge_timed_out|
+	// Automaton. Details: automaton_id, kind (judge_could_not_start|judge_timed_out|
 	// judge_found_problem), headline (the plain-language wording of the kind).
 	ActionJudgeOutcome = "autonomous_judge_outcome"
 )
