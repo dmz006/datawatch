@@ -28,7 +28,7 @@ to its tab without changing the other tabs.
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
 | **Resources** | Capacity, lane fill, usage against the plan, infrastructure retries, the Automata checks card and the Automata ship status card. Lane utilization and verifier slots appear here when they ship. |
 | **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
-| **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind, automatic grouping tags and the supervisor loop appear here when they ship. |
+| **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind and the supervisor loop appear here when they ship. The automatic grouping tags (the placement axes and the tag sweep) ship today, but they live on the Settings page under **Settings → General → Automata → Placement tags**, not as a card of this tab; see [automata-tags](automata-tags.md). |
 | **Housekeeping** | The safe-to-delete report, cleanup and uncommitted work. Stale worktrees appears here when it ships. |
 
 ## What an Automation is
