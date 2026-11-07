@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Every datawatch session now knows it runs on datawatch and what that gives it.** Each session, on every supported LLM backend, is given a short platform context describing the datawatch tools and services available to it. It reaches a session through the backend's rules file, the first prompt, or both; the `platform_context_status` MCP tool reports, for the calling session, whether it is enabled, the project's own override (if any), the text version and which delivery path that backend uses. Control it under the new `platform_context` Settings section (shown in all five web locales) or in config: `platform_context.enabled` (default `true`; `false` delivers nothing) and `platform_context.note` (optional text appended after the context, up to 2000 bytes). A project can override `enabled` with its own `platform_context_enabled` policy value. A change applies to sessions started afterwards. Documented in the sessions deep-dive, `docs/mcp.md`, `docs/cursor-mcp.md`, the definitions and the config reference. **Migration:** none; the context is on by default, so set `platform_context.enabled: false` to keep sessions as they were.
+
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
 ### Fixed
