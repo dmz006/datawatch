@@ -97,6 +97,48 @@ def exempt_match(pattern, key):
     return key == pattern
 
 
+def compare(keys, sets, exemptions, covers):
+    """Pure comparison of keys against surface sets and exemptions.
+
+    Returns (rows, gaps, total_gaps, total_exempt, stale) where rows is a
+    list of (key, {surface: "ok"|"exempt"|"MISSING"}), gaps maps surface to
+    the keys MISSING from it, and stale lists warning strings for exemptions
+    on a surface where the key is actually present.
+    """
+    rows = []
+    gaps = {s: [] for s in SURFACES}
+    total_gaps = 0
+    total_exempt = 0
+    for key in keys:
+        status = {}
+        for s in SURFACES:
+            if covers(sets[s], key):
+                status[s] = "ok"
+                continue
+            ex = None
+            for pat, sset, _r, _n in exemptions:
+                if s in sset and exempt_match(pat, key):
+                    ex = True
+                    break
+            if ex:
+                status[s] = "exempt"
+                total_exempt += 1
+            else:
+                status[s] = "MISSING"
+                total_gaps += 1
+                gaps[s].append(key)
+        rows.append((key, status))
+
+    stale = []
+    for pat, sset, _r, n in exemptions:
+        for s in sorted(sset):
+            for key in keys:
+                if exempt_match(pat, key) and covers(sets[s], key):
+                    stale.append("stale exemption (line %d): %r on %s, but %s is present"
+                                 % (n, pat, s, key))
+    return rows, gaps, total_gaps, total_exempt, stale
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Audit config keys across the five config surfaces.")
     ap.add_argument("--all", action="store_true", help="print every key, not only keys with a gap")
@@ -137,40 +179,8 @@ def main(argv=None):
         print("config-parity-audit: error: %s: %s" % (type(e).__name__, e), file=sys.stderr)
         return 2
 
-    rows = []  # (key, {surface: status})
-    gaps = {s: [] for s in SURFACES}
-    total_gaps = 0
-    total_exempt = 0
-    used = set()
-    for key in keys:
-        status = {}
-        for s in SURFACES:
-            if mod.covers(sets[s], key):
-                status[s] = "ok"
-                continue
-            ex = None
-            for i, (pat, sset, _r, _n) in enumerate(exemptions):
-                if s in sset and exempt_match(pat, key):
-                    ex = i
-                    break
-            if ex is not None:
-                status[s] = "exempt"
-                total_exempt += 1
-                used.add(ex)
-            else:
-                status[s] = "MISSING"
-                total_gaps += 1
-                gaps[s].append(key)
-        rows.append((key, status))
-
-    # Stale exemptions: exempted on a surface where the key is present.
-    stale = []
-    for pat, sset, _r, n in exemptions:
-        for s in sorted(sset):
-            for key in keys:
-                if exempt_match(pat, key) and mod.covers(sets[s], key):
-                    stale.append("stale exemption (line %d): %r on %s, but %s is present"
-                                 % (n, pat, s, key))
+    rows, gaps, total_gaps, total_exempt, stale = compare(
+        keys, sets, exemptions, mod.covers)
     for w in stale:
         print("warning: " + w, file=sys.stderr)
 
