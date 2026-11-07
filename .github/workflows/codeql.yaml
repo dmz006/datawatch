@@ -10,6 +10,7 @@
 #     count, so any alert dismissed in code scanning is excluded. The gate does
 #     not read security/accepted-risks.yml; that registry documents the reason
 #     for each dismissal, which the operator applies in GitHub.
+#   - A push which changes only documents starts no run.
 #
 # Concurrency is keyed on the ref so a newer run replaces an older one on the
 # same ref.
@@ -18,6 +19,10 @@ name: CodeQL
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'CHANGELOG.md'
+      - '**/*.md'
   pull_request:
     branches: [main]
   schedule:
