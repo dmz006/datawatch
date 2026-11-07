@@ -45652,7 +45652,12 @@ function pluginServiceNumberHTML(field, value) {
 function pluginServiceLifecycleSelectHTML(name, modes, currentValue) {
   const label = _pluginServiceLocaleKey('settings_plugin_services_lifecycle', 'Lifecycle mode');
   const esc = String(name).replace(/\\/g, '\\\\').replace(/'/g, "'\\'");
-  if (!Array.isArray(modes) || modes.length === 0) modes = ['attach_only', 'managed'];
+  // No fallback list: a service that declares no modes (invalid for
+  // kind: service — defensive only) is offered no concrete modes, just
+  // the "" = use-default entry. The daemon (normalizePluginServiceOverride)
+  // rejects unknown modes anyway, but the card never offers what the
+  // manifest has not declared.
+  if (!Array.isArray(modes)) modes = [];
   const defLabel = _pluginServiceLocaleKey('settings_plugin_services_lifecycle_default', '(default)');
   const cur = String(currentValue || '');
   const opts = [`<option value=""${cur === '' ? ' selected' : ''}>${escHtml(defLabel)}</option>`].concat(
@@ -45666,8 +45671,8 @@ function pluginServiceLifecycleSelectHTML(name, modes, currentValue) {
 
 // pluginServiceSettingsHTML — the full card body: the five declarative
 // globals, then one lifecycle select per service plugin (a service with
-// no declared modes — invalid for kind: service, defensive only — falls
-// back to the two valid modes).
+// no declared modes — invalid for kind: service, defensive only —
+// offers only the use-default entry, never a fallback mode list).
 function pluginServiceSettingsHTML(svc, services) {
   const g = (svc && typeof svc === 'object') ? svc : {};
   const rows = PLUGIN_SERVICES_FIELDS.map(f =>
@@ -45718,10 +45723,14 @@ window.loadPluginServiceSettings = loadPluginServiceSettings;
 
 // savePluginServiceLifecycleMode — the card's single write path: the
 // shared saveGeneralConfigPut PUTs one key ({ key: value }) to
-// /api/config; '' clears the override (the daemon's load-time default
+// /api/config. The daemon's contract (applyConfigPatch /
+// normalizePluginServiceOverride in internal/server, and the router's
+// configure-verb registry) is key 'plugins.services.per_service.<name>'
+// with the mode STRING as the value — not a nested .lifecycle_mode
+// member key. '' clears the override (the daemon's load-time default
 // applies again).
 function savePluginServiceLifecycleMode(name, mode) {
-  saveGeneralField('plugins.services.per_service.' + name + '.lifecycle_mode', mode);
+  saveGeneralField('plugins.services.per_service.' + name, mode);
 }
 window.savePluginServiceLifecycleMode = savePluginServiceLifecycleMode;
 

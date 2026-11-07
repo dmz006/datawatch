@@ -115,10 +115,13 @@ test('lifecycle_mode select offers only the modes the service declares', () => {
   assert.ok(web.includes(def));
 
   // A stored mode for a service that only declares another is still
-  // selectable (so the operator can clear it), but NO unlisted mode is
-  // ever added for a service with no declaration... defensive fallback:
+  // selectable (so the operator can clear it). A service that declares
+  // NO modes (defensive) is offered only the use-default entry — never
+  // a fallback attach_only+managed list.
   const none = run(`pluginServiceLifecycleSelectHTML('x', [], 'managed')`);
-  assert.equal((none.match(/<option value="/g) || []).length, 3, 'no modes declared → default + two valid modes only');
+  assert.equal((none.match(/<option value="/g) || []).length, 1, 'no modes declared → default option only, no fallback modes offered');
+  assert.ok(!/value="attach_only"/.test(none), 'no undeclared attach_only for a mode-less service');
+  assert.ok(!/value="managed"/.test(none), 'no undeclared managed for a mode-less service');
 });
 
 test('every field row carries a ? help pill linking to docs/plugins.md', () => {
@@ -138,13 +141,19 @@ test('every field row carries a ? help pill linking to docs/plugins.md', () => {
   assert.ok(html.includes('<strong>mcp</strong>'), 'mcp labelled');
   assert.ok(html.includes('<strong>web</strong>'), 'web labelled');
 
-  // The lifecycle save helper targets the exact PUT key for the service.
-  const keyExpr = run(`'plugins.services.per_service.' + 'web' + '.lifecycle_mode'`);
-  assert.equal(keyExpr, 'plugins.services.per_service.web.lifecycle_mode');
+  // The lifecycle save helper targets the daemon's exact per-service key:
+  // 'plugins.services.per_service.<name>' (mode string as the value — the
+  // daemon's applyConfigPatch contract), not a nested .lifecycle_mode member.
+  const keyExpr = run(`'plugins.services.per_service.' + 'web'`);
+  assert.equal(keyExpr, 'plugins.services.per_service.web');
 });
 
 test('save helper writes the per-service PUT key through saveGeneralField', () => {
   // Capture saveGeneralField's argument by wrapping it inside the sandbox.
+  // The recorded call must be the daemon contract: key
+  // 'plugins.services.per_service.web' (service name only) with the mode
+  // string as the value — NOT a nested .lifecycle_mode member key, which
+  // the daemon would store as a junk per_service entry named 'web.lifecycle_mode'.
   run(`
     (function () {
       var orig = saveGeneralField;
@@ -157,7 +166,7 @@ test('save helper writes the per-service PUT key through saveGeneralField', () =
   const record = run('window.__psSaveRecord');
   // (array literal created inside the vm realm → compare by serialized form,
   // deepStrictEqual across realms would fail on identity)
-  assert.equal(JSON.stringify(record), JSON.stringify([['plugins.services.per_service.web.lifecycle_mode', 'attach_only']]));
+  assert.equal(JSON.stringify(record), JSON.stringify([['plugins.services.per_service.web', 'attach_only']]));
 });
 
 test('locale bundles: card keys present with non-empty values in all five locales', () => {
