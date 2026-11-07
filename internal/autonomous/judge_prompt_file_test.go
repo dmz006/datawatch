@@ -65,3 +65,42 @@ func TestWriteJudgePromptFile_ExcludeAddedOnce(t *testing.T) {
 		t.Fatalf("judge file not excluded: %s", out)
 	}
 }
+
+func TestJudgeBackendHasFileTools(t *testing.T) {
+	for b, want := range map[string]bool{"claude-code": true, "pi": true, "pi-prompt": true, "ollama": false, "openai": false, "": false} {
+		if got := judgeBackendHasFileTools(b); got != want {
+			t.Errorf("judgeBackendHasFileTools(%q)=%v want %v", b, got, want)
+		}
+	}
+}
+
+func TestJudgePromptForDelivery(t *testing.T) {
+	wt := t.TempDir()
+	if out, err := exec.Command("git", "-C", wt, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	long := strings.Repeat("line\n", 50)
+	// Full prompt: threshold 0, short prompt, no file tools.
+	for _, c := range []struct {
+		backend string
+		thr     int
+		p       string
+	}{{"claude-code", 0, long}, {"claude-code", 100, long}, {"ollama", 10, long}} {
+		if got := judgePromptForDelivery(wt, "k", c.backend, c.p, c.thr); got != c.p {
+			t.Errorf("%+v: expected full prompt", c)
+		}
+	}
+	got := judgePromptForDelivery(wt, "k", "pi", long, 10)
+	if got == long || strings.Count(got, "\n")+1 > 20 {
+		t.Fatalf("expected short prompt <=20 lines, got %q", got)
+	}
+	for _, want := range []string{".datawatch/judge/k-prompt.md", "file tools", `"outcome": "pass|warn|block"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("short prompt missing %q", want)
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(wt, ".datawatch/judge/k-prompt.md"))
+	if err != nil || string(b) != long {
+		t.Fatalf("file not written with full prompt: %v", err)
+	}
+}
