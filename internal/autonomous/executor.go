@@ -1394,6 +1394,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// run. Later passes (including re-queued ones) carry their own session.
 	inherited := true
 	for attempt := 0; attempt < budget; attempt++ {
+		// Ceiling step of the retry policy: a second ceiling failure in a row
+		// moves the task to review instead of another attempt.
+		if attempt > 0 {
+			if held, herr := m.holdAfterCeilingFailures(prd, t); held {
+				m.relocateCheckpoint(prd, t)
+				return herr
+			}
+		}
 		var err error
 		run = attemptRun{RefsBefore: len(t.AttemptRefs), AttemptsBefore: len(t.Attempts)}
 		inheritedSession := inherited
