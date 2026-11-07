@@ -4167,6 +4167,7 @@
   "memory_ceiling_path_none": "nicht durchgesetzt",
   "memory_ceiling_none_warning": "Kein Speicherlimit: Prüfläufe sind nicht begrenzt. Grund: %1$s",
   "memory_ceiling_none_reason": "keine Einstellungen für das Speicherlimit geladen",
+  "memory_ceiling_none_reason_unenforced": "der Host hat weder einen systemd-Benutzer-Scope noch /proc",
   "memory_attempt_over_limit": "Gestoppt: Der Prozess hat mehr Speicher als das Limit von %1$s MB verbraucht (Prozess %2$s, Spitze %3$s MB)",
   "memory_attempt_unknown_process": "unbekannt"
 }

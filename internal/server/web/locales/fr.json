@@ -4167,6 +4167,7 @@
   "memory_ceiling_path_none": "non appliquée",
   "memory_ceiling_none_warning": "Aucune limite de mémoire : les vérifications ne sont pas plafonnées. Raison : %1$s",
   "memory_ceiling_none_reason": "aucun réglage de limite de mémoire n'est chargé",
+  "memory_ceiling_none_reason_unenforced": "l'hôte n'a ni scope utilisateur systemd ni /proc",
   "memory_attempt_over_limit": "Arrêté : le processus a utilisé plus de mémoire que la limite de %1$s Mo (processus %2$s, pic %3$s Mo)",
   "memory_attempt_unknown_process": "inconnu"
 }

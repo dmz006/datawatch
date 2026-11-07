@@ -6588,7 +6588,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   area.innerHTML = `
     ${parentLink}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
-      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
+      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}${memoryCeilingStatusHTML(board.memory_ceiling)}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
     ${sprintCard}
@@ -36703,14 +36703,16 @@ function automationStatusLine(row) {
 }
 window.automationStatusLine = automationStatusLine;
 
-// memoryCeilingStatusHTML words the memory_ceiling block of the loop status:
+// memoryCeilingStatusHTML words the memory_ceiling block of the session status:
 // the limit in MB, where it came from and how it is enforced. A status with no
-// block says nothing; no ceiling is a warning that gives its reason.
+// block says nothing; a missing or unenforced ceiling is a warning that gives
+// its reason.
 function memoryCeilingStatusHTML(mc) {
   if (!mc || typeof mc !== 'object') return '';
   const sep = '<span style="margin:0 6px;">·</span>';
-  if (mc.source === 'none' || !(Number(mc.effective_mb) > 0)) {
-    const warn = t('memory_ceiling_none_warning', [t('memory_ceiling_none_reason')]);
+  if (mc.warning || mc.source === 'none' || !(Number(mc.effective_mb) > 0)) {
+    const reason = mc.reason === 'no_enforcement' ? t('memory_ceiling_none_reason_unenforced') : t('memory_ceiling_none_reason');
+    const warn = t('memory_ceiling_none_warning', [reason]);
     return `${sep}<span class="memory-ceiling-warning" role="alert" style="color:var(--warning,#f59e0b);">⚠ ${escHtml(warn)}</span>`;
   }
   const srcLabels = { project: t('memory_ceiling_source_project'), task_kind: t('memory_ceiling_source_task_kind') };
@@ -36729,7 +36731,7 @@ function loadAutomationLiveStatus(id) {
     if (!el || _automationState.detailId !== id) return;
     const rows = st && Array.isArray(st.automations) ? st.automations : [];
     const line = automationStatusLine(rows.find(r => r && r.id === id));
-    el.innerHTML = (line ? escHtml(line) : '') + memoryCeilingStatusHTML(st && st.memory_ceiling);
+    el.innerHTML = line ? escHtml(line) : '';
   }, () => {});
 }
 window.loadAutomationLiveStatus = loadAutomationLiveStatus;

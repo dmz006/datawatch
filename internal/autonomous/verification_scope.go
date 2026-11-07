@@ -36,6 +36,19 @@ type verifyLaunch struct {
 	Path      string // VerifyCeiling* constant
 	CeilingMB int    // resolved ceiling; 0 when none
 	UnitID    string // scope unit id
+
+	// Killed, PeakMB and KilledProcess are set by runVerifyCommand when the
+	// watchdog ended the run for passing the ceiling.
+	Killed        bool
+	PeakMB        int
+	KilledProcess string
+}
+
+// CeilingKill records a run ended for using more memory than its ceiling.
+type CeilingKill struct {
+	Process   string `json:"process"`
+	PeakMB    int    `json:"peak_mb"`
+	CeilingMB int    `json:"ceiling_mb"`
 }
 
 // SetResourceCeiling wires the ceiling settings and the resolver that picks
@@ -162,6 +175,7 @@ func runVerifyCommand(argv []string, dir string, l *verifyLaunch) ([]byte, error
 		return runVerifyUncapped(argv, dir)
 	}
 	if res.Killed {
+		l.Killed, l.PeakMB, l.KilledProcess = true, int(res.PeakKB/1024), res.LargestName
 		fmt.Fprintf(&buf, "\nverification script passed its %s MB memory ceiling and was ended\n", strconv.Itoa(l.CeilingMB))
 	}
 	return buf.Bytes(), err
@@ -185,8 +199,15 @@ func (m *Manager) recordVerifyCeiling(t *Task, l *verifyLaunch) {
 			t.Verification.CeilingPath, t.Verification.CeilingMB = l.Path, l.CeilingMB
 			changed = true
 		}
+		if l.Killed {
+			t.CeilingKill = &CeilingKill{Process: l.KilledProcess, PeakMB: l.PeakMB, CeilingMB: l.CeilingMB}
+			changed = true
+		}
 	})
 	if changed {
 		_ = m.store.SaveTask(t)
+	}
+	if l.Killed {
+		m.RecordCeilingKill(t.ID, l.KilledProcess, l.PeakMB, l.CeilingMB)
 	}
 }

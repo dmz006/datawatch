@@ -33,6 +33,10 @@ type MemoryCeilingStatus struct {
 	CapMB        int `json:"cap_mb"`
 }
 
+// MemoryCeiling returns the effective memory ceiling status for callers
+// outside the package (the session status in the REST API).
+func (m *Manager) MemoryCeiling() MemoryCeilingStatus { return m.memoryCeilingStatus() }
+
 // memoryCeilingStatus builds the status block. With no ceiling settings wired,
 // verification scripts run uncapped, so the source is none.
 func (m *Manager) memoryCeilingStatus() MemoryCeilingStatus {

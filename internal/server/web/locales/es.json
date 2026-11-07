@@ -4167,6 +4167,7 @@
   "memory_ceiling_path_none": "sin aplicar",
   "memory_ceiling_none_warning": "Sin límite de memoria: las verificaciones no tienen tope. Motivo: %1$s",
   "memory_ceiling_none_reason": "no hay ajustes de límite de memoria cargados",
+  "memory_ceiling_none_reason_unenforced": "el host no tiene ni un scope de usuario de systemd ni /proc",
   "memory_attempt_over_limit": "Detenido: el proceso usó más memoria que el límite de %1$s MB (proceso %2$s, pico %3$s MB)",
   "memory_attempt_unknown_process": "desconocido"
 }

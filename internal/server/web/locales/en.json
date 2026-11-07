@@ -4167,6 +4167,7 @@
   "memory_ceiling_path_none": "not enforced",
   "memory_ceiling_none_warning": "No memory limit: verification runs are not capped. Reason: %1$s",
   "memory_ceiling_none_reason": "no memory limit settings are loaded",
+  "memory_ceiling_none_reason_unenforced": "the host has neither a systemd user scope nor /proc",
   "memory_attempt_over_limit": "Stopped: the process used more memory than the limit of %1$s MB (process %2$s, peak %3$s MB)",
   "memory_attempt_unknown_process": "unknown"
 }

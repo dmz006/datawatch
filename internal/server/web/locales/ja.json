@@ -4167,6 +4167,7 @@
   "memory_ceiling_path_none": "強制なし",
   "memory_ceiling_none_warning": "メモリ上限なし: 検証の実行に上限がありません。理由: %1$s",
   "memory_ceiling_none_reason": "メモリ上限の設定が読み込まれていません",
+  "memory_ceiling_none_reason_unenforced": "ホストに systemd ユーザースコープも /proc もありません",
   "memory_attempt_over_limit": "停止: プロセスが上限 %1$s MB を超えるメモリを使用しました (プロセス %2$s、ピーク %3$s MB)",
   "memory_attempt_unknown_process": "不明"
 }
