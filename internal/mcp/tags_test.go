@@ -77,6 +77,9 @@ func newTagMCPServer(t *testing.T) (*Server, *autonomous.Manager) {
 		prd, err := api.SetPRDTags(id, in.TagIDs)
 		reply(w, prd, err)
 	})
+	mux.HandleFunc("/api/autonomous/tags/sweep", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, api.SweepTags(r.URL.Query().Get("dry_run") == "true"), nil)
+	})
 	rest := httptest.NewServer(mux)
 	t.Cleanup(rest.Close)
 	_, portStr, _ := net.SplitHostPort(rest.Listener.Addr().String())
@@ -239,6 +242,7 @@ func TestTagToolDefinitions(t *testing.T) {
 		"autonomous_tag_set_color":  s.toolAutonomousTagSetColor(),
 		"autonomous_tag_delete":     s.toolAutonomousTagDelete(),
 		"autonomous_prd_set_tags":   s.toolAutonomousPRDSetTags(),
+		"autonomous_tag_sweep":      s.toolAutonomousTagSweep(),
 	} {
 		if tool.Name != name {
 			t.Errorf("tool name = %q, want %q", tool.Name, name)
