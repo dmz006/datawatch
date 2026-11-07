@@ -35,8 +35,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -89,17 +87,12 @@ func (s *Server) usageSeries() (*usagecalc.SharedSeries, error) {
 }
 
 // usageDataDir is the data directory the usage store and the lane history live in.
+// It resolves the configured data directory exactly like every other state file
+// (Server.statePath: the instance override, then the configured data directory,
+// then the config default) and never consults the process home directory on its
+// own.
 func (s *Server) usageDataDir() string {
-	dataDir := ""
-	if s.cfg != nil {
-		dataDir = s.cfg.DataDir
-	}
-	if dataDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			dataDir = filepath.Join(home, ".datawatch")
-		}
-	}
-	return dataDir
+	return s.statePath()
 }
 
 // buildUsageSeries opens the store and wires the keeper's lane stamper: the ledger count
