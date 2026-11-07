@@ -564,6 +564,28 @@ _KNOWN_DOTTED_WILDCARDS = (
 )
 
 
+def _split_top(text):
+    """Split a case-label list on commas outside string literals."""
+    out, cur, i, n = [], [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in '"`':
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if (text[j] == "\\" and c == '"') else 1
+            cur.append(text[i : j + 1])
+            i = j + 1
+            continue
+        if c == ",":
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return [x for x in out if x.strip()]
+
+
 def api_put_keys(repo_root):
     """Dotted keys accepted by PUT /api/config (``applyConfigPatch``/``handlePutConfig``, api.go).
 
@@ -587,6 +609,14 @@ def api_put_keys(repo_root):
                 keys.add(key + "*")
             else:
                 keys.add(key)
+    # Const-based labels (``case protectedPathsKey:``, ``case prefixConst + "x",``):
+    # a case clause runs from ``case`` to the ``:`` ending its last line.
+    consts = _build_consts(src, *_server_go_sources(repo_root))
+    for cm in re.finditer(r'(?m)^[ \t]*case\s+((?:[^\n]*,[ \t]*\n)*[^\n]*?):[ \t]*$', body):
+        for part in _split_top(cm.group(1)):
+            val = _const_expr_value(part, consts)
+            if val and "." in val:
+                keys.add(val + "*" if val.endswith(".") else val)
     for pm in _CUT_PREFIX.finditer(body):
         keys.add(pm.group(1) + "*")
     for pm in re.finditer(r'HasPrefix\s*\(\s*k\s*,\s*"([^"]+)"', body):
