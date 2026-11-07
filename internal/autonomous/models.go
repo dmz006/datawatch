@@ -1630,6 +1630,11 @@ type GuardrailVerdict struct {
 	Mode   string         `json:"mode,omitempty"`
 	Scores *VerdictScores `json:"scores,omitempty"`
 	Route  *VerdictRoute  `json:"route,omitempty"`
+	// CeilingPath and CeilingMB record how the one-shot guardrail run was
+	// capped: "scope", "watchdog" or "none". Recording only; the verdict is
+	// never changed by it.
+	CeilingPath string `json:"ceiling_path,omitempty"`
+	CeilingMB   int    `json:"ceiling_mb,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match

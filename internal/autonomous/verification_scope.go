@@ -94,6 +94,14 @@ func chooseVerifyLaunch(c resources.Ceiling, unitID string) *verifyLaunch {
 // the systemd-run argument list; on any other path it is returned bare.
 func verifyScriptArgv(scriptPath string, l *verifyLaunch) ([]string, string, error) {
 	base := []string{"env", "-u", "TMUX", "-u", "TMUX_TMPDIR", "bash", scriptPath}
+	return scopedArgv(base, "verify", l)
+}
+
+// scopedArgv is the one argument builder shared by verification scripts and
+// one-shot guardrail runs: base is wrapped in the systemd-run argument list on
+// the scope path and returned bare on any other path. A scope launcher that
+// cannot be built falls back to the watchdog when /proc exists.
+func scopedArgv(base []string, kind string, l *verifyLaunch) ([]string, string, error) {
 	if l == nil {
 		return base, "", nil
 	}
@@ -101,10 +109,9 @@ func verifyScriptArgv(scriptPath string, l *verifyLaunch) ([]string, string, err
 		return base, l.Path, nil
 	}
 	bin, args, err := verifyScopeCommandFn(resources.ScopeSpec{
-		ID: l.UnitID, Kind: "verify", CeilingMB: l.CeilingMB, Command: base,
+		ID: l.UnitID, Kind: kind, CeilingMB: l.CeilingMB, Command: base,
 	})
 	if err != nil {
-		// Scope launcher unusable: fall back to the watchdog when /proc exists.
 		if verifyProcExistsFn() {
 			l.Path = VerifyCeilingWatchdog
 			return base, l.Path, nil

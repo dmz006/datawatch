@@ -53,6 +53,11 @@ func (m *Manager) classifyGate(ctx context.Context, inv GuardrailInvocation, v G
 		return v
 	}
 	body := classifyGateBody(inv, v)
+	launch := m.planGuardrailLaunch(inv)
+	ctx = WithGuardrailLaunch(ctx, launch)
+	if launch != nil {
+		v.CeilingPath, v.CeilingMB = launch.Path, launch.CeilingMB
+	}
 	res := gc.run(ctx, inv.GuardrailBackend, inv.GuardrailModel, body)
 	v.Scores, v.Route = res.Scores, res.Route
 	if !res.OK {
@@ -76,6 +81,41 @@ func (m *Manager) classifyGate(ctx context.Context, inv GuardrailInvocation, v G
 		v.Severity = res.Severity
 	}
 	return v
+}
+
+type guardrailLaunchKey struct{}
+
+// WithGuardrailLaunch carries the ceiling launch for a one-shot guardrail run
+// to the runner. A nil launch leaves ctx unchanged.
+func WithGuardrailLaunch(ctx context.Context, l *verifyLaunch) context.Context {
+	if l == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, guardrailLaunchKey{}, l)
+}
+
+// planGuardrailLaunch resolves the ceiling and path for a guardrail run from
+// the unit it judges, with the same resolver the verification runs use.
+func (m *Manager) planGuardrailLaunch(inv GuardrailInvocation) *verifyLaunch {
+	prd, t := &PRD{}, &Task{ID: inv.UnitID}
+	if m.store != nil {
+		if p, ok := m.store.GetPRD(inv.PRDID); ok {
+			prd = p
+		}
+		if tk, ok := m.store.GetTask(inv.UnitID); ok {
+			t = tk
+		}
+	}
+	return m.planVerifyLaunch(prd, t)
+}
+
+// GuardrailRunArgv wraps the one-shot guardrail command carried in ctx's
+// launch with the shared scope argument builder. It returns the command to
+// run and the ceiling path ("" when no launch is carried).
+func GuardrailRunArgv(ctx context.Context, base []string) ([]string, string) {
+	l, _ := ctx.Value(guardrailLaunchKey{}).(*verifyLaunch)
+	argv, path, _ := scopedArgv(base, "guardrail", l)
+	return argv, path
 }
 
 // classifyGateBody builds the data the classifier reads: the unit spec and the
