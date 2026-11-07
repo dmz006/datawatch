@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.108.0 — Grace period and unmerged-work guard for cancelled Automata
+
+### Added
+
+- **A grace period and an unmerged-work guard for cancelled Automata.** The supervisor loop used to archive a cancelled Automaton within seconds, which removed its record before you could reset or recover it. It now waits `supervisor_loop.archive_cancelled_after_minutes` (default 60, 0 archives at once) from the most recent cancel. A cancelled Automaton whose branch holds commits that are not on the base branch is not archived by the loop at all until you archive it, its work is merged, or its branch is deleted. The setting is on the config file, REST config, comm channel, MCP, CLI and the PWA Settings supervisor loop card in all five languages, and archiving now records who did it. A sandbox live check script and its passing report cover the behaviour end to end.
+
 ## v9.107.1 — Judge prompt file route, infrastructure retry and outcome kinds
 
 ### Fixed

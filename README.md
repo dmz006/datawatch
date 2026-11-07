@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.107.1 (2026-11-07).** Large guardrail judge prompts are now delivered through a file, infrastructure failures retry, and the review shows the judge outcome kind. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.108.0 (2026-11-07).** Cancelled Automata are now kept for a configurable grace period and are never auto-archived while their branch holds unmerged work. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
