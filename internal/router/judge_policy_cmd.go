@@ -1,7 +1,7 @@
 // Comm-channel verbs for the judge routing settings, under "autonomous":
 //
 //	autonomous judge-policy                                   show the judge backends and time limit
-//	autonomous judge-policy-set key=value...                  set judge_policy, judge_timeout_seconds, judge_size_threshold_lines, judge_strong_backend and/or judge_verdict_cache_enabled
+//	autonomous judge-policy-set key=value...                  set judge_policy, judge_timeout_seconds, judge_size_threshold_lines, judge_prompt_file_threshold_lines, judge_delivery_wait_per_thousand_lines_seconds, judge_strong_backend and/or judge_verdict_cache_enabled
 //
 // The settings are autonomous.judge_policy, autonomous.judge_timeout_seconds, autonomous.judge_size_threshold_lines,
 // autonomous.judge_strong_backend and autonomous.judge_verdict_cache_enabled
@@ -23,10 +23,12 @@ import (
 
 const (
 	judgePolicyShowUsage = "usage: autonomous judge-policy"
-	judgePolicySetUsage  = "usage: autonomous judge-policy-set judge_policy=<a,b> judge_timeout_seconds=<n> judge_size_threshold_lines=<n> judge_strong_backend=<name> judge_verdict_cache_enabled=<true|false> " +
+	judgePolicySetUsage  = "usage: autonomous judge-policy-set judge_policy=<a,b> judge_timeout_seconds=<n> judge_size_threshold_lines=<n> judge_prompt_file_threshold_lines=<n> judge_delivery_wait_per_thousand_lines_seconds=<n> judge_strong_backend=<name> judge_verdict_cache_enabled=<true|false> " +
 		"(name at least one; judge_policy is an ordered backend list, empty clears it so the judges follow the verifier routing policy; " +
 		"judge_timeout_seconds is a whole number of seconds, 0 = 1800; " +
 		"judge_size_threshold_lines is a whole number of changed lines, 0 = size rule off, default 400; " +
+		"judge_prompt_file_threshold_lines is a whole number of prompt lines, a longer judge prompt is sent as a file, 0 = always send the full prompt; " +
+		"judge_delivery_wait_per_thousand_lines_seconds is a whole number of seconds of extra wait per thousand prompt lines, 0 = no extra wait; " +
 		"judge_strong_backend is the LLM backend large diffs route to first, empty resolves to the last judge-policy entry; " +
 		"judge_verdict_cache_enabled is true|false for the per-commit verdict cache, default true)"
 )
@@ -47,7 +49,7 @@ func judgePolicyConfigBody(tokens []string) (map[string]any, error) {
 		switch k {
 		case "judge_policy":
 			body[k] = splitVerifierPolicyBackends(v)
-		case "judge_timeout_seconds", "judge_size_threshold_lines":
+		case "judge_timeout_seconds", "judge_size_threshold_lines", "judge_prompt_file_threshold_lines", "judge_delivery_wait_per_thousand_lines_seconds":
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 0 {
 				return nil, fmt.Errorf("%s must be a whole number >= 0, got %q", k, v)
@@ -86,11 +88,13 @@ func (r *Router) autonomousJudgePolicy(args []string) {
 		var cfg map[string]json.RawMessage
 		if json.Unmarshal([]byte(out), &cfg) == nil {
 			judge := map[string]json.RawMessage{
-				"judge_policy":                cfg["judge_policy"],
-				"judge_timeout_seconds":       cfg["judge_timeout_seconds"],
-				"judge_size_threshold_lines":  cfg["judge_size_threshold_lines"],
-				"judge_strong_backend":        cfg["judge_strong_backend"],
-				"judge_verdict_cache_enabled": cfg["judge_verdict_cache_enabled"],
+				"judge_policy":                                   cfg["judge_policy"],
+				"judge_timeout_seconds":                          cfg["judge_timeout_seconds"],
+				"judge_size_threshold_lines":                     cfg["judge_size_threshold_lines"],
+				"judge_prompt_file_threshold_lines":              cfg["judge_prompt_file_threshold_lines"],
+				"judge_delivery_wait_per_thousand_lines_seconds": cfg["judge_delivery_wait_per_thousand_lines_seconds"],
+				"judge_strong_backend":                           cfg["judge_strong_backend"],
+				"judge_verdict_cache_enabled":                    cfg["judge_verdict_cache_enabled"],
 			}
 			if raw, err := json.Marshal(judge); err == nil {
 				out = string(raw)
