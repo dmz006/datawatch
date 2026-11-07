@@ -30924,8 +30924,11 @@ window.progressCardHtml = function(state, opts) {
     banner = `<div class="progress-card-stale" role="status" style="color:var(--warning,#f59e0b);font-size:12px;">${escHtml(t('progress_card_stale'))} · ${escHtml(t('last_updated_ago', [ageSec]))}` +
       (state.error ? ` · ${escHtml(state.error)}` : '') + '</div>';
   }
-  // A card with no records is not shown.
-  if (!(data.totals && data.totals.prds > 0)) return '';
+  // No open work yet: no table, just the next action.
+  if (!(data.totals && data.totals.prds > 0)) {
+    return wrap('empty', `<div class="progress-card-empty" role="status" style="color:var(--text2);">${escHtml(t('progress_empty_next'))} ` +
+      `<button type="button" class="btn-secondary progress-card-new" onclick="window.openLaunchAutomatonWizard()">${escHtml(t('fab_launch_auto'))}</button></div>`);
+  }
   const axis = PC_GROUP_FIELDS[state.group] ? state.group : 'overall';
   const tp = data.throughput || {}, ut = data.utilization || {};
   const throughput = _pcSection('progress_card_throughput_title',

@@ -78,6 +78,14 @@ test('loading state shows the title and the loading text and no table', () => {
   assert.ok(!html.includes('progress-card-retry'), 'no retry while loading');
 });
 
+test('no records: the card keeps its title and points at the next action', () => {
+  const html = render({ status: 'ok', data: metrics({ totals: { prds: 0 } }), error: '', fetchedAt: NOW, trend: null });
+  assert.ok(html.includes('Create an Automaton to start tracking progress.'), html);
+  assert.ok(html.includes('progress-card-new'), 'next action button present');
+  assert.ok(html.includes('window.openLaunchAutomatonWizard'), 'the button opens the launch wizard');
+  assert.ok(!html.includes('<table'), 'no table while there are no records');
+});
+
 test('ok state shows the table rows, the totals and the columns', () => {
   const html = render({ status: 'ok', data: metrics(), error: '', fetchedAt: NOW, trend: { direction: 'converging' } });
   for (const label of ['Automata', 'Done', 'Running', 'Waiting', 'Blocked', 'Tasks', 'Tasks done', 'Tasks left', 'Work time', 'Median per Automaton', 'Mean per task']) {
