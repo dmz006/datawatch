@@ -9,6 +9,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Per-plugin token usage listing (`GET /api/plugins/{name}/tokens`).** For a service plugin, the operator can now list each secret the manifest references — the manifest fields that carry the reference (`connection.auth.token`, `env.<KEY>`) and whether that secret exists in the store — plus the names and creation times of the service tokens minted for that service. The response carries names and fields only; it never returns a secret value or a service token value. Only the operator token may use the route: a missing or wrong token gets 401, and a federation peer (even with full control) or a session-scoped credential is refused with 403; an unknown plugin gets 404, a non-GET method gets 405, and with no plugin wiring the route reports 503.
 
+- **Per-plugin secret rotation and removal (`POST /api/plugins/{name}/tokens/{secret}/rotate`, `DELETE /api/plugins/{name}/tokens/{secret}`).** The operator can now rotate or delete one of the secrets a plugin's manifest references. A rotate takes the new value in the request body, stores it through the secrets store, and — when that secret is also a registered service token — revokes the old token and mints a fresh one under the same name, leaving every other token untouched. The rotate response carries only the plugin and secret names and never echoes a secret value. Both routes are operator-token-only (a federation peer or session-scoped credential is refused with 403), refuse a secret the plugin does not reference with 400, return 404 for an unknown plugin, and report 503 with no plugin or secret wiring; both actions land in the audit log.
+
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
 ### Fixed
