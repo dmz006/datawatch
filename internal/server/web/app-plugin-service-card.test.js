@@ -28,7 +28,7 @@ test('pluginServiceCardHtml is exported', () => {
   assert.equal(typeof sandbox.window.pluginServiceCardHtml, 'function');
 });
 
-test('valid managed payload renders name, state, mode, address, version, uptime, last check and the start action', () => {
+test('valid managed payload renders name, state, mode, address, version, uptime and last check — no action for an up service', () => {
   const html = render('enrich', {
     mode: 'managed',
     state: 'healthy',
@@ -50,13 +50,15 @@ test('valid managed payload renders name, state, mode, address, version, uptime,
   assert.match(html, /1h 2m/);
   assert.match(html, /Last health check/);
   assert.match(html, /2026-11-01 14:00:00 UTC/);
-  assert.match(html, /Start it from here/);
-  assert.match(html, /pluginServiceStart\('enrich'\)/);
+  // A service that is up has no next action to show: no start link, no
+  // check-running hint.
+  assert.doesNotMatch(html, /Start it from here/);
+  assert.doesNotMatch(html, /Check that the service is running/);
   assert.doesNotMatch(html, /Last error/);
   assert.doesNotMatch(html, /\bdown\b/);
 });
 
-test('attach-only payload without a version omits the Version, uptime and start-action rows', () => {
+test('attach-only payload without a version omits the Version and start-action rows but keeps uptime and last check', () => {
   const html = render('enrich-attach', {
     mode: 'attach_only',
     address: 'https://enrich.example:8443',
@@ -159,6 +161,24 @@ test('open service events render as a single link to the Events entry, not a sta
   assert.doesNotMatch(html, /refused.{0,40}refused/s); // one last-error row, not repeated per event
   const links = html.split('navigate(\'dashboard\')').length - 1;
   assert.equal(links, 1);
+});
+
+test('the open-events count comes only from the backend open_events field, from 0 or absent', () => {
+  // open_events = 1 wins even if an (unwired) events array is present:
+  // the card counts the real backend counter, not an event list.
+  const html = render('ev-source', {
+    mode: 'attach_only',
+    open_events: 1,
+    events: [1, 2, 3],
+  });
+  assert.match(html, /1 open service events — Events →/);
+  assert.doesNotMatch(html, /3 open service events/);
+
+  // 0 and absent both mean the link is omitted entirely, and an
+  // (unwired) events array alone renders no link.
+  assert.doesNotMatch(render('ev-zero', { mode: 'attach_only', open_events: 0 }), /open service events/);
+  assert.doesNotMatch(render('ev-absent', { mode: 'attach_only' }), /open service events/);
+  assert.doesNotMatch(render('ev-array', { mode: 'attach_only', events: [{ id: 1 }] }), /open service events/);
 });
 
 test('every new card locale key is present in all five bundles, without tracker IDs', () => {

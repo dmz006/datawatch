@@ -45606,23 +45606,27 @@ window.pluginServiceCardHtml = function(name, svc) {
   const lastError = (managed ? (svc.last_error || svc.last_health_error) : (svc.last_health_error || svc.last_error));
   const errorRow = lastError ? row(label('plugin_service_last_error', 'Last error'), `<span style="color:var(--error,#ef4444);">${escHtml(lastError)}</span>`) : '';
 
-  // Next action: managed services are started from here (the enable route
-  // with the managed opt-in); an attach-only service we probe down (or can
-  // not verify) gets the plain "check it is running" hint. A service that
-  // is up has no next action to show, so the row is omitted.
+  // Next action: a managed service that is not up is started from here
+  // (the enable route with the managed opt-in); an attach-only service
+  // that is down (or cannot be verified) gets the plain "check it is
+  // running" hint. A service that is up has no next action to show, so
+  // the row is omitted.
   let action = '';
-  if (managed) {
-    const esc = escJsAttr(String(name));
-    action = `<div style="margin-top:6px;"><a onclick="pluginServiceStart('${esc}')" style="color:var(--accent2,#60a5fa);cursor:pointer;text-decoration:underline;font-size:12px;">${label('plugin_service_action_start', 'Start it from here')} →</a></div>`;
-  } else if (state !== 'up') {
-    action = `<div style="margin-top:6px;font-size:12px;color:var(--warning,#f59e0b);">${label('plugin_service_action_check_running', 'Check that the service is running')}</div>`;
+  if (state !== 'up') {
+    if (managed) {
+      const esc = escJsAttr(String(name));
+      action = `<div style="margin-top:6px;"><a onclick="pluginServiceStart('${esc}')" style="color:var(--accent2,#60a5fa);cursor:pointer;text-decoration:underline;font-size:12px;">${label('plugin_service_action_start', 'Start it from here')} →</a></div>`;
+    } else {
+      action = `<div style="margin-top:6px;font-size:12px;color:var(--warning,#f59e0b);">${label('plugin_service_action_check_running', 'Check that the service is running')}</div>`;
+    }
   }
 
-  // Open service events are a link to the Events entry (the dashboard Live
-  // Events feed) — never a status strip inside the card.
+  // Open service events (active service event conditions reported by the
+  // backend on the plugin's service object) are a link to the Events
+  // entry (the dashboard Live Events feed) — never a status strip inside
+  // the card.
   let events = '';
-  const openEvents = Number(svc.open_events) > 0 ? Number(svc.open_events)
-    : (Array.isArray(svc.events) ? svc.events.length : 0);
+  const openEvents = Number(svc.open_events) > 0 ? Number(svc.open_events) : 0;
   if (openEvents > 0) {
     const evKey = 'plugin_service_events_link';
     const evLabel = t(evKey, [openEvents]) !== evKey

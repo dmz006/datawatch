@@ -139,6 +139,9 @@ func (r *Registry) reconcileAttachProbes(parent context.Context) {
 			if r.cfg.HealthInterval > 0 {
 				pr.Interval = r.cfg.HealthInterval
 			}
+			// Every completed check feeds the health observer (nil-safe;
+			// in the daemon it is the service event recorder).
+			pr.OnResult = func(healthy bool, code int) { r.observeHealth(name, healthy, code) }
 			apCtx, cancel := context.WithCancel(r.attachCtx)
 			ap := &attachProbe{probe: pr, cancel: cancel, doneCh: make(chan struct{})}
 			r.attachProbes[name] = ap

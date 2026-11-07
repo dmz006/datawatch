@@ -7871,7 +7871,44 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if secretsStore != nil {
 				reg.SetSecretsStore(secretsStore) // BL242 Phase 5b — plugin env secret injection
 			}
-			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
+			// Service event recorder for this process: fed by the attach
+			// and managed health probes (via the registry observer) and the
+			// model-node events task; reports the open-conditions count the
+			// plugin service status card's events link renders. Its own
+			// alerts land in the global alerts store and its entries in the
+			// plugin service audit log, once per transition.
+			serviceRec := pluginspkg.NewServiceEventRecorder(pluginspkg.ServiceEventOptions{
+				BacklogRisePulls: cfg.Plugins.Services.EffectiveBacklogGrowthPulls(),
+				Audit: func(action, subject string, details map[string]any) {
+					httpServer.AuditPluginService(subject, action, details)
+				},
+			})
+			httpServer.SetModelNodeRecorder(serviceRec)
+			reg.SetHealthObserver(func(name string, healthy bool, code int) {
+				serviceRec.RecordHealthProbe(name, healthy)
+				if code != 0 {
+					serviceRec.RecordHTTPStatus(name, "probe", code)
+				}
+			})
+			pluginsAPI := pluginspkg.NewAPI(reg)
+			pluginsAPI.SetOpenEventsCounter(func(name string) int {
+				down, token, backlog, node := serviceRec.Active(name, "")
+				open := 0
+				if down {
+					open++
+				}
+				if token {
+					open++
+				}
+				if backlog {
+					open++
+				}
+				if node {
+					open++
+				}
+				return open
+			})
+			httpServer.SetPluginsAPI(pluginsAPI)
 			// v4.0.1 — plugin hot-reload via fsnotify. No-op when
 			// plugins.enabled=false; debounces 500 ms to coalesce
 			// editor-save storms.

@@ -432,6 +432,11 @@ type Registry struct {
 	managed        map[string]bool
 	supervisors    map[string]*ServiceSupervisor
 	serviceEventFn func(ServiceEvent)
+	// healthObserver receives every attach or managed health probe result
+	// (plugin, healthy, HTTP code; 0 code = no completed request). Set by
+	// SetHealthObserver; nil-safe. The service event recorder hooks in
+	// here (service_down / token_rejected conditions).
+	healthObserver func(plugin string, healthy bool, statusCode int)
 	started        bool
 
 	// Manifest v3 attach-only health (see registry_attach.go): one health
