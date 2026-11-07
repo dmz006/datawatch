@@ -340,6 +340,15 @@ full text, and every spec/description write refuses (400) text carrying the mark
 `/tasks/{task_id}/outputs`) returns the heavy fields byte for byte. The list summary
 (`BuildSummaryView`) does not read these fields.
 
+`autonomous.inherited_tags_cache_seconds` (default 15; 0 = default, negative = off)
+sets the lifetime of the shared cache of inherited (system) tags per Automaton
+that the session manager builds when listing sessions (`internal/session`
+`system_tag_index.go`, `Manager.SetInheritedTagsCacheTTL` / `InheritedTagsCacheTTL`).
+A negative value turns the cache off: every read rebuilds the index (concurrent
+callers still share one in-flight build). A config write applies the lifetime to
+the live session manager immediately (no restart), and the daemon applies it at
+startup alongside the other session-manager settings.
+
 Foreign-file drift is checked for direct-mode (non-worktree) Automata only. The
 capture point is the worker spawn in `cmd/datawatch/main.go`: alongside the pre-task
 `HEAD` SHA and untracked files it calls `autonomous.CapturePreTaskDirtyFiles`

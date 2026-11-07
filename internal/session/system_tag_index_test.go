@@ -452,3 +452,18 @@ func TestSystemTagIndexMoveSessionTagsViaSave(t *testing.T) {
 		t.Fatalf("prd-a = %v, want %v", tagsOf(m, "prd-a"), want)
 	}
 }
+
+func TestInheritedTagsCacheTTLGetter(t *testing.T) {
+	m := newTestManager(t)
+	if got := m.InheritedTagsCacheTTL(); got != 15*time.Second {
+		t.Fatalf("unset TTL = %v, want the default 15s", got)
+	}
+	m.SetInheritedTagsCacheTTL(time.Hour)
+	if got := m.InheritedTagsCacheTTL(); got != time.Hour {
+		t.Fatalf("TTL after set = %v, want 1h", got)
+	}
+	m.SetInheritedTagsCacheTTL(-1)
+	if got := m.InheritedTagsCacheTTL(); got != -1 {
+		t.Fatalf("TTL after set off = %v, want -1 (caching off)", got)
+	}
+}
