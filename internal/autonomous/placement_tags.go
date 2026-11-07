@@ -3,6 +3,7 @@ package autonomous
 import (
 	"log"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/placementtags"
 )
@@ -137,6 +138,27 @@ func ApplyPlacementTags(sink SystemTagsSink, node NodeChooser, taskID, sessionID
 	}
 	tags := DerivePlacementTags(p, pc)
 	return sink.SetSystemTags(sessionID, tags)
+}
+
+// workerLaunchPlacement is the placement fact a task worker carries at
+// launch (and on every retry: the same two facts, re-derived, ride the
+// re-tag of the same or a new session): the node it landed on, the backend
+// and model it runs under, the lane that backend serves, the worker role,
+// the project it works in, and the Automaton, Automation and stage the
+// work runs under (stage empty when the Automaton is not stage-typed).
+func (m *Manager) workerLaunchPlacement(prd *PRD, placedNode, backend, model, project string) Placement {
+	return Placement{
+		Node:       placedNode,
+		Backend:    backend,
+		Model:      model,
+		Lane:       laneForBackend(backend),
+		Role:       string(capacity.RoleWorker),
+		Project:    project,
+		Automaton:  prd.ID,
+		Automation: prd.AutomationID,
+		Stage:      m.StageOfPRD(prd),
+		Kind:       "task",
+	}
 }
 
 // laneForBackend names the execution lane a worker backend serves, as far

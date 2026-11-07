@@ -105,6 +105,27 @@ func (m *Manager) AutomationForPRD(prd *PRD) *Automation {
 	return a
 }
 
+// StageOfPRD returns the Automaton's stage name — the label operator gave the
+// PRD's member slot of its Automation — or "" when the PRD is not
+// stage-typed: the PRD is standalone, is not a member of an Automation, or
+// its member slot's Stage label is empty. The empty value is what the
+// placement stage axis reads as "no stage": the axis takes no tag on it.
+func (m *Manager) StageOfPRD(prd *PRD) string {
+	if prd == nil {
+		return ""
+	}
+	a := m.AutomationForPRD(prd)
+	if a == nil {
+		return ""
+	}
+	for i := range a.Members {
+		if a.Members[i].PRDID == prd.ID {
+			return a.Members[i].Stage
+		}
+	}
+	return ""
+}
+
 // ListAutomations returns all Automations.
 func (m *Manager) ListAutomations() []*Automation {
 	return m.automations.List()
