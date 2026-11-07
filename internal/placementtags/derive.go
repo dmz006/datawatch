@@ -22,10 +22,10 @@ type PlacementFacts struct {
 	Role string
 	// Project is the project alias the work belongs to.
 	Project string
+	// Automaton is the id of the Automaton the work belongs to.
+	Automaton string
 	// Automation, Stage and Kind carry the surrounding automation context
-	// (automation id, pipeline stage and work kind). They are facts about the
-	// placement, not configurable built-in axes; expose them as tags by
-	// configuring a custom axis that reads them through Fields.
+	// (automation id, pipeline stage and work kind).
 	Automation string
 	Stage      string
 	Kind       string
@@ -66,6 +66,12 @@ type Settings struct {
 	Lane    AxisSetting
 	Role    AxisSetting
 	Project AxisSetting
+	// Automaton, Automation, Stage and Kind carry the surrounding automation
+	// context (Automaton id, automation id, pipeline stage and work kind).
+	Automaton  AxisSetting
+	Automation AxisSetting
+	Stage      AxisSetting
+	Kind       AxisSetting
 	// Custom holds user-defined axes that read their value from Facts.Fields.
 	Custom []CustomAxis
 }
@@ -74,12 +80,16 @@ type Settings struct {
 // template. A template that omits its own placeholder is rejected by
 // ValidateSettings.
 const (
-	placeholderNode    = "{node}"
-	placeholderPeer    = "{peer}"
-	placeholderBackend = "{backend}"
-	placeholderLane    = "{lane}"
-	placeholderRole    = "{role}"
-	placeholderProject = "{project}"
+	placeholderNode       = "{node}"
+	placeholderPeer       = "{peer}"
+	placeholderBackend    = "{backend}"
+	placeholderLane       = "{lane}"
+	placeholderRole       = "{role}"
+	placeholderProject    = "{project}"
+	placeholderAutomaton  = "{automaton}"
+	placeholderAutomation = "{automation}"
+	placeholderStage      = "{stage}"
+	placeholderKind       = "{kind}"
 )
 
 // CustomPlaceholder is the single placeholder every custom axis template must
@@ -90,15 +100,19 @@ const CustomPlaceholder = "{value}"
 // AxisPlaceholders maps each built-in axis name to the placeholder its
 // template must contain. The keys are the built-in axis names themselves.
 var AxisPlaceholders = map[string]string{
-	"compute": placeholderNode,
-	"peer":    placeholderPeer,
-	"backend": placeholderBackend,
-	"lane":    placeholderLane,
-	"role":    placeholderRole,
-	"project": placeholderProject,
+	"compute":    placeholderNode,
+	"peer":       placeholderPeer,
+	"backend":    placeholderBackend,
+	"lane":       placeholderLane,
+	"role":       placeholderRole,
+	"project":    placeholderProject,
+	"automaton":  placeholderAutomaton,
+	"automation": placeholderAutomation,
+	"stage":      placeholderStage,
+	"kind":       placeholderKind,
 }
 
-// IsBuiltinAxis reports whether name is one of the six built-in axes.
+// IsBuiltinAxis reports whether name is one of the ten built-in axes.
 func IsBuiltinAxis(name string) bool {
 	_, ok := AxisPlaceholders[name]
 	return ok
@@ -118,7 +132,7 @@ func DefaultTemplate(axis string) (string, bool) {
 // defined once here — a neutral package that neither internal/session nor
 // internal/config imports into a cycle — so the config block's validation and
 // any other consumer share one allowed list.
-var SessionFields = []string{"Name", "Backend", "Model", "Node", "PRDID", "Role", "Project"}
+var SessionFields = []string{"Name", "Backend", "Model", "Node", "PRDID", "Role", "Project", "Automaton", "Automation", "Stage", "Kind"}
 
 // IsSessionField reports whether field is on the allowed list of session
 // fields a custom axis may read.
@@ -139,7 +153,7 @@ type axisSpec struct {
 	setting     AxisSetting
 }
 
-// builtins returns the six built-in axes in a stable order, paired with the
+// builtins returns the ten built-in axes in a stable order, paired with the
 // caller's settings.
 func builtins(f PlacementFacts, s Settings) []axisSpec {
 	return []axisSpec{
@@ -149,6 +163,10 @@ func builtins(f PlacementFacts, s Settings) []axisSpec {
 		{"lane", placeholderLane, func(f PlacementFacts) string { return f.Lane }, s.Lane},
 		{"role", placeholderRole, func(f PlacementFacts) string { return f.Role }, s.Role},
 		{"project", placeholderProject, func(f PlacementFacts) string { return f.Project }, s.Project},
+		{"automaton", placeholderAutomaton, func(f PlacementFacts) string { return f.Automaton }, s.Automaton},
+		{"automation", placeholderAutomation, func(f PlacementFacts) string { return f.Automation }, s.Automation},
+		{"stage", placeholderStage, func(f PlacementFacts) string { return f.Stage }, s.Stage},
+		{"kind", placeholderKind, func(f PlacementFacts) string { return f.Kind }, s.Kind},
 	}
 }
 
@@ -156,12 +174,16 @@ func builtins(f PlacementFacts, s Settings) []axisSpec {
 // conventional "<axis>:<placeholder>" templates and no custom axes.
 func DefaultSettings() Settings {
 	return Settings{
-		Compute: AxisSetting{Enabled: true, Template: "compute:" + placeholderNode},
-		Peer:    AxisSetting{Enabled: true, Template: "peer:" + placeholderPeer},
-		Backend: AxisSetting{Enabled: true, Template: "backend:" + placeholderBackend},
-		Lane:    AxisSetting{Enabled: true, Template: "lane:" + placeholderLane},
-		Role:    AxisSetting{Enabled: true, Template: "role:" + placeholderRole},
-		Project: AxisSetting{Enabled: true, Template: "project:" + placeholderProject},
+		Compute:    AxisSetting{Enabled: true, Template: "compute:" + placeholderNode},
+		Peer:       AxisSetting{Enabled: true, Template: "peer:" + placeholderPeer},
+		Backend:    AxisSetting{Enabled: true, Template: "backend:" + placeholderBackend},
+		Lane:       AxisSetting{Enabled: true, Template: "lane:" + placeholderLane},
+		Role:       AxisSetting{Enabled: true, Template: "role:" + placeholderRole},
+		Project:    AxisSetting{Enabled: true, Template: "project:" + placeholderProject},
+		Automaton:  AxisSetting{Enabled: true, Template: "automaton:" + placeholderAutomaton},
+		Automation: AxisSetting{Enabled: true, Template: "automation:" + placeholderAutomation},
+		Stage:      AxisSetting{Enabled: true, Template: "stage:" + placeholderStage},
+		Kind:       AxisSetting{Enabled: true, Template: "kind:" + placeholderKind},
 	}
 }
 
