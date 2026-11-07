@@ -262,6 +262,10 @@ type Server struct {
 	availableBackends  []string // registered LLM backend names
 	cfg                *config.Config
 	cfgPath            string
+	// dataDir is this instance's explicit data-directory override (set by
+	// the daemon at startup; empty in bare test fixtures). statePath
+	// resolves it first, then cfg.DataDir, then the config default.
+	dataDir string
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
