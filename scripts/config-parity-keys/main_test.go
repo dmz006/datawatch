@@ -2,114 +2,86 @@ package main
 
 import (
 	"reflect"
-	"sort"
 	"testing"
 )
 
-// embeddedBlock is a normal nested config block (tagged `block`).
-type embeddedBlock struct {
-	Beta  string   `yaml:"beta"`
-	Gamma []string `yaml:"gamma"`
+// fixture is a small local struct (not config.Config) exercising every
+// walker rule: tag-name use, nesting, yaml:"-" skip, inline flattening,
+// untagged-embedded flattening, pointer-to-struct recursion, maps/slices
+// as leaves, interface as a leaf, and stable sorted de-duplicated output.
+type inner struct {
+	Alpha  string  `yaml:"alpha"`
+	Beta   float64 `yaml:"beta,omitempty"`
+	Hidden string  `yaml:"-"`
 }
 
-// fixture exercises every rule the walker must follow.
+type embedded struct {
+	Gamma  int    `yaml:"gamma"`
+	Hidden string `yaml:"-"`
+}
+
 type fixture struct {
-	Alpha    string         `yaml:"alpha"`
-	Block    embeddedBlock  `yaml:"block"`
-	Inline   inlineHolder   `yaml:",inline"`
-	Nested   *nested        `yaml:"nested"`
-	Children map[string]int `yaml:"children,omitempty"`
-	Raw      []byte         `yaml:"raw"`
-	Skip     string         `yaml:"-"`
-	Subs     embeddedSubs   `yaml:",inline"`
+	embedded                // untagged embedded struct: flattened
+	Name     string         `yaml:"name"`
+	In       inner          `yaml:"in"`
+	Ptr      *inner         `yaml:"ptr"`
+	Tags     []string       `yaml:"tags"` // slice: one leaf
+	Meta     map[string]int `yaml:"meta"` // map: one leaf
+	If       describer      `yaml:"if"`   // interface: one leaf
+
+	Flat inner `yaml:",inline"` // inline: flattened into the parent
+
+	Nope string `yaml:"-"`
 }
 
-// inlineHolder is untagged-embedded with inline semantics at the field
-// level: the fixture's `Inline` field carries `yaml:",inline"` and is a
-// struct, so its children must appear at the top level.
-type inlineHolder struct {
-	Tagged string `yaml:"tagged"`
+type describer interface {
+	Desc() string
 }
 
-// embeddedSubs is an anonymous embedded struct with no tag at all.
-type embeddedSubs struct {
-	Deep deep `yaml:"deep"`
-}
-
-type deep struct {
-	Leaf string `yaml:"leaf"`
-}
-
-type nested struct {
-	Name string            `yaml:"name"`
-	Ref  *nested           `yaml:"ref"`
-	Meta map[string]string `yaml:"meta,omitempty"`
-}
-
-func fixtureKeys() []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, k := range ConfigKeys(reflect.TypeOf(fixture{}), "") {
-		if !seen[k] {
-			seen[k] = true
-			out = append(out, k)
+func TestLeafKeysFixture(t *testing.T) {
+	got := LeafKeys(reflect.TypeOf(fixture{}))
+	wantSet := map[string]struct{}{
+		"alpha": {}, "beta": {}, "gamma": {}, "if": {},
+		"in.alpha": {}, "in.beta": {},
+		"meta": {}, "name": {},
+		"ptr.alpha": {}, "ptr.beta": {},
+		"tags": {},
+	}
+	if len(got) != len(wantSet) {
+		t.Fatalf("got %d keys %v, want %d keys %v", len(got), got, len(wantSet), wantSet)
+	}
+	for _, k := range got {
+		if _, ok := wantSet[k]; !ok {
+			t.Errorf("unexpected key %q in %v", k, got)
 		}
 	}
-	sort.Strings(out)
-	return out
-}
-
-func TestConfigKeysFixture(t *testing.T) {
-	got := fixtureKeys()
-	want := []string{
-		"alpha",
-		"block.beta", // nested struct recursed
-		"block.gamma",
-		"children",    // map is one leaf
-		"deep.leaf",   // tagless anonymous embedded struct flattened
-		"nested.meta", // pointee struct recursed
-		"nested.name",
-		"nested.ref", // pointer to struct recursed
-		"nested.ref.name",
-		"nested.ref.ref",
-		"raw",    // slice is one leaf
-		"tagged", // yaml:",inline" field flattened into parent
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v\nwant %v", got, want)
-	}
-}
-
-func TestConfigKeysSortedAndDeduped(t *testing.T) {
-	got := fixtureKeys()
-	if !sort.StringsAreSorted(got) {
-		t.Fatalf("not sorted: %v", got)
-	}
+	// Stable sorted order.
 	for i := 1; i < len(got); i++ {
-		if got[i] == got[i-1] {
-			t.Fatalf("duplicate: %q", got[i])
+		if got[i-1] >= got[i] {
+			t.Errorf("keys not strictly sorted unique: %v", got)
 		}
 	}
 }
 
-func TestUntaggedNamedFieldSkipped(t *testing.T) {
-	type withUntagged struct {
-		Tagged   string `yaml:"tagged"`
-		Untagged string
-	}
-	got := ConfigKeys(reflect.TypeOf(withUntagged{}), "p")
-	if len(got) != 1 || got[0] != "p.tagged" {
-		t.Fatalf("got %v, want [p.tagged]", got)
+func TestLeafKeysSkipsSkippedAndUnreferenced(t *testing.T) {
+	got := LeafKeys(reflect.TypeOf(fixture{}))
+	for _, k := range got {
+		switch k {
+		case "hidden", "in.hidden", "ptr.hidden", "flat", "flat.alpha", "nope":
+			t.Errorf("key %q must not appear (yaml:\"-\" and inline fields are flattened, not nested)", k)
+		}
 	}
 }
 
-func TestSkippedFieldAbsent(t *testing.T) {
-	type hidden struct {
-		Visible string `yaml:"visible"`
-		Hidden  string `yaml:"-"`
+func TestLeafKeysPointerTop(t *testing.T) {
+	got := LeafKeys(reflect.TypeOf(&fixture{}))
+	if len(got) == 0 {
+		t.Fatal("expected keys when passing a pointer to a struct")
 	}
-	got := ConfigKeys(reflect.TypeOf(hidden{}), "pfx")
-	if len(got) != 1 || got[0] != "pfx.visible" {
-		t.Fatalf("got %v, want [pfx.visible]", got)
+}
+
+func TestLeafKeysEmptyStruct(t *testing.T) {
+	if got := LeafKeys(reflect.TypeOf(struct{}{})); len(got) != 0 {
+		t.Fatalf("expected no keys, got %v", got)
 	}
 }

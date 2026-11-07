@@ -1,15 +1,19 @@
 // Command config-parity-keys prints every leaf configuration key of the
-// Config struct in internal/config, one dotted path per line, sorted and
-// de-duplicated. The names are the yaml tag names — the same keys that
-// appear in config.yaml — so the output can be diffed against the keys
-// reachable through the other config channels (REST, CLI, PWA, MCP) to
-// prove parity.
+// Config struct (internal/config) as a dotted path, one per line, sorted
+// and de-duplicated, using each field's yaml tag name (the same names that
+// appear in config.yaml).
 //
-// Run with: go run ./scripts/config-parity-keys
+// Rules:
+//   - fields tagged yaml:"-" are skipped
+//   - fields tagged yaml:",inline" are flattened into the parent
+//   - untagged embedded (anonymous) structs are flattened
+//   - nested structs and pointers to structs are recursed into
+//   - maps, slices and interfaces count as one leaf key (the field itself)
 package main
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -17,110 +21,111 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// ConfigKeys walks the fields of type t and returns the dotted
-// yaml-key path of every leaf configuration field. The result is not
-// sorted or de-duplicated here; callers do that (main and the tests).
-//
-// Rules:
-//   - A field's key segment is the first comma-separated piece of its
-//     yaml tag (options like "omitempty" are ignored).
-//   - Fields tagged `yaml:"-"` do not exist in the configuration and
-//     are skipped, together with their subtrees.
-//   - Fields tagged `yaml:",inline"` and anonymous (embedded) struct
-//     fields are flattened into the parent: their children inherit the
-//     parent's key prefix.
-//   - Struct values and pointers to structs are recursed into.
-//   - Everything else — maps, slices, arrays, interfaces and scalars —
-//     is one leaf key: the field's own path.
-//   - Untagged fields that are neither embedded nor marked inline do
-//     not appear in the configuration (yaml.v3 would serialize them by
-//     Go field name, which is not a documented config key), and are
-//     skipped; untagged fields of struct kind that do need a key
-//     instead panic with a clear message, because that is a programming
-//     error rather than a configuration decision.
-func ConfigKeys(t reflect.Type, prefix string) []string {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
+// LeafKeys walks t (a struct type, or a pointer to one) and returns every
+// leaf configuration key as a dotted path, sorted and de-duplicated.
+// The rules are exactly the ones documented in the package comment above.
+func LeafKeys(t reflect.Type) []string {
+	seen := make(map[string]struct{})
+	walk(t, "", &seen)
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
 	}
-	if t.Kind() != reflect.Struct {
-		// A leaf reached through a pointer: its key is the prefix.
-		if prefix == "" {
-			return nil
-		}
-		return []string{prefix}
-	}
-
-	keys := make([]string, 0, 8)
-	for i := 0; i < t.NumField(); i++ {
-		child := t.Field(i)
-		if !child.IsExported() {
-			continue
-		}
-
-		tag, _ := child.Tag.Lookup("yaml")
-		parts := strings.Split(tag, ",")
-		name := parts[0]
-		inline := len(parts) > 1 && anyIn(parts[1:], "inline")
-
-		if name == "-" {
-			continue // yaml:"-" — not in the configuration
-		}
-		if name == "" && !inline && !child.Anonymous {
-			// No tag at all on a named field: not a documented
-			// config key.
-			continue
-		}
-
-		ft := child.Type
-		for ft.Kind() == reflect.Pointer {
-			ft = ft.Elem()
-		}
-
-		// Flatten conditions: anonymous embedded struct, or an
-		// explicit inline tag on a struct (or pointer to struct).
-		// Maps and other kinds stay one leaf even when inline: their
-		// keys are not statically known.
-		if ft.Kind() == reflect.Struct && (child.Anonymous || inline) {
-			keys = append(keys, ConfigKeys(child.Type, prefix)...)
-			continue
-		}
-		if ft.Kind() == reflect.Struct && name == "" {
-			panic("config-parity-keys: untagged struct field " + child.Name + " without yaml:\",inline\" cannot be named")
-		}
-
-		path := name
-		if prefix != "" {
-			path = prefix + "." + name
-		}
-		if ft.Kind() == reflect.Struct {
-			keys = append(keys, ConfigKeys(child.Type, path)...)
-		} else {
-			keys = append(keys, path)
-		}
-	}
-	return keys
+	sort.Strings(out)
+	return out
 }
 
-func anyIn(parts []string, want string) bool {
-	for _, p := range parts {
-		if p == want {
-			return true
+// walk recursively collects leaf keys, prefixing every key under
+// the dotted prefix.
+func walk(t reflect.Type, prefix string, seen *map[string]struct{}) {
+	t = deref(t)
+	if t.Kind() != reflect.Struct {
+		return
+	}
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("yaml")
+		name, inline := yamlName(tag, field)
+
+		// Fields tagged yaml:"-" are ignored entirely (skipped above
+		// already returns a special sentinel for that).
+		ft := deref(field.Type)
+		switch {
+		case name == "-":
+			continue
+		case inline:
+			// Inline fields (yaml:",inline" or an untagged embedded
+			// struct) flatten into the parent: recurse with the same
+			// prefix and contribute no key of their own.
+			if ft.Kind() == reflect.Struct {
+				walk(ft, prefix, seen)
+				continue
+			}
+			// Inline non-struct is not a meaningful nesting target;
+			// treat it as a single leaf under the parent prefix.
+			addSeen(seen, prefix)
+			continue
+		}
+
+		key := name
+		if key == "" {
+			key = strings.ToLower(field.Name) // yaml default for untagged fields
+		}
+		full := key
+		if prefix != "" {
+			full = prefix + "." + key
+		}
+		if ft.Kind() == reflect.Struct {
+			walk(ft, full, seen)
+			continue
+		}
+		// Scalars, maps, slices, arrays, interfaces, chans and funcs:
+		// one leaf key (the field itself).
+		addSeen(seen, full)
+	}
+}
+
+// addSeen records path unless it is empty.
+func addSeen(seen *map[string]struct{}, path string) {
+	if path == "" {
+		return
+	}
+	(*seen)[path] = struct{}{}
+}
+
+// deref follows pointer indirections to the underlying struct.
+func deref(t reflect.Type) reflect.Type {
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil {
+		return reflect.TypeOf(0)
+	}
+	return t
+}
+
+// yamlName splits a yaml tag into its name and inline option.
+// name is "-" for yaml:"-", and "" for untagged fields.
+func yamlName(tag string, field reflect.StructField) (string, bool) {
+	parts := strings.Split(tag, ",")
+	name := parts[0]
+	inline := false
+	for _, opt := range parts[1:] {
+		if opt == "inline" {
+			inline = true
 		}
 	}
-	return false
+	// Untagged embedded (anonymous) structs flatten into the parent.
+	if tag == "" && field.Anonymous {
+		inline = true
+	}
+	return name, inline
 }
 
 func main() {
-	seen := make(map[string]bool)
-	sorted := make([]string, 0)
-	for _, k := range ConfigKeys(reflect.TypeOf(config.Config{}), "") {
-		if !seen[k] {
-			seen[k] = true
-			sorted = append(sorted, k)
-		}
-	}
-	sort.Strings(sorted)
-	for _, k := range sorted {
+	keys := LeafKeys(reflect.TypeOf(config.Config{}))
+	for _, k := range keys {
 		fmt.Println(k)
 	}
+	os.Exit(0)
 }
