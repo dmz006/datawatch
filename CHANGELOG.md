@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Automaton list and detail no longer re-read the whole session archive once per Automaton.** Listing Automata — or opening one — used to walk every archived session again for each Automaton, so a large archive made the list and detail slow. The inherited (system) tags now come from one shared read of the live and archived sessions, taken when the list opens and reused when you open a single Automaton, and the archive is read pass by pass without blocking the live sessions. The tags shown are unchanged — only how quickly the list and detail come back.
+
+### Added
+
+- **`autonomous.inherited_tags_cache_seconds`.** Lifetime in seconds of that shared read. Default **15**; `0` keeps the default; a negative value turns the cache off. A tag change always shows on the next read — the kept result is dropped when a session is archived, deleted, restored, or its placement tags change. Settable on every settings surface (YAML, `GET`/`PUT /api/config`, MCP, `datawatch config set`, the chat `configure` verb, PWA Settings) without a restart.
+- **Documentation.** The tags how-to covers the shared read and the setting ([howto/automata-tags.md](docs/howto/automata-tags.md)); `docs/config-reference.yaml` lists the key.
+
+No migration step: the default lifetime is in place on upgrade, and the tags the list and detail show are identical to before.
+
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
 ### Fixed
