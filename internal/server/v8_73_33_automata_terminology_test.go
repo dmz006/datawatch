@@ -45,7 +45,18 @@ func isAutomationObjectKey(key string) bool {
 	// オートメーション wording (AGENT.md Automation addendum; the guard-narrowing
 	// that the Terminology Rule reserves).
 	return key == "settings_defect_intake_automation" ||
-		key == "settings_defect_intake_automation_hint"
+		key == "settings_defect_intake_automation_hint" ||
+		// The placement-tags group help and the automation-axis rows name the
+		// Automation object specifically -- the automation axis of the placement
+		// tags (docs/howto/automata-tags.md). Their de/es/fr/ja values therefore
+		// legitimately carry the localized Automatisierung/automatización/
+		// automatisation/オートメーション wording, like the defect-intake
+		// Automation field above. The automaton axis stays out of this exemption
+		// (it must be the feature word Automat/autómata/automate/オートマトン).
+		key == "settings_placement_group_help" ||
+		key == "settings_placement_automation" ||
+		key == "settings_placement_automation_help" ||
+		key == "settings_placement_automation_template"
 }
 
 // pendingTranslationKeys lists keys whose de/es/fr/ja value is, by the
