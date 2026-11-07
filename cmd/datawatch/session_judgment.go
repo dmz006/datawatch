@@ -139,8 +139,8 @@ func sessionJudgmentTask(prompt, projectDir, outputFile string) string {
 // MUST use a name unique to their own call site (e.g.
 // "decompose-output.json", "verify-<taskID>.json") so concurrent
 // sessions for the same PRD never collide on the same relocated file.
-func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
-	content, _, err := runOneShotJSONSessionCaptureID(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionCaptureID(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout, launchTags)
 	return content, err
 }
 
@@ -160,8 +160,8 @@ func sessionOneShotTimeoutMessage(sessionName, sessionID, backend, model string,
 
 // node is the compute node the session starts on ("" leaves placement to the
 // session, as it always has); a judge passes the node its lease holds.
-func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string) (string, error) {
-	content, _, err := runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, node)
+func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, node, launchTags)
 	return content, err
 }
 
@@ -171,8 +171,8 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 // timeout, failed/killed/cancelled, waiting-input stall and idle error), so a
 // caller can name the session even when the judgment failed. It stays empty
 // only when no session was started.
-func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (content string, sessionID string, err error) {
-	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, "")
+func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, "", launchTags)
 }
 
 // runOneShotJudgeSessionCaptureID is runOneShotJSONSessionCaptureID for a
@@ -182,8 +182,23 @@ func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backe
 // to the scratch dir under scratchRelocateName so the durable copy exists. The
 // caller removes the project file with autonomouspkg.RemoveJudgeOutputFile
 // once the verdict is recorded.
-func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string) (content string, sessionID string, err error) {
-	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node)
+func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node, launchTags)
+}
+
+// launchTags is the optional launch placement tagging a caller wants the
+// one-shot session started with (docs/plans/
+// 2026-11-06-automata-pages-redesign.md, section 12: tag every
+// Automata-launched session — worker, verifier, planner, judge — with its
+// role, kind, Automaton and stage). Each empty field is simply absent from
+// the /api/sessions/start request, so a zero value posts exactly the body
+// callers sent before this feature existed, and the daemon applies no launch
+// tags at all.
+type launchTags struct {
+	Role      string // launch_role:      worker|verifier|planner|judge|supervisor
+	Kind      string // launch_kind:      task|decompose|review|rejudge|auto-fix
+	Automaton string // launch_automaton: the PRD's Automaton id
+	Stage     string // launch_stage:     the Automaton stage the session serves
 }
 
 // judgeOutputReader reads a one-shot session's output file from projectDir
@@ -271,7 +286,7 @@ var judgeLiveSession func(sessionName string) string
 // runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
 // decides how the output file is read, and whether it is removed from the
 // project directory.
-func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string) (content string, sessionID string, err error) {
+func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
@@ -335,6 +350,22 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		// does. Absent when no node is held, so the session places itself as before.
 		if node != "" {
 			startReq["compute_node"] = node
+		}
+		// Launch placement tags (docs/plans/2026-11-06-automata-pages-redesign.md
+		// section 12): each is optional and posted only when non-empty, so a
+		// caller that passes the zero value posts exactly the body it sent before
+		// this feature — the daemon then applies no launch tags at all.
+		if launchTags.Role != "" {
+			startReq["launch_role"] = launchTags.Role
+		}
+		if launchTags.Kind != "" {
+			startReq["launch_kind"] = launchTags.Kind
+		}
+		if launchTags.Automaton != "" {
+			startReq["launch_automaton"] = launchTags.Automaton
+		}
+		if launchTags.Stage != "" {
+			startReq["launch_stage"] = launchTags.Stage
 		}
 		body, _ := json.Marshal(startReq)
 
