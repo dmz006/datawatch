@@ -12,6 +12,9 @@ const (
 	// JudgeOutcomeNoSlot: the capacity lease was not granted in time, so the
 	// judge never ran on that backend.
 	JudgeOutcomeNoSlot = "no_slot"
+	// JudgeOutcomeCouldNotStart: the judge session never received its main
+	// prompt (judge_could_not_start), so it never ran on that backend.
+	JudgeOutcomeCouldNotStart = "could_not_start"
 )
 
 // JudgeAttemptRecord is one judge attempt on one backend: the backend, when

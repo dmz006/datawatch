@@ -6402,6 +6402,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"judge_policy":               judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
 			"judge_timeout_seconds":      config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
 			"judge_size_threshold_lines": s.cfg.Autonomous.JudgeSizeThresholdLines,
+			// Judge prompt delivery: the stored values (0 = always send the full prompt / no extra wait).
+			"judge_prompt_file_threshold_lines":              s.cfg.Autonomous.JudgePromptFileThresholdLines,
+			"judge_delivery_wait_per_thousand_lines_seconds": s.cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds,
 			// Strong-first judge routing: the named strong backend (empty =
 			// the last judge-policy entry) and the per-commit verdict cache
 			// flag (unset reads the default, true).
@@ -6437,9 +6440,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"ship":                                 checksShipConfigDisplay(s.cfg)["ship"],
 			"detail_text_cap_bytes":                s.cfg.Autonomous.DetailTextCapBytes,
 			"inherited_tags_cache_seconds":         s.cfg.Autonomous.InheritedTagsCacheSeconds, // 0 = default (15s), negative = off
-			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
-			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
-			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
+			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails,          // rules-review, ci-watch
+			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift,          // strict foreign-file-drift enforcement
+			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement,          // verifier OK + gate regression: "warn" (default) or "block"
 			"failure_escalation":                   failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
 			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
 			"verification_record_scores":           autonomous.RecordScoresEnabled(s.cfg.Autonomous.VerificationRecordScores),
@@ -7326,6 +7329,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// judge_size_threshold_lines is a whole number of 0 or more; the whole PUT
 	// is refused before anything is applied.
 	if err := validateJudgeSizeThresholdPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The two judge prompt delivery keys are whole numbers within fixed ranges.
+	if err := validateJudgePromptDeliveryPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9628,6 +9636,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.JudgeSizeThresholdLines = n
 			}
+		case "autonomous.judge_prompt_file_threshold_lines":
+			// Range checked up front by validateJudgePromptDeliveryPatch.
+			if n, ok := toInt(v); ok && n >= 0 && n <= 100000 {
+				cfg.Autonomous.JudgePromptFileThresholdLines = n
+			}
+		case "autonomous.judge_delivery_wait_per_thousand_lines_seconds":
+			// Range checked up front by validateJudgePromptDeliveryPatch.
+			if n, ok := toInt(v); ok && n >= 0 && n <= 3600 {
+				cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds = n
+			}
 		case "autonomous.judge_strong_backend":
 			// Stored trimmed; empty clears the strong-first routing. Type
 			// checked up front by validateJudgeStrongRoutingPatch.
@@ -11197,6 +11215,35 @@ func validateJudgeSizeThresholdPatch(patch map[string]interface{}) error {
 		}
 	}
 	return fmt.Errorf("%s: %v is invalid; use a whole number of 0 or more (0 turns size-aware judge routing off)", key, v)
+}
+
+// validateJudgePromptDeliveryPatch checks the judge prompt delivery keys in a
+// config patch: autonomous.judge_prompt_file_threshold_lines is a whole number
+// from 0 to 100000, autonomous.judge_delivery_wait_per_thousand_lines_seconds a
+// whole number from 0 to 3600.
+func validateJudgePromptDeliveryPatch(patch map[string]interface{}) error {
+	for key, max := range map[string]float64{
+		"autonomous.judge_prompt_file_threshold_lines":              100000,
+		"autonomous.judge_delivery_wait_per_thousand_lines_seconds": 3600,
+	} {
+		v, ok := patch[key]
+		if !ok {
+			continue
+		}
+		var f float64
+		switch x := v.(type) {
+		case float64:
+			f = x
+		case int:
+			f = float64(x)
+		default:
+			return fmt.Errorf("%s: %v is invalid; use a whole number from 0 to %d", key, v, int(max))
+		}
+		if f != math.Trunc(f) || f < 0 || f > max {
+			return fmt.Errorf("%s: %v is invalid; use a whole number from 0 to %d", key, v, int(max))
+		}
+	}
+	return nil
 }
 
 // validateJudgeStrongRoutingPatch checks the two strong-first judge routing

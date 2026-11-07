@@ -14,18 +14,6 @@ const (
 	RulesReviewActionAutoFixDisabled = "auto_fix_disabled"
 )
 
-// RulesReviewOutcome records one blocked completion rules review.
-type RulesReviewOutcome struct {
-	Action       string    `json:"action"`
-	Findings     []string  `json:"findings"`
-	Summary      string    `json:"summary"`
-	Attempt      int       `json:"attempt"`
-	RetryBudget  int       `json:"retry_budget"`
-	RetriesSpent int       `json:"retries_spent"`
-	Reason       string    `json:"reason,omitempty"`
-	At           time.Time `json:"at"`
-}
-
 // newRulesReviewOutcome builds the record from a verdict. Findings are the
 // verdict's Issues, or the Summary as a single finding when there are no
 // issues; Findings is never nil.
@@ -44,8 +32,26 @@ func newRulesReviewOutcome(v GuardrailVerdict, action, reason string, attempt, b
 		RetryBudget:  budget,
 		RetriesSpent: spent,
 		Reason:       reason,
+		JudgeOutcome: judgeOutcomeKind(v),
 		At:           at,
 	}
+}
+
+// judgeOutcomeKind maps a verdict to how the judge ended: delivery failure to
+// judge_could_not_start, the time limit to judge_timed_out, a block with a
+// problem to judge_found_problem, and anything else (no judge ran) to "".
+func judgeOutcomeKind(v GuardrailVerdict) string {
+	switch {
+	case judgeCouldNotStart(v, nil):
+		return JudgeKindCouldNotStart
+	case IsJudgeTimeoutHold(v):
+		return JudgeKindTimedOut
+	case v.Outcome == "block" && v.Category != "infra" && v.Category != "invalid-response":
+		// Any other block (content, policy, test, scope, verification, ...)
+		// is a judge that ran and found a problem.
+		return JudgeKindFoundProblem
+	}
+	return ""
 }
 
 // reviewNow is the time source for rules review records: the injected

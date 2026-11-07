@@ -20,7 +20,7 @@ func TestB124_AutonomousVerify_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		{"branches on useSession", "if useSession {"},
 		{"enforces the pi-family pinned-model guard (v9.10.19)", "guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)"},
 		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,"},
-		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, taskDir, outputFile)"},
+		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, taskDir, outputFile)"},
 	}
 	for _, c := range checks {
 		if !contains(src, c.want) {
@@ -38,7 +38,7 @@ func TestB124_AutonomousGuardrail_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		{"checks needsSessionJudgment before downgrading", "if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {"},
 		{"spawns a real session and captures its id", "runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
 		{"stamps the judge session onto its verdicts", "judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{"},
-		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, req.ProjectDir, outputFile)"},
+		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)"},
 		// The old unconditional downgrade must still exist as the
 		// no-project-dir fallback, just gated behind the session check
 		// now rather than applying unconditionally.

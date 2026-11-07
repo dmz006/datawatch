@@ -2001,6 +2001,13 @@
   "settings_judge_strong_backend_help": "Nennt den starken Judge-Backend, zu dem eine große Änderung zuerst gelenkt wird, wenn die Zahl der geänderten Zeilen die Größenschwelle überschreitet. Leer (Standard) löst sich auf den letzten Backend der Judge-Richtung auf; ein Wert außerhalb der Richtung belässt die Reihenfolge unverändert.",
   "settings_judge_verdict_cache": "Judge-Urteils-Cache",
   "settings_judge_verdict_cache_help": "Speichert das Pass- oder Blockurteil eines Judges pro Dreifach (Commit-SHA, Judge-Richtung, Regeln) und wiederholt es in späteren Läufen, statt den Judge erneut zu starten; ein Judge, der abgelaufen ist oder sonst nicht zu Ende kam, wird nie gezwischert. Aus bedeutet, dass der Judge immer neu läuft.",
+  "settings_judge_prompt_file_threshold": "Judge-Prompt-Dateischwelle (Zeilen, 0=immer vollständig senden)",
+  "settings_judge_prompt_file_threshold_help": "Ist der Prompt eines Judge-Laufs länger als diese Zeilenzahl, wird er in eine Datei geschrieben und der Judge liest sie dort, statt dass der gesamte Text in die Sitzung getippt wird. 0 sendet immer den vollständigen Prompt. Ganze Zahl von 0 bis 100000.",
+  "settings_judge_delivery_wait": "Judge-Zusatzwartezeit pro 1000 Prompt-Zeilen (Sek., 0=keine)",
+  "settings_judge_delivery_wait_help": "Zusätzliche Zeit, die ein Judge-Lauf auf die Zustellung eines langen Prompts wartet, für je 1000 Zeilen des Prompts. 0 fügt keine Wartezeit hinzu. Ganze Zahl von 0 bis 3600.",
+  "settings_judge_prompt_file_threshold_error": "Geben Sie eine ganze Zeilenzahl von 0 bis 100000 ein.",
+  "settings_judge_delivery_wait_error": "Geben Sie eine ganze Zahl von Sekunden von 0 bis 3600 ein.",
+  "settings_judge_help_link_label": "Abschnitt zu den Judge-Einstellungen in der Anleitung zum Automation-Tab öffnen",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
   "settings_stuck_running_seconds_help": "How long a running item may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
@@ -4196,5 +4203,12 @@
   "settings_platform_context_note": "Project note",
   "settings_platform_context_note_hint": "Optional text appended to the platform context every session receives.",
   "settings_platform_context_state_enabled": "Platform context is enabled (datawatch %1$s).",
-  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s)."
+  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s).",
+  "automation.review.judgeOutcome.label": "Ergebnis der Prüfung",
+  "automation.review.judgeOutcome.couldNotStart": "Prüfer konnte nicht starten",
+  "automation.review.judgeOutcome.timedOut": "Prüfer hat das Zeitlimit überschritten",
+  "automation.review.judgeOutcome.foundProblem": "Prüfer hat ein Problem gefunden",
+  "automation.review.judgeOutcome.next.couldNotStart": "Nichts zu tun – es wird erneut versucht.",
+  "automation.review.judgeOutcome.next.timedOut": "Nichts zu tun – es wird erneut versucht, oder siehe Ereignisse.",
+  "automation.review.judgeOutcome.next.foundProblem": "Öffnen Sie den Befund."
 }

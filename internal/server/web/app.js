@@ -14763,6 +14763,27 @@ window.reviewTimedOutBadgeHtml = function(prd) {
   </span>`;
 };
 
+// Judge result line on the review card: the plain-language outcome text from
+// review_state.judge_outcome_text under a "Judge result" label, plus one line
+// saying what the operator can do next. Nothing renders without the text.
+window.judgeOutcomeCardHtml = function(prd) {
+  const rs = prd && prd.review_state;
+  if (!rs || !rs.judge_outcome_text) return '';
+  const keys = {
+    judge_could_not_start: 'couldNotStart',
+    judge_timed_out: 'timedOut',
+    judge_found_problem: 'foundProblem',
+  };
+  const k = keys[rs.judge_outcome];
+  const next = k ? t('automation.review.judgeOutcome.next.' + k) : '';
+  const label = t('automation.review.judgeOutcome.label') || 'Judge result';
+  const text = (k && t('automation.review.judgeOutcome.' + k)) || rs.judge_outcome_text;
+  return `<div class="review-judge-outcome" style="font-size:12px;line-height:1.5;padding:6px 10px;background:var(--bg2);border-left:3px solid #f59e0b;border-radius:0 4px 4px 0;">
+    <div><span style="font-weight:700;">${escHtml(label)}:</span> ${escHtml(text)}</div>
+    ${next ? `<div style="color:var(--text2);">${escHtml(next)}</div>` : ''}
+  </div>`;
+};
+
 // Run the re-judgment: without a backend (Retry — same judge policy order)
 // or pinned to a named backend (Reroute — the PRD's stronger guardrail
 // backend). Success → toast + refresh so the new review state renders in
@@ -17981,6 +18002,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.judge_size_threshold_lines', label: 'Judge size threshold (lines, 0=off)', labelKey: 'settings_judge_size_threshold', helpKey: 'settings_judge_size_threshold_help', type: 'number', min: 0, placeholder: '400' },
     { key: 'autonomous.judge_strong_backend', label: 'Strong judge backend (large-diff reroute)', labelKey: 'settings_judge_strong_backend', helpKey: 'settings_judge_strong_backend_help', type: 'text', placeholder: 'claude-opus', default: '' },
     { key: 'autonomous.judge_verdict_cache_enabled', label: 'Judge verdict cache', labelKey: 'settings_judge_verdict_cache', helpKey: 'settings_judge_verdict_cache_help', type: 'toggle', default: true },
+    { key: 'autonomous.judge_prompt_file_threshold_lines', label: 'Judge prompt file threshold (lines, 0=always send in full)', labelKey: 'settings_judge_prompt_file_threshold', helpKey: 'settings_judge_prompt_file_threshold_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 100000, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_prompt_file_threshold_lines', this)" },
+    { key: 'autonomous.judge_delivery_wait_per_thousand_lines_seconds', label: 'Judge extra wait per 1000 prompt lines (sec, 0=none)', labelKey: 'settings_judge_delivery_wait', helpKey: 'settings_judge_delivery_wait_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 3600, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_delivery_wait_per_thousand_lines_seconds', this)" },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/
@@ -20342,7 +20365,7 @@ function settingsHelpLink(f) {
   if (localStorage.getItem('cs_show_docs_links') === '0') return '';
   const url = '/diagrams.html#docs/' + f.helpDocs;
   const tip = t(f.helpKey) || '';
-  const lbl = t('settings_help_link_label') || '';
+  const lbl = t(f.helpLabelKey || 'settings_help_link_label') || '';
   return ` <a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="${escHtml(tip)}" aria-label="${escHtml(lbl)}">?</a>`;
 }
 
@@ -20388,6 +20411,23 @@ function saveResourceLimitField(key, el) {
   saveGeneralConfigPut(key, n);
 }
 window.saveResourceLimitField = saveResourceLimitField;
+
+// saveJudgePromptNumberField validates a judge prompt delivery field before
+// saving it: a whole number from 0 up to the field's max. A bad value shows a
+// toast, restores the saved value and sends nothing.
+function saveJudgePromptNumberField(key, el) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  const max = key === 'autonomous.judge_prompt_file_threshold_lines' ? 100000 : 3600;
+  if (raw === '' || !Number.isInteger(n) || n < 0 || n > max) {
+    showToast(t(max === 100000 ? 'settings_judge_prompt_file_threshold_error' : 'settings_judge_delivery_wait_error'), 'error');
+    if (el && el.defaultValue !== undefined) el.value = el.defaultValue;
+    return;
+  }
+  if (el) el.defaultValue = String(n);
+  saveGeneralConfigPut(key, n);
+}
+window.saveJudgePromptNumberField = saveJudgePromptNumberField;
 
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and
@@ -32151,6 +32191,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       </div>
       ${shippedDetailLineHtml(prd)}
       ${window.reviewTimedOutBadgeHtml ? `<div style="margin-bottom:8px;">${window.reviewTimedOutBadgeHtml(prd)}</div>` : ''}
+      ${window.judgeOutcomeCardHtml ? `<div style="margin-bottom:8px;">${window.judgeOutcomeCardHtml(prd)}</div>` : ''}
       ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
         <span id="prdSpecCollapsed" style="white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) : specSnippet)}${specSnippet.length > 280 ? `<span id="prdSpecEllipsis">… <button onclick="document.getElementById('prdSpecCollapsed').style.display='none';document.getElementById('prdSpecFull').style.display='';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_show_full')||'show full')}</button></span>` : ''}</span>
         ${specSnippet.length > 280 ? `<span id="prdSpecFull" style="white-space:pre-wrap;display:none;">${escHtml(specSnippet)} <button onclick="document.getElementById('prdSpecCollapsed').style.display='';document.getElementById('prdSpecFull').style.display='none';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_hide')||'collapse')}</button></span>` : ''}

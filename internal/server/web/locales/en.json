@@ -1979,6 +1979,13 @@
   "settings_judge_strong_backend_help": "Names the strong judge backend a large diff is routed to first when the changed-line count exceeds the judge size threshold. Empty (the default) resolves to the last backend in the judge policy; a value not in the judge policy leaves the policy order unchanged.",
   "settings_judge_verdict_cache": "Judge verdict cache",
   "settings_judge_verdict_cache_help": "Caches a judge's pass or block verdict per (commit sha, judge policy, rules) triple and replays it on later runs instead of running the judge again; a judge that timed out or otherwise did not finish is never cached. Off re-runs the judge every time.",
+  "settings_judge_prompt_file_threshold": "Judge prompt file threshold (lines, 0=always send in full)",
+  "settings_judge_prompt_file_threshold_help": "When the prompt for a judge run is longer than this many lines, it is written to a file and the judge is told to read it, instead of the whole text being typed into the session. 0 always sends the full prompt. Whole number, 0 to 100000.",
+  "settings_judge_delivery_wait": "Judge extra wait per 1000 prompt lines (sec, 0=none)",
+  "settings_judge_delivery_wait_help": "Extra time a judge run waits for a long prompt to be delivered, added for every 1000 lines of the prompt. 0 adds no extra wait. Whole number, 0 to 3600.",
+  "settings_judge_prompt_file_threshold_error": "Enter a whole number of lines from 0 to 100000.",
+  "settings_judge_delivery_wait_error": "Enter a whole number of seconds from 0 to 3600.",
+  "settings_judge_help_link_label": "Open the judge settings section of the Automation tab how-to",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
   "settings_stuck_running_seconds_help": "How long an Automaton may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
@@ -4196,5 +4203,12 @@
   "settings_platform_context_note": "Project note",
   "settings_platform_context_note_hint": "Optional text appended to the platform context every session receives.",
   "settings_platform_context_state_enabled": "Platform context is enabled (datawatch %1$s).",
-  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s)."
+  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s).",
+  "automation.review.judgeOutcome.label": "Judge result",
+  "automation.review.judgeOutcome.couldNotStart": "Judge could not start",
+  "automation.review.judgeOutcome.timedOut": "Judge timed out",
+  "automation.review.judgeOutcome.foundProblem": "Judge found a problem",
+  "automation.review.judgeOutcome.next.couldNotStart": "Nothing to do — it is retried.",
+  "automation.review.judgeOutcome.next.timedOut": "Nothing to do — it is retried, or see Events.",
+  "automation.review.judgeOutcome.next.foundProblem": "Open the finding."
 }

@@ -57,6 +57,27 @@ type ReviewResult struct {
 	// (the hold's one record per backend); 0 for a single-judgment verdict
 	// and for pending.
 	Attempts int `json:"attempts"`
+	// JudgeOutcome is how the judge ended (judge_could_not_start,
+	// judge_timed_out or judge_found_problem), copied from the PRD's rules
+	// review outcome. JudgeOutcomeText is its plain-language wording. Both
+	// are omitted when no judge problem is recorded.
+	JudgeOutcome     string `json:"judge_outcome,omitempty"`
+	JudgeOutcomeText string `json:"judge_outcome_text,omitempty"`
+}
+
+// withJudgeOutcome copies the judge outcome kind and its wording from the
+// PRD's rules review outcome onto r. Nothing is set when the kind is empty.
+func withJudgeOutcome(r ReviewResult, prd *PRD) ReviewResult {
+	if prd == nil || prd.RulesReviewOutcome == nil {
+		return r
+	}
+	kind := prd.RulesReviewOutcome.JudgeOutcome
+	if kind == "" {
+		return r
+	}
+	r.JudgeOutcome = kind
+	r.JudgeOutcomeText = judgeOutcomeWording(kind)
+	return r
 }
 
 // reviewVerdicts collects every guardrail verdict recorded on the PRD —
@@ -108,6 +129,10 @@ func latestVerdict(vs []GuardrailVerdict, outcome string) *GuardrailVerdict {
 //
 // A nil PRD is pending.
 func ReviewStateOf(prd *PRD) ReviewResult {
+	return withJudgeOutcome(reviewStateOf(prd), prd)
+}
+
+func reviewStateOf(prd *PRD) ReviewResult {
 	if prd == nil {
 		return ReviewResult{State: ReviewStatePending}
 	}
