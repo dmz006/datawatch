@@ -3311,6 +3311,11 @@ type AutonomousConfig struct {
 	// text; ?full=1 and the outputs sub-resource return it. 0 means the
 	// default (4096); a negative value turns the cap off.
 	DetailTextCapBytes int `yaml:"detail_text_cap_bytes,omitempty" json:"detail_text_cap_bytes,omitempty"`
+	// InheritedTagsCacheSeconds is the lifetime of the shared cache of
+	// inherited (system) tags per Automaton that the session manager
+	// builds. 0 means the default (15 seconds); a negative value turns
+	// the cache off (the index is rebuilt on every read).
+	InheritedTagsCacheSeconds int `yaml:"inherited_tags_cache_seconds,omitempty" json:"inherited_tags_cache_seconds,omitempty"`
 	// ContentAutoFixEnabled/AutoFixSkipApproval have no omitempty —
 	// see AutoApproveChildren's comment below for why a bool config
 	// field needs the explicit-clear discipline. Defaults: both true.
@@ -6903,6 +6908,7 @@ func DefaultConfig() *Config {
 			InfraRetryEscalateAfter: 2,
 			CIWatchTimeoutSeconds:   1500,
 			DetailTextCapBytes:      4096,
+			InheritedTagsCacheSeconds: 15,
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
 			// The never-stage list ships populated (scratch, temp and local

@@ -78,9 +78,22 @@ type archiveState struct {
 	size    int64
 	after   atomic.Int64 // time.Duration; atomic: read while other locks are held
 	fieldCp atomic.Int64
+	decodes atomic.Int64 // archived-record decodes (readArchivedAt calls); tests read it, lock-free
 	started bool
 	passMu  sync.Mutex // one archive pass at a time
 	wg      sync.WaitGroup
+}
+
+// archiveDecodeCount returns how many archived lines readArchivedAt has decoded
+// since the store was opened or resetArchiveDecodeCount was last called. Tests
+// use it to check how many records a listing or lookup actually read.
+func (s *Store) archiveDecodeCount() int64 {
+	return s.arc.decodes.Load()
+}
+
+// resetArchiveDecodeCount sets the decode counter back to zero. Tests only.
+func (s *Store) resetArchiveDecodeCount() {
+	s.arc.decodes.Store(0)
 }
 
 func (s *Store) archivePath() string { return filepath.Join(filepath.Dir(s.path), archiveFileName) }
@@ -237,8 +250,11 @@ func (s *Store) decodeRec(rec json.RawMessage) (*Session, error) {
 	return &sess, nil
 }
 
-// readArchived reads the session at ref. Call with arc.mu held.
-func (s *Store) readArchivedLocked(ref archiveRef) (*Session, error) {
+// readArchivedAt reads and decodes the session line at ref. It does not need
+// arc.mu: the archive file is append-only and never rewritten, so a ref copied
+// from the index keeps pointing at the same complete line.
+func (s *Store) readArchivedAt(ref archiveRef) (*Session, error) {
+	s.arc.decodes.Add(1)
 	f, err := os.Open(s.archivePath())
 	if err != nil {
 		return nil, err
@@ -328,11 +344,13 @@ func (s *Store) ArchiveOnce(now time.Time) (int, error) {
 			continue
 		}
 		delete(s.sessions, c.line.ID)
+		delete(s.tagSigs, c.line.ID)
 		s.markRecordDeletedLocked(c.line.ID)
 		moved++
 	}
 	inline := false
 	if moved > 0 {
+		s.tagGen.Add(1)
 		inline = s.markDirtyLocked()
 	}
 	s.mu.Unlock()
@@ -428,7 +446,7 @@ func (s *Store) GetArchived(id string) (*Session, bool) {
 	if !ok || s.activeLocked(full) {
 		return nil, false
 	}
-	sess, err := s.readArchivedLocked(s.arc.idx[full])
+	sess, err := s.readArchivedAt(s.arc.idx[full])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[warn] sessions archive: read %s: %v\n", full, err)
 		return nil, false
@@ -472,37 +490,14 @@ func (s *Store) ListArchived(text string, offset, limit int) (out []*Session, to
 
 // ListArchivedFiltered is ListArchived with extra selection. Without Text and
 // Match only the requested page is read from the file; with either, matching
-// reads the candidates in order.
+// reads the candidates in order. arc.mu is held only to copy the candidate
+// list; the file reads and Match calls run without it, so another query or a
+// GetArchived can proceed while this one is still decoding.
 func (s *Store) ListArchivedFiltered(q ArchivedQuery) (out []*Session, total int, err error) {
-	s.arc.mu.Lock()
-	defer s.arc.mu.Unlock()
-	if err := s.loadArchiveIndexLocked(); err != nil {
+	ents, err := s.archiveCandidates(q.Before)
+	if err != nil {
 		return nil, 0, err
 	}
-	type ent struct {
-		id  string
-		ref archiveRef
-	}
-	ents := make([]ent, 0, len(s.arc.idx))
-	before := int64(0)
-	if !q.Before.IsZero() {
-		before = q.Before.UnixNano()
-	}
-	for id, ref := range s.arc.idx {
-		if before != 0 && ref.ts > before {
-			continue
-		}
-		if s.activeLocked(id) {
-			continue
-		}
-		ents = append(ents, ent{id, ref})
-	}
-	sort.Slice(ents, func(i, j int) bool {
-		if ents[i].ref.ts != ents[j].ref.ts {
-			return ents[i].ref.ts > ents[j].ref.ts
-		}
-		return ents[i].id < ents[j].id
-	})
 	text := strings.ToLower(strings.TrimSpace(q.Text))
 	skip := q.Offset
 	if skip < 0 {
@@ -523,13 +518,13 @@ func (s *Store) ListArchivedFiltered(q ArchivedQuery) (out []*Session, total int
 	for _, e := range ents {
 		if !fast && q.Limit > 0 && len(out) >= q.Limit && skip == 0 {
 			// Window is full; only the match count is left to finish.
-			sess, rerr := s.readArchivedLocked(e.ref)
+			sess, rerr := s.readArchivedAt(e.ref)
 			if rerr == nil && archivedWants(sess, text, q.Match) {
 				total++
 			}
 			continue
 		}
-		sess, rerr := s.readArchivedLocked(e.ref)
+		sess, rerr := s.readArchivedAt(e.ref)
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "[warn] sessions archive: read %s: %v\n", e.id, rerr)
 			continue
@@ -547,6 +542,45 @@ func (s *Store) ListArchivedFiltered(q ArchivedQuery) (out []*Session, total int
 		out = append(out, sess)
 	}
 	return out, total, nil
+}
+
+// archiveCandidate is one archived session as ListArchivedFiltered sees it: its
+// id and the file ref copied from the index.
+type archiveCandidate struct {
+	id  string
+	ref archiveRef
+}
+
+// archiveCandidates copies the archived, non-active sessions updated at or
+// before before (zero = no limit), newest first, from the index. It is the only
+// part of a listing that holds arc.mu.
+func (s *Store) archiveCandidates(before time.Time) ([]archiveCandidate, error) {
+	s.arc.mu.Lock()
+	defer s.arc.mu.Unlock()
+	if err := s.loadArchiveIndexLocked(); err != nil {
+		return nil, err
+	}
+	cut := int64(0)
+	if !before.IsZero() {
+		cut = before.UnixNano()
+	}
+	ents := make([]archiveCandidate, 0, len(s.arc.idx))
+	for id, ref := range s.arc.idx {
+		if cut != 0 && ref.ts > cut {
+			continue
+		}
+		if s.activeLocked(id) {
+			continue
+		}
+		ents = append(ents, archiveCandidate{id, ref})
+	}
+	sort.Slice(ents, func(i, j int) bool {
+		if ents[i].ref.ts != ents[j].ref.ts {
+			return ents[i].ref.ts > ents[j].ref.ts
+		}
+		return ents[i].id < ents[j].id
+	})
+	return ents, nil
 }
 
 func archivedWants(sess *Session, text string, match func(*Session) bool) bool {
@@ -582,7 +616,7 @@ func (s *Store) RestoreFromArchive(id string) (*Session, error) {
 	if s.activeLocked(full) {
 		return nil, fmt.Errorf("session %q is already active", full)
 	}
-	sess, err := s.readArchivedLocked(s.arc.idx[full])
+	sess, err := s.readArchivedAt(s.arc.idx[full])
 	if err != nil {
 		return nil, fmt.Errorf("read archived session %s: %w", full, err)
 	}
@@ -593,6 +627,9 @@ func (s *Store) RestoreFromArchive(id string) (*Session, error) {
 	if err := s.flush(true); err != nil {
 		return nil, err
 	}
+	// Bump again now the archive line is gone: a build between Save and here
+	// saw the session in both places.
+	defer s.tagGen.Add(1)
 	if err := s.appendArchiveLocked([]archiveLine{{ID: full, Del: true}}); err != nil {
 		return sess, fmt.Errorf("restored %s but could not update the archive: %w", full, err)
 	}

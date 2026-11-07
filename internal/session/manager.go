@@ -329,6 +329,7 @@ type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile
 
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
+	tagIdx systemTagIndexCache // system tag index cache; own mutex, never m.mu
 	hostname       string
 	dataDir        string
 	llmBin         string      // fallback binary path (legacy; prefer launchFn)

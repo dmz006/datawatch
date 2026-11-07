@@ -134,13 +134,14 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	filtered := len(statuses) > 0 || active || needle != "" || tag != "" || shipSet || (statusShipped && shipEnabled)
 
 	var rows []autonomous.SummaryRow
+	fillTags := s.inheritedTagFiller() // one snapshot for the whole list
 	for _, raw := range s.autonomousMgr.ListPRDs() {
 		prd, err := toPRD(raw)
 		if err != nil || prd == nil {
 			continue
 		}
 		row := autonomous.BuildSummaryRow(prd)
-		s.fillInheritedTags(&row.SummaryView)
+		fillTags(&row.SummaryView)
 		st := string(row.Status)
 		if len(statuses) > 0 && !statuses[st] &&
 			(!statusShipped || !shipEnabled || !prd.IsShipped()) {

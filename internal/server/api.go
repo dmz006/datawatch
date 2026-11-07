@@ -6430,6 +6430,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"checks":                               checksShipConfigDisplay(s.cfg)["checks"],
 			"ship":                                 checksShipConfigDisplay(s.cfg)["ship"],
 			"detail_text_cap_bytes":                s.cfg.Autonomous.DetailTextCapBytes,
+			"inherited_tags_cache_seconds":         s.cfg.Autonomous.InheritedTagsCacheSeconds, // 0 = default (15s), negative = off
 			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
@@ -7611,6 +7612,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// B30: apply hot-reloadable session knobs to live manager.
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
+	}
+	// The inherited-tags cache lifetime is hot-reloadable too: a write
+	// applies to the live session manager immediately, no restart.
+	if _, touched := patch["autonomous.inherited_tags_cache_seconds"]; touched && s.manager != nil {
+		s.manager.SetInheritedTagsCacheTTL(time.Duration(s.cfg.Autonomous.InheritedTagsCacheSeconds) * time.Second)
 	}
 	for k := range patch {
 		if strings.HasPrefix(k, "session.store_") {
@@ -9705,6 +9711,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.detail_text_cap_bytes":
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.DetailTextCapBytes = n
+			}
+		case "autonomous.inherited_tags_cache_seconds":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.InheritedTagsCacheSeconds = n
 			}
 		case "autonomous.ci_watch_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

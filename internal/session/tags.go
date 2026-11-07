@@ -132,14 +132,7 @@ func (m *Manager) SystemTagsByPRD(prdID string) []string {
 	if prdID == "" {
 		return out
 	}
-	for _, sess := range m.store.List() {
-		if sess.PRDID == prdID {
-			out = append(out, sess.SystemTags...)
-		}
-	}
-	for _, sess := range m.ListArchivedSessions(SessionFilter{}, func(s *Session) bool { return s.PRDID == prdID }, "", time.Time{}, 0) {
-		out = append(out, sess.SystemTags...)
-	}
+	out = append(out, m.cachedSystemTagIndex()[prdID]...)
 	return out
 }
 

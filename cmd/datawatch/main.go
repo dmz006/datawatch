@@ -1140,6 +1140,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
 	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
 	mgr.StartArchiver(session.DefaultArchiveInterval)
+	// Inherited-tags cache lifetime (0 = default, negative = off) applies
+	// at startup, the same way the other session-manager settings do.
+	mgr.SetInheritedTagsCacheTTL(time.Duration(cfg.Autonomous.InheritedTagsCacheSeconds) * time.Second)
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
 	}
