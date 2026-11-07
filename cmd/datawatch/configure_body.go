@@ -23,6 +23,15 @@ func configureRequestBody(key, value string) string {
 		if m, err := config.ParseLivenessOverridesText(value); err == nil {
 			val = m
 		}
+	} else if key == "plugins.services.per_service" {
+		// The per-service map goes out as an object when it is one (service
+		// name to lifecycle mode or {"lifecycle_mode": mode} entry), so the
+		// daemon applies every entry; text that is not a JSON object goes out
+		// as a string, which the daemon leaves for the per-service key form.
+		var m map[string]any
+		if json.Unmarshal([]byte(value), &m) == nil {
+			val = m
+		}
 	} else if value == "true" || value == "false" {
 		val = json.RawMessage(value)
 	} else {
