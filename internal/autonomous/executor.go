@@ -1773,6 +1773,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if verr := m.gateVerifierPrestart(prd, t, taskDir); verr != nil {
 				return verr
 			}
+			// retryHint is the fix context this spawn carries (a failed
+			// verification, a guardrail's findings, or a prior attempt's
+			// report). A non-empty hint is what marks the launch as an
+			// auto-fix attempt: TaskLaunchKind reads the same value as the
+			// launch session's kind.
+			retryHint := m.escalationRetryHint(prd, t, hint)
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:           t.ID,
@@ -1786,7 +1792,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Model:            model,
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
-				RetryHint:        m.escalationRetryHint(prd, t, hint),
+				RetryHint:        retryHint,
 				ProjectProfile:   prd.ProjectProfile,               // v5.26.19
 				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
 				Branch:           prd.Git.Branch,                   // BL407 Phase 4
@@ -1851,7 +1857,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// the same session: SetSystemTags replaces the whole list, so the
 			// old node's compute and peer tags are gone. Master switch off
 			// clears the list instead of writing (TagTaskPlacement).
-			m.TagTaskPlacement(t.ID, sr.SessionID, m.workerLaunchPlacement(prd, placedNode, backend, model, path.Base(taskDir)))
+			// An auto-fix launch is read as an auto-fix, not a task: a
+			// re-run carrying the fix context (retryHint) or a synthesized
+			// "Auto-fix: " corrective task gets kind auto-fix; an ordinary
+			// first run keeps kind task.
+			m.TagTaskPlacement(t.ID, sr.SessionID, m.workerLaunchPlacement(prd, placedNode, backend, model, path.Base(taskDir), TaskLaunchKind(t, retryHint)))
 			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
@@ -20,17 +22,25 @@ import (
 // operator's "everything we can tag should be tagged"). The builder per
 // site lives in session_judgment.go next to the launchTags type; the
 // decompose/verifier/guardrail-judge sites in main.go and the supervisor
-// site in supervisor_loop_models_wire.go all go through these, so a site
-// silently losing its tags (or picking the wrong role/kind) fails here
-// instead of showing up as untagged sessions later.
+// site in supervisor_loop_models_wire.go all go through these, and the
+// task-worker sites (an ordinary run and the auto-fix re-launch, tagged by
+// the executor's placement write) are pinned by their production values
+// below (role from the capacity vocabulary, kind from the autonomous
+// package's TaskLaunchKind rule) — so a site silently losing its tags (or
+// picking the wrong role/kind) fails here instead of showing up as
+// untagged sessions later.
 //
-//	launch site                                        role       kind
-//	decompose (decomposeFnSession, main.go)            planner    decompose
-//	verifier (runOneShotJSONSessionWithEffort, main.go) verifier   task
-//	guardrail judge (runOneShotJudgeSessionCaptureID)  judge      review (rejudge on a re-judgment)
-//	supervisor loop (supervisorLoopSessionFn)          supervisor — (no Automaton)
+//	launch site                                             role       kind
+//	decompose (decomposeFnSession, main.go)                 planner    decompose
+//	verifier (runOneShotJSONSessionWithEffort, main.go)     verifier   task
+//	guardrail judge (runOneShotJudgeSessionCaptureID)       judge      review (rejudge on a re-judgment)
+//	supervisor loop (supervisorLoopSessionFn)                supervisor — (no Automaton)
+//	task worker (executeOne, internal/autonomous/executor.go) worker     task
+//	auto-fix (executeOne's auto-fix re-launch, ibid.)        worker     auto-fix
 func TestLaunchTagsPerSite(t *testing.T) {
 	const prd = "prd-1a2b"
+	workerRole := string(capacity.RoleWorker)
+	newTask := func(title string) *autonomous.Task { return &autonomous.Task{Title: title} }
 	cases := []struct {
 		name          string
 		got           launchTags
@@ -44,6 +54,14 @@ func TestLaunchTagsPerSite(t *testing.T) {
 		{"guardrail judge rules-review", launchTagsForJudge(prd, false), "judge", "review", prd, ""},
 		{"guardrail judge re-judgment", launchTagsForJudge(prd, true), "judge", "rejudge", prd, ""},
 		{"supervisor loop", launchTagsForSupervisorLoop(), "supervisor", "", "", ""},
+		// The worker sites tag through the executor's placement write, not the
+		// one-shot body: the role is the capacity vocabulary's worker, and the
+		// kind comes from the production rule autonomous.TaskLaunchKind (an
+		// auto-fix launch is a re-run that carries the fix context, or a
+		// synthesized "Auto-fix: " corrective task).
+		{"task worker, fresh run", launchTags{Role: workerRole, Kind: autonomous.TaskLaunchKind(newTask("wire it"), "")}, "worker", "task", "", ""},
+		{"auto-fix, re-run with fix context", launchTags{Role: workerRole, Kind: autonomous.TaskLaunchKind(newTask("wire it"), "fix the failing build")}, "worker", "auto-fix", "", ""},
+		{"auto-fix, synthesized corrective task", launchTags{Role: workerRole, Kind: autonomous.TaskLaunchKind(newTask("Auto-fix: rules-review findings (attempt 1)"), "")}, "worker", "auto-fix", "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

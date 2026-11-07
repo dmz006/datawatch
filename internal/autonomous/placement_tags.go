@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"log"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
@@ -144,9 +145,10 @@ func ApplyPlacementTags(sink SystemTagsSink, node NodeChooser, taskID, sessionID
 // launch (and on every retry: the same two facts, re-derived, ride the
 // re-tag of the same or a new session): the node it landed on, the backend
 // and model it runs under, the lane that backend serves, the worker role,
-// the project it works in, and the Automaton, Automation and stage the
+// the kind of work (task or auto-fix, the caller's TaskLaunchKind), the
+// project it works in, and the Automaton, Automation and stage the
 // work runs under (stage empty when the Automaton is not stage-typed).
-func (m *Manager) workerLaunchPlacement(prd *PRD, placedNode, backend, model, project string) Placement {
+func (m *Manager) workerLaunchPlacement(prd *PRD, placedNode, backend, model, project, kind string) Placement {
 	return Placement{
 		Node:       placedNode,
 		Backend:    backend,
@@ -157,8 +159,36 @@ func (m *Manager) workerLaunchPlacement(prd *PRD, placedNode, backend, model, pr
 		Automaton:  prd.ID,
 		Automation: prd.AutomationID,
 		Stage:      m.StageOfPRD(prd),
-		Kind:       "task",
+		Kind:       kind,
 	}
+}
+
+// autoFixTaskKind is the launch kind an auto-fix worker session carries —
+// the "auto-fix" member of the server's launch-kind vocabulary (see
+// validateSessionLaunch in internal/server/session_launch_tags.go), so a
+// fix attempt reads as auto-fix on the Automata page, not as an ordinary
+// task.
+const autoFixTaskKind = "auto-fix"
+
+// autoFixTaskTitlePrefix is the title prefix the synthesized corrective
+// tasks carry (synthesizeCorrectiveWorkAttempt), which is what marks a
+// freshly spawned corrective task as an auto-fix launch.
+const autoFixTaskTitlePrefix = "Auto-fix: "
+
+// TaskLaunchKind is the launch kind a task worker session carries:
+// "auto-fix" when the launch is an auto-fix attempt — a re-run of a
+// previous failed attempt that carries the fix context (retryHint), or a
+// synthesized corrective task the content auto-fix created — and "task" on
+// a genuine first run of a new task. The value stays inside the server's
+// launch-kind vocabulary.
+func TaskLaunchKind(t *Task, retryHint string) string {
+	if strings.TrimSpace(retryHint) != "" {
+		return autoFixTaskKind
+	}
+	if t != nil && strings.HasPrefix(t.Title, autoFixTaskTitlePrefix) {
+		return autoFixTaskKind
+	}
+	return "task"
 }
 
 // laneForBackend names the execution lane a worker backend serves, as far
