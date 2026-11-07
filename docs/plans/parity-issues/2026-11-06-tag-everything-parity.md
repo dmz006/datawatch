@@ -72,7 +72,9 @@ Sessions list (`GET /api/sessions`) and Automaton list (`GET /api/autonomous/prd
 | `project=` | ✓ | ✓ | Single-axis shortcut: keeps the list to that project. |
 | `automation=` | ✓ | ✓ | Single-axis shortcut: keeps the list to that Automation. |
 | `automaton=` | ✓ | ✓ | Single-axis shortcut: keeps the list to that Automaton. |
-| `stage=`, `kind=`, `role=`, `lane=`, `compute=`, `peer=`, `backend=` | ✓ (sessions list) | — (run axes are session facts) | Single-axis shortcuts that expand to their `axis:value` tag and combine with the explicit `tag` list under `tag_match`. |
+| `stage=`, `kind=`, `role=`, `lane=`, `compute=` | ✓ (sessions list) | — | Single-axis shortcuts that expand to their `axis:value` tag and combine with the explicit `tag` list under `tag_match`. |
+| `peer=` | — | — | No shortcut parameter — the sessions list does not expand `peer=`; a `peer:<name>` tag is filterable via the `tag=` list only. |
+| `backend=` | ✓ (special) | — | Not a tag shortcut: it stays the sessions list's session-backend filter, which a session satisfies by its backend family name OR by carrying the `backend:<value>` tag, and it applies independently of `tag`/`tag_match`. |
 
 Examples:
 
