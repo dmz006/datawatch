@@ -294,3 +294,101 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 	return true, nil, nil
 }
+
+// judgeCouldNotStartTryKey is the judge-tries key of the could-not-start
+// attempts of one judge call. It differs from the key the judge runner uses
+// for its timed-out attempts, so the runner's own clear and restore never touch
+// these records.
+func judgeCouldNotStartTryKey(inv GuardrailInvocation) string {
+	return inv.UnitID + "|" + inv.Guardrail + "|" + InfraClassJudgeCouldNotStart
+}
+
+// judgeCouldNotStart reports whether a judge run ended because its main prompt
+// was never delivered: the run returned that error, or an infra block whose
+// text says so.
+func judgeCouldNotStart(v GuardrailVerdict, err error) bool {
+	if err != nil {
+		class, ok := ClassifyInfraFailure(err)
+		return ok && class == InfraClassJudgeCouldNotStart
+	}
+	if v.Outcome != "block" || v.Category != "infra" {
+		return false
+	}
+	class, ok := ClassifyInfraText(strings.Join(append([]string{v.Summary, v.RawJudge}, v.Issues...), "\n"))
+	return ok && class == InfraClassJudgeCouldNotStart
+}
+
+// nextJudgeBackend returns the first backend of the judge policy (else the
+// verifier policy) that is not in tried, or "" when none is left.
+func (m *Manager) nextJudgeBackend(tried []string) string {
+	cfg := m.Config()
+	list := config.NormalizeJudgePolicy(cfg.JudgePolicy)
+	if len(list) == 0 {
+		list = config.NormalizeVerifierPolicyBackends(cfg.VerifierPolicy.Backends)
+	}
+	for _, b := range list {
+		if !slices.Contains(tried, b) {
+			return b
+		}
+	}
+	return ""
+}
+
+// runRulesReviewJudge runs the rules-review judge. A judge whose main prompt
+// was never delivered (judge_could_not_start) is an infrastructure failure, not
+// a finding: it is retried on the next backend of the judge policy when one is
+// left, otherwise on the same backend after the infrastructure retry delay. Each
+// attempt is recorded in the judge tries. The retry limit and delays are the
+// existing infra_retry ones. While tries remain nothing is recorded as a
+// verdict, so the Automaton is not blocked; once they are used up the last
+// result is returned unchanged.
+func (m *Manager) runRulesReviewJudge(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
+	cfg := m.infraRetryConfig()
+	key := judgeCouldNotStartTryKey(inv)
+	used := len(m.JudgeTries(prd.ID, key))
+	for {
+		v, err := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+		if !judgeCouldNotStart(v, err) || !cfg.EffectiveEnabled() {
+			_ = m.ClearJudgeTries(prd.ID, key)
+			return v, err
+		}
+		started := time.Now()
+		backend := inv.GuardrailBackend
+		if rerr := m.RecordJudgeTry(prd.ID, key, JudgeAttemptRecord{
+			Backend: backend, Started: started, Outcome: JudgeOutcomeCouldNotStart,
+		}); rerr != nil {
+			log.Printf("[autonomous] prd=%s: record judge could-not-start try: %v", prd.ID, rerr)
+		}
+		used++
+		max := cfg.EffectiveMaxTries()
+		if used > max {
+			_ = m.ClearJudgeTries(prd.ID, key)
+			return v, err
+		}
+		var tried []string
+		for _, t := range m.JudgeTries(prd.ID, key) {
+			tried = append(tried, t.Backend)
+		}
+		next := m.nextJudgeBackend(tried)
+		delay := time.Duration(0)
+		action := "retrying on backend " + next
+		if next != "" {
+			inv.GuardrailBackend, inv.GuardrailModel, inv.GuardrailPinned = next, "", false
+		} else {
+			delay = infraBackoffDelay(cfg, used)
+			action = fmt.Sprintf("retrying the same backend in %s", delay)
+		}
+		m.store.WithLock(func() {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At: time.Now(), Kind: infraRetryDecisionKind, Actor: "autonomous",
+				Note: fmt.Sprintf("rules-review judge could not start (%s): retry %d of %d, %s",
+					InfraClassJudgeCouldNotStart, used, max, action),
+				FailureCategory: infraRetryFailureCategory,
+			})
+		})
+		_ = m.savePRDOwn(prd)
+		if serr := infraSleep(ctx, delay); serr != nil {
+			return GuardrailVerdict{}, WithContextCause(ctx, serr)
+		}
+	}
+}
