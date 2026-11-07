@@ -3489,6 +3489,11 @@ autonomous:
   # GET .../prds/{id}/outputs return everything.
   # Default 4096; 0 uses the default; a negative value turns the cap off.
   detail_text_cap_bytes: 4096
+  # Lifetime (seconds) of the shared cache of inherited (system) tags per
+  # Automaton that the session manager builds when listing sessions. Applied
+  # live on write (no restart). 0 uses the default (15); a negative value
+  # turns the cache off (the index is rebuilt on every read).
+  inherited_tags_cache_seconds: 15
   # Whether a content-category guardrail block (a real judgment, e.g.
   # rules-review finding a real issue) gets auto-corrective retry.
   # Default true.

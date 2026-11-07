@@ -73,6 +73,18 @@ func (m *Manager) SetInheritedTagsCacheTTL(d time.Duration) {
 	m.tagIdx.ttl = d
 }
 
+// InheritedTagsCacheTTL reports the currently configured lifetime of the
+// cached system tag index: the set value when one was, or the default
+// (15 seconds) when none was. A negative result means caching is off.
+func (m *Manager) InheritedTagsCacheTTL() time.Duration {
+	m.tagIdx.mu.Lock()
+	defer m.tagIdx.mu.Unlock()
+	if m.tagIdx.ttl == 0 {
+		return defaultInheritedTagsCacheTTL
+	}
+	return m.tagIdx.ttl
+}
+
 // InvalidateSystemTagIndex drops the cached index so the next read rebuilds.
 func (m *Manager) InvalidateSystemTagIndex() {
 	m.tagIdx.mu.Lock()
