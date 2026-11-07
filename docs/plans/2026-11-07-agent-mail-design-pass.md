@@ -164,3 +164,76 @@ Nothing is built by this record, so no surface is touched now. If features follo
 - Android: follows the PWA through a parity issue filed at the merge that changes the PWA.
 - iPhone: same as Android.
 - Excluded for now: a graphical editor for read markers, because read state is written by the seats and the operator only needs to see it.
+
+## Cross-check against Automata and the registry
+
+Status: validation record, documents only, nothing decided. This section answers the operator's instruction of 2026-11-07 (registry row 412, part c) to check GitHub issue 211 against the queue of completed and open Automata. It lists options and a recommendation. It changes no code, no settings and no version, and it runs no release.
+
+### How the check was made
+
+- The registry `docs/plans/README.md` was searched for every row and tracker item that touches mail, messaging, discussion, queue, federation, exit hooks, channel routing, identity, personal agents, plugins and issue 211. Rows 390, 412 and 414 and the tracker items BL446, BL456 and BL403 are the ones that matter. The registry is very large, so the check was a targeted search of it, not a line-by-line read of every row; the unrelated rows (for example the row numbered 211, which is about LLM node placement and has nothing to do with GitHub issue 211) were checked and set aside.
+- Completed work was read in `docs/plans/HISTORY.md` and `docs/plans/historical-plans/`.
+- The overlap check named in the instruction was done by reading the registry rows that mention GitHub issue 211. There are two: row 390 (issue 211 stays open, "the owner is still reviewing the requests") and row 412 (the 2026-11-07 answer that queued this design pass as Automaton `ac690001`). No other row mentions issue 211, and no row files an Automaton that builds any of the six requests. The search tool for overlaps exists as the MCP tool `autonomous_overlap_search` (read from the tool list in `internal/mcp`); it was not run here because it needs a running daemon, and this pass may not start or call one.
+- Each existing-behaviour claim below was checked by reading the file named beside it.
+
+### Identifiers found
+
+| Identifier | What it is | Status in the registry or history | Source read |
+|---|---|---|---|
+| BL357 | Durable role based work queue (queue_push, queue_claim, queue_complete, queue_fail, queue_list) | shipped, within BL344-BL361 (v8.10.3 to v8.10.15) | `docs/plans/HISTORY.md` line 76; `internal/mcp/bl357_queue.go` |
+| BL332 | Discussion scopes for federated shared memory: write, write ahead log, participants, conflicts | shipped v8.4.0 | `docs/plans/HISTORY.md` line 72; `docs/howto/discussion-scopes.md`; `internal/server/bl332_discussion_scope.go`, `internal/server/bl332_discussion_sync.go`; `internal/mcp/bl332_discussion_tools.go` |
+| BL358 | Discussion subscribe: deliver a discussion entry to a named session | shipped, within BL344-BL361 | `docs/plans/HISTORY.md` line 76; `internal/mcp/bl358_discussion_subscribe.go` |
+| BL332 sync (peer replication) | One-way background push of each write to the participant peers; no catch-up | shipped inside BL332 | `internal/server/bl332_discussion_sync.go` (push at the sync function, receive handler) |
+| BL331 | Channel routing: inbound chat messages (Telegram, Signal, Matrix) go to a federation peer by rule | shipped v8.3.0 | `docs/plans/HISTORY.md` line 71; `docs/howto/channel-routing.md`; `internal/mcp/bl331_channel_routing_tools.go` |
+| BL356 | Exit hooks: restart or notify on a session crash or failed or killed state; enable flag and cooldown | shipped, within BL344-BL361 | `docs/plans/HISTORY.md` line 76; `internal/mcp/bl356_exit_hooks.go` |
+| BL353 | Schedule spawn (recurring and one-shot ephemeral sessions) | shipped, within BL344-BL361 | `docs/plans/HISTORY.md` line 76; `docs/plans/harness-research/datawatch-mapping.md` |
+| BL360 | Structured agent result store | shipped, within BL344-BL361 | `internal/mcp/bl360_result_store.go` |
+| BL329 | Identity endpoints | shipped v8.2.0 | `docs/plans/HISTORY.md` line 69; `internal/mcp/identity.go` |
+| Registry row 272, Automaton `28bd0001` | Identity backups, empty-write refusal and restore on every surface | done, shipped 9.49.0 | `docs/plans/README.md` row 272 |
+| Identity scaffold records (no tracker number assigned) | Plans and designs only, archived: gap analysis, skill, memory extension, multi-person, continuity, refusal and ethics | archived, planning only | `docs/plans/historical-plans/2026-09-21-identity-scaffold-*.md` (the gap analysis says "planning only, ships no code" and that BL numbers are assigned at implementation time) |
+| `docs/howto/identity-scaffold-bootstrap.md`, `docs/howto/identity-and-telos.md` | The shipped bootstrap and operator identity howtos | shipped | the two files |
+| BL456 | Personal agents with personality and decision making, for a real community user | placeholder only; the first Automaton (`51c531b6`) produced no output; needs a real design session; held for v11.0.0 planning | `docs/plans/README.md` (community and personal agent design table) |
+| BL446 | Federation as a sibling agent mail transport (external feature request) | not started | `docs/plans/README.md` (feature requests table) |
+| BL403, Automaton `784f0001`, row 414 | Plugin extension surfaces: manifest v3, supervised service plugins, widget model and renderer, capability gating; imap-mcp as first adopter | phases 1 to 5 shipped; phases 6 to 9 are Automaton `784f0001`, held for an overlap review | `docs/plans/README.md` rows 397 and 414; `docs/plans/2026-10-09-plugin-extension-surfaces.md` |
+| BL404, row 195 | imap_mcp channel configuration parity | done, released 9.14.0 | `docs/plans/README.md` row 195 |
+| Row 149, BL568 | Resource fingerprint exchange between federated peers | done, shipped 9.5.103 | `docs/plans/README.md` row 149 |
+| Row 362, Automaton `396a0001` | Federated peer placement design document | merged docs only; the implementation Automata wait for the operator | `docs/plans/README.md` row 362 |
+| GH#201 and `internal/federation/hopchain.go` | Hop chain for federation nesting, capability grants | landed 2026-10-09 | `docs/plans/2026-10-10-llm-enhancements.md` |
+| Automaton `ac690001` | This design pass | filed as a draft 2026-11-07 (row 412) | `docs/plans/README.md` row 412 |
+
+### The six requests against what exists
+
+| # | Request | What already covers it (identifier) | What does not | Overlapping or neighbouring work |
+|---|---|---|---|---|
+| 1 | Read-back delivery receipts | BL332 sync pushes an entry to each participant and the receive handler appends it to the log; the log read on the recipient (`memory_discussion_wal`) can show it. BL357 records completion on its own node. | The push ignores the peer reply and drops errors (`internal/server/bl332_discussion_sync.go`, push and receive handlers); the receive handler answers ok even when the append failed. The BL332 howto says `origin_wal_seq` lets a receiver skip re-syncs, but the receive handler does not pass it to the append, so the sender's number is lost. No stable message identifier exists. BL357 has no cross node receipt. | BL446 (federation as mail transport, not started) would own a receipt if it is ever specified. BL568 (row 149) shows the opt-in, hash only exchange pattern between peers that a receipt could reuse. |
+| 2 | Per-seat read state, change wins merge | BL332 log read has an after-sequence cursor and a long-poll block (`internal/mcp/bl332_discussion_tools.go`). BL332 conflict resolver picks a winner among duplicate content. | No read state is stored anywhere. The cursor is per node because numbers differ per replica. The resolver is not a field merge. No catch-up or anti-entropy in replication. | BL446. The shipped hop chain (GH#201) and the federated peer placement design (row 362) are about routing and capacity, not about merged per-seat state. |
+| 3 | Writer provenance | BL332 entries carry `origin_peer` and a role. The federation capability system and the session manager know the token owner and session. BL399 (HISTORY line 108) audit logging records access, including federation hops. | `origin_peer` and role come from the request body and are not stamped from the token. No seat field. No marker for a direct append. Audit logs (BL399) record access, not per entry provenance. | BL399 audit trail is the nearest thing and could be the place a stamp is also mirrored; it does not replace a stamp on the entry itself. |
+| 4 | Wake on arrival | BL358 delivers an entry to a running named session from the MCP write path on the node of the write. BL356 has an enable flag and a cooldown in seconds. BL353 starts sessions on a schedule. BL331 routes chat channel messages to peers. | BL358 does not run for a REST write or a peer push, and skips a missing session silently. BL356 fires on crash or failed state, not on a message. BL331 does not read discussion entries. Nothing starts a session on an arrival. | BL446. The usage guard and capacity limits (rows on lane fill and capacity, for example BL514 row 95 and BL428 phases) apply to any session start and must be named in the design. |
+| 5 | Small per-seat views of large stores | BL332 log read pages forward with count, after-sequence and long-poll; discussion identifiers are free strings, so one discussion per seat works; `memory_remember` can hold the saved position. | BL357 `queue_list` filters by role and state only, so it cannot page. Semantic recall has a count only and does not show peer entries. The saved position is not replicated. | None. No Automaton covers it; it needs a skill or howto only. The skills registry (`skills_registry_*` tools, BL255) is where the skill would live. |
+| 6 | Multi-aspect identity handoff | BL329 identity tools and the row 272 backups and restore (`get_identity`, `update_identity`, `identity_backups`, `restore_identity`); memory handoff, scope borrow and seed; the two shipped identity howtos. | The identity is the operator level record for one daemon, not a per-seat persona. No handoff convention or acknowledgement exists. The identity scaffold work (archived) is plans only and bootstraps a new person; it does not move identity from seat to seat. | The archived identity scaffold designs (continuity and multi-person are the two closest) and BL456, the personal agents placeholder, which already says this area needs its own design session. |
+
+### Overlap judgement
+
+- No completed or open Automaton delivers any of the six requests. This confirms the validation in row 412.
+- BL357 and BL332 with BL358 are real and shipped, and they are the base the requests build on. They are not duplicates, because none of them gives a read-back receipt, a merged read state or a stamped writer.
+- BL446 is the closest overlap. It has no spec, so filing request 1 to 4 work without reading it would risk two Automata owning the same transport. The options below keep one owner.
+- BL456 and the archived identity scaffold designs are the overlap for request 6 if the requester means a persona per sibling.
+- The plugin extension plan (BL403, row 414) and the imap mail integration (BL404, row 195, and Automaton `784f0001`) are neighbours, not overlaps. They put an external mail service (imap-mcp) beside the daemon and show it on a service card. They carry human email, not messages between agents. The one useful link is that a service plugin could be the route for a future wake step, so the plugin plan should be read before a wake feature chooses where its settings live. The held status of `784f0001` is unaffected by this record.
+- Federation work that stays separate: BL568 fingerprint exchange (row 149), the federated peer placement design (row 362) and the hop chain (GH#201). They share the peer and capability machinery but answer different questions.
+- Channel routing (BL331) is not mail between agents. It routes human chat messages to a peer. Reusing it for sibling mail would mix the two and is not recommended.
+
+### Options
+
+1. Treat BL446 as the owner. Rewrite BL446 from "not started" into the design record's scope (the six requests), file the features under it in the order given in "Smallest build", and keep the two skills outside it. This keeps one owner and one transport.
+2. File the features as separate small Automata under issue 211 and leave BL446 as a link only. This is faster per item and risks overlapping with whatever BL446 later says.
+3. Do the two skills now and hold every feature until the operator decides the open points above. This costs almost nothing and delivers requests 5 and 6 at once.
+4. Do nothing yet and reply to issue 211 with this record. This leaves the requester without the two cheap wins.
+
+### Recommendation
+
+Option 3 first, then option 1 once the operator has answered the decision list in this record. Concretely: publish the two skills (requests 5 and 6, after the operator answers the identity scope question, since a persona per sibling belongs to BL456), and make BL446 the single owner of the features for requests 1 to 4. Do not file any feature Automaton until the operator has decided the stable message identifier and the replication model, because three of the four features depend on them. The sequencing rule stands: this work follows the 10.0.0 release work and uses no parallel messaging layer. Whether a design is needed from the operator is answered by the decision list above; the cross-check adds one more decision: whether BL446 absorbs these requests or stays separate (options 1 and 2).
+
+### Corrections found while checking
+
+- The BL332 howto (`docs/howto/discussion-scopes.md`, "What happens on write") says the write ahead log records `origin_wal_seq` so a receiver can detect re-syncs. The receive handler in `internal/server/bl332_discussion_sync.go` calls the append with content, role and origin peer only, so the sender's number is not kept. This record's earlier statement stands. The howto wording is worth a docs fix when someone next edits it; this record does not change it.
+- The earlier paragraph of this record names "the federation-as-mail-transport item" as a neighbour. Its registry identifier is BL446 and its state is not started.
