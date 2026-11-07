@@ -2253,7 +2253,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Defaults: file provider rooted at <data_dir>/secrets.
 	secretsBaseDir := cfg.Agents.SecretsBaseDir
 	if secretsBaseDir == "" {
-		secretsBaseDir = filepath.Join(expandHome(cfg.DataDir), "secrets")
+		secretsBaseDir = secretspkg.DefaultFileProviderDir(cfg.DataDir)
 	}
 	agentMgr.SecretsProvider = secretspkg.Resolve(cfg.Agents.SecretsProvider, secretsBaseDir)
 

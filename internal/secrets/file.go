@@ -19,15 +19,26 @@ type FileProvider struct {
 	BaseDir string
 }
 
-// NewFileProvider builds a FileProvider rooted at baseDir. Empty
-// baseDir defaults to ~/.datawatch/secrets/ (operator can override
-// per-Cluster-Profile).
+// NewFileProvider builds a FileProvider rooted at baseDir. The
+// caller must pass a concrete folder — e.g. DefaultFileProviderDir
+// for the configured data directory's secrets folder. No default
+// location is derived here (in particular no home-directory
+// lookup); an empty baseDir yields a provider rooted at "".
 func NewFileProvider(baseDir string) *FileProvider {
-	if baseDir == "" {
-		home, _ := os.UserHomeDir()
-		baseDir = filepath.Join(home, ".datawatch", "secrets")
-	}
 	return &FileProvider{BaseDir: baseDir}
+}
+
+// DefaultFileProviderDir returns the default secrets folder under
+// the expanded configured data directory: <data_dir>/secrets. A
+// leading "~" in dataDir is expanded against the process home
+// directory; other values are used as-is.
+func DefaultFileProviderDir(dataDir string) string {
+	if dataDir == "~" || strings.HasPrefix(dataDir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			dataDir = filepath.Join(home, strings.TrimPrefix(dataDir, "~"))
+		}
+	}
+	return filepath.Join(filepath.Clean(dataDir), "secrets")
 }
 
 // Kind implements Provider.
