@@ -3,6 +3,7 @@ package session
 import (
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 )
@@ -118,7 +119,7 @@ func TestSystemTagIndexKeepsRepeatsAndSkipsEmptyPRDID(t *testing.T) {
 	m := newTestManager(t)
 	seedTagFixture(t, m, tagFixtureSet())
 
-	idx := m.systemTagIndex()
+	idx := m.buildSystemTagIndex()
 	if got, want := sortedCopy(idx["prd-a"]), []string{"ci", "ci", "ci", "docs", "gpu", "gpu"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("index[prd-a] = %v, want %v (repeats kept)", got, want)
 	}
@@ -175,16 +176,153 @@ func TestSystemTagIndexDecodesEachArchivedRecordOnce(t *testing.T) {
 	}
 
 	m.store.resetArchiveDecodeCount()
-	_ = m.systemTagIndex()
+	_ = m.buildSystemTagIndex()
 	if got := m.store.archiveDecodeCount(); got != int64(archived) {
 		t.Fatalf("decode count after building the index = %d, want %d (each archived record once)", got, archived)
 	}
 
-	// SystemTagsByPRD builds the index on each call, so one call decodes
+	// SystemTagsByPRD on an empty cache builds the index once, so it decodes
 	// each archived record once as well.
+	m.InvalidateSystemTagIndex()
 	m.store.resetArchiveDecodeCount()
 	_ = m.SystemTagsByPRD("prd-a")
 	if got := m.store.archiveDecodeCount(); got != int64(archived) {
 		t.Fatalf("decode count after SystemTagsByPRD = %d, want %d", got, archived)
+	}
+}
+
+func fixtureArchivedCount() int64 {
+	n := int64(0)
+	for _, f := range tagFixtureSet() {
+		if f.archived {
+			n++
+		}
+	}
+	return n
+}
+
+// fakeTagClock is an injectable clock for the cache tests.
+type fakeTagClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeTagClock) now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *fakeTagClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
+}
+
+func newCachedTagManager(t *testing.T) (*Manager, *fakeTagClock) {
+	t.Helper()
+	m := newTestManager(t)
+	seedTagFixture(t, m, tagFixtureSet())
+	clk := &fakeTagClock{t: time.Now()}
+	m.tagIdx.clock = clk.now
+	m.store.resetArchiveDecodeCount()
+	return m, clk
+}
+
+func TestSystemTagIndexCacheHitWithinLifetime(t *testing.T) {
+	m, clk := newCachedTagManager(t)
+	m.SetInheritedTagsCacheTTL(time.Minute)
+	_ = m.SystemTagsByPRD("prd-a")
+	clk.advance(30 * time.Second)
+	_ = m.SystemTagsByPRD("prd-b")
+	if got := m.store.archiveDecodeCount(); got != fixtureArchivedCount() {
+		t.Fatalf("decode count = %d, want %d (one build)", got, fixtureArchivedCount())
+	}
+}
+
+func TestSystemTagIndexDefaultTTL(t *testing.T) {
+	m, clk := newCachedTagManager(t)
+	_ = m.SystemTagsByPRD("prd-a")
+	clk.advance(14 * time.Second)
+	_ = m.SystemTagsByPRD("prd-a")
+	if got := m.store.archiveDecodeCount(); got != fixtureArchivedCount() {
+		t.Fatalf("within default TTL decode = %d, want one build", got)
+	}
+	clk.advance(2 * time.Second)
+	_ = m.SystemTagsByPRD("prd-a")
+	if got := m.store.archiveDecodeCount(); got != 2*fixtureArchivedCount() {
+		t.Fatalf("after default TTL decode = %d, want two builds", got)
+	}
+}
+
+func TestSystemTagIndexRebuildsAfterLifetime(t *testing.T) {
+	m, clk := newCachedTagManager(t)
+	m.SetInheritedTagsCacheTTL(time.Minute)
+	_ = m.SystemTagsByPRD("prd-a")
+	clk.advance(61 * time.Second)
+	_ = m.SystemTagsByPRD("prd-a")
+	if got := m.store.archiveDecodeCount(); got != 2*fixtureArchivedCount() {
+		t.Fatalf("decode count = %d, want %d (two builds)", got, 2*fixtureArchivedCount())
+	}
+}
+
+func TestSystemTagIndexInvalidateForcesRebuild(t *testing.T) {
+	m, _ := newCachedTagManager(t)
+	m.SetInheritedTagsCacheTTL(time.Hour)
+	_ = m.SystemTagsByPRD("prd-a")
+	m.InvalidateSystemTagIndex()
+	_ = m.SystemTagsByPRD("prd-a")
+	if got := m.store.archiveDecodeCount(); got != 2*fixtureArchivedCount() {
+		t.Fatalf("decode count = %d, want two builds", got)
+	}
+}
+
+func TestSystemTagIndexNegativeTTLRebuildsEveryCall(t *testing.T) {
+	m, _ := newCachedTagManager(t)
+	m.SetInheritedTagsCacheTTL(-1)
+	for i := 0; i < 3; i++ {
+		_ = m.SystemTagsByPRD("prd-a")
+	}
+	if got := m.store.archiveDecodeCount(); got != 3*fixtureArchivedCount() {
+		t.Fatalf("decode count = %d, want three builds", got)
+	}
+}
+
+func TestSystemTagIndexSingleFlight(t *testing.T) {
+	m, _ := newCachedTagManager(t)
+	m.SetInheritedTagsCacheTTL(time.Hour)
+	const n = 50
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	results := make([][]string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i] = m.SystemTagsByPRD("prd-a")
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	// One build decodes each archived record once; a second build would double it.
+	if got := m.store.archiveDecodeCount(); got != fixtureArchivedCount() {
+		t.Fatalf("decode count = %d, want %d (exactly one build)", got, fixtureArchivedCount())
+	}
+	for i, r := range results {
+		if len(r) != 6 {
+			t.Fatalf("caller %d got %v", i, r)
+		}
+	}
+}
+
+func TestSystemTagIndexSnapshotIsCopyOnRead(t *testing.T) {
+	m, _ := newCachedTagManager(t)
+	snap := m.SystemTagIndexSnapshot()
+	got := snap("prd-b")
+	if len(got) == 0 {
+		t.Fatal("prd-b empty")
+	}
+	got[0] = "mutated"
+	if snap("prd-b")[0] == "mutated" || m.SystemTagsByPRD("prd-b")[0] == "mutated" {
+		t.Fatal("snapshot aliases the cache")
+	}
+	if v := snap("nobody"); v == nil || len(v) != 0 {
+		t.Fatalf("unknown prd = %v, want empty non-nil", v)
 	}
 }
