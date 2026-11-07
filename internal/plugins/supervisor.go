@@ -215,7 +215,7 @@ func NewServiceSupervisor(p *Plugin, store secrets.Store) (*ServiceSupervisor, e
 	}
 	if c := p.Connection; c != nil {
 		if c.HealthPath != "" {
-			s.healthURL = strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(c.HealthPath, "/")
+			s.healthURL = connectionHealthURL(c)
 		}
 		h, err := resolveConnectionAuthHeader(p, store)
 		if err != nil {
@@ -224,6 +224,13 @@ func NewServiceSupervisor(p *Plugin, store secrets.Store) (*ServiceSupervisor, e
 		s.authHeader = h
 	}
 	return s, nil
+}
+
+// connectionHealthURL joins a connection's base URL and health path into
+// the absolute URL a health probe GETs. Shared by the service supervisor
+// and the attach-only health probe; callers check HealthPath != "" first.
+func connectionHealthURL(c *PluginConnection) string {
+	return strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(c.HealthPath, "/")
 }
 
 // resolveConnectionAuthHeader returns the Authorization header value for
