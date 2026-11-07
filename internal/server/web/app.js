@@ -9502,6 +9502,13 @@ const DOCS_ONBOARDING_REPORT_LINKS = [
   [['onboarding_report.', 'settings_onboarding_report_', 'onboarding_report_'], DOCS_DEFINITIONS + '#onboarding-report'],
 ];
 
+// Placement tags: every row of the Placement tags group — the axis toggles
+// and the per-axis template fields — links to the placement-tags section of
+// the Automata tags howto, which owns the tag settings surface.
+const DOCS_PLACEMENT_TAGS_LINKS = [
+  [['autonomous.tags.placement.', 'settings_placement_'], 'howto/automata-tags.md#placement-tags-the-system-tags'],
+];
+
 // Post-ship hooks: the Post-ship hooks card settings and the card itself map
 // to sections of the Post-ship hooks howto. The first matching prefix wins,
 // so the specific ones come first. These keys sit under
@@ -9563,6 +9570,9 @@ function docsLinkForKey(key) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_PLACEMENT_TAGS_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   return null;
@@ -18436,6 +18446,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.auto_tags.kind_labels', label: 'Kind labels (kind:label, comma-separated)', labelKey: 'settings_auto_tags_kind_labels', type: 'text', placeholder: 'feature:feature, bug:bug, other:maintenance', default: 'feature:feature, bug:bug, other:maintenance' },
     // Placement tags — machine-derived system tags, one per axis
     // (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
+    // automaton:<id>, automation:<name>, stage:<stage>, kind:<label>,
     // project:<name>). Stamped on every session the machine creates so the
     // session list, dashboard and Gantt can group and filter by axis.
     { label: 'Placement tags', labelKey: 'settings_placement_group', type: 'group', hintKey: 'settings_placement_group_help' },
@@ -18445,12 +18456,20 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.tags.placement.backend.enabled', label: 'backend axis', labelKey: 'settings_placement_backend', type: 'toggle' },
     { key: 'autonomous.tags.placement.lane.enabled', label: 'lane axis', labelKey: 'settings_placement_lane', type: 'toggle' },
     { key: 'autonomous.tags.placement.role.enabled', label: 'role axis', labelKey: 'settings_placement_role', type: 'toggle' },
-    { key: 'autonomous.tags.placement.project.enabled', label: 'project axis', labelKey: 'settings_placement_project', type: 'toggle' },
+    { key: 'autonomous.tags.placement.automaton.enabled', label: 'Automaton axis', labelKey: 'settings_placement_automaton', type: 'toggle', helpKey: 'settings_placement_automaton_help', docsKey: 'autonomous.tags.placement.automaton.enabled' },
+    { key: 'autonomous.tags.placement.automation.enabled', label: 'Automation axis', labelKey: 'settings_placement_automation', type: 'toggle', helpKey: 'settings_placement_automation_help', docsKey: 'autonomous.tags.placement.automation.enabled' },
+    { key: 'autonomous.tags.placement.stage.enabled', label: 'stage axis', labelKey: 'settings_placement_stage', type: 'toggle', helpKey: 'settings_placement_stage_help', docsKey: 'autonomous.tags.placement.stage.enabled' },
+    { key: 'autonomous.tags.placement.kind.enabled', label: 'kind axis', labelKey: 'settings_placement_kind', type: 'toggle', helpKey: 'settings_placement_kind_help', docsKey: 'autonomous.tags.placement.kind.enabled' },
+    { key: 'autonomous.tags.placement.project.enabled', label: 'project axis', labelKey: 'settings_placement_project', type: 'toggle', default: true },
     { key: 'autonomous.tags.placement.compute.template', label: 'compute tag template', labelKey: 'settings_placement_compute_template', type: 'text', placeholder: 'compute:auto' },
     { key: 'autonomous.tags.placement.peer.template', label: 'peer tag template', labelKey: 'settings_placement_peer_template', type: 'text', placeholder: 'peer:auto' },
     { key: 'autonomous.tags.placement.backend.template', label: 'backend tag template', labelKey: 'settings_placement_backend_template', type: 'text', placeholder: 'backend:auto' },
     { key: 'autonomous.tags.placement.lane.template', label: 'lane tag template', labelKey: 'settings_placement_lane_template', type: 'text', placeholder: 'lane:auto' },
     { key: 'autonomous.tags.placement.role.template', label: 'role tag template', labelKey: 'settings_placement_role_template', type: 'text', placeholder: 'role:auto' },
+    { key: 'autonomous.tags.placement.automaton.template', label: 'Automaton tag template', labelKey: 'settings_placement_automaton_template', type: 'text', placeholder: 'automaton:{automaton}', helpKey: 'settings_placement_automaton_help', docsKey: 'autonomous.tags.placement.automaton.template' },
+    { key: 'autonomous.tags.placement.automation.template', label: 'Automation tag template', labelKey: 'settings_placement_automation_template', type: 'text', placeholder: 'automation:{automation}', helpKey: 'settings_placement_automation_help', docsKey: 'autonomous.tags.placement.automation.template' },
+    { key: 'autonomous.tags.placement.stage.template', label: 'stage tag template', labelKey: 'settings_placement_stage_template', type: 'text', placeholder: 'stage:{stage}', helpKey: 'settings_placement_stage_help', docsKey: 'autonomous.tags.placement.stage.template' },
+    { key: 'autonomous.tags.placement.kind.template', label: 'kind tag template', labelKey: 'settings_placement_kind_template', type: 'text', placeholder: 'kind:{kind}', helpKey: 'settings_placement_kind_help', docsKey: 'autonomous.tags.placement.kind.template' },
     { key: 'autonomous.tags.placement.project.template', label: 'project tag template', labelKey: 'settings_placement_project_template', type: 'text', placeholder: 'project:auto' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
