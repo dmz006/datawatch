@@ -423,6 +423,27 @@ tree:
   stays exactly yours; the placement tags only ride along for display, so an
   Automaton's card shows where its work ran without you touching it.
 
+### One shared read, not one per Automaton
+
+- **A list is one read.** The inherited tags of every Automaton in a list
+  come from a **single read of the sessions — live and archived alike —
+  taken when the list is opened**, not one read per Automaton. A long list
+  opens in about the time of a single read, even with thousands of archived
+  sessions.
+- **The result is kept briefly.** That read's result is cached for a short
+  time (`autonomous.inherited_tags_cache_seconds`, default **15 seconds**;
+  `0` means the default, a negative value turns the cache off), so the web
+  app polling the list does not repeat the work on every poll.
+- **Tag changes show at once.** The kept result is dropped at the moment a
+  session is archived, deleted, restored, or its placement tags change, so a
+  tag change shows on the next read — it never waits out the cache window.
+- **A single Automaton reads the same kept result.** Opening one Automaton
+  uses the same shared result and does not scan the archive again on its
+  own; if the result is fresh it is used as-is.
+- **The archive no longer blocks the rest of the daemon.** Reading the
+  archive happens pass by pass, without holding the live sessions up, so a
+  slow or large archive cannot stall other daemon work.
+
 ### Configuration
 
 Under `autonomous.tags.placement`, one key per axis, plus the master:
@@ -433,6 +454,7 @@ Under `autonomous.tags.placement`, one key per axis, plus the master:
 | `autonomous.tags.placement.<axis>.enabled` | `true` (`project` is `false`) | on/off for that axis (`<axis>` is `compute`, `peer`, `backend`, `lane`, `role`, `project`) |
 | `autonomous.tags.placement.<axis>.template` | `<axis>:<placeholder>` (see the table above) | the tag text with the axis's placeholder |
 | `autonomous.tags.placement.custom` | empty list | user-defined axes (YAML file or full config write) |
+| `autonomous.inherited_tags_cache_seconds` | `15` | lifetime of the shared inherited-tags read (the section above); `0` means the default, negative turns the cache off — note this one lives directly under `autonomous`, not under `tags.placement` |
 
 Set and read them the same way as the tag-browser keys above: `PUT/GET
 /api/config`, the PWA **Settings → General → Automata → Placement tags**
@@ -441,6 +463,27 @@ group, `datawatch config set|get autonomous.tags.placement.…`, the MCP
 `config get` with the same keys. An invalid template (one missing its axis's
 placeholder) or an invalid custom block is refused on every surface with the
 same message and nothing written. Changes apply without a restart.
+
+### Tuning the shared read: `inherited_tags_cache_seconds`
+
+How long the daemon keeps the result of the shared inherited-tags read
+before repeating it. Default **15 seconds**; `0` means "use the default",
+a negative number turns the cache off entirely (every read repeats the
+work, which you only want for testing). Changes apply without a restart, and
+a tag change always shows on the next read regardless of the setting.
+
+| Surface | Example |
+|---|---|
+| MCP | `autonomous_config_set` `{"inherited_tags_cache_seconds": 30}` |
+| REST | `PUT /api/config` `{"key":"autonomous.inherited_tags_cache_seconds","value":30}` |
+| CLI | `datawatch config set autonomous.inherited_tags_cache_seconds 30` |
+| Comm channel | `configure autonomous.inherited_tags_cache_seconds=30` |
+| PWA | Settings → **General** → **Inherited tags cache (sec, 0=15, negative=off)** |
+| YAML | `autonomous:` → `inherited_tags_cache_seconds: 30` |
+
+Raise it if you poll the Automata list often and want the daemon to repeat
+the read less often; keep it near the default if you want tag changes to be
+visible within a few seconds.
 
 Listing the tags takes the same five surfaces as the rest of this howto, plus
 two filters for the system tags: `GET /api/autonomous/tags` accepts
