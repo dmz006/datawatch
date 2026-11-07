@@ -605,6 +605,13 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 
 ---
 
+## Memory ceiling
+
+- **Memory ceiling** — the most memory one worker pane or verification run may use: a share of host memory, kept between a floor and a cap. See [Memory ceiling](operations.md#memory-ceiling).
+- **Scope** — the systemd user scope the worker's shell runs in; the kernel holds the ceiling there.
+- **Watchdog path** — the fallback when there is no user scope: the daemon watches the pane's process group through `/proc` and ends it when it passes the ceiling.
+- **No-ceiling status** — `enforcement_path` is `none` and `effective_mb` is `0` when the host has neither a user scope nor `/proc`. The run is not capped. A project or task kind opt-out (`none`) shows only in the worker session's own `ceiling_path` and `ceiling_mb`, not in the status object.
+
 ## Automata
 
 ### Automata list

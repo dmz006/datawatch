@@ -1078,3 +1078,47 @@ func TestValidateUndeclaredEditMode(t *testing.T) {
 		}
 	}
 }
+
+func TestResourceLimits_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	rl := cfg.ResourceLimits
+	if rl.MemorySharePercent != 50 {
+		t.Errorf("MemorySharePercent = %d, want 50", rl.MemorySharePercent)
+	}
+	if rl.MemoryFloorMB != 2048 {
+		t.Errorf("MemoryFloorMB = %d, want 2048", rl.MemoryFloorMB)
+	}
+	if rl.MemoryCapMB != 16384 {
+		t.Errorf("MemoryCapMB = %d, want 16384", rl.MemoryCapMB)
+	}
+
+	// A missing file loads the defaults too.
+	loaded, err := Load(filepath.Join(t.TempDir(), "absent.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.ResourceLimits != DefaultResourceLimits() {
+		t.Errorf("loaded defaults = %+v, want %+v", loaded.ResourceLimits, DefaultResourceLimits())
+	}
+}
+
+func TestResourceLimits_YAMLOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	yaml := `
+resource_limits:
+  memory_share_percent: 30
+  memory_floor_mb: 1024
+  memory_cap_mb: 8192
+`
+	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	rl := cfg.ResourceLimits
+	if rl.MemorySharePercent != 30 || rl.MemoryFloorMB != 1024 || rl.MemoryCapMB != 8192 {
+		t.Errorf("ResourceLimits = %+v, want {30 1024 8192}", rl)
+	}
+}

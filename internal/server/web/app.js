@@ -6588,7 +6588,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   area.innerHTML = `
     ${parentLink}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
-      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
+      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}${memoryCeilingStatusHTML(board.memory_ceiling)}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
     ${sprintCard}
@@ -17771,6 +17771,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
     { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
     { key: 'session.backend_family', label: 'Default LLM backend', type: 'llm_select' },
+    // Memory ceiling: the share of host memory a verification run may use,
+    // bounded by a floor and a cap. Each has a ? help entry that opens the
+    // memory ceiling section of the operations docs.
+    { key: 'resource_limits.memory_share_percent', label: '', labelKey: 'settings_resource_limits_memory_share_percent', helpKey: 'settings_resource_limits_memory_share_percent_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '50', min: 1, max: 100, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_share_percent', this)" },
+    { key: 'resource_limits.memory_floor_mb', label: '', labelKey: 'settings_resource_limits_memory_floor_mb', helpKey: 'settings_resource_limits_memory_floor_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '2048', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_floor_mb', this)" },
+    { key: 'resource_limits.memory_cap_mb', label: '', labelKey: 'settings_resource_limits_memory_cap_mb', helpKey: 'settings_resource_limits_memory_cap_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '16384', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_cap_mb', this)" },
   ]},
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
@@ -19699,15 +19705,16 @@ function loadGeneralConfig() {
             }
             const _inHint = _fieldHintHTML(f);
             const _zNoteHTML = zNote ? `<div style="font-size:10px;color:var(--text2);width:100%;">${escHtml(zNote)}</div>` : '';
-            html += `<div class="settings-row" style="justify-content:space-between;${(_inHint || _zNoteHTML) ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
-              <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
+            html += `<div class="settings-row" style="justify-content:space-between;${(_inHint || _zNoteHTML || f.helpDocs) ? 'flex-wrap:wrap;gap:6px;' : ''}">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <input type="${f.type}" data-cfg-key="${escHtml(f.key)}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${zPlaceholder ? 'placeholder="' + escHtml(zPlaceholder) + '"' : ''}
                 ${f.min !== undefined ? 'min="' + f.min + '"' : ''}
                 ${f.max !== undefined ? 'max="' + f.max + '"' : ''}
                 ${f.step !== undefined ? 'step="' + f.step + '"' : ''}
+                ${f.helpDocs ? 'style="min-width:0;max-width:100%;"' : ''}
                 onchange="${txtOnchange}" />
-              ${_inHint}${_zNoteHTML}
+              ${f.helpDocs ? _settingsHelpTextHTML(f) : ''}${_inHint}${_zNoteHTML}
             </div>`;
           }
         }
@@ -20242,6 +20249,7 @@ function _taskAttemptsHTML(task) {
         <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
       <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
       ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${a.memory_killed ? `<div class="prd-task-attempt-memory" style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('memory_attempt_over_limit', [String(a.ceiling_mb || 0), a.killed_process || t('memory_attempt_unknown_process'), String(a.peak_memory_mb || 0)]))}</div>` : ''}
       ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
       ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
     </div>`;
@@ -20319,6 +20327,60 @@ function _cfgTextareaText(val) {
 function saveGeneralField(key, value) {
   saveGeneralConfigPut(key, value);
 }
+
+// settingsHelpLink: the ? help entry on a field with helpDocs. It opens the
+// docs viewer at that page and anchor in a new tab; its tooltip is the
+// field's help text. Hidden with the other inline doc links.
+function settingsHelpLink(f) {
+  if (localStorage.getItem('cs_show_docs_links') === '0') return '';
+  const url = '/diagrams.html#docs/' + f.helpDocs;
+  const tip = t(f.helpKey) || '';
+  const lbl = t('settings_help_link_label') || '';
+  return ` <a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="${escHtml(tip)}" aria-label="${escHtml(lbl)}">?</a>`;
+}
+
+// _settingsHelpTextHTML: the help text under a field, full row width so it
+// wraps below the control at phone width.
+function _settingsHelpTextHTML(f) {
+  const v = t(f.helpKey);
+  if (!v || v === f.helpKey) return '';
+  return `<div style="flex-basis:100%;font-size:10px;color:var(--text2);">${escHtml(v)}</div>`;
+}
+
+// saveResourceLimitField validates a memory ceiling field before saving it:
+// the share is a whole number 1 to 100; the floor and cap are whole MB of at
+// least 1, and the floor may not exceed the cap. A bad value shows a toast,
+// restores the saved value and sends nothing. An empty box is rejected too.
+function saveResourceLimitField(key, el) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  const isShare = key === 'resource_limits.memory_share_percent';
+  let err = '';
+  if (raw === '' || !Number.isInteger(n)) {
+    err = t(isShare ? 'settings_resource_limits_error_share' : 'settings_resource_limits_error_mb');
+  } else if (isShare && (n < 1 || n > 100)) {
+    err = t('settings_resource_limits_error_share');
+  } else if (!isShare && n < 1) {
+    err = t('settings_resource_limits_error_mb');
+  } else if (!isShare) {
+    const other = key === 'resource_limits.memory_floor_mb' ? 'resource_limits.memory_cap_mb' : 'resource_limits.memory_floor_mb';
+    const oe = document.querySelector('input[data-cfg-key="' + other + '"]');
+    const ov = oe ? Number(String(oe.value).trim()) : NaN;
+    if (Number.isInteger(ov) && ov >= 1) {
+      const floor = key === 'resource_limits.memory_floor_mb' ? n : ov;
+      const cap = key === 'resource_limits.memory_cap_mb' ? n : ov;
+      if (floor > cap) err = t('settings_resource_limits_error_floor_above_cap');
+    }
+  }
+  if (err) {
+    showToast(err, 'error');
+    if (el && el.defaultValue !== undefined) el.value = el.defaultValue;
+    return;
+  }
+  if (el) el.defaultValue = String(n);
+  saveGeneralConfigPut(key, n);
+}
+window.saveResourceLimitField = saveResourceLimitField;
 
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and
@@ -36698,6 +36760,26 @@ function automationStatusLine(row) {
   return t('automation_live_status', [current, Number(row.pending_members) || 0, idle]);
 }
 window.automationStatusLine = automationStatusLine;
+
+// memoryCeilingStatusHTML words the memory_ceiling block of the session status:
+// the limit in MB, where it came from and how it is enforced. A status with no
+// block says nothing; a missing or unenforced ceiling is a warning that gives
+// its reason.
+function memoryCeilingStatusHTML(mc) {
+  if (!mc || typeof mc !== 'object') return '';
+  const sep = '<span style="margin:0 6px;">·</span>';
+  if (mc.warning || mc.source === 'none' || !(Number(mc.effective_mb) > 0)) {
+    const reason = mc.reason === 'no_enforcement' ? t('memory_ceiling_none_reason_unenforced') : t('memory_ceiling_none_reason');
+    const warn = t('memory_ceiling_none_warning', [reason]);
+    return `${sep}<span class="memory-ceiling-warning" role="alert" style="color:var(--warning,#f59e0b);">⚠ ${escHtml(warn)}</span>`;
+  }
+  const srcLabels = { project: t('memory_ceiling_source_project'), task_kind: t('memory_ceiling_source_task_kind') };
+  const pathLabels = { scope: t('memory_ceiling_path_scope'), watchdog: t('memory_ceiling_path_watchdog') };
+  const src = srcLabels[mc.source] || t('memory_ceiling_source_default');
+  const path = pathLabels[mc.enforcement_path] || t('memory_ceiling_path_none');
+  return `${sep}<span class="memory-ceiling-line">${escHtml(t('memory_ceiling_status', [String(mc.effective_mb), src, path]))}</span>`;
+}
+window.memoryCeilingStatusHTML = memoryCeilingStatusHTML;
 
 // loadAutomationLiveStatus reads automations[] from the loop status and shows
 // the row of the open Automation under its controls.

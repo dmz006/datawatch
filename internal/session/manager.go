@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -1884,6 +1885,143 @@ func (m *Manager) scrubPaneTmuxEnv(sess *Session) {
 	}
 }
 
+// Ceiling paths recorded on Session.CeilingPath.
+const (
+	// CeilingPathScope: the pane shell runs inside a systemd user scope.
+	CeilingPathScope = "scope"
+	// CeilingPathWatchdog: the /proc watchdog enforces the ceiling.
+	CeilingPathWatchdog = "watchdog"
+	// CeilingPathNone: no ceiling applies (operator opt-out or no mechanism).
+	CeilingPathNone = "none"
+)
+
+// Seams for tests; production values talk to the host.
+var (
+	scopeAvailableFn = resources.ScopeAvailable
+	procExistsFn     = func() bool { return resources.ProcFS{Root: "/proc"}.Exists() }
+	hostTotalMBFn    = resources.HostTotalMB
+	scopeCommandFn   = resources.ScopeCommand
+	killPaneGroupFn  = func(pgid int) error {
+		return exec.Command("kill", "-KILL", "--", "-"+strconv.Itoa(pgid)).Run()
+	}
+)
+
+// paneLaunchPlan says how a worker's pane is started.
+type paneLaunchPlan struct {
+	Path      string   // CeilingPath* constant, "" when the pane is not a worker pane
+	CeilingMB int      // resolved ceiling; 0 when none
+	Cmd       []string // pane command (scope path only); nil = tmux default shell
+}
+
+// planPaneLaunch resolves the ceiling and the launcher for a worker pane.
+// Only PRD-owned worker sessions (ScrubTmuxEnv) get a plan; the scope wraps
+// the pane's shell, never the tmux server or the new-session call.
+func (m *Manager) planPaneLaunch(sess *Session, ov resources.Override) paneLaunchPlan {
+	if sess == nil || !sess.ScrubTmuxEnv {
+		return paneLaunchPlan{}
+	}
+	limits := config.DefaultResourceLimits()
+	if m.cfg != nil {
+		c := m.cfg.ResourceLimits
+		if c.MemorySharePercent > 0 {
+			limits.MemorySharePercent = c.MemorySharePercent
+		}
+		if c.MemoryFloorMB > 0 {
+			limits.MemoryFloorMB = c.MemoryFloorMB
+		}
+		if c.MemoryCapMB > 0 {
+			limits.MemoryCapMB = c.MemoryCapMB
+		}
+	}
+	total, _ := hostTotalMBFn() // 0 on error: the floor applies
+	ceil := resources.ResolveCeiling(total, limits, ov)
+	if ceil.NoCeiling() {
+		return paneLaunchPlan{Path: CeilingPathNone}
+	}
+	switch resources.SelectStatus(scopeAvailableFn(), procExistsFn()) {
+	case resources.StatusScope:
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		bin, args, err := scopeCommandFn(resources.ScopeSpec{
+			ID:        fmt.Sprintf("%s-%d", sess.FullID, time.Now().Unix()),
+			Kind:      "worker",
+			CeilingMB: ceil.MB,
+			Command:   []string{shell},
+		})
+		if err == nil {
+			return paneLaunchPlan{Path: CeilingPathScope, CeilingMB: ceil.MB, Cmd: append([]string{bin}, args...)}
+		}
+		fmt.Printf("[warn] scope launcher for %s: %v; using the watchdog\n", sess.ID, err)
+		if procExistsFn() {
+			return paneLaunchPlan{Path: CeilingPathWatchdog, CeilingMB: ceil.MB}
+		}
+		return paneLaunchPlan{Path: CeilingPathNone}
+	case resources.StatusWatchdog:
+		return paneLaunchPlan{Path: CeilingPathWatchdog, CeilingMB: ceil.MB}
+	default:
+		return paneLaunchPlan{Path: CeilingPathNone}
+	}
+}
+
+// startWorkerPane creates the tmux session for sess, recording the ceiling
+// path on it. The scope path hands the wrapped shell command to tmux as the
+// pane command; the watchdog path starts a plain pane and watches it.
+func (m *Manager) startWorkerPane(sess *Session, cols, rows int, ov resources.Override) error {
+	plan := m.planPaneLaunch(sess, ov)
+	if plan.Path != "" {
+		sess.CeilingPath, sess.CeilingMB = plan.Path, plan.CeilingMB
+	}
+	if len(plan.Cmd) > 0 {
+		if pl, ok := m.tmux.(PaneLauncher); ok {
+			return pl.NewSessionWithPaneCommand(sess.TmuxSession, cols, rows, plan.Cmd)
+		}
+		sess.CeilingPath, sess.CeilingMB = CeilingPathNone, 0
+	}
+	if err := m.tmux.NewSessionWithSize(sess.TmuxSession, cols, rows); err != nil {
+		return err
+	}
+	if sess.CeilingPath == CeilingPathWatchdog {
+		m.startPaneWatchdog(sess)
+	}
+	return nil
+}
+
+// startPaneWatchdog turns job control off in the pane shell, so every worker
+// process stays in the pane's process group, and watches that group until the
+// tmux session ends or the ceiling is passed.
+func (m *Manager) startPaneWatchdog(sess *Session) {
+	pp, ok := m.tmux.(PanePIDer)
+	if !ok || sess.CeilingMB <= 0 {
+		return
+	}
+	_ = m.tmux.SendKeys(sess.TmuxSession, "set +m")
+	pgid := pp.PanePID(sess.TmuxSession)
+	if pgid <= 1 {
+		return
+	}
+	tmuxSession, ceilingMB, id := sess.TmuxSession, sess.CeilingMB, sess.ID
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(resources.WatchdogInterval)
+		defer t.Stop()
+		for range t.C {
+			if !m.tmux.SessionExists(tmuxSession) {
+				close(done)
+				return
+			}
+		}
+	}()
+	go func() {
+		res := resources.WatchGroup(done, resources.ProcFS{Root: "/proc"}, pgid, 0, ceilingMB,
+			resources.WatchdogInterval, killPaneGroupFn)
+		if res.Killed {
+			fmt.Printf("[warn] session %s passed its %d MB memory ceiling; its process group was ended (%s)\n", id, ceilingMB, res)
+		}
+	}()
+}
+
 // StartOptions holds optional parameters for starting a session.
 type StartOptions struct {
 	Name          string            // optional human-readable name
@@ -1939,6 +2077,11 @@ type StartOptions struct {
 	// sessions leave it false. Recorded on Session.ScrubTmuxEnv so restart
 	// and resume re-apply it to the fresh pane shell.
 	ScrubTmuxEnv bool
+
+	// MemoryCeiling is the per-project / per-task-kind ceiling override
+	// (already picked with resources.PickOverride). Zero value = no override.
+	// Only used for worker panes (ScrubTmuxEnv).
+	MemoryCeiling resources.Override
 
 	// Skills (v6.13.7) — comma-separated list of synced-skill names to
 	// inject into <ProjectDir>/.datawatch/skills/<name>/ at session
@@ -2502,7 +2645,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		sess.InputMode = m.cfg.GetInputMode(backendName)
 	}
 	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q size=%dx%d mode=%s", tmuxSession, backendName, task, projectDir, cols, rows, sess.OutputMode)
-	if err := m.tmux.NewSessionWithSize(tmuxSession, cols, rows); err != nil {
+	var ceilingOv resources.Override
+	if opt != nil {
+		ceilingOv = opt.MemoryCeiling
+	}
+	if err := m.startWorkerPane(sess, cols, rows, ceilingOv); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
@@ -4367,7 +4514,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			cols, rows = m.cfg.GetConsoleSize(backendName)
 		}
 	}
-	if err := m.tmux.NewSessionWithSize(sess.TmuxSession, cols, rows); err != nil {
+	if err := m.startWorkerPane(sess, cols, rows, resources.Override{}); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 	switch backendName {

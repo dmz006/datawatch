@@ -80,6 +80,13 @@ func RunVerificationScriptExit(scriptRelPath, projectDir string) (output string,
 // unsafe path, a script file that is absent from the worktree (wrapping
 // ErrVerificationScriptMissing), or a failure to run bash at all.
 func runVerificationScript(scriptRelPath, projectDir string) (output string, exitCode int, err error) {
+	return runVerificationScriptCapped(scriptRelPath, projectDir, nil)
+}
+
+// runVerificationScriptCapped is runVerificationScript run inside the
+// ceiling launch l (nil = no ceiling). It records the path actually used
+// back on l.
+func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaunch) (output string, exitCode int, err error) {
 	if scriptRelPath == "" {
 		return "", -1, errors.New("verification script path is empty")
 	}
@@ -95,9 +102,8 @@ func runVerificationScript(scriptRelPath, projectDir string) (output string, exi
 		return "", -1, fmt.Errorf("%w: %s", ErrVerificationScriptMissing, scriptRelPath)
 	}
 
-	cmd := exec.Command("bash", scriptPath) // #nosec G204 -- scriptPath validated above to resolve inside projectDir
-	cmd.Dir = projectDir
-	out, runErr := cmd.CombinedOutput()
+	argv, _, _ := verifyScriptArgv(scriptPath, l) // scriptPath validated above to resolve inside projectDir
+	out, runErr := runVerifyCommand(argv, projectDir, l)
 	output = truncateScriptOutput(out)
 	if runErr != nil {
 		var exitErr *exec.ExitError

@@ -280,6 +280,13 @@ type Session struct {
 	// restart re-applies it to the new pane shell.
 	ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
 
+	// CeilingPath records which memory-ceiling mechanism the worker pane
+	// used: "scope" (systemd user scope), "watchdog" (/proc watchdog) or
+	// "none". Empty for sessions that are not worker panes.
+	CeilingPath string `json:"ceiling_path,omitempty"`
+	// CeilingMB is the resolved memory ceiling in MB (0 when none).
+	CeilingMB int `json:"ceiling_mb,omitempty"`
+
 	// LastChannelEventAt (BL266 v6.11.24) — wall time of the last channel
 	// event (ACP/MCP message, chat_message, structured status, or
 	// significant tmux pane change). Used by the channel-state watcher

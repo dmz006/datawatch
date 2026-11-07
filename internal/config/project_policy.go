@@ -99,6 +99,12 @@ type ProjectPolicy struct {
 	// resolved independently across tiers.
 	FailureEscalation *FailureEscalationLevel `yaml:"failure_escalation,omitempty" json:"failure_escalation,omitempty"`
 
+	// --- resources ---
+
+	// MemoryLimit: the per-project memory ceiling override; a positive MB
+	// number, the word "none", or unset for the default.
+	MemoryLimit *string `yaml:"memory_limit,omitempty" json:"memory_limit,omitempty"`
+
 	// --- git defaults ---
 
 	// DefaultAutoPR turns auto-PR on or off for this project's Automata.
@@ -305,6 +311,11 @@ func ValidateProjectPolicy(p *ProjectPolicy, keyPrefix string) error {
 		}
 	}
 	countField("max_concurrent_tasks", p.MaxConcurrentTasks, 1)
+	if v := p.MemoryLimit; v != nil {
+		if err := ValidateMemoryLimit(*v); err != nil {
+			fatal("%s.memory_limit: %v", keyPath, err)
+		}
+	}
 	for k, v := range p.PlanTierMaxInflight {
 		if v < 0 {
 			fatal("%s.plan_tier_max_inflight[%s]: %d is invalid; use 0 (unlimited) or more", keyPath, k, v)

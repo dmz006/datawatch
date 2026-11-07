@@ -19,6 +19,7 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
@@ -1203,6 +1204,7 @@ type GuardrailInvocation struct {
 	// backends; when no tier resolves it is left empty and the caller
 	// records NoGuardrailModelVerdict instead of launching a judge.
 	ScriptRan        bool
+	scriptLaunch     *verifyLaunch // ceiling launch for the script run; nil = uncapped
 	ScriptExitCode   int
 	ScriptOutput     string
 	GuardrailBackend string
@@ -1239,6 +1241,11 @@ var builtinTypes = []AutomatonType{
 // Manager is the public façade for the autonomous package.
 type Manager struct {
 	mu sync.Mutex
+	// Memory ceiling for verification script runs (verification_scope.go).
+	// Guarded by mu; nil limits = uncapped.
+	resourceLimits    *config.ResourceLimitsConfig
+	resourceLimitsFn  func() config.ResourceLimitsConfig
+	ceilingOverrideFn func(prd *PRD, t *Task) resources.Override
 	// capacityWaitSpent is the queue time each task's current admission has
 	// used against the capacity wait bound (capacity.go).
 	capacityWaitSpent map[string]time.Duration
@@ -6360,10 +6367,12 @@ func (m *Manager) Status() LoopStatus {
 	// this runs before m.mu is taken, as the PRD reads above do).
 	var held []HeldTaskStatus
 	m.store.WithLock(func() { held = heldTasksAcrossPRDs(m.store.prds) })
+	memCeiling := m.memoryCeilingStatus() // takes m.mu itself
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
 	st.ReviewNeeded = held
+	st.MemoryCeiling = memCeiling
 	st.Budgets = budgets
 	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)

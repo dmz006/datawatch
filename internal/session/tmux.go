@@ -58,14 +58,70 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 	if rows <= 0 {
 		rows = 24
 	}
+	return t.NewSessionWithPaneCommand(name, cols, rows, nil)
+}
+
+// PaneLauncher is the optional TmuxAPI extension the manager uses to start a
+// session whose pane runs a given command (the scope-wrapped pane shell)
+// instead of tmux's default shell.
+type PaneLauncher interface {
+	NewSessionWithPaneCommand(name string, cols, rows int, paneCmd []string) error
+}
+
+// PanePIDer is the optional TmuxAPI extension that reports a pane's PID, used
+// by the watchdog fallback to find the process group to watch.
+type PanePIDer interface {
+	PanePID(session string) int
+}
+
+// NewSessionWithPaneCommand creates a detached tmux session like
+// NewSessionWithSize. A non-empty paneCmd becomes the pane's command, built as
+// one shell-quoted string after the tmux flags. Only the pane program is
+// wrapped by the caller; the tmux invocation itself, and so the tmux server,
+// is never placed inside a scope.
+func (t *TmuxManager) NewSessionWithPaneCommand(name string, cols, rows int, paneCmd []string) error {
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
 	colStr := fmt.Sprintf("%d", cols)
 	rowStr := fmt.Sprintf("%d", rows)
-	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", colStr, "-y", rowStr).Run(); err != nil {
+	if err := exec.Command("tmux", newSessionArgs(name, colStr, rowStr, paneCmd)...).Run(); err != nil {
 		return err
 	}
 	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()     //nolint:errcheck
 	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run() //nolint:errcheck
 	return nil
+}
+
+// newSessionArgs builds the tmux new-session argument list.
+func newSessionArgs(name, cols, rows string, paneCmd []string) []string {
+	args := []string{"new-session", "-d", "-s", name, "-x", cols, "-y", rows}
+	if len(paneCmd) > 0 {
+		args = append(args, shellJoin(paneCmd))
+	}
+	return args
+}
+
+// shellJoin quotes each word for a POSIX shell and joins them with spaces.
+func shellJoin(words []string) string {
+	q := make([]string, len(words))
+	for i, w := range words {
+		q[i] = "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
+	}
+	return strings.Join(q, " ")
+}
+
+// PanePID returns the PID of the first pane's process, or 0 on any error.
+func (t *TmuxManager) PanePID(session string) int {
+	out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_pid}").Output()
+	if err != nil {
+		return 0
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]))
+	return pid
 }
 
 // SendTrustPromptAccept accepts Claude Code's workspace-trust TUI dialog.

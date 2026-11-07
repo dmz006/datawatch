@@ -1242,6 +1242,10 @@ type Task struct {
 	// stall and cleared once recordFailedAttempt has copied it into the
 	// attempt record.
 	RunnerEvidence *RunnerEvidence `json:"runner_evidence,omitempty"`
+	// CeilingKill is set when a verification run was ended for passing its
+	// memory ceiling, and cleared once recordFailedAttempt has copied it into
+	// the attempt record.
+	CeilingKill *CeilingKill `json:"ceiling_kill,omitempty"`
 	// DecisionResume records the worker question the coordinator tick last
 	// resumed this task for (question_tick.go), so a later tick never resumes
 	// it twice for the same answer. Nil = never resumed for a question.
@@ -1630,6 +1634,11 @@ type GuardrailVerdict struct {
 	Mode   string         `json:"mode,omitempty"`
 	Scores *VerdictScores `json:"scores,omitempty"`
 	Route  *VerdictRoute  `json:"route,omitempty"`
+	// CeilingPath and CeilingMB record how the one-shot guardrail run was
+	// capped: "scope", "watchdog" or "none". Recording only; the verdict is
+	// never changed by it.
+	CeilingPath string `json:"ceiling_path,omitempty"`
+	CeilingMB   int    `json:"ceiling_mb,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match
@@ -1678,6 +1687,11 @@ type VerificationResult struct {
 	// is false. Never set in generate mode.
 	Scores *VerdictScores `json:"scores,omitempty"`
 	Route  *VerdictRoute  `json:"route,omitempty"`
+	// CeilingPath records how the verification script was capped: "scope",
+	// "watchdog" or "none". CeilingMB is the resolved ceiling (0 for none).
+	// Recording only; it never changes how the result is judged.
+	CeilingPath string `json:"ceiling_path,omitempty"`
+	CeilingMB   int    `json:"ceiling_mb,omitempty"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved
@@ -1837,6 +1851,10 @@ type LoopStatus struct {
 	// ReviewNeeded lists every task held for operator review across all
 	// Automata, oldest hold first. Omitted when none is held.
 	ReviewNeeded []HeldTaskStatus `json:"review_needed,omitempty"`
+
+	// MemoryCeiling is the effective memory ceiling of a verification run with
+	// no project or task kind override: its size, source and enforcement path.
+	MemoryCeiling MemoryCeilingStatus `json:"memory_ceiling"`
 	// Notify reports the notify-events resolution state: the effective
 	// global default tier and which non-finished Automata override it
 	// with an automaton- or profile-tier event list. Always present, with
@@ -1990,3 +2008,23 @@ type PlanningRecord struct {
 	SupervisorEdits int       `json:"supervisor_edits,omitempty"`
 	RecordedAt      time.Time `json:"recorded_at"`
 }
+
+// ProjectMemoryLimit returns the project's memory_limit override from its
+// policy block (config.ProjectPolicy.MemoryLimit): "" when unset.
+func ProjectMemoryLimit(p *config.ProjectPolicy) string {
+	if p == nil || p.MemoryLimit == nil {
+		return ""
+	}
+	return *p.MemoryLimit
+}
+
+// KindMemoryLimit returns the memory_limit override for a task kind from
+// the per-kind table (config.AutonomousConfig.MemoryLimitByKind): "" when
+// the kind has no entry.
+func KindMemoryLimit(table map[string]string, kind string) string {
+	return table[kind]
+}
+
+// AttemptMemoryKillReason is the failure reason recorded on a task attempt
+// that was stopped for using more memory than its limit.
+const AttemptMemoryKillReason = "the process used more memory than the limit"

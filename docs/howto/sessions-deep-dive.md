@@ -52,6 +52,10 @@ your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /
 `Killed` (terminal — sticky). See `channel-state-engine.md` for the
 state-decision logic.
 
+## How a worker pane is capped
+
+A pane that an Automaton task runs in is held to a memory ceiling. With a systemd user scope, the pane's shell starts inside that scope. Without one, the daemon watches the pane's processes through `/proc` and ends them if they pass the ceiling. With neither, the pane runs uncapped. The session records `ceiling_path` and `ceiling_mb`. Sessions you start yourself are not capped. See [Memory ceiling](../operations.md#memory-ceiling).
+
 ## Base requirements
 
 - `datawatch start` — daemon up.

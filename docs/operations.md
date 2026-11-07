@@ -763,6 +763,41 @@ The project automation policy is the per-project tier of the three policy tiers 
 | **MCP** | `project_upsert` with the `policy` argument; `project_policy_effective(name)` with the optional `automaton` argument |
 | **Comm channel** | `project policy <name> [automaton]` (read) |
 
+### Memory ceiling
+
+A verification run is held to a memory ceiling so one run cannot starve the host. The ceiling is a share of the host memory, kept between a floor and a cap:
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `resource_limits.memory_share_percent` | Share of the host memory a run may use, 1 to 100 | 50 |
+| `resource_limits.memory_floor_mb` | Lowest ceiling, whole MB | 2048 |
+| `resource_limits.memory_cap_mb` | Highest ceiling, whole MB; the floor may not be above it | 16384 |
+
+The ceiling is the share of host memory, raised to the floor if it falls below it and lowered to the cap if it goes above it. A worker pane and a verification run both get it.
+
+**Overrides.** A project sets `memory_limit` in its project policy; a task kind sets an entry in `autonomous.memory_limit_by_kind`. Each value is a whole number of MB or the word `none`. `none` opts that project or task kind out of a ceiling. An empty value uses the default above.
+
+**Reading the status.** The `memory_ceiling` object of `GET /api/autonomous/status` and the `autonomous_status` MCP tool shows:
+
+- `effective_mb`: the ceiling in MB, or `0` when there is none.
+- `source`: where it came from: `default`, `project`, `task_kind`, or `none` (no ceiling settings are installed).
+- `enforcement_path`: how it is held: `scope` (a systemd user scope around the worker's shell), `watchdog` (a daemon check of the pane's memory use through `/proc`), or `none`.
+- `share_percent`, `floor_mb` and `cap_mb`: the settings the default comes from.
+
+The status describes a run with no project or task kind override, so an opt-out shows only in a worker session's own `ceiling_path` and `ceiling_mb`.
+
+**When a ceiling stops work.** The process group is ended and the task attempt fails with the reason "the process used more memory than the limit". Two things are written: a `resource_ceiling_kill` entry in Events (the task, the process name, the peak and the ceiling, both in MB) and a warning alert, "Task stopped: memory ceiling exceeded". The first such failure is retried like any other. A second failure in a row moves the Automaton task to review instead of retrying a third time; see the [retry policy howto](howto/retry-policy.md#memory-ceiling-failures).
+
+**Hosts without systemd.** With no systemd user scope, the watchdog holds the ceiling if `/proc` is readable. With neither, the run starts with no ceiling and `enforcement_path` reads `none`. No Events entry is written for that case, so check the worker session's `ceiling_path` to see it.
+
+| Surface | How |
+|---|---|
+| **Web UI** | Settings > General > datawatch: Memory share, Memory floor and Memory cap, each with a **?** help link to this section |
+| **CLI** | `datawatch config set resource_limits.memory_share_percent <n>` (likewise the floor and cap) |
+| **REST API** | `PUT /api/config` with the `resource_limits` keys |
+| **MCP** | `config_set`; `autonomous_status` for the effective ceiling |
+| **Comm channel** | `configure resource_limits.memory_share_percent=<n>` |
+
 ### Verifier node limit
 
 Verifier runs take a lease on the node's own **verifier pool**, not the pool of the workers they check. Each compute node that hosts a local engine gets one verifier slot by default — one verifier at a time in its own pool, running alongside the executor's sessions — so a verification no longer queues behind the worker count on the node. A node that hosts no local engine, or one whose `verifier_slots` is set to `0`, has no verifier pool: a verifier for that node leases its executor pool (the node's `session_slots` / `max_concurrent_sessions` limit) exactly as before. The verifier pool never raises the executor's limit; the two coexist under their own caps, and a node with one GPU runs one verifier at a time by default.

@@ -36,6 +36,20 @@ const (
 // behaviour. When escalation is enabled and t has recorded failed attempts, it
 // returns hint followed by the escalation retry prompt.
 func (m *Manager) escalationRetryHint(prd *PRD, t *Task, hint string) string {
+	out := m.escalationRetryHintBase(prd, t, hint)
+	var para string
+	m.store.WithLock(func() { para = ceilingRetryParagraph(t) })
+	switch {
+	case para == "":
+		return out
+	case out == "":
+		return para
+	default:
+		return out + "\n\n" + para
+	}
+}
+
+func (m *Manager) escalationRetryHintBase(prd *PRD, t *Task, hint string) string {
 	if !m.resolveFailureEscalation(prd, t).Enabled {
 		return hint
 	}

@@ -18,6 +18,11 @@ const (
 	// rate-limit pattern fingerprint as rechecked. Details: patterns_version.
 	ActionUsageBackoffPatternsRechecked = "autonomous_usage_backoff_patterns_rechecked"
 
+	// ActionResourceCeilingKill — a run was stopped for using more memory than
+	// its ceiling, or started with no ceiling because the host has neither a
+	// user scope nor /proc. Details: task, process, peak_mb, ceiling_mb, reason.
+	ActionResourceCeilingKill = "resource_ceiling_kill"
+
 	// ActionBudgetCeilingWait — an LLM's dollar budget window filled, so
 	// autonomous admission for it now waits. Emitted once per transition.
 	// Details: llm, spend_usd, ceiling_usd, rolls_over_at (RFC 3339, when known).

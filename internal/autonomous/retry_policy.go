@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -528,4 +529,81 @@ func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVer
 		}
 	}
 	return createdStory, task, nil
+}
+
+// ceilingRetryParagraph returns the fixed paragraph added to the next worker
+// prompt when the previous attempt was stopped for using more memory than its
+// limit. It returns "" when t has no attempts or the last attempt was not a
+// ceiling kill. The limit, process name and peak come from the attempt record;
+// an empty process name reads as "unknown". The caller must hold the store
+// lock when t is shared.
+func ceilingRetryParagraph(t *Task) string {
+	if t == nil || len(t.Attempts) == 0 {
+		return ""
+	}
+	a := t.Attempts[len(t.Attempts)-1]
+	if !a.MemoryKilled {
+		return ""
+	}
+	name := a.KilledProcess
+	if name == "" {
+		name = "unknown"
+	}
+	return fmt.Sprintf("The previous run was stopped because the process used more memory than the limit of %d MB (process %s, peak %d MB). "+
+		"Bound your program: avoid unbounded recursion, stream instead of holding data, cap collection sizes, and test with a small input first.",
+		a.CeilingMB, name, a.PeakMemoryMB)
+}
+
+// ceilingReviewThreshold is how many consecutive attempts of one task may be
+// stopped for using more memory than the limit before the task is no longer
+// retried. The first is retried as usual with the reason in the prompt; the
+// second moves the task to review.
+const ceilingReviewThreshold = 2
+
+// ceilingReviewSource is the FailureReason.Source of a task held because of
+// consecutive ceiling failures.
+const ceilingReviewSource = "ceiling-hold"
+
+// consecutiveCeilingFailures counts the attempts at the end of t's attempt
+// list that were stopped for using more memory than the limit. An attempt that
+// failed for another reason ends the run, so the count starts again after it.
+// The caller must hold the store lock when t is shared.
+func consecutiveCeilingFailures(t *Task) int {
+	n := 0
+	for i := len(t.Attempts) - 1; i >= 0 && t.Attempts[i].MemoryKilled; i-- {
+		n++
+	}
+	return n
+}
+
+// holdAfterCeilingFailures is the ceiling step of the retry policy. When the
+// task's last ceilingReviewThreshold attempts were all ceiling failures it
+// moves the task to the review state with AttemptMemoryKillReason recorded as
+// the failure reason, and reports held true so the caller does not retry. With
+// fewer, it does nothing and the caller retries as usual. The error is from
+// saving the task.
+func (m *Manager) holdAfterCeilingFailures(prd *PRD, t *Task) (held bool, err error) {
+	var count int
+	m.store.WithLock(func() { count = consecutiveCeilingFailures(t) })
+	if count < ceilingReviewThreshold {
+		return false, nil
+	}
+	last, err := m.parkTaskForReview(prd, t, reviewParking{
+		reason: FailureReason{Category: "infra", Detail: AttemptMemoryKillReason, Source: ceilingReviewSource},
+		describe: func(t *Task) (string, string) {
+			return AttemptMemoryKillReason,
+				fmt.Sprintf("task %s moved to review: %s, %d attempts in a row", t.ID, AttemptMemoryKillReason, count)
+		},
+		report: func(t *Task, now time.Time) *ReviewSummary {
+			var b strings.Builder
+			fmt.Fprintf(&b, "Task %s (%s) is held for operator review: %s, in %d attempts in a row.\n\n",
+				t.ID, t.Title, AttemptMemoryKillReason, count)
+			return finishReviewSummary(&b, t, now)
+		},
+	})
+	if err != nil {
+		return true, err
+	}
+	m.raiseReviewAlert(prd, t, count, last)
+	return true, nil
 }
