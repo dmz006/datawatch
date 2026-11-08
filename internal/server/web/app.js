@@ -14810,6 +14810,100 @@ function automatonReleaseBadgesHtml(rec) {
 }
 window.automatonReleaseBadgesHtml = automatonReleaseBadgesHtml;
 
+// Milestone marker. An Automation with milestone set shows a badge on its list
+// row and in its detail header; an ordinary arc shows nothing. The detail header
+// carries the toggle that marks or unmarks it through the Automation update
+// path (PUT /api/automations/{id}).
+function automationIsMilestone(a) {
+  return !!(a && a.milestone === true);
+}
+// automationMilestoneBadgeHtml is the badge for a milestone, or '' otherwise.
+function automationMilestoneBadgeHtml(a) {
+  if (!automationIsMilestone(a)) return '';
+  const style = 'font-size:10px;padding:2px 7px;border-radius:8px;margin-left:6px;font-weight:600;white-space:nowrap;display:inline-block;vertical-align:middle;border:1px solid var(--accent);color:var(--accent);background:rgba(245,158,11,0.12);';
+  return `<span class="automation-milestone-badge" data-milestone="true" style="${style}" title="${escHtml(t('automation_milestone_hint'))}">${escHtml(t('automation_milestone_badge'))}</span>`;
+}
+window.automationMilestoneBadgeHtml = automationMilestoneBadgeHtml;
+
+// automationMilestoneToggleHtml is the detail-header button that marks or
+// unmarks the milestone. Its aria-pressed state mirrors the current value.
+function automationMilestoneToggleHtml(a) {
+  const on = automationIsMilestone(a);
+  const label = t(on ? 'automation_milestone_unmark' : 'automation_milestone_mark');
+  return `<button type="button" class="btn-secondary automation-milestone-toggle" data-milestone="${on ? 'true' : 'false'}" aria-pressed="${on ? 'true' : 'false'}" onclick="automationToggleMilestone('${escJsAttr(a.id)}')">${escHtml(label)}</button>`;
+}
+
+// automationMilestoneBody is the full update body for a milestone change. The
+// update path overwrites the Automation's own settings from the body and keeps
+// only the members, decision assistant, auto tags and milestone when they are
+// absent, so the body echoes every loaded setting back unchanged.
+function automationMilestoneBody(a, milestone) {
+  return {
+    name: a.name || '',
+    description: a.description || '',
+    entry_member_id: a.entry_member_id || '',
+    budget_policy: a.budget_policy || null,
+    project_dir: a.project_dir || '',
+    backend: a.backend || '',
+    model: a.model || '',
+    effort: a.effort || '',
+    verification_backend: a.verification_backend || '',
+    verification_model: a.verification_model || '',
+    verification_effort: a.verification_effort || '',
+    milestone: !!milestone,
+    expected_version: Number(a.version) || 0,
+    actor: 'operator',
+  };
+}
+
+// automationSetMilestone marks or unmarks the open Automation through PUT. The
+// update does not carry the planning LLM pair, so when the Automation had one it
+// is put back through set_llm straight after. A 409 opens the stale prompt; any
+// other failure is a toast. Resolves the updated Automation, or null on failure.
+function automationSetMilestone(id, milestone) {
+  const st = _automationState;
+  const a = st.detail;
+  if (!a || a.id !== id) return Promise.resolve(null);
+  const planningBackend = String(a.planning_backend || '');
+  const planningModel = String(a.planning_model || '');
+  const base = '/api/automations/' + encodeURIComponent(id);
+  return automationRequest('PUT', base, automationMilestoneBody(a, milestone))
+    .then(data => {
+      if (!data || typeof data !== 'object') return data;
+      if (!planningBackend && !planningModel) return data;
+      return automationRequest('POST', base + '/set_llm', {
+        planning_backend: planningBackend,
+        planning_model: planningModel,
+        expected_version: Number(data.version) || 0,
+        actor: 'operator',
+      }).then(restored => (restored && typeof restored === 'object' ? restored : data), restoreErr => {
+        showToast(String((restoreErr && restoreErr.message) || restoreErr || ''), 'error');
+        return data;
+      });
+    })
+    .then(data => {
+      if (data && typeof data === 'object' && st.detailId === id) {
+        st.detail = data;
+        _automationDrawDetail(data);
+      }
+      return data;
+    }, err => {
+      const message = String((err && err.message) || err || '');
+      if (err && err.status === 409) automationShowStalePrompt(message);
+      else showToast(message, 'error');
+      return null;
+    });
+}
+window.automationSetMilestone = automationSetMilestone;
+
+// automationToggleMilestone flips the open Automation's milestone flag.
+function automationToggleMilestone(id) {
+  const a = _automationState.detail;
+  if (!a || a.id !== id) return Promise.resolve(null);
+  return automationSetMilestone(id, !automationIsMilestone(a));
+}
+window.automationToggleMilestone = automationToggleMilestone;
+
 function shippedChipHtml(rec) {
   if (!_shippedState.enabled || !_shippedState.show_chip) return '';
   if (!shippedCarriesState(rec)) return '';
@@ -36254,7 +36348,7 @@ function buildAutomationCardHTML(automation, ctx) {
     onOpen: open,
     statusClass,
     statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
-    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)),
+    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a),
     title: a.name,
     titleClass: 'automation-card-title',
     progress: { done, total },
@@ -36954,6 +37048,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
+      ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}
     </div>${desc}${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>

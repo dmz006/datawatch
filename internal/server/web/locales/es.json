@@ -4337,5 +4337,9 @@
   "automaton_release_source_explicit": "fijado en este autómata",
   "automaton_release_source_project": "mapa de tamaños del proyecto",
   "automaton_release_source_default": "valor predeterminado integrado",
-  "automation_release_source_milestone": "hito de la automatización"
+  "automation_release_source_milestone": "hito de la automatización",
+  "automation_milestone_badge": "Hito",
+  "automation_milestone_hint": "Esta automatización es un hito: al completarse, sube el paso de versión mayor.",
+  "automation_milestone_mark": "Marcar como hito",
+  "automation_milestone_unmark": "Quitar hito"
 }

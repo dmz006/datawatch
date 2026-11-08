@@ -4337,5 +4337,9 @@
   "automaton_release_source_explicit": "set on this Automaton",
   "automaton_release_source_project": "project size map",
   "automaton_release_source_default": "built-in default",
-  "automation_release_source_milestone": "Automation milestone"
+  "automation_release_source_milestone": "Automation milestone",
+  "automation_milestone_badge": "Milestone",
+  "automation_milestone_hint": "This Automation is a milestone: when it completes it raises the major release step.",
+  "automation_milestone_mark": "Mark as milestone",
+  "automation_milestone_unmark": "Unmark milestone"
 }
