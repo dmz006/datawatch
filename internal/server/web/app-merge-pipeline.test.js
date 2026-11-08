@@ -232,8 +232,13 @@ test('the Autonomous settings group has the six merge_pipeline fields with the r
     'autonomous.merge_pipeline.conflict_policy': 'select',
     'autonomous.merge_pipeline.conflict_model': 'text',
     'autonomous.merge_pipeline.version_files': 'text',
+    // Release settings: their own help link, checked in the next test.
+    'autonomous.merge_pipeline.release_size_map': 'release_size_map',
+    'autonomous.merge_pipeline.major_trigger': 'select',
+    'autonomous.merge_pipeline.release_cadence': 'select',
+    'autonomous.merge_pipeline.version_scheme': 'select',
   };
-  assert.equal(fields.length, 6, 'expected six fields: ' + fields.map(f => f.key).join(','));
+  assert.equal(fields.length, 10, 'expected ten fields: ' + fields.map(f => f.key).join(','));
   for (const [key, type] of Object.entries(want)) {
     assert.ok(byKey[key], key + ' missing');
     assert.equal(byKey[key].type, type, key + ' has the wrong type');
@@ -249,6 +254,12 @@ test('every merge_pipeline field has a label key, an inline description key and 
   for (const f of mergeFields()) {
     const name = f.key.slice('autonomous.merge_pipeline.'.length);
     assert.equal(f.labelKey, 'settings_merge_pipeline_' + name, f.key + ' labelKey');
+    if (f.helpDocs) {
+      // Release fields carry a '?' help link (helpDocs) instead of the docs pill.
+      assert.ok(en[f.helpKey], f.key + ' help text missing in en');
+      assert.equal(docsLink(f.key), f.helpDocs, f.key + ' help link does not map to its howto');
+      continue;
+    }
     assert.equal(f.hintKey, 'settings_merge_pipeline_' + name + '_hint', f.key + ' hintKey');
     assert.ok(en[f.labelKey] && en[f.hintKey], f.key + ' label or description missing in en');
     assert.ok(f.docsKey, f.key + ' has no docs link');

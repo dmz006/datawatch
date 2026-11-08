@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Settings > Automation > Merge pipeline shows the release settings
+
+- **Four release settings are now editable in the web UI** on the Merge pipeline card: release size by kind (a row per Automaton kind with its size), major release trigger, release cadence and version scheme. Each has a `?` link to the new [release size and milestones](docs/howto/release-size-and-milestones.md) how-to. Cadence `batch` and `manual`, and any version scheme other than `semver`, are shown but the save is refused with the daemon's reason.
+- Labels and help text are in all five locale bundles (en, de, es, fr, ja).
+
 ### The release size a merge adds is now decided by rules, not by convention (part of finishing review and merge by the daemon, Phase 4)
 
 - **The release size of an Automaton — the version step its merge adds (patch, minor, major or none) — is resolved in layers, most specific first.** (1) An explicit `release_size` on the Automaton wins, including an explicit `none` and an explicit major. (2) When the Automation (arc) an Automaton belongs to is marked as a milestone and has completed, and the project's `major_trigger` is `milestone`, the step is raised to major — the arc is the major feature being grown out of the minors and patches that land under it. (3) The project's kind-to-size setting (`autonomous.merge_pipeline.release_size_map`, with the per-project override in `autonomous.merge_pipeline.projects`) — by default feature is a minor and bug is a patch. (4) The built-in default: feature minor, bug patch, anything else no release step.

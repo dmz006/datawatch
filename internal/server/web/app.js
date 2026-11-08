@@ -9728,6 +9728,14 @@ const DOCS_POST_SHIP_LINKS = [
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
 const DOCS_MERGE_PIPELINE_LINKS = [
+  // Release settings: the release size map, major trigger, release cadence
+  // and version scheme open the release size and milestones howto.
+  [['autonomous.merge_pipeline.release_size_map', 'autonomous.merge_pipeline.major_trigger',
+    'autonomous.merge_pipeline.release_cadence', 'autonomous.merge_pipeline.version_scheme',
+    'settings_merge_pipeline_release_size_map', 'settings_merge_pipeline_major_trigger',
+    'settings_merge_pipeline_release_cadence', 'settings_merge_pipeline_version_scheme',
+    'merge_pipeline_release_size_', 'merge_pipeline_major_', 'merge_pipeline_cadence_', 'merge_pipeline_scheme_'],
+    'howto/release-size-and-milestones.md'],
   [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
@@ -18578,6 +18586,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
+    { key: 'autonomous.merge_pipeline.release_size_map', label: 'Release size by kind (the step each Automaton kind adds to the version)', labelKey: 'settings_merge_pipeline_release_size_map', helpKey: 'settings_merge_pipeline_release_size_map_help', helpDocs: 'howto/release-size-and-milestones.md', type: 'release_size_map' },
+    { key: 'autonomous.merge_pipeline.major_trigger', label: 'Major release trigger (manual, milestone or never; default manual)', labelKey: 'settings_merge_pipeline_major_trigger', helpKey: 'settings_merge_pipeline_major_trigger_help', helpDocs: 'howto/release-size-and-milestones.md', type: 'select', options: ['manual', 'milestone', 'never'], optionLabelKeys: { manual: 'merge_pipeline_major_manual', milestone: 'merge_pipeline_major_milestone', never: 'merge_pipeline_major_never' }, default: 'manual', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.major_trigger', this)" },
+    { key: 'autonomous.merge_pipeline.release_cadence', label: 'Release cadence (per_merge, batch or manual; default per_merge)', labelKey: 'settings_merge_pipeline_release_cadence', helpKey: 'settings_merge_pipeline_release_cadence_help', helpDocs: 'howto/release-size-and-milestones.md', type: 'select', options: ['per_merge', 'batch', 'manual'], optionLabelKeys: { per_merge: 'merge_pipeline_cadence_per_merge', batch: 'merge_pipeline_cadence_batch', manual: 'merge_pipeline_cadence_manual' }, default: 'per_merge', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.release_cadence', this)" },
+    { key: 'autonomous.merge_pipeline.version_scheme', label: 'Version scheme (semver; default semver)', labelKey: 'settings_merge_pipeline_version_scheme', helpKey: 'settings_merge_pipeline_version_scheme_help', helpDocs: 'howto/release-size-and-milestones.md', type: 'select', options: ['semver'], optionLabelKeys: { semver: 'merge_pipeline_scheme_semver' }, default: 'semver', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.version_scheme', this)" },
     // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
     // every hook is disabled until you switch it on. The four builtins are
     // registry_row, parity_issue, tag and notify; the registry, companion
@@ -19837,6 +19849,20 @@ function loadGeneralConfig() {
                   });
               };
             }, 0);
+          } else if (f.type === 'release_size_map') {
+            // Kind-to-size rows: one row per Automaton kind with its release
+            // size. Save PUTs the whole map as a JSON object.
+            const _rsMap = (val && typeof val === 'object') ? val : {};
+            const _rsRows = Object.keys(_rsMap).sort().map(k => _releaseSizeMapRowHTML(k, _rsMap[k])).join('');
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <div id="release_size_map_rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">${_rsRows}</div>
+              <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn-secondary" style="font-size:11px;" onclick="addReleaseSizeMapRow()">${escHtml(t('settings_merge_pipeline_release_size_map_add'))}</button>
+                <button class="btn-secondary" style="font-size:11px;" onclick="saveReleaseSizeMap()">${escHtml(t('settings_merge_pipeline_release_size_map_save'))}</button>
+              </div>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
           } else if (f.type === 'post_ship_hooks') {
             // Seed the editable copy from the config GET (the daemon returns
             // the array) and render the initial rows straight into the html.
@@ -20638,6 +20664,84 @@ function _cfgTextareaText(val) {
     return Object.keys(val).length ? JSON.stringify(val) : '';
   }
   return String(val || '');
+}
+
+// Release settings on the Merge pipeline card. The sizes a kind may take.
+const RELEASE_SIZE_CHOICES = ['patch', 'minor', 'major', 'none'];
+const RELEASE_SIZE_LABEL_KEYS = {
+  patch: 'merge_pipeline_release_size_patch',
+  minor: 'merge_pipeline_release_size_minor',
+  major: 'merge_pipeline_release_size_major',
+  none: 'merge_pipeline_release_size_none',
+};
+
+// _releaseSizeMapRowHTML: one kind row of the release size map, a kind text
+// box, a size select and a remove button.
+function _releaseSizeMapRowHTML(kind, size) {
+  const opts = RELEASE_SIZE_CHOICES.map(s =>
+    `<option value="${s}" ${s === String(size) ? 'selected' : ''}>${escHtml(t(RELEASE_SIZE_LABEL_KEYS[s]))}</option>`
+  ).join('');
+  return `<div class="release-size-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <input type="text" class="form-input" data-release-kind value="${escHtml(kind)}" placeholder="${escHtml(t('settings_merge_pipeline_release_size_map_kind'))}" aria-label="${escHtml(t('settings_merge_pipeline_release_size_map_kind'))}" style="flex:1;min-width:120px;" />
+    <select class="form-select" data-release-size aria-label="${escHtml(t('settings_merge_pipeline_release_size_map_size'))}" style="width:auto;">${opts}</select>
+    <button class="btn-secondary" style="font-size:11px;" onclick="this.closest('.release-size-row').remove()">${escHtml(t('settings_merge_pipeline_release_size_map_remove'))}</button>
+  </div>`;
+}
+
+// addReleaseSizeMapRow appends an empty kind row, sized minor by default.
+function addReleaseSizeMapRow() {
+  const list = document.getElementById('release_size_map_rows');
+  if (!list) return;
+  list.insertAdjacentHTML('beforeend', _releaseSizeMapRowHTML('', 'minor'));
+}
+
+// saveReleaseSizeMap reads the kind rows and PUTs them as one object. A blank
+// or repeated kind is refused in the browser before anything is sent.
+function saveReleaseSizeMap() {
+  const list = document.getElementById('release_size_map_rows');
+  if (!list) return;
+  const map = {};
+  let err = '';
+  list.querySelectorAll('.release-size-row').forEach(row => {
+    const kind = (row.querySelector('[data-release-kind]').value || '').trim();
+    const size = row.querySelector('[data-release-size]').value;
+    if (!kind) {
+      err = err || t('settings_merge_pipeline_release_size_map_empty_kind');
+    } else if (Object.prototype.hasOwnProperty.call(map, kind)) {
+      err = err || t('settings_merge_pipeline_release_size_map_duplicate', [kind]);
+    } else {
+      map[kind] = size;
+    }
+  });
+  if (err) { showToast(err, 'error'); return; }
+  putMergePipelineSetting('autonomous.merge_pipeline.release_size_map', map, null);
+}
+
+// saveMergePipelineReleaseField saves a release select (major trigger, release
+// cadence, version scheme) when it changes.
+function saveMergePipelineReleaseField(key, el) {
+  putMergePipelineSetting(key, el.value, el);
+}
+
+// putMergePipelineSetting PUTs one merge pipeline value to /api/config. A
+// refused value (the daemon answers 400 with the reason) is shown in full and
+// the select goes back to the value in effect, so the control never shows a
+// value the daemon did not keep.
+function putMergePipelineSetting(key, value, el) {
+  fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => r.text().then(body => {
+      if (r.ok) { showToast('Saved', 'success', 1500); return; }
+      if (el && el.tagName === 'SELECT') {
+        const saved = Array.from(el.options).find(o => o.defaultSelected);
+        if (saved) el.value = saved.value;
+      }
+      showToast(t('merge_pipeline_save_failed', [(body || '').trim() || ('HTTP ' + r.status)]), 'error');
+    }))
+    .catch(() => showToast('Save failed', 'error'));
 }
 
 function saveGeneralField(key, value) {
