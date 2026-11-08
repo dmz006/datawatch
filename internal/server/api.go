@@ -2385,6 +2385,22 @@ func (s *Server) executeCommand(cmd router.Command, raw, origin string) string {
 	}
 }
 
+// wsOffloadImageSend delivers a WebSocket send whose text references images
+// via the connection's input worker instead of blocking the read loop:
+// expandImageTags calls the vision backend (seconds per image) and returns
+// the description for SendInput. The worker sends the same response the
+// synchronous path would have sent, and the per-connection FIFO plus the
+// awaitInputForSession gate on the synchronous path keep per-session input
+// order intact (an earlier image send is never overtaken by a later plain
+// send for the same session).
+func wsOffloadImageSend(c *client, s *Server, cmd router.Command, raw, origin string) {
+	c.enqueueInput(cmd.SessionID, func() {
+		result := s.executeCommand(cmd, raw, origin)
+		respRaw, _ := json.Marshal(NotificationData{Message: result})
+		c.safeSend(mustMarshal(WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}))
+	})
+}
+
 // handleWS upgrades a connection to WebSocket and registers it with the hub
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// BL316 — capture federated peer at upgrade time for per-message cap checks.
@@ -2470,6 +2486,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocking)
 	defer func() {
+		// Deliver any accepted-but-still-expanding inputs and stop the
+		// connection's input worker before unregistering, so the worker
+		// never runs past connection teardown.
+		c.stopInputWorker()
 		// Cancel all screen captures for this client
 		c.mu.Lock()
 		for _, cancel := range c.captureCancels {
@@ -2523,6 +2543,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			var d CommandData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			cmd := router.Parse(d.Text)
+			if cmd.Type == router.CmdSend && strings.Contains(d.Text, "[image:") {
+				// Offload: expandImageTags can take seconds per image while the
+				// vision backend describes, so it runs on this connection's
+				// input worker instead of blocking the read loop
+				// (see client.enqueueInput).
+				wsOffloadImageSend(c, s, cmd, d.Text, wsOrigin)
+				continue
+			}
+			// A plain send must not overtake an earlier, still-expanding
+			// image send for the same session.
+			if cmd.Type == router.CmdSend {
+				c.awaitInputForSession(cmd.SessionID)
+			}
 			result := s.executeCommand(cmd, d.Text, wsOrigin)
 			// Send result back to this client
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
@@ -2562,6 +2595,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case MsgSendInput:
 			var d SendInputData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
+			if !d.Raw && strings.Contains(d.Text, "[image:") {
+				// Offload the image expansion to the per-connection input
+				// worker so the read loop keeps reading (see
+				// client.enqueueInput).
+				wsOffloadImageSend(c, s, router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}, "", wsOrigin)
+				continue
+			}
+			// A later plain or raw input must not overtake an earlier
+			// still-expanding image input for the same session.
+			c.awaitInputForSession(d.SessionID)
 			if d.Raw {
 				// Raw mode: send literal bytes to tmux (for interactive terminal)
 				sess, ok := s.manager.GetSession(d.SessionID)
