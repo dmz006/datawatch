@@ -253,9 +253,13 @@ func runSessionTagInventory(asJSON bool) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "TAG\tAXIS\tVALUE\tCOUNT")
+	if _, err := fmt.Fprintln(w, "TAG\tAXIS\tVALUE\tCOUNT"); err != nil {
+		return err
+	}
 	for _, e := range reply.Tags {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", e.Tag, e.Axis, e.Value, e.Count)
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", e.Tag, e.Axis, e.Value, e.Count); err != nil {
+			return err
+		}
 	}
 	return w.Flush()
 }
@@ -363,9 +367,13 @@ func printTagSweepTally(body []byte) error {
 		{"held questions", res.Questions},
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "KIND\tEXAMINED\tCHANGED\tUNCHANGED\tFAILED")
+	if _, err := fmt.Fprintln(w, "KIND\tEXAMINED\tCHANGED\tUNCHANGED\tFAILED"); err != nil {
+		return err
+	}
 	for _, r := range rows {
-		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", r.name, r.c.Examined, r.c.Changed, r.c.Unchanged, r.c.Failed)
+		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", r.name, r.c.Examined, r.c.Changed, r.c.Unchanged, r.c.Failed); err != nil {
+			return err
+		}
 	}
 	return w.Flush()
 }

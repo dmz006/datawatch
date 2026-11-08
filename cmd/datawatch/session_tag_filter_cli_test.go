@@ -13,20 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
-
-func sessionTagsSubcmd(t *testing.T) *cobra.Command {
-	t.Helper()
-	for _, c := range newSessionCmd().Commands() {
-		if c.Name() == "tags" {
-			return c
-		}
-	}
-	t.Fatal("session tags subcommand missing")
-	return nil
-}
 
 func TestSessionListQuery_AxisShortcuts(t *testing.T) {
 	c := sessionListSubcmd(t)
