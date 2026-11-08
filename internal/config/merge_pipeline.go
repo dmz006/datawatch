@@ -571,6 +571,25 @@ func validConflictPolicy(key, v string) error {
 		ConflictPolicyStopAndAsk, ConflictPolicyMechanical, ConflictPolicyMechanicalAndModel)
 }
 
+// ValidateReleaseApprovalMode reports whether v is an accepted release approval
+// mode: "" (unset, inherits), "auto", "ask" or "manual". The error names the
+// valid values. Write paths (config route, MCP, comm, CLI) call it so the
+// check lives in one place.
+func ValidateReleaseApprovalMode(v string) error {
+	return validReleaseApprovalMode("release_approval", v)
+}
+
+// validReleaseApprovalMode is ValidateReleaseApprovalMode with the config key
+// named in the error, as Validate reports it.
+func validReleaseApprovalMode(key, v string) error {
+	switch v {
+	case "", ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual:
+		return nil
+	}
+	return fmt.Errorf("%s: %q is invalid; use %q, %q or %q", key, v,
+		ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual)
+}
+
 func validModelName(key string, v *string) error {
 	if v == nil || *v == "" {
 		return nil
@@ -606,6 +625,15 @@ func (c MergePipelineConfig) Validate() error {
 	}
 	if err := validModelName(p+"conflict_model", c.ConflictModel); err != nil {
 		return err
+	}
+	for _, sz := range []struct{ size, v string }{
+		{ReleaseSizePatch, c.ReleaseApproval.Patch},
+		{ReleaseSizeMinor, c.ReleaseApproval.Minor},
+		{ReleaseSizeMajor, c.ReleaseApproval.Major},
+	} {
+		if err := validReleaseApprovalMode(p+"release_approval."+sz.size, sz.v); err != nil {
+			return err
+		}
 	}
 	if err := c.PostShip.Validate(); err != nil {
 		return err
@@ -643,6 +671,15 @@ func (c MergePipelineConfig) Validate() error {
 		}
 		if err := validModelName(k+"conflict_model", o.ConflictModel); err != nil {
 			return err
+		}
+		for _, sz := range []struct{ size, v string }{
+			{ReleaseSizePatch, o.ReleaseApproval.Patch},
+			{ReleaseSizeMinor, o.ReleaseApproval.Minor},
+			{ReleaseSizeMajor, o.ReleaseApproval.Major},
+		} {
+			if err := validReleaseApprovalMode(k+"release_approval."+sz.size, sz.v); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
