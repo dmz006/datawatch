@@ -155,3 +155,21 @@ test('re-selecting the peer that is already active makes no re-render and no req
   assert.deepEqual(s.__renders, [], 'no view may re-render');
   assert.deepEqual(urls, [], `no request may be made: ${JSON.stringify(urls)}`);
 });
+
+test('switching to a peer while Sessions is shown resets the Sessions list before the re-render, and the re-render still runs', () => {
+  const s = load('sessions');
+  // A populated Sessions list from the previous server.
+  vm.runInContext(`state.sessions = [{ id: 'stale-local-session' }];`, s);
+  // Record what the Sessions list looks like at the moment it is redrawn.
+  const seen = [];
+  s.renderSessionsView = () => {
+    s.__renders.push('renderSessionsView');
+    seen.push(vm.runInContext(`JSON.stringify({ active: state.activeServer, sessions: state.sessions })`, s));
+  };
+
+  s.selectServer(PEER);
+
+  assert.equal(vm.runInContext('state.activeServer', s), PEER, 'state.activeServer must equal the peer');
+  assert.deepEqual(s.__renders, ['renderSessionsView'], 'Sessions must be re-rendered once');
+  assert.deepEqual(JSON.parse(seen[0]), { active: PEER, sessions: [] }, 'Sessions list must be reset before the redraw');
+});
