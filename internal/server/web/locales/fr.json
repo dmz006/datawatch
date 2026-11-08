@@ -730,6 +730,7 @@
   "image_upload_failed": "Échec de l'envoi de l'image",
   "image_upload_ok": "Image jointe — elle sera envoyée avec votre prochain message",
   "image_wait_upload": "Attendez la fin de l'envoi de l'image",
+  "image_send_pending": "Envoi de l'image en cours…",
   "image_uploading": "envoi en cours…",
   "input_ph_command": "Envoyer une commande ou une entrée…",
   "input_ph_message": "Envoyer un message…",

@@ -1714,6 +1714,7 @@
   "image_upload_failed": "Image upload failed",
   "image_upload_ok": "Image attached — will be sent with your next message",
   "image_wait_upload": "Wait for image upload to finish",
+  "image_send_pending": "Sending image…",
   "widget_description": "Running / waiting / total session counts at a glance.",
   "widget_monitor_description": "CPU load, memory and session counts from the active datawatch server.",
   "widget_monitor_label": "datawatch Monitor",

@@ -730,6 +730,7 @@
   "image_upload_failed": "Bild-Upload fehlgeschlagen",
   "image_upload_ok": "Bild angehängt — wird mit deiner nächsten Nachricht gesendet",
   "image_wait_upload": "Warte, bis der Bild-Upload abgeschlossen ist",
+  "image_send_pending": "Bild wird gesendet…",
   "image_uploading": "wird hochgeladen…",
   "input_ph_command": "Befehl oder Eingabe senden…",
   "input_ph_message": "Nachricht senden…",
