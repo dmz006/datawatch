@@ -4563,6 +4563,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// of the Automation this installation takes kind-bug filings on;
 			// empty by default — filings are then recorded not_configured.
 			DefectIntakeAutomation: acfgIn.DefectIntakeAutomation,
+			// autonomous.first_attempt_escalate_after_failures: failed attempts
+			// before a task leaves the first-attempt pair (0 reads as 1).
+			FirstAttemptEscalateAfterFailures: acfgIn.FirstAttemptEscalateAfterFailures,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
