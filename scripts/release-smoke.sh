@@ -6377,6 +6377,91 @@ if u is not None:
 fi
 
 # ---------------------------------------------------------------------------
+H "95. Autonomous host load alert — autonomous.host_load_alert config + status read"
+# The three keys (see config/host_load_alert.go):
+#   autonomous.host_load_alert.mode      off|alert|reap, default alert
+#   autonomous.host_load_alert.multiple  load-to-cores multiple, default 1.5
+#   autonomous.host_load_alert.minutes   sustained-breach window, default 10
+# This section runs ONLY against this script's own isolated daemon (never an
+# external / production daemon, whose live host-load settings a bad-value
+# probe is best not touching and whose operator state a GET would read):
+#   1) GET /api/config shows the three keys at their effective defaults
+#      (mode alert, multiple 1.5, minutes 10)
+#   2) a bad value is refused with a 400: a mode other than off/alert/reap
+#      (or empty), a multiple below 1 (negative), and minutes below 1 (a
+#      negative or a non-whole value)
+#   3) the host load status read answers — GET /api/autonomous/status is 200
+#      and carries the host load check snapshot when autonomous is wired
+# It writes only bad values (each refused with a 400), so it creates no
+# entity and leaves the daemon's config unchanged; no add_cleanup kind is
+# needed and it never widens the orphan sweep.
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  :
+elif [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "autonomous.host_load_alert: external daemon (DW_BASE set) holds the operator's live settings; the section runs only against this script's own isolated daemon"
+else
+  # Read the autonomous.host_load_alert object from GET /api/config and print
+  # mode, multiple and minutes space-separated (a missing field as empty).
+  _hla_get() {
+    curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json,sys
+h=json.load(sys.stdin).get("autonomous",{}).get("host_load_alert",{})
+print(h.get("mode",""),h.get("multiple",""),h.get("minutes",""),sep=" ")
+' 2>/dev/null || echo ""
+  }
+  # PUT /api/config with a JSON body, answering the HTTP status code.
+  _hla_put() {
+    curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000"
+  }
+
+  # -- 1) the three keys at their effective defaults -------------------------
+  read -r _HLA_MODE _HLA_MULT _HLA_MIN <<< "$(_hla_get)" || true
+  if [[ "$_HLA_MODE" == "alert" && "$_HLA_MULT" == "1.5" && "$_HLA_MIN" == "10" ]]; then
+    ok "defaults: host_load_alert mode=alert, multiple=1.5, minutes=10"
+  else
+    ko "defaults: host_load_alert not at its effective defaults (got mode=$_HLA_MODE multiple=$_HLA_MULT minutes=$_HLA_MIN)"
+  fi
+
+  # -- 2) bad values: refused with a 400, nothing changes ---------------------
+  _HLA_B1=$(_hla_put '{"autonomous.host_load_alert.mode": "bogus"}')
+  if [[ "$_HLA_B1" == "400" ]]; then ok "mode=bogus (not off|alert|reap) refused with 400"; else ko "mode=bogus answered HTTP $_HLA_B1 (expected 400)"; fi
+  _HLA_B2=$(_hla_put '{"autonomous.host_load_alert.mode": ""}')
+  if [[ "$_HLA_B2" == "400" ]]; then ok "empty mode (no mode) refused with 400"; else ko "empty mode answered HTTP $_HLA_B2 (expected 400)"; fi
+  _HLA_B3=$(_hla_put '{"autonomous.host_load_alert.multiple": -1}')
+  if [[ "$_HLA_B3" == "400" ]]; then ok "multiple below 1 (-1) refused with 400"; else ko "multiple=-1 answered HTTP $_HLA_B3 (expected 400)"; fi
+  _HLA_B4=$(_hla_put '{"autonomous.host_load_alert.minutes": -1}')
+  if [[ "$_HLA_B4" == "400" ]]; then ok "minutes below 1 (-1) refused with 400"; else ko "minutes=-1 answered HTTP $_HLA_B4 (expected 400)"; fi
+  _HLA_B5=$(_hla_put '{"autonomous.host_load_alert.minutes": 1.5}')
+  if [[ "$_HLA_B5" == "400" ]]; then ok "minutes below 1 (1.5, not a whole number) refused with 400"; else ko "minutes=1.5 answered HTTP $_HLA_B5 (expected 400)"; fi
+  # Every refused PUT must have left the setting at its (step-1) defaults.
+  read -r _HLA_MODE2 _HLA_MULT2 _HLA_MIN2 <<< "$(_hla_get)" || true
+  if [[ "$_HLA_MODE2" == "$_HLA_MODE" && "$_HLA_MULT2" == "$_HLA_MULT" && "$_HLA_MIN2" == "$_HLA_MIN" ]]; then
+    ok "the refused bad-value PUTs changed nothing (still mode=$_HLA_MODE2 multiple=$_HLA_MULT2 minutes=$_HLA_MIN2)"
+  else
+    ko "a refused bad-value PUT changed the config (now mode=$_HLA_MODE2 multiple=$_HLA_MULT2 minutes=$_HLA_MIN2, was mode=$_HLA_MODE multiple=$_HLA_MULT minutes=$_HLA_MIN)"
+  fi
+
+  # -- 3) the host load status read answers -----------------------------------
+  _HLA_ST=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/status" 2>/dev/null || true)
+  _HLA_ST_CODE=$(echo "$_HLA_ST" | tail -n1)
+  _HLA_ST_JSON=$(echo "$_HLA_ST" | sed '$d')
+  if [[ "$_HLA_ST_CODE" == "200" ]] && echo "$_HLA_ST_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+hl=d.get("host_load")
+assert isinstance(hl, dict), hl
+assert hl.get("mode") in ("off","alert","reap"), hl
+assert isinstance(hl.get("last_load"),(int,float)) and isinstance(hl.get("last_limit"),(int,float)), hl
+assert isinstance(hl.get("breached"), bool) and isinstance(hl.get("orphans_reaped"), int), hl
+' 2>/dev/null; then
+    ok "host load status read: GET /api/autonomous/status answers 200 with the host load snapshot (mode, last_load, last_limit, breached, orphans_reaped)"
+  else
+    ko "host load status read: returned HTTP $_HLA_ST_CODE or a malformed host_load snapshot: $(echo "$_HLA_ST_JSON" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "94. Lane fill eligibility — refusal codes, lane counts, per-lane-kind mode"
 # The Automata checks and ship status reads: both answer 200 with a JSON object.
 # They are read-only and change nothing.

@@ -310,3 +310,7 @@ unfinished Automaton, never uses `--force` or `-D`, never removes anything
 outside the `automaton/` branch namespace or the daemon's own scratch files,
 and never follows a symbolic link. In `off` it does not even run git for the
 cleanup. The disk alert never removes anything.
+
+## Processes the worker left running
+
+The cleanup above removes branches and folders. Separately, when a worker session ends (including cancel and failure), the daemon ends processes that worker started and left running. It matches them by `/proc` evidence only (a working directory, executable or script in the session worktree or scratch folder, ancestry to the session, or the session id in the environment), never by name. Read the result as a `session_end_reap` decision on the task or an audit entry of the same name (the decision exists only when the session is bound to a task). If the audit entry shows `survivors` above zero, those processes ignored the signal and are counted only, with no pid or command recorded: look for them by hand, even when the ended count is zero. Details and review notes: [operations](../operations.md#processes-a-session-leaves-behind).

@@ -371,6 +371,11 @@ type Config struct {
 	// verifier selection reads it from the Config() snapshot. No omitempty,
 	// same round-trip reason as VerificationBackends.
 	VerifierPolicy config.VerifierPolicyConfig `json:"verifier_policy"`
+	// HostLoadAlert mirrors autonomous.host_load_alert in config: the host
+	// load check's mode, multiple and minutes. The check reads it from the
+	// Config() snapshot on every tick. No omitempty, same round-trip reason as
+	// VerifierPolicy.
+	HostLoadAlert config.HostLoadAlertConfig `json:"host_load_alert"`
 	// TaskOverrideStatuses (v9.5.5) — PRD statuses that accept task-level and
 	// story-level LLM overrides. Empty = default; see config.AutonomousConfig's doc comment.
 	// No omitempty, same round-trip reason as VerificationBackends.
@@ -1310,6 +1315,12 @@ type Manager struct {
 	// autonomous.judge_verdict_cache_enabled (wired in cmd/datawatch/main.go);
 	// nil = read the manager's Config at call time. Guarded by mu.
 	judgeVerdictCacheEnabledFn func() bool
+	// hostLoadStatusFn — read-only snapshot of the daemon's host load check
+	// (host_load.go): wired by cmd/datawatch with SetHostLoadProvider so
+	// Status() carries it into the autonomous status (GET
+	// /api/autonomous/status, returned verbatim by the autonomous_status
+	// MCP tool). Guarded by mu. Nil = the check is not wired.
+	hostLoadStatusFn func() HostLoadStatus
 	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose                  DecomposeFn
 	guardrail                  GuardrailFn
@@ -1847,6 +1858,18 @@ func (m *Manager) SetProfileResolver(r ProfileResolver) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.profileResolver = r
+}
+
+// SetHostLoadProvider (host load check, host_load.go) wires the daemon's
+// read-only snapshot of the host load check — effective mode, last load
+// reading vs its threshold, whether it is over now, orphans reaped — into
+// Status() as LoopStatus.HostLoad: the GET /api/autonomous/status body the
+// autonomous_status MCP tool returns verbatim. The provider reads the
+// check's own state and must not block; nil detaches (HostLoad stays nil).
+func (m *Manager) SetHostLoadProvider(fn func() HostLoadStatus) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hostLoadStatusFn = fn
 }
 
 // SetContextFn (BL244) wires the plugin session-injection lookup. fn is called
@@ -3134,6 +3157,8 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	// The digest, when due, is already in rulesSuffix above.
 	prompt += m.verificationScriptSuffixFor(prd, planningRulesBackend(backend), false)
+
+	prompt += m.loadStepSuffix(prd)
 	prompt += m.generatedArtefactPlanSuffix()
 	// Decompose guidance (decompose_guidance.go): the operator's
 	// autonomous.decompose_guidance — literal text, or a file whose
@@ -3332,6 +3357,8 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
 	// The digest, when due, is already in rulesSuffix above.
 	prompt += m.verificationScriptSuffixFor(prd, planningRulesBackend(backend), false)
+
+	prompt += m.loadStepSuffix(prd)
 	prompt += m.generatedArtefactPlanSuffix()
 	// Decompose guidance (decompose_guidance.go) — identical to
 	// Decompose()'s call above; one source for the block's format.
@@ -6390,6 +6417,16 @@ func (m *Manager) Status() LoopStatus {
 	automations := m.automationStatusSummaries(time.Now())
 	usageBackoff := m.usageBackoffSummary()
 	budgets := m.budgetsSummary()
+	// Host load check snapshot: the provider reads the check's own
+	// state (host_load.go), not the manager or its stores.
+	m.mu.Lock()
+	hostLoadFn := m.hostLoadStatusFn
+	m.mu.Unlock()
+	var hostLoad *HostLoadStatus
+	if hostLoadFn != nil {
+		hl := hostLoadFn()
+		hostLoad = &hl
+	}
 	// Same rule for the task views: they read the PRD store and the ledger.
 	queue, holdings := m.buildTaskVisibility(budgets)
 	// Held tasks are read under the store lock (the lock is not re-entrant, so
@@ -6406,6 +6443,7 @@ func (m *Manager) Status() LoopStatus {
 	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)
 	st.UsageBackoff = usageBackoff
+	st.HostLoad = hostLoad
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
 	verdictCounts := map[string]int{}
 	// Notify block (notify-events): the effective global default plus the

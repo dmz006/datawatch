@@ -2783,6 +2783,38 @@ autonomous:
   # see the block under "Compute node slot override" below) and do not draw on
   # this count.
   max_engines_per_node: 1
+  # host_load_alert: the host load check. When the load average stays above
+  # `multiple` times the core count for `minutes` minutes, the daemon raises ONE
+  # warning alert for that episode ("Host load high: Automata may be slowed")
+  # naming the busiest process groups and whether each belongs to a worktree or
+  # scratch folder of a running or ended session. The episode ends when the load
+  # falls back under the limit, and the next breach alerts again. The check runs
+  # from the daemon once a minute and reads the live setting each time, so a
+  # change needs no restart.
+  #   mode: string, `off`, `alert` (default) or `reap`. `off` does nothing.
+  #     `alert` only reports. `reap` also ends processes of ENDED sessions that
+  #     the orphan reaper's evidence rule proves belong to the session (by exact
+  #     process id; nothing is ever ended by name, and a running session is
+  #     never touched). An absent or empty value reads as `alert`; any other
+  #     value is refused on load, on PUT /api/config and on PUT
+  #     /api/autonomous/config with 400, and nothing is written.
+  #   multiple: number >= 0. Load-to-cores multiple that counts as a breach.
+  #     0 or absent reads as 1.5. Negative is refused.
+  #   minutes: whole number >= 0. How long a breach must last before it alerts.
+  #     0 or absent reads as 10. Negative or fractional is refused.
+  # Settable via PUT /api/config (keys autonomous.host_load_alert.mode,
+  # .multiple and .minutes; GET /api/config shows the effective values),
+  # PUT /api/autonomous/config (host_load_alert object), CLI `datawatch
+  # autonomous config-set --host-load-alert-mode reap --host-load-alert-multiple 2
+  # --host-load-alert-minutes 15` (or the JSON object), comm `configure
+  # autonomous.host_load_alert.mode=reap`, the MCP autonomous_config_set tool
+  # (host_load_alert_mode, host_load_alert_multiple, host_load_alert_minutes),
+  # and the PWA Settings > General > Autonomous fields
+  # (settings_host_load_alert_mode, _multiple, _minutes).
+  host_load_alert:
+    mode: alert
+    multiple: 1.5
+    minutes: 10
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
   # BL428 §3a (docs/plans/2026-10-14-concurrency-and-budget-design.md) — how

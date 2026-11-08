@@ -133,6 +133,8 @@ More: [skills](docs/skills.md) · [MCP](docs/mcp.md) · [plugin services](docs/p
 - Agent tracing: a timeline of what each agent did (tool calls, model requests, permission decisions, loop warnings, errors) for a session or a whole Automaton, with roll-ups and a per-backend coverage badge. On by default at the summary level; settings under `tracing.*` ([how-to](docs/howto/agent-tracing.md))
 - Rate-limit recovery, network monitoring, Prometheus metrics and a Tailscale network
 - A usage calculator that sizes the parallel lanes to your weekly Claude allowance, with an option for the daemon to apply that advice itself within a cap you set (auto-lanes, off by default)
+- A host load watch: one warning when the load average stays high for the minutes you set, naming the busiest processes, and in reap mode also ending the leftover processes of already-ended sessions (`autonomous.host_load_alert`; more: [host load check](docs/howto/host-load-check.md))
+- A session-end reap: when a session ends — finished, cancelled or failed — the daemon ends the processes that session left behind, attributing each only by evidence read from `/proc`, never by name (more: [orphan reaping](docs/howto/automata-orphan-reaping.md))
 
 Everything else is in the [Documentation index](#documentation-index).
 

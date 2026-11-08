@@ -190,11 +190,25 @@ func TestWorkerQuestionGuardrail(t *testing.T) {
 	sess := &Session{FullID: "host-abcd", Task: "do a thing", ProjectDir: "/tmp/proj"}
 
 	// check asserts one rendered guardrail text carries the worker question
-	// bullet next to the unchanged needs-input text, with the marker only inline.
+	// bullet next to the unchanged needs-input text, with the marker only inline,
+	// and the bounded load-step rule (the same wording the decompose-prompt
+	// rules text and the worker templates carry).
 	check := func(t *testing.T, text string) {
 		t.Helper()
 		if !strings.Contains(text, "DATAWATCH_NEEDS_INPUT:") {
 			t.Error("guardrail lost the needs-input marker")
+		}
+		for _, want := range []string{
+			"nice -n 19",            // run it niced
+			"quarter of the cores",  // at most a quarter of the cores
+			"nproc/4",               // the worker-count cap
+			"hard timeout",          // its own hard timeout
+			"trap on EXIT INT TERM", // clean up children with a trap
+			"never outlive its owning task", // dies with the task
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("guardrail missing bounded load-step bound %q", want)
+			}
 		}
 		if !strings.Contains(text, "`"+marker+"`") {
 			t.Errorf("guardrail does not carry %s inline in backticks", marker)

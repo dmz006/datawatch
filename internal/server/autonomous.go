@@ -166,6 +166,14 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// host_load_alert: an unknown mode or a negative multiple or
+			// minutes rejects the whole PUT. null is absent and passes.
+			if raw, ok := top["host_load_alert"]; ok && string(raw) != "null" {
+				if verr := validateHostLoadAlertObject(raw); verr != nil {
+					http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
 			// snapshot_never_stage: the snapshot's never-stage list — path
 			// patterns the autonomous snapshot must never `git add`. Array
 			// (or null) only; blank patterns reject the whole PUT (same rule

@@ -201,6 +201,15 @@ The systemctl restart path is not changed; the policy only decides whether and w
 
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
 
+#### Processes a session leaves behind
+
+When any worker session ends (finished, cancelled, failed or killed), the daemon looks for processes the worker started and left running (test runs, servers, helper scripts) and ends them. This is automatic; there is no setting to turn it on.
+
+- **Evidence, never names.** A process is the session's only if `/proc` shows proof: its working directory, executable or script lies in the session's worktree or scratch folder, its ancestry reaches the session, or its environment carries the session id. Path proof counts only for a process whose parent is init or the daemon's own parent (a user service manager), so a shell or editor of yours that sits in the folder under another parent is left alone. A shell or editor that was itself orphaned (parent is init or the daemon's parent) while its working directory is in the worktree matches path proof and can be ended.
+- **Exact pid, re-checked.** Each match is ended by pid. The evidence and the process start time are re-read just before every signal, so a reused pid cannot hit an unrelated process.
+- **What you see.** One decision `session_end_reap` on the task (count and short commands, never the environment), recorded only when the session is bound to a task, and one audit entry `session_end_reap` (`N ended, M survived`), written whenever anything was found; a session with no task produces only the audit entry. The audit entry holds the ended count, the survivor count and the commands of the ended processes, joined by `; `. Nothing is written when nothing was found. A session with no project folder is skipped.
+- **Review.** Leftovers from before this change are not cleaned up; end them by hand after checking their pids. A process that survives its signal is only counted under `survivors` in the audit entry; its pid and command are not recorded. When `survivors` is above zero (even if the ended count is zero), look for the surviving processes in the session worktree or scratch folder by hand (for example with `ps` and `ls -l /proc/<pid>/cwd`).
+
 #### What a restart does to running work
 
 This section is for the operator: what happens to an Automaton's running tasks when the daemon restarts.
@@ -4896,6 +4905,56 @@ The same key is available in `config.yaml`, `PUT /api/config`, the MCP
 key list is in `docs/config-reference.yaml`. Raising the value lets more local
 sessions run on each node at once. It does not change how many hosted-backend
 sessions run.
+
+---
+
+## Host load alert (autonomous.host_load_alert)
+
+When the host is overloaded, running Automata slow down and can time out. The
+daemon watches the load average once a minute. When it stays above `multiple`
+times the core count for `minutes` minutes, it raises one warning alert for that
+episode, titled "Host load high: Automata may be slowed". The alert names the
+busiest process groups and says whether each belongs to a worktree or scratch
+folder of a running or an ended session. The episode ends when the load drops
+back under the limit; the next breach alerts again.
+
+| Setting | Values | Default |
+|---|---|---|
+| `autonomous.host_load_alert.mode` | `off`, `alert`, `reap` | `alert` |
+| `autonomous.host_load_alert.multiple` | number >= 0 | `1.5` |
+| `autonomous.host_load_alert.minutes` | whole number >= 0 | `10` |
+
+`off` turns the check off. `alert` only reports. `reap` also ends processes of
+ended sessions that the orphan reaper's evidence rule proves belong to the
+session; it works by exact process id, never by name, and never touches a running
+session. A `0` multiple or minutes reads as the default; negative values and an
+unknown mode are refused everywhere.
+
+```bash
+datawatch autonomous config-set --host-load-alert-mode reap --host-load-alert-multiple 2 --host-load-alert-minutes 15
+datawatch autonomous config-set '{"host_load_alert":{"mode":"off"}}'
+```
+
+The same settings are in `config.yaml`, `PUT /api/config`
+(`autonomous.host_load_alert.mode` and the two others), the MCP
+`autonomous_config_set` tool (`host_load_alert_mode`, `host_load_alert_multiple`,
+`host_load_alert_minutes`), the comm `configure` command
+(`configure autonomous.host_load_alert.mode=reap`) and Settings > General >
+Autonomous in the PWA. A change applies on the next minute, with no restart.
+Read the effective settings from the chat channel with `autonomous host-load`;
+it reports the mode, the limit and the duration in plain text and changes
+nothing.
+
+Note for the operator: the alert names the 5 busiest process groups — there may
+be more on the host; attribution only covers processes whose evidence points
+into a worktree or scratch folder of a session this daemon knows; `reap` acts
+only when the check raises its alert, at the first sustained breach after it
+was switched on; and the load check's reap keeps **no record** — there is no
+`session_end_reap` audit entry, task decision or `survivors` count for it, so
+a `session_end_reap` record always refers to a session end — a process that
+ignores the end signal survives it without being counted, so check the room
+(`ps` and `ls -l /proc/<pid>/cwd`) after a load-check reap. See
+[howto/host-load-check.md](howto/host-load-check.md).
 
 ---
 

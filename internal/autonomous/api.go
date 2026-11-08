@@ -564,6 +564,15 @@ func (a *API) SetConfig(v any) error {
 	if err := normalizeVerifierPolicyConfig(&cfg.VerifierPolicy); err != nil {
 		return err
 	}
+	if err := config.ValidateHostLoadAlertMode(cfg.HostLoadAlert.Mode); err != nil {
+		return err
+	}
+	if err := config.ValidateHostLoadAlertMultiple(cfg.HostLoadAlert.Multiple); err != nil {
+		return err
+	}
+	if err := config.ValidateHostLoadAlertMinutes(cfg.HostLoadAlert.Minutes); err != nil {
+		return err
+	}
 	// Judge settings are normalized on every write path so the stored value
 	// is the effective one: a zero or negative time limit becomes the 30m
 	// default and blank or duplicate judge backends are dropped.

@@ -239,6 +239,7 @@ func TestDecomposeLintEffectiveRulesDefault(t *testing.T) {
 		{"read_only_unverifiable", "block"},
 		{"no_verification_script", "warn"},
 		{"names_tracker_id", "warn"},
+		{"unbounded_load_step", "warn"},
 	}
 	got := EffectiveRules(config.DecomposeLintConfig{})
 	if len(got) != len(want) {

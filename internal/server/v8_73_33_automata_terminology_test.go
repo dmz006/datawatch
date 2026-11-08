@@ -256,6 +256,10 @@ var pendingTranslationKeys = map[string]bool{
 	"settings_automation_protected_paths":        true,
 	"settings_automation_protected_paths_action": true,
 	"settings_automation_rules_review_source":    true,
+	// Host load check settings labels: English until the app translation lands.
+	"settings_host_load_alert_mode":     true,
+	"settings_host_load_alert_multiple": true,
+	"settings_host_load_alert_minutes":  true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

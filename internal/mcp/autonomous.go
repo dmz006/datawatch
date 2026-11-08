@@ -61,7 +61,7 @@ func (s *Server) handleAutomationMergedMembers(_ context.Context, req mcpsdk.Cal
 
 func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_get",
-		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), resume_max_age_seconds (how old in seconds a completed task may be before it is no longer eligible for resume; 3600 = 1h default, 0 = never resume, -1 = no age limit), max_engines_per_node (local-model sessions allowed per compute node; default 1), backends, retries, capacity limits, guardrail lists and timeouts. "+
+		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), resume_max_age_seconds (how old in seconds a completed task may be before it is no longer eligible for resume; 3600 = 1h default, 0 = never resume, -1 = no age limit), max_engines_per_node (local-model sessions allowed per compute node; default 1), host_load_alert (mode off/alert/reap, multiple, minutes: the host load check), backends, retries, capacity limits, guardrail lists and timeouts. "+
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
 			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
 			"snapshot_never_stage lists the path patterns the autonomous snapshot must never `git add` (an explicit empty list = nothing is protected; unset = the built-in default list). "+
@@ -166,6 +166,9 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("resume_max_age_seconds", mcpsdk.Description("How old (in seconds) a completed task may be before it is no longer eligible for resume (default 3600). 0 = never resume; -1 = no age limit.")),
 		mcpsdk.WithNumber("max_parallel_tasks", mcpsdk.Description("DEPRECATED — accepted and ignored, has no effect; use max_concurrent_tasks. Will be removed in a future release.")),
 		mcpsdk.WithNumber("max_engines_per_node", mcpsdk.Description("Number of local-model sessions allowed per compute node. Defaults to 1; values below 1 are clamped to 1.")),
+		mcpsdk.WithString("host_load_alert_mode", mcpsdk.Enum("off", "alert", "reap"), mcpsdk.Description("Host load check (autonomous.host_load_alert.mode): off = do nothing, alert = one alert per sustained load breach naming the busiest process groups (the default), reap = also end the leftover processes of ended sessions that are proven orphaned.")),
+		mcpsdk.WithNumber("host_load_alert_multiple", mcpsdk.Description("Host load check: load average counts as a breach above this multiple of the core count (default 1.5; 0 = default; negative is rejected).")),
+		mcpsdk.WithNumber("host_load_alert_minutes", mcpsdk.Description("Host load check: minutes a breach must last before it alerts (default 10; 0 = default; negative is rejected).")),
 		mcpsdk.WithString("planning_backend", mcpsdk.Description("LLM backend for the Automata planning call (empty = inherit); alias: decomposition_backend")),
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
 		mcpsdk.WithArray("verification_backends", mcpsdk.Description("v8.36.9 — ordered list of LLM registry names to load-balance verifier capacity across (e.g. [\"ollama-datawatch\", \"ollama-local-node\"]); tries each in order, uses whichever has free node capacity right now. Empty = single-backend behavior via verification_backend above.")),
@@ -763,6 +766,23 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["scope_lint"]; ok {
 			body["scope_lint"] = req.GetString("scope_lint", "")
+		}
+	}
+	// Host load alert (autonomous.host_load_alert.*), nested under one object.
+	// Presence-aware; the REST write validates the values.
+	if args := req.GetArguments(); args != nil {
+		hla := map[string]any{}
+		if _, ok := args["host_load_alert_mode"]; ok {
+			hla["mode"] = req.GetString("host_load_alert_mode", "")
+		}
+		if _, ok := args["host_load_alert_multiple"]; ok {
+			hla["multiple"] = req.GetFloat("host_load_alert_multiple", 0)
+		}
+		if _, ok := args["host_load_alert_minutes"]; ok {
+			hla["minutes"] = req.GetFloat("host_load_alert_minutes", 0)
+		}
+		if len(hla) > 0 {
+			body["host_load_alert"] = hla
 		}
 	}
 	// Verifier policy (autonomous.verifier_policy.*), nested under one object.

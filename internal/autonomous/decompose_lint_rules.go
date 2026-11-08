@@ -114,5 +114,13 @@ func DefaultDecomposeLintRules() []Rule {
 				},
 			},
 		},
+		{
+			ID:       "unbounded_load_step",
+			Severity: config.DecomposeLintSeverityWarning,
+			Message:  "A CPU-load or stress step was requested in the spec; bound it before it runs — run it niced (nice -n 19), use at most a quarter of the cores, give it a hard timeout, and clean up its children with a trap — so it never outlives its owning task.",
+			Match: config.DecomposeLintMatch{
+				SpecRegex: `(?i)(stress|soak|load)\s*[-_ ]?test|busy\s*[- ]?loop|\bcpu\s*[- ]?(load|stress)\b|pin(ning)?\s+(the\s+)?(cpu|cores?)\b|max(ing|ed)?\s+(out\s+)?(the\s+)?(cpu|cores?)\b|all\s+(the\s+)?(cpu|cores?)\b`,
+			},
+		},
 	}
 }

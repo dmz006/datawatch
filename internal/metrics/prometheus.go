@@ -225,6 +225,26 @@ var (
 		Help: "Seconds since the supervisor loop last ran a job (-1 when it never has)",
 	})
 
+	// Host load check (autonomous.host_load_alert): effective mode, the last
+	// load reading against its threshold, whether the reading is over the
+	// threshold, and the processes the reaper has ended (reap mode).
+	HostLoadLastRead = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_last_reading",
+		Help: "1-minute load average of the host load check's last successful reading (0 before the first reading, e.g. mode off)",
+	})
+	HostLoadLimit = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_limit",
+		Help: "Threshold (multiple x core count) of the host load check's last successful reading",
+	})
+	HostLoadBreached = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_breached",
+		Help: "1 while the host load check's last reading is over its threshold (a breach streak is in progress), else 0",
+	})
+	HostLoadOrphansReaped = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_orphans_reaped_total",
+		Help: "Leftover processes the host load check's reaper has ended for ended sessions (reap mode; the alert fires on the same tick as the reap)",
+	})
+
 	// BL397 — native ACME subsystem metrics.
 	AcmeCertExpirySeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datawatch_acme_cert_expiry_seconds",
@@ -297,6 +317,7 @@ func Register() {
 			UIPromptDismissalsTotal,
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
 			SupervisorLoopRuns, SupervisorLoopJobsEnabled, SupervisorLoopLastRunAge,
+			HostLoadLastRead, HostLoadLimit, HostLoadBreached, HostLoadOrphansReaped,
 			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
 			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
 			TraceEventsTotal, TraceAppendErrorsTotal, TraceStoredEvents, TraceStoredSessions,

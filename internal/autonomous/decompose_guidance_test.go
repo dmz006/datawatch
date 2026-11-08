@@ -149,6 +149,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"read_only_unverifiable",
 				"no_verification_script",
 				"names_tracker_id",
+				"unbounded_load_step",
 			},
 		},
 	}

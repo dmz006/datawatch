@@ -1843,6 +1843,11 @@ type LoopStatus struct {
 	// UsageBackoff reports the live per-backend usage back-off flags and
 	// the effective back-off config. Always present in a Manager.Status().
 	UsageBackoff *UsageBackoffStatus `json:"usage_backoff,omitempty"`
+	// HostLoad is the host load check status (host_load.go): effective
+	// mode, the last load reading against its threshold, whether it is
+	// over the threshold now, and the orphans the reaper has ended. nil
+	// when the daemon did not wire the check (SetHostLoadProvider).
+	HostLoad *HostLoadStatus `json:"host_load,omitempty"`
 
 	// Budgets lists the dollar budget state of every LLM that has a budget.
 	// Always an array, empty when none is wired or set.

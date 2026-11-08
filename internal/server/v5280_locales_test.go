@@ -644,6 +644,12 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"plugin_service_unknown",
 		"plugin_service_action_start",
 		"plugin_service_action_check_running",
+		// Host load check (autonomous.host_load_alert) — the three PWA
+		// Settings labels every non-English bundle must carry, English
+		// placeholders pending the Android app's translations.
+		"settings_host_load_alert_mode",
+		"settings_host_load_alert_multiple",
+		"settings_host_load_alert_minutes",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
