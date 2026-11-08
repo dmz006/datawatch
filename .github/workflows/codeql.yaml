@@ -3,16 +3,21 @@
 # nothing.
 #
 #   - On push and pull_request it first waits until default setup has uploaded
-#     its analyses for this commit, so the gate never reads the alerts of the
-#     previous commit.
+#     its analyses for this commit (the default setup analysis for a commit
+#     takes minutes after each push). Dependabot rebases every open pull
+#     request on each push to main, so about fifteen jobs poll the same
+#     installation rate limit at once; the earlier fixed 30 second poll
+#     exhausted that limit and the step failed with a rate-limit error rather
+#     than a finding. A red check whose log shows "Rate limited" with a reset
+#     time is wait-and-retry and not a finding. A line "No analysis for" is
+#     the real missing-analysis timeout. The check never reruns security
+#     workflows to get green.
 #   - alert-gate (BLOCKING) — lists open alerts at severity high or critical
 #     for this ref and fails with the counts. Only alerts in state "open"
-#     count, so any alert dismissed in code scanning is excluded. The gate does
-#     not read security/accepted-risks.yml; that registry documents the reason
-#     for each dismissal, which the operator applies in GitHub.
+#     count, so any alert dismissed in code scanning is excluded. The gate
+#     does not read security/accepted-risks.yml; that registry documents the
+#     reason for each dismissal, which the operator applies in GitHub.
 #
-# Concurrency is keyed on the ref so a newer run replaces an older one on the
-# same ref.
 name: CodeQL
 
 on:
@@ -24,6 +29,8 @@ on:
     - cron: "17 4 * * 1"
   workflow_dispatch:
 
+# Concurrency keyed on the ref: a newer run replaces an older one on the same
+# ref. This is the reason a rebase cancels the older run.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
@@ -39,7 +46,21 @@ jobs:
     permissions:
       security-events: read
       contents: read
+    # The default setup analysis for a commit takes minutes after each push.
+    # Dependabot rebases every open pull request on each push to main, so about
+    # fifteen jobs poll the same installation rate limit at once. The earlier
+    # fixed 30 second poll exhausted that limit and the step failed with a
+    # rate-limit error rather than a finding. A red check whose log shows
+    # "Rate limited" with a reset time is wait-and-retry and not a finding. A
+    # line "No analysis for" is the real missing-analysis timeout. This check
+    # never reruns security workflows to get green.
     steps:
+      # Both steps below shell out to scripts/codeql-alert-gate.sh, which only
+      # exists in the repository — the runner starts with an empty workspace,
+      # so the checkout must land before either of them runs.
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+
       - name: Wait for the default setup analyses
         if: github.event_name == 'push' || github.event_name == 'pull_request'
         env:
@@ -50,41 +71,11 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EXPECTED_CATEGORIES: "/language:actions /language:go /language:javascript-typescript /language:python"
+          WAIT_INITIAL_SECONDS: 60
+          WAIT_MAX_INTERVAL_SECONDS: 300
+          WAIT_MAX_SECONDS: 1500
         run: |
-          set -euo pipefail
-          interval="${WAIT_INTERVAL_SECONDS:-30}"
-          max="${WAIT_MAX_SECONDS:-1500}"
-          # Default setup records pull request analyses under refs/pull/N/head
-          # at the PR head commit, not under refs/pull/N/merge at the merge commit.
-          if [ -n "${PR_NUMBER:-}" ]; then
-            REF="refs/pull/${PR_NUMBER}/head"
-            SHA="${PR_HEAD_SHA}"
-          fi
-          waited=0
-          while true; do
-            # The analyses endpoint ignores a sha query parameter, so filter on
-            # commit_sha here. A failed call is treated as nothing seen yet and
-            # retried until the deadline.
-            have=$(gh api "repos/${REPO}/code-scanning/analyses?ref=${REF}&per_page=100" \
-              --jq '.[] | select(.commit_sha == env.SHA) | .category' || true)
-            missing=""
-            for c in ${EXPECTED_CATEGORIES}; do
-              if ! printf "%s\n" "$have" | grep -qxF -- "$c"; then
-                missing="${missing:+${missing} }${c}"
-              fi
-            done
-            if [ -z "$missing" ]; then
-              echo "All default setup analyses are present for ${SHA} on ${REF}."
-              exit 0
-            fi
-            if [ "$waited" -ge "$max" ]; then
-              echo "::error title=Default setup analysis missing::No analysis for ${missing} on ${REF} at ${SHA} after ${waited}s."
-              exit 1
-            fi
-            echo "Waiting for: ${missing} (${waited}s of ${max}s)"
-            sleep "$interval"
-            waited=$((waited + interval))
-          done
+          bash scripts/codeql-alert-gate.sh wait-analyses
 
       - name: Fail on open high or critical alerts
         env:
@@ -92,16 +83,4 @@ jobs:
           REPO: ${{ github.repository }}
           REF: ${{ github.ref }}
         run: |
-          set -euo pipefail
-          alerts=$(gh api --paginate \
-            "repos/${REPO}/code-scanning/alerts?state=open&ref=${REF}&per_page=100" \
-            --jq '.[] | select(.rule.security_severity_level == "high" or .rule.security_severity_level == "critical") | [.rule.security_severity_level, .number, .rule.id, .most_recent_instance.location.path] | @tsv')
-          if [ -z "$alerts" ]; then
-            echo "No open high or critical code-scanning alerts on ${REF}."
-            exit 0
-          fi
-          crit=$(printf "%s\n" "$alerts" | grep -c "^critical" || true)
-          high=$(printf "%s\n" "$alerts" | grep -c "^high" || true)
-          echo "::error title=Open code-scanning alerts::${crit} critical and ${high} high alerts are open on ${REF}. Fix them or dismiss with a registered reason in security/accepted-risks.yml."
-          printf "%s\n" "$alerts" | sort
-          exit 1
+          bash scripts/codeql-alert-gate.sh open-alerts

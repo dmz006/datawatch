@@ -194,6 +194,52 @@ repo-relative paths or glob patterns). Its shell tests live in
   affected file named, and that exempt locations (Go code comments, `docs/plans/`)
   still pass.
 
+## CodeQL alert gate: rate-limit waits (alert-gate job)
+
+**Defect:** the CodeQL workflow's alert-gate job — the `wait-analyses` step
+and the single `open-alerts` read of `scripts/codeql-alert-gate.sh` — read
+GitHub's code-scanning API with no handling for a rate-limited response, so a
+rate limit could surface as a spurious "missing analysis" red in
+`wait-analyses`, be misread as an alert result in `open-alerts`, or be
+reported as a zero-alert read — a red check for a reason that has nothing to
+do with the code.
+
+**Steps:** drive the gate script through a subprocess with its two test seams
+substituted by stubs (the API command and the sleep command, so there are no
+real API calls and no real sleeps), then: retry past three rate-limit
+responses and check the recorded waits; honour a reported core reset epoch;
+time out a missing analyses category under the wait budget; run a rate limit
+out against the budget with the reset far in the future; read a clean and a
+non-clean open-alerts set through the rate-limit retry; fail a non-rate-limit
+read so it is never reported as zero alerts; and reject an unknown
+subcommand. Run it once directly:
+
+```
+python3 -I scripts/tests/test_codeql_alert_gate.py
+```
+
+and once as part of the Makefile `test` target, which carries the line
+
+```
+python3 scripts/tests/test_codeql_alert_gate.py
+```
+
+(`make test`).
+
+**Expected:** exit 0, eight cases pass.
+
+**Actual:** PASS. The run exits 0; every case prints `... ok` and the summary
+is
+
+```
+Ran 8 tests in 0.228s
+OK
+```
+
+(The run's elapsed seconds are a wall-clock figure and shift by a few
+hundredths of a second between runs; `Ran 8 tests` and `OK` are the stable
+parts, and the exit code is 0 either way.)
+
 ## Test daemon cleanup rules
 
 Every job that starts a datawatch daemon must end that daemon, and every session the
