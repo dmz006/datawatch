@@ -4,10 +4,13 @@
 `dmz006/datawatch-app` repository when the operator files it. Filing the issue does
 not change a line of this repo. Draft written 2026-11-08 against the worker session
 profiles work (PRD `24230001`) that landed its docs set and changelog entry on main.
-The draft carries a placeholder where the exact setting and tool names land: the
-how-to and the operations section both say the key and tool names arrive with the
-settings work for this change, and this draft must be updated with them before
-filing.
+The config keys have already landed and are documented (the
+[how-to](../../howto/worker-session-profiles.md) names them: `autonomous.worker_profiles`,
+`autonomous.worker_profile_defaults` with its `role` and `kind` keys, the daemon-wide
+`autonomous.worker_profile`, and the `worker_profile` field on a task and on an
+Automaton). What still lands is the per-surface tool names — the MCP, CLI and comm
+surface names that set and read those keys — and this draft must be updated with
+them before filing.
 
 Parent release: the datawatch release that ships worker session profiles — the
 feature currently under `[Unreleased]` in `CHANGELOG.md` (daemon version at
@@ -66,8 +69,11 @@ Now, on the datawatch daemon:
 5. The choice is configurable by every datawatch user on the six standard settings
    surfaces — the settings file, the web settings, REST, the MCP tools, the CLI and
    the comm channel — and the read-back on any of them names the profile in force
-   per role and task kind, its fields, and the tier that set them. The exact key
-   and tool names arrive with the settings work for this change.
+   per role and task kind, its fields, and the tier that set them. The config keys
+   are the ones the how-to names (`autonomous.worker_profiles`,
+   `autonomous.worker_profile_defaults`, `autonomous.worker_profile`,
+   `worker_profile` on the task and the Automaton); the per-surface tool names
+   that set and read them arrive with the settings work for this change.
 
 ## The parity gap this leaves open
 
@@ -117,8 +123,8 @@ silently hiding the surface.
 
 Treat this as a follow-up in `datawatch-app`, filed **after** the settings work for
 worker session profiles lands on the daemon with its final key and tool names —
-file it with placeholders and the draft is wrong, so update this draft's affected
-area and expected behavior with the real keys first, then file. At minimum the app
+file it before the per-surface tool names exist and the draft is wrong, so update
+this draft's affected area and expected behavior with them first, then file. At minimum the app
 should: (1) add a profiles settings surface that reads and writes the same profile
 keys the daemon's REST config endpoint round-trips, showing the profile in force
 per role and task kind with its tier, the four built-in names as the valid set
@@ -137,6 +143,6 @@ change makes.
 
 ## Filing record
 
-- Filed: — (pending; issue number / URL once opened; file after the settings work
-  lands with its final key and tool names, and after this draft is updated with
+- Filed: — (pending; issue number / URL once opened; file after the per-surface
+  tool names for the settings above land, and after this draft is updated with
   them)
