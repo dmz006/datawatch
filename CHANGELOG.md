@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **A task template can state why its tasks have no verification script.** `TaskTemplateDef` gains a `verification_script_reason` field (YAML and JSON, optional). It is the explicit reason a task from the template has no verification script, and it is copied onto that task as `VerificationScriptReason`. It is a template field, not a new daemon setting.
+  - **How it shows up:** an operator template that sets `verification_script_reason` produces tasks that carry the same reason; templates without it are unchanged.
+  - **Migration:** none. The field is optional and absent from existing templates.
+
 ### Fixed
 - **The decomposed Automaton's closing tasks pass the verifier instead of being rejected at prestart.** The built-in final-gate task template carried a command string (`go build ./... && go test ./...`) as its verification script; a verification script must be one repo-relative script file, and a command string is not one, so the verifier rejected the gate before it could run and the story could not close. The gate now verifies through its read-only report under `.datawatch/reports/` (its verdict file), and its closing note — including the release version note — carries no verification script at all, so it passes as a note. A guard now catches the same mistake in operator templates: a template whose `verification_script` is a command string is refused at config write with an error naming the template id, and if one still exists it is skipped when templates are applied, so it never becomes a task the verifier cannot start.
   - **How it shows up:** a decomposed Automaton's final gate and version note run to a verdict and pass verification, instead of dying at the verifier prestart with a "not a file" rejection. Saving a template whose `verification_script` looks like a command (for example `go build ./... && go test ./...`) is refused with a single error naming the template id; a valid entry is one repo-relative script file (for example `scripts/verify.sh`).

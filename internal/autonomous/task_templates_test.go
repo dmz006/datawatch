@@ -531,3 +531,26 @@ func TestFinalGateTemplateReportPathBadUserTemplateRefused(t *testing.T) {
 		t.Fatal("valid user template not instantiated")
 	}
 }
+
+// TestTaskTemplateCopiesVerificationScriptReason checks that a template's
+// explicit verification-script exemption reason is copied onto the task it
+// instantiates, and that a template without one leaves the task field empty.
+func TestTaskTemplateCopiesVerificationScriptReason(t *testing.T) {
+	story := testTaskTemplateStory(t)
+	def := config.TaskTemplateDef{
+		ID:                       "exempt-reason",
+		Title:                    "Exempt task",
+		Spec:                     "Write the release note.",
+		VerificationScriptReason: "docs-only change; no script can verify prose",
+	}
+	task := taskForTemplate(story, def, nil, map[string]string{})
+	if task.VerificationScriptReason != def.VerificationScriptReason {
+		t.Fatalf("VerificationScriptReason = %q, want %q",
+			task.VerificationScriptReason, def.VerificationScriptReason)
+	}
+
+	bare := config.TaskTemplateDef{ID: "no-reason", Spec: "Do the thing."}
+	if got := taskForTemplate(story, bare, nil, map[string]string{}).VerificationScriptReason; got != "" {
+		t.Fatalf("template without reason produced VerificationScriptReason = %q, want empty", got)
+	}
+}
