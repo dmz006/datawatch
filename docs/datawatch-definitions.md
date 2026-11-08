@@ -408,7 +408,7 @@ Unclaimed items whose lease expires are automatically returned to `pending` stat
 
 ### Discussion id
 
-The name of a discussion scope or file folder: 1 to 128 characters from letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Any other id gets HTTP 400 `invalid discussion id`. Every path into the discussion folder is built with a single guard that also verifies the cleaned result is a direct child of the cleaned base folder, so an id can never resolve outside the discussion directory. Older ids with other characters stay on disk but are unreachable through the API; operators should rename them. See [discussion-scopes](howto/discussion-scopes.md) and [file-service](howto/file-service.md).
+The name of a discussion scope or file folder: 1 to 128 characters from letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Any other id gets HTTP 400 `invalid discussion id`. Because an accepted id can never carry a path separator, any folder path built from it stays a direct child of the discussion base folder, so an id can never resolve outside the discussion directory. A shared helper with the same containment guarantee is centralized and unit-tested in `internal/server/discussion_folder.go` (see [operations](operations.md) for what is and isn't wired to it yet). Older ids with other characters stay on disk but are unreachable through the API; operators should rename them. See [discussion-scopes](howto/discussion-scopes.md) and [file-service](howto/file-service.md).
 
 ### Discussion push / subscribe
 
@@ -1346,7 +1346,7 @@ Per-discussion memory namespaces that are durable, federated, and conflict-aware
 
 **CLI:** `datawatch memory discussion list | write | recall | wal | participants`
 
-Path traversal (`..` in a discussion ID) is rejected with 400, and the folder path is always built with a containment check that the cleaned result stays a direct child of the discussion base folder — a stored discussion cannot be addressed outside it.
+Path traversal (`..` in a discussion ID) is rejected with 400. Because an accepted id can never carry a path separator, the folder path built from it always resolves as a direct child of the discussion base folder — a stored discussion cannot be addressed outside it.
 
 See [`howto/discussion-scopes.md`](howto/discussion-scopes.md).
 

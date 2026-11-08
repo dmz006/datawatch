@@ -52,7 +52,7 @@ addressable only by their discussion ID.
 Every write to a new discussion ID automatically creates the scope and the WAL file. There
 is no explicit create step.
 
-**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID, including an empty one or one holding `/`, `\` or spaces, is rejected with HTTP 400 and the text `invalid discussion id` on every scope, sync and file-service route. IDs that were created earlier with other characters are no longer reachable through the API. Every path into the discussion folder — the WAL at `~/.datawatch/discussions/<id>/` and any file-service folder under the same root — is built with the same guard plus a containment check that the cleaned result is a direct child of the cleaned base folder, so a stored discussion can never be addressed outside its base directory.
+**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID, including an empty one or one holding `/`, `\` or spaces, is rejected with HTTP 400 and the text `invalid discussion id` on every scope, sync and file-service route. IDs that were created earlier with other characters are no longer reachable through the API. Because a valid ID can never carry a path separator, every path into the discussion folder — the WAL at `~/.datawatch/discussions/<id>/` and any file-service folder under the same root — always resolves as a direct child of its base folder, so a stored discussion can never be addressed outside its base directory.
 
 ### REST
 
