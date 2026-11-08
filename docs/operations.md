@@ -4559,8 +4559,11 @@ Note for the operator: the alert names the 5 busiest process groups — there ma
 be more on the host; attribution only covers processes whose evidence points
 into a worktree or scratch folder of a session this daemon knows; `reap` acts
 only when the check raises its alert, at the first sustained breach after it
-was switched on; and a process that ignores the end signal survives, counted in
-the session-end reaper's `session_end_reap` audit. See
+was switched on; and the load check's reap keeps **no record** — there is no
+`session_end_reap` audit entry, task decision or `survivors` count for it, so
+a `session_end_reap` record always refers to a session end — a process that
+ignores the end signal survives it without being counted, so check the room
+(`ps` and `ls -l /proc/<pid>/cwd`) after a load-check reap. See
 [howto/host-load-check.md](howto/host-load-check.md).
 
 ---

@@ -123,9 +123,12 @@ never by process name or command line. Consequences to plan for:
   path when a sustained breach happens while the setting is `reap`.
 - It never touches a running session's processes, no matter how long the host
   stays overloaded.
-- A process that ignores the end signal survives; the session-end reaper
-  counts those as *survivors* in its `session_end_reap` audit record, and that
-  report is the place to check that a reap actually cleaned the room.
+- A process that ignores the end signal survives — and this reap keeps
+  **no record** of it: there is no `session_end_reap` audit entry and no
+  *survivors* count for the load check's reap (that audit trail belongs
+  to the session-end pass only). To check that a reap actually cleaned
+  the room, re-check the ended session's worktree and scratch folder
+  yourself (for example `ps -eo pid,ppid,cmd` and `ls -l /proc/<pid>/cwd`).
 - The usual session-end reap still runs independently when a session ends
   (see [Automaton worktree cleanup](automaton-worktree-cleanup.md)); this
   check is the backstop for the sessions that ended **without** their leak
