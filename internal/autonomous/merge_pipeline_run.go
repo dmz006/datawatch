@@ -179,6 +179,23 @@ func (m *Manager) mergeRuns() *MergeRunRecords {
 	return m.mergeRunStore
 }
 
+// MergeLocks returns the merge lock store, opened under the daemon store
+// directory on first use. A store that cannot be opened (for instance a
+// corrupt lock file) is returned as an error and is not cached, so the next
+// call tries again; a caller must treat that as a refusal, never as free.
+func (m *Manager) MergeLocks() (*MergeLocks, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mergeLockStore == nil {
+		locks, err := NewMergeLocks(m.store.dir)
+		if err != nil {
+			return nil, err
+		}
+		m.mergeLockStore = locks
+	}
+	return m.mergeLockStore, nil
+}
+
 // RecordMergeRun makes the Manager a MergeRunRecorder, so a pipeline run's
 // steps land in the merge status the operator already sees.
 func (m *Manager) RecordMergeRun(run MergePipelineRun) { m.mergeRuns().RecordMergeRun(run) }

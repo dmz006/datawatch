@@ -30,6 +30,24 @@ import (
 // mergeRunTimeout bounds one whole merge run.
 const mergeRunTimeout = 60 * time.Minute
 
+// mergeLockSource is the optional Manager surface that supplies the
+// repository merge lock. A Manager without it runs with no lock.
+type mergeLockSource interface {
+	MergeLocks() (*autonomous.MergeLocks, error)
+}
+
+// unavailableMergeLocks refuses every lock request when the lock store cannot
+// be opened, so a run never proceeds unlocked because its store is broken.
+type unavailableMergeLocks struct{ err error }
+
+// Acquire implements mergepipeline.MergeLocker by refusing the lock.
+func (u unavailableMergeLocks) Acquire(string, autonomous.MergeLockHolder) (autonomous.MergeLockStatus, error) {
+	return autonomous.MergeLockStatus{}, fmt.Errorf("merge lock store unavailable: %w", u.err)
+}
+
+// Release implements mergepipeline.MergeLocker; nothing is ever held.
+func (unavailableMergeLocks) Release(string, string) error { return nil }
+
 // mergeRunner is the Manager surface the run route needs.
 type mergeRunner interface {
 	autonomous.MergeRunRecorder
@@ -104,6 +122,13 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 	}
 	if q := mr.MergeQuestionStore(); q != nil {
 		runner.Questions = q
+	}
+	if src, ok := mr.(mergeLockSource); ok {
+		if locks, err := src.MergeLocks(); err != nil {
+			runner.Locks = unavailableMergeLocks{err: err}
+		} else {
+			runner.Locks = locks
+		}
 	}
 	return runner
 }

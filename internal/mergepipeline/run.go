@@ -47,6 +47,16 @@ type ShipRunner interface {
 	FileIssue(ctx context.Context, dir, repo, title, body string) error
 }
 
+// MergeLocker keeps two merge runs from shipping into the same repository at
+// once. *autonomous.MergeLocks is the production one.
+type MergeLocker interface {
+	// Acquire takes the lock for repo. It refuses, with an error and the
+	// holder's status, when another run owns the repository.
+	Acquire(repo string, h autonomous.MergeLockHolder) (autonomous.MergeLockStatus, error)
+	// Release frees repo when runID holds it.
+	Release(repo, runID string) error
+}
+
 // RunRequest is one merge to run.
 type RunRequest struct {
 	// Title is the plain-language title of the release.
@@ -79,6 +89,9 @@ type Runner struct {
 	Ship ShipRunner
 	// Recorder receives the run after every step; nil records nothing.
 	Recorder autonomous.MergeRunRecorder
+	// Locks holds the repository lock for the length of a run; nil means no
+	// lock is taken.
+	Locks MergeLocker
 
 	MainBranch string // default main
 	// PostShip is the operator's autonomous.merge_pipeline.post_ship block.
@@ -192,6 +205,19 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if len(req.Branches) == 0 {
 		return finish(autonomous.MergeRunFailed, errors.New("at least one branch is required"))
 	}
+	if r.Locks != nil {
+		holder := autonomous.MergeLockHolder{RunID: st.run.ID, AutomatonID: req.AutomatonID, Branches: req.Branches}
+		status, err := r.Locks.Acquire(r.Dir, holder)
+		if err != nil {
+			st.run.Reason = redact(lockRefusal(status, err))
+			return finish(autonomous.MergeRunFailed, fmt.Errorf("merge refused: %w", err))
+		}
+		defer func() {
+			if rerr := r.Locks.Release(r.Dir, st.run.ID); rerr != nil {
+				log.Printf("[merge-pipeline] release the merge lock on %s: %v", r.Dir, rerr)
+			}
+		}()
+	}
 	st.m = &Merger{Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions}
 	st.record()
 	if err := st.preflight(ctx); err != nil {
@@ -221,6 +247,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return finish(autonomous.MergeRunCompletedWithFailures, nil)
 	}
 	return finish(autonomous.MergeRunOK, nil)
+}
+
+// lockRefusal is the plain-language reason a run was refused its repository
+// lock. When the refusal names a holder, the reason names its run and
+// Automaton, so the record shows who is shipping.
+func lockRefusal(holder autonomous.MergeLockStatus, err error) string {
+	if holder.RunID != "" || holder.AutomatonID != "" {
+		return fmt.Sprintf("another merge holds this repository: run %s (Automaton %s)", holder.RunID, holder.AutomatonID)
+	}
+	return "the merge lock could not be taken: " + err.Error()
 }
 
 // preflight requires the main branch checked out and a clean tree, as the
