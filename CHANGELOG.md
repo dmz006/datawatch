@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- An operator task template whose `verification_script` is a command string (for example `go build ./... && go test ./...`) is rejected. A verification script must be one repo-relative script file. The config write that carries such a template is refused with an error naming the template id, and a template that still carries one is skipped when templates are applied, so it never becomes a task the verifier cannot start. Built-in templates are unaffected, and no setting changes.
 - The built-in final-gate task template no longer carries a command string as its verification script. That string is not a file, so the verifier prestart rejected the gate. The gate now verifies through its read-only report under `.datawatch/reports/`.
 
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
