@@ -158,18 +158,20 @@ and re-opening the view. Picking **Local** or **All** takes the same page
 back to that view the same way.
 
 > **Confirm this on your setup before relying on it.** The in-place fix is
-> new and recorded under **[Unreleased] → Fixed** in the
+> recorded under **[Unreleased] → Fixed** in the
 > [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry notes
-> that no live verification had been run when it was recorded. On builds
-> that predate the fix — and, as of the date of these docs, on the source
-> tree these docs describe, where the picker's `selectServer` only
-> re-fetches the Sessions view (plus the **Showing:** line and the
-> connection) on a chip change — a chip selection on the Alerts, Automata,
-> Observer and Dashboard tabs only set the active server and reconnected,
-> and the tab kept showing the previous server's data until you navigated
-> away and back. Confirm the in-place switch on a two-host setup, and check
-> the **Automata** tab's **Automation** sub-tab separately: nothing in the
-> change confirms that sub-tab re-renders on a chip change yet. The full
+> that no live verification had been run when it was recorded; the
+> 2026-11-08 code change is also not present in this worktree's
+> `internal/server/web/app.js` (the branch carries only the changelog entry
+> and these docs). On this source tree a chip change already updates the
+> **Showing:** line and the connection, re-fetches the Sessions list and
+> re-renders the Alerts view (the reconnect resync does that
+> unconditionally — the Alerts picker behaviour fixed in v8.73.5, 2026-10-08),
+> so the entry's tab list — which includes Alerts — is best read as the
+> operator's report of which pages didn't follow the chip, not a per-tab
+> audit of this tree. Confirm the in-place switch on a two-host setup, and
+> check the **Automata** tab's **Automation** sub-tab separately: nothing in
+> the change confirms that sub-tab re-renders on a chip change yet. The full
 > checklist is in [operations.md](../operations.md), under
 > "Still to review (operator)" in the multi-server section.
 
