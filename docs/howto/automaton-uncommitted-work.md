@@ -128,7 +128,8 @@ as unedited while it still carries its
 marker line, has no `<!-- edited -->` line, and its body still matches the hash the daemon
 recorded in a sidecar file when it last wrote it — and because the daemon
 never overwrites an artefact a person has edited, unedited means "still
-exactly what the daemon wrote." An unedited artefact is left out of the check,
+exactly what the daemon wrote." An unedited artefact — together with the
+sidecar file that records its hash — is left out of the check,
 of the hold listing and of the warning, so an Automaton whose only
 uncommitted work is what the daemon generated reaches `completed` and is
 listed as merge ready as usual, and one already held for nothing but unedited

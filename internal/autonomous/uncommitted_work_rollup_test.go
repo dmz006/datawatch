@@ -2,12 +2,14 @@ package autonomous
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 )
 
 // uncommittedRollupRig is a Manager with one Automaton on a work branch whose
@@ -313,4 +315,182 @@ func containsString(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// addDirty marks more files as modified in the fake worktree.
+func (r *uncommittedRollupRig) addDirty(rels ...string) {
+	r.git.mu.Lock()
+	defer r.git.mu.Unlock()
+	if r.git.dirty == nil {
+		r.git.dirty = map[string]string{}
+	}
+	for _, p := range rels {
+		r.git.dirty[p] = " M"
+	}
+}
+
+// writeUneditedArtefact writes the daemon's gate report for the rig's
+// Automaton into its project directory, exactly as the daemon's own write
+// does (marker, body, fresh hash sidecar), and returns its tracked path
+// relative to the project root.
+func (r *uncommittedRollupRig) writeUneditedArtefact(t *testing.T) string {
+	t.Helper()
+	rel := "docs/plans/reports/" + r.prd.ID + "-gate.md"
+	res, err := genartifacts.Write(genartifacts.GateReport, "All checks passed for this run.", rel, genartifacts.Options{Root: r.prd.ProjectDir})
+	if err != nil {
+		t.Fatalf("write artefact: %v", err)
+	}
+	if res.Status != genartifacts.Written {
+		t.Fatalf("write artefact = %s (%s); want written", res.Status, res.Reason)
+	}
+	return rel
+}
+
+// takeOverArtefact edits the generated file the way a person does: the marker
+// is kept, the edited line is added right after it and a note is appended.
+func (r *uncommittedRollupRig) takeOverArtefact(t *testing.T, rel string) {
+	t.Helper()
+	full := filepath.Join(r.prd.ProjectDir, filepath.FromSlash(rel))
+	content := genartifacts.Marker + "\n" + genartifacts.EditedMarker + "\n" +
+		"All checks passed for this run.\nOperator: verified by hand."
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil { // #nosec G306 -- test fixture
+		t.Fatalf("take over artefact: %v", err)
+	}
+}
+
+// changeArtefactBody rewrites the generated file's body while keeping the
+// marker and the now-stale hash sidecar: content the daemon never wrote.
+func (r *uncommittedRollupRig) changeArtefactBody(t *testing.T, rel string) {
+	t.Helper()
+	full := filepath.Join(r.prd.ProjectDir, filepath.FromSlash(rel))
+	content := genartifacts.Marker + "\nChanged body the daemon never wrote."
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil { // #nosec G306 -- test fixture
+		t.Fatalf("change artefact body: %v", err)
+	}
+}
+
+// The files the daemon itself generated at finish time are exactly what the
+// finishing Automaton left dirty in its worktree; holding on them would park
+// every one of them.
+func TestUncommittedRollupUneditedArtefactDoesNotHold(t *testing.T) {
+	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyHold, nil)
+	rel := r.writeUneditedArtefact(t)
+	r.addDirty(rel, genartifacts.SidecarRelPath(rel))
+
+	got := r.run(t)
+	if got.Status != PRDCompleted {
+		t.Fatalf("status = %s; want completed (hold: %+v)", got.Status, got.UncommittedWork)
+	}
+	if got.UncommittedWork != nil || len(r.store.List(QuestionFilter{})) != 0 {
+		t.Errorf("the daemon's own artefact raised a hold or question: hold=%+v", got.UncommittedWork)
+	}
+	if r.git.statusCount() == 0 {
+		t.Error("the worktree was never read")
+	}
+}
+
+func TestUncommittedRollupWarnUneditedArtefactStaysQuiet(t *testing.T) {
+	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyWarn, nil)
+	rel := r.writeUneditedArtefact(t)
+	r.addDirty(rel, genartifacts.SidecarRelPath(rel))
+
+	got := r.run(t)
+	if got.Status != PRDCompleted {
+		t.Fatalf("status = %s; want completed", got.Status)
+	}
+	if len(r.decisions(uncommittedWarnedDecisionKind)) != 0 || len(r.actions()) != 0 || len(r.store.List(QuestionFilter{})) != 0 {
+		t.Errorf("the daemon's own artefact was still recorded: decisions=%d actions=%v",
+			len(r.decisions(uncommittedWarnedDecisionKind)), r.actions())
+	}
+}
+
+// A person edit (or any other change) to a generated file is the operator's
+// work and counts like any uncommitted file again.
+func TestUncommittedRollupEditedArtefactHolds(t *testing.T) {
+	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyHold, nil)
+	rel := r.writeUneditedArtefact(t)
+	r.takeOverArtefact(t, rel)
+	r.addDirty(rel)
+
+	got := r.run(t)
+	if got.Status != PRDBlocked {
+		t.Fatalf("status = %s; want blocked", got.Status)
+	}
+	if got.UncommittedWork == nil || !containsString(got.UncommittedWork.Files, rel) {
+		t.Fatalf("hold record lacks %q: %+v", rel, got.UncommittedWork)
+	}
+}
+
+// A changed body the daemon never wrote does not carry a person edit with it:
+// it is still uncommitted work.
+func TestUncommittedRollupChangedBodyHolds(t *testing.T) {
+	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyHold, nil)
+	rel := r.writeUneditedArtefact(t)
+	r.changeArtefactBody(t, rel)
+	r.addDirty(rel)
+
+	got := r.run(t)
+	if got.Status != PRDBlocked {
+		t.Fatalf("status = %s; want blocked", got.Status)
+	}
+	if got.UncommittedWork == nil || !containsString(got.UncommittedWork.Files, rel) {
+		t.Fatalf("hold record lacks %q: %+v", rel, got.UncommittedWork)
+	}
+}
+
+// With both kinds of files dirty, only the operator's stay in.
+func TestUncommittedRollupMixedListsOnlyOperatorFiles(t *testing.T) {
+	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyHold, dirtyFiles("internal/a.go"))
+	rel := r.writeUneditedArtefact(t)
+	r.addDirty(rel, genartifacts.SidecarRelPath(rel))
+
+	got := r.run(t)
+	if got.Status != PRDBlocked {
+		t.Fatalf("status = %s; want blocked", got.Status)
+	}
+	if got.UncommittedWork == nil || !containsString(got.UncommittedWork.Files, "internal/a.go") {
+		t.Fatalf("hold record lacks internal/a.go: %+v", got.UncommittedWork)
+	}
+	if got.UncommittedWork != nil && (containsString(got.UncommittedWork.Files, rel) ||
+		containsString(got.UncommittedWork.Files, genartifacts.SidecarRelPath(rel))) {
+		t.Errorf("hold record lists the daemon's own artefact: %+v", got.UncommittedWork)
+	}
+
+	held := r.decisions(uncommittedHeldDecisionKind)
+	qs := r.store.List(QuestionFilter{})
+	if len(held) != 1 || len(qs) != 1 {
+		t.Fatalf("held=%d questions=%d; want one each", len(held), len(qs))
+	}
+	for _, text := range []string{got.BlockedReason, held[0].Note, qs[0].Text} {
+		if !strings.Contains(text, "internal/a.go") {
+			t.Errorf("operator text lacks internal/a.go: %s", text)
+		}
+		if strings.Contains(text, "-gate.md") {
+			t.Errorf("operator text lists the daemon's own artefact: %s", text)
+		}
+	}
+}
+
+func TestExcludeUneditedGeneratedArtefacts(t *testing.T) {
+	dir := t.TempDir()
+	rel := "docs/plans/reports/abc123-gate.md"
+	res, err := genartifacts.Write(genartifacts.GateReport, "body.", rel, genartifacts.Options{Root: dir})
+	if err != nil || res.Status != genartifacts.Written {
+		t.Fatalf("write artefact: %v %s", err, res)
+	}
+	side := genartifacts.SidecarRelPath(rel)
+	files := []UncommittedFile{
+		{Path: "internal/a.go", Status: " M"},
+		{Path: rel, Status: " M"},
+		{Path: side, Status: " M"},
+		{Path: "docs/notes.md", Status: " M"},
+	}
+	got := excludeUneditedGeneratedArtefacts(dir, files)
+	if len(got) != 2 || got[0].Path != "internal/a.go" || got[1].Path != "docs/notes.md" {
+		t.Fatalf("kept = %+v; want the operator's two files in order", got)
+	}
+	// An empty root matches nothing: every file stays.
+	if g2 := excludeUneditedGeneratedArtefacts("", files); len(g2) != len(files) {
+		t.Errorf("empty root kept %d of %d; want all", len(g2), len(files))
+	}
 }
