@@ -105,6 +105,11 @@ type TaskAttempt struct {
 	// Escalated is true when this attempt ran on an escalation step rather
 	// than the task's normally resolved worker.
 	Escalated bool `json:"escalated,omitempty"`
+	// BackendReason says why this attempt ran on its backend and model: "first
+	// attempt for <kind> tasks", "escalated after <n> failures", "operator
+	// pinned" or "default choice" (see describeAttemptBackendReason). Attempts
+	// stored before it existed leave it empty.
+	BackendReason string `json:"backend_reason,omitempty"`
 	// RunnerExitStatus is pi's exit status when the pane showed it; nil when
 	// no pi exit status was seen.
 	RunnerExitStatus *int `json:"runner_exit_status,omitempty"`

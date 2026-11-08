@@ -1691,6 +1691,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			_ = m.store.SaveTask(t)
 			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
 			run.Escalated = escalated
+			run.BackendReason = describeAttemptBackendReason(execSource, taskAttemptKind(t), m.escalationFailureCount(t))
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode

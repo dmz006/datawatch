@@ -58,6 +58,8 @@ type attemptRun struct {
 	RefsBefore int
 	// Escalated is true when an escalation step chose this attempt's worker.
 	Escalated bool
+	// BackendReason is the describeAttemptBackendReason text for the worker.
+	BackendReason string
 	// SessionID and TmuxSession name the session the attempt used, when the
 	// caller knows them. Both stay empty when no session started.
 	SessionID   string
@@ -137,11 +139,14 @@ func (m *Manager) attemptNow() time.Time {
 func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, run attemptRun, f attemptFailure) {
 	ended := m.attemptNow()
 	backend, model, effort := run.Backend, run.Model, run.Effort
+	backendReason := run.BackendReason
 	if backend == "" {
 		story := findStory(prd, t.StoryID)
 		auto := m.AutomationForPRD(prd)
-		backend, model, _ = resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+		var source string
+		backend, model, source = resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
 		effort = resolveTaskEffort(t, story, prd, auto)
+		backendReason = describeAttemptBackendReason(source, taskAttemptKind(t), m.escalationFailureCount(t))
 	}
 
 	started := run.StartedAt
@@ -178,6 +183,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
 		SnapshotRef:     ref,
 		Escalated:       run.Escalated,
+		BackendReason:   backendReason,
 		SessionID:       sessionID,
 		TmuxSession:     tmux,
 		EndReason:       deriveAttemptEndReason(f, adopted),
