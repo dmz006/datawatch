@@ -69,8 +69,12 @@ func pidAlive(pid int) bool {
 
 func TestOrphanFinderMatchesByEvidenceNotName(t *testing.T) {
 	t.Setenv("TMUX", "")
-	os.Unsetenv("TMUX")
-	os.Unsetenv("TMUX_TMPDIR")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
+		t.Fatal(err)
+	}
 	wt := t.TempDir()
 	other := t.TempDir()
 	mine := startFixtureSleeper(t, wt)
@@ -96,8 +100,12 @@ func TestOrphanFinderMatchesByEvidenceNotName(t *testing.T) {
 }
 
 func TestOrphanReapEndsFixtureAndLeavesBystander(t *testing.T) {
-	os.Unsetenv("TMUX")
-	os.Unsetenv("TMUX_TMPDIR")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
+		t.Fatal(err)
+	}
 	wt := t.TempDir()
 	other := t.TempDir()
 	mine := startFixtureSleeper(t, wt, "SECRET_TOKEN=hunter2-do-not-print")
@@ -131,8 +139,12 @@ func TestOrphanReapEndsFixtureAndLeavesBystander(t *testing.T) {
 }
 
 func TestOrphanFinderEnvEvidence(t *testing.T) {
-	os.Unsetenv("TMUX")
-	os.Unsetenv("TMUX_TMPDIR")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
+		t.Fatal(err)
+	}
 	other := t.TempDir()
 	const id = "sess-evidence-abcd1234"
 	withID := startFixtureSleeper(t, other, "DATAWATCH_SESSION_ID="+id)
@@ -437,8 +449,12 @@ func TestOrphanScriptEvidenceUnderLiveParentAndWithoutExecBit(t *testing.T) {
 }
 
 func TestOrphanRealPidfdSignalPathHonoursVerify(t *testing.T) {
-	os.Unsetenv("TMUX")
-	os.Unsetenv("TMUX_TMPDIR")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
+		t.Fatal(err)
+	}
 	wt := t.TempDir()
 	cmd := startFixtureSleeper(t, wt)
 	waitStarted(t, cmd)

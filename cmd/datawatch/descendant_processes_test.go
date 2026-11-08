@@ -301,7 +301,9 @@ func startReapFixture(t *testing.T) (string, int) {
 
 func TestSessionEndReapEndsFixtureAndRecords(t *testing.T) {
 	t.Setenv("TMUX", "")
-	os.Unsetenv("TMUX")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
 	wt, pid := startReapFixture(t)
 	sess := &session.Session{FullID: "host-ab12cd34", ProjectDir: wt}
 	var gotID string
@@ -323,7 +325,9 @@ func TestSessionEndReapEndsFixtureAndRecords(t *testing.T) {
 }
 
 func TestSessionEndReapNoEvidenceTouchesNothing(t *testing.T) {
-	os.Unsetenv("TMUX")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
 	_, pid := startReapFixture(t)
 	other := t.TempDir()
 	called := false

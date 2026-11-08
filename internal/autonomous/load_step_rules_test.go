@@ -369,7 +369,7 @@ func pollProcGone(t *testing.T, pid int, deadline time.Duration) bool {
 	for time.Now().Before(deadlineAt) {
 		// A zombie/dead state counts as gone (the load is off, even if the
 		// /proc entry lingers until the parent reaps it).
-		if !procRunning(pid) && !procRunning(pid) {
+		if !procRunning(pid) {
 			return true
 		}
 		time.Sleep(50 * time.Millisecond)
