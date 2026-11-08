@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.6 (2026-11-08).** The Sessions Tags menu no longer repeats system tags: each appears once under its axis heading. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.7 (2026-11-08).** Dependencies and workflow action pins are updated to their newest majors; mcp-go v1 needed one small compatibility change. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

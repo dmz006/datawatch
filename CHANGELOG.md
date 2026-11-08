@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.7 — Update dependencies and workflow action pins to the newest majors
+
+### Changed
+
+- **Go modules, the channel bridge and the workflow actions are updated to their newest majors, with the one code change the mcp-go major needed.** The mcp-go module moves from v0.46.0 to v1.5.0 (with the rest of the Go module group and the patch updates). Version 1 refuses server-initiated sampling and elicitation requests for clients on the 2026-07-28 protocol unless asked not to, so both the daemon and the channel bridge now pass the legacy server-initiated-requests option, and a refused request is treated like "no sampling-capable client" so callers degrade as before. A golden test now pins the registered MCP tool names and a test covers the refused-request path. The workflow actions move: `actions/upload-artifact` v5 to v7.0.2, `docker/setup-qemu-action` v3 to v4.4.0, `golangci/golangci-lint-action` v8 to v9, `zaproxy/action-baseline` v0.9.0 to v0.15.0 and `zaproxy/action-full-scan` v0.9.0 to v0.13.0 (the ZAP pins were corrected to real tags). Every pin keeps its existing form (a full commit hash with a version comment, except the golangci-lint action which stays a version tag as before), and no trigger, permission or workflow input changed.
+  - **How it shows up:** nothing changes in day-to-day use. MCP clients on the newer protocol keep working with sampling and elicitation; older clients behave as before. The CI, container, release and ZAP workflows run the newer action versions on the next run.
+  - **Migration:** none. A self-hosted runner needs the Node 24 runtime for the new upload-artifact major. The maintainer guide (`docs/plans/2026-11-01-upstream-monitoring-maintainer-guide.md`) lists which majors moved and what each upstream change meant, and the three review reports are kept under `docs/plans/reports/`. The ZAP API-scan action is still on v0.9.0 and is left for a separate decision.
+
 ## v9.112.6 — Show each system tag once in the Sessions tag menu
 
 ### Fixed
