@@ -11,6 +11,7 @@
 package autonomous
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -530,4 +531,30 @@ func (r *OrphanReaper) Reap(ev OrphanEvidence, procs []OrphanProc) OrphanReapRes
 // EndOrphans finds and ends every process proven to belong to the session.
 func (r *OrphanReaper) EndOrphans(ev OrphanEvidence) OrphanReapResult {
 	return r.Reap(ev, r.Find(ev))
+}
+
+// RecordSessionEndReap appends one decision to the task bound to sessionID
+// recording how many processes the session-end reap ended and their short
+// commands (never the environment). It reports whether a task was found.
+func (m *Manager) RecordSessionEndReap(sessionID string, count int, commands []string) bool {
+	prdID, taskID := m.FindTaskBySessionID(sessionID)
+	if prdID == "" {
+		return false
+	}
+	note := fmt.Sprintf("session end reap: ended %d process(es) left behind by session %s", count, sessionID)
+	if len(commands) > 0 {
+		note += ": " + strings.Join(commands, "; ")
+	}
+	now := time.Now()
+	return m.store.MutatePRD(prdID, func(p *PRD) bool {
+		p.Decisions = append(p.Decisions, Decision{At: now, Kind: "session_end_reap", Actor: "autonomous", Note: note})
+		for si := range p.Story {
+			for ti := range p.Story[si].Tasks {
+				if p.Story[si].Tasks[ti].ID == taskID {
+					p.Story[si].Tasks[ti].History = append(p.Story[si].Tasks[ti].History, TaskHistoryEntry{At: now, Note: note})
+				}
+			}
+		}
+		return true
+	})
 }

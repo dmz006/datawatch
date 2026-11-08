@@ -1726,6 +1726,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 		})
+		wireSessionEndReap(mgr)
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
 			// Design A3 — revoke this session's scoped credential
 			// immediately; its bridge process can no longer authenticate
@@ -7623,6 +7624,8 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			}
 			amgr.SetScanGrader(scanGrader)
 			amgr.SetRuleEditorFn(ruleEditor)
+			recordReap := amgr.RecordSessionEndReap
+			sessionEndReapRecorder.Store(&recordReap)
 			httpServer.SetAutonomousAPI(aAPI)
 			wireTagRegistry(ctx, cfg, amgr, httpServer)
 			// Phase 4 follow-up (v5.26.67) — wire the post-session

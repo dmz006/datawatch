@@ -476,6 +476,11 @@ type Manager struct {
 
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
+	// onSessionReap ends the processes proven to belong to a session once the
+	// session is over. It runs from every end path (EndSession, which also
+	// serves kill, cancel and delete, and the terminal-state transition that
+	// serves normal completion).
+	onSessionReap func(sess *Session)
 
 	// sessionTempRelease releases the session's own temporary files (task
 	// capture files, per-session worker config directories for the pi,
@@ -1174,6 +1179,12 @@ func (m *Manager) SetOnPreLaunch(fn func(*Session)) {
 	m.onPreLaunch = fn
 }
 
+// SetOnSessionReap sets the callback that ends the processes proven to belong
+// to a session after any path that ends it.
+func (m *Manager) SetOnSessionReap(fn func(*Session)) {
+	m.onSessionReap = fn
+}
+
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
@@ -1198,6 +1209,11 @@ func (m *Manager) SetScratchReleaser(fn func(*Session)) {
 // unchanged in behaviour. Every end path (complete, failed, killed,
 // interrupted-after-restart, ...) funnels through here.
 func (m *Manager) emitSessionEnd(sess *Session) {
+	if m.onSessionReap != nil {
+		// Normal completion: the reap may wait out a grace period, so it
+		// never blocks the state transition that called us.
+		go m.onSessionReap(sess)
+	}
 	if m.sessionTempRelease != nil {
 		m.sessionTempRelease(sess)
 	}
