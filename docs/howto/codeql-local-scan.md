@@ -1,16 +1,26 @@
 # CodeQL local scan (find alerts before CI does)
 
-GitHub runs CodeQL on every push through default setup and a CodeQL workflow
-gates on the result. The same analysis can run on a developer machine, so a
-finding shows up before the push instead of as a failed check afterwards.
-Nothing is uploaded: the scan reads the working tree and prints a report.
+GitHub's default setup analyzes every push, and a CodeQL workflow gates on the
+result. The same analysis can run on a developer machine, so a finding shows up
+before the push instead of as a failed check afterwards. Nothing is uploaded:
+the scan reads the working tree and prints a report.
+
+The gate only runs when a change can add a finding. A push to `main` that
+touches only documents (`docs/**`, `CHANGELOG.md` and any `*.md`) starts no
+run. A pull request starts a run only if it changes Go or web-app code, a
+dependency, a workflow or a script (`.go`, `go.mod`, `go.sum`, `channel/**`,
+`internal/server/web/**`, `*.js`, `*.ts`, `*.mjs`, `*.py`,
+`.github/workflows/**` and `scripts/**`). Scheduled (Monday) and manual runs
+have no path filter and always run the gate.
 
 ## What it is and why
 
 - **CI side.** GitHub default setup analyzes every push in four languages:
   `go`, `javascript-typescript`, `python` and `actions`, using the default
   code-scanning suite. The CodeQL workflow's alert gate then fails when the
-  repository has open alerts of level high or critical.
+  repository has open alerts of level high or critical — but it only runs when
+  a push or pull request touches a tracked code, dependency, workflow or script
+  path, so a document-only change spends no run on it.
 - **Local side.** `scripts/codeql-local.sh` runs the same four languages with the
   same suite and the same CodeQL bundle version, writes SARIF files under
   `.datawatch/codeql/out/` (gitignored) and prints a summary. It never uploads
