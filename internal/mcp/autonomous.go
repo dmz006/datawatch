@@ -928,6 +928,42 @@ func (s *Server) handleAutonomousPRDSetKind(_ context.Context, req mcpsdk.CallTo
 	return llmSetterResult(out, err)
 }
 
+func (s *Server) toolAutonomousPRDSetReleaseSize() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_release_size",
+		mcpsdk.WithDescription("Set the release size of an Automaton: patch, minor, major or none. An empty size clears the setting so the size is resolved again from the Automation, the project's kind map and the built-in default. A major is raised by the operator here or by the Automation milestone rule; it is never inferred from a diff."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("release_size", mcpsdk.Required(), mcpsdk.Enum("patch", "minor", "major", "none", ""), mcpsdk.Description("patch, minor, major or none; empty to resolve again")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetReleaseSize(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"release_size": req.GetString("release_size", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_release_size", body)
+	return llmSetterResult(out, err)
+}
+
+func (s *Server) toolAutonomousPRDSetBreakingChange() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_breaking_change",
+		mcpsdk.WithDescription("Set or clear the breaking-change flag of an Automaton. A breaking change raises its release to the major approval mode, so it is never merged quietly."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithBoolean("breaking_change", mcpsdk.Required(), mcpsdk.Description("true when the change breaks users; false clears the flag")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetBreakingChange(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	v, present := req.GetArguments()["breaking_change"]
+	if !present {
+		return mcpsdk.NewToolResultError("breaking_change is required (true or false)"), nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return mcpsdk.NewToolResultError("breaking_change must be true or false"), nil
+	}
+	body, _ := json.Marshal(map[string]bool{"breaking_change": b})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_breaking_change", body)
+	return llmSetterResult(out, err)
+}
+
 // toolAutonomousShippedRecord + handler serve the operator/LLM "record shipped
 // state" action for one Automaton (PRD) or one Automation. It posts to the
 // server's POST /.../shipped endpoint, which writes the four shipped fields

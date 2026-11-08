@@ -3483,6 +3483,67 @@ paths:
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
 
+  /api/autonomous/prds/{id}/set_release_size:
+    post:
+      summary: Set the release size of an Automaton
+      description: |
+        Sets the explicit release size to `patch`, `minor`, `major` or `none`. An empty
+        value clears the setting, so the size is resolved again from the Automation
+        milestone rule, the project's kind-to-size map and the built-in default
+        (feature = minor, bug = patch). An unknown size is refused and is never stored.
+        The change is recorded on the decision timeline and audit-logged as
+        `set_release_size`. Needs the autonomous write capability when called by a
+        federated peer.
+      operationId: autonomousPRDSetReleaseSize
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [release_size]
+              properties:
+                release_size: {type: string, enum: [patch, minor, major, none, ""]}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Unknown release size}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
+  /api/autonomous/prds/{id}/set_breaking_change:
+    post:
+      summary: Set or clear the breaking-change flag of an Automaton
+      description: |
+        Sets the breaking-change flag. A breaking change raises the Automaton's release to
+        the major approval mode, so it is never merged quietly. `breaking_change` is
+        required, so an omitted value is refused rather than clearing the flag. The
+        change is recorded on the decision timeline and audit-logged as
+        `set_breaking_change`. Needs the autonomous write capability when called by a
+        federated peer.
+      operationId: autonomousPRDSetBreakingChange
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [breaking_change]
+              properties:
+                breaking_change: {type: boolean}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: breaking_change missing or not a boolean}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
   /api/autonomous/prds/{id}/set_lane_preference:
     post:
       summary: Set the lane preference of an Automaton
@@ -11575,6 +11636,7 @@ components:
         id: {type: string, description: "Automation ID (8-hex)"}
         name: {type: string}
         description: {type: string}
+        milestone: {type: boolean, description: "true marks the Automation as a milestone arc: when it completes, its release step is raised to major under the project's major_trigger setting"}
         status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
         entry_member_id: {type: string, description: "Member the Automation starts at"}
         current_member_id: {type: string, description: "Member the cursor is on for a linear Automation; see active_cursors for fork/join"}
@@ -11761,6 +11823,7 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
+        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone arc. On create omitted means false; on update omitted keeps the stored value."}
         entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
         members:
           type: array
