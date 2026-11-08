@@ -164,7 +164,11 @@ curl -sk \
 The discussion folder route follows the discussion id rule: a discussion id is a whole name of
 1 to 128 characters from letters, digits, dot, underscore and hyphen, and the names `.` and `..`
 are never accepted. Any other id answers HTTP 400 with the plain text `invalid discussion id`
-before anything is read or written. See [discussion-scopes.md](discussion-scopes.md) for the same
+before anything is read or written. Because an accepted id can never carry a path separator,
+the folder path built from it always resolves as a direct child of the base directory
+(`<file_service_root>/discussions`), so the listing can never resolve outside the discussion
+folder.
+See [discussion-scopes.md](discussion-scopes.md) for the same
 rule on the discussion memory routes.
 
 ### CLI
