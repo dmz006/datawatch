@@ -29,7 +29,7 @@ func (sel ObjectTagSelection) MatchesObjectTags(systemTags, tagIDs []string) boo
 	if len(sel.Tags) == 0 {
 		return true
 	}
-	set := make(map[string]struct{}, len(systemTags)+len(tagIDs))
+	set := make(map[string]struct{})
 	for _, t := range systemTags {
 		set[t] = struct{}{}
 	}
