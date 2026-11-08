@@ -22326,7 +22326,30 @@ function selectServer(name) {
       }
       showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Connected to ${_localHostname || 'this server'}`), 'info');
     }
+    // Re-render the view the operator is on so its picker bar re-injects
+    // with the new active chip highlighted (it used to redraw only Sessions).
+    _rerenderActiveViewForServerSwitch();
   }
+}
+
+// Re-renders the view currently shown after a real picker switch. The view is
+// read from state.activeView (the field navigate() sets). Views that show no
+// picker bar are skipped (no route). Settings and Observer inject the bar with
+// hideAll, so the "All" selection is skipped there and they keep their present
+// behaviour.
+function _rerenderActiveViewForServerSwitch() {
+  const routes = {
+    sessions:   { render: () => renderSessionsView(),   hidesAll: false },
+    autonomous: { render: () => renderAutonomousView(), hidesAll: false },
+    alerts:     { render: () => renderAlertsView(),     hidesAll: false },
+    dashboard:  { render: () => renderDashboardView(),  hidesAll: false },
+    settings:   { render: () => renderSettingsView(),   hidesAll: true },
+    observer:   { render: () => renderObserverView(),   hidesAll: true },
+  };
+  const route = routes[state.activeView];
+  if (!route) return;
+  if (route.hidesAll && state.activeServer === 'all') return;
+  route.render();
 }
 
 // BL312 S4 — fetch sessions from /api/sessions/aggregated and merge into state.
