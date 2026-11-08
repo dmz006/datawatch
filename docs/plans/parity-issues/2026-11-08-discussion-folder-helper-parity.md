@@ -1,6 +1,6 @@
 # Parity issue draft — discussion folder id guard (code scanning alert #768, go/path-injection)
 
-**Not filed yet.** — this is the tracked draft; the issue on the app tracker is
+**Filed 2026-11-08 as https://github.com/dmz006/datawatch-app/issues/398 (release v9.112.4).** Original note: — this is the tracked draft; the issue on the app tracker is
 opened when the operator files it. Writing this draft changes nothing on any
 host, and filing it never runs a hosting CLI or creates anything on a tracker.
 
