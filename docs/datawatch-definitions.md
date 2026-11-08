@@ -406,6 +406,10 @@ Unclaimed items whose lease expires are automatically returned to `pending` stat
 
 ---
 
+### Discussion id
+
+The name of a discussion scope or file folder: 1 to 128 characters from letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Any other id gets HTTP 400 `invalid discussion id`. Older ids with other characters stay on disk but are unreachable through the API; operators should rename them. See [discussion-scopes](howto/discussion-scopes.md) and [file-service](howto/file-service.md).
+
 ### Discussion push / subscribe
 
 Subscribe an agent session to a discussion so new entries are delivered as live input.
