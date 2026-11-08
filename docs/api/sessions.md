@@ -71,7 +71,7 @@ additively; the compact summary rows carry the placement `system_tags`
 names as well (names, not registry IDs — that is what lets the PWA draw
 the placement chips on the Sessions page at first load, before the tag
 registry has loaded; see
-[automata-tags](howto/automata-tags.md#placement-tags-the-system-tags)).
+[automata-tags](../howto/automata-tags.md#placement-tags-the-system-tags)).
 No existing field changed. Deleting a tag is refused with 409
 while an Automaton or a session still carries it; the `count` in the 409
 body covers both.
