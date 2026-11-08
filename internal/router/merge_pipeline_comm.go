@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
 
@@ -50,6 +51,9 @@ func MergePipelineConfigureKeys() []string {
 		"autonomous.merge_pipeline.conflict_policy",
 		"autonomous.merge_pipeline.conflict_model",
 		"autonomous.merge_pipeline.version_files",
+		"autonomous.merge_pipeline.release_approval.patch",
+		"autonomous.merge_pipeline.release_approval.minor",
+		"autonomous.merge_pipeline.release_approval.major",
 		"autonomous.merge_pipeline.post_ship.enabled",
 		"autonomous.merge_pipeline.post_ship.registry_file",
 		"autonomous.merge_pipeline.post_ship.registry_row_pattern",
@@ -58,6 +62,37 @@ func MergePipelineConfigureKeys() []string {
 		"autonomous.merge_pipeline.post_ship.notify_template",
 		"autonomous.merge_pipeline.post_ship.hooks",
 	}
+}
+
+// isMergePipelineReleaseApprovalKey reports whether key is a release approval
+// key of the block, global or for one project
+// (autonomous.merge_pipeline.projects.<project>.release_approval.<size>).
+func isMergePipelineReleaseApprovalKey(key string) bool {
+	rest, ok := strings.CutPrefix(key, "autonomous.merge_pipeline.")
+	if !ok {
+		return false
+	}
+	if p, ok := strings.CutPrefix(rest, "projects."); ok {
+		i := strings.Index(p, ".release_approval.")
+		if i <= 0 {
+			return false
+		}
+		rest = p[i+1:]
+	}
+	size, ok := strings.CutPrefix(rest, "release_approval.")
+	return ok && (size == "patch" || size == "minor" || size == "major")
+}
+
+// checkMergePipelineConfigure refuses a release approval value before the
+// configure verb sends it to the daemon. It reuses
+// config.ValidateReleaseApprovalModeKey, the check the daemon's config write
+// runs as well, so the refusal names the same key and the same valid values.
+// Any other key passes unchanged.
+func checkMergePipelineConfigure(key, value string) error {
+	if !isMergePipelineReleaseApprovalKey(key) {
+		return nil
+	}
+	return config.ValidateReleaseApprovalModeKey(key, strings.TrimSpace(value))
 }
 
 // replyMergePipeline answers the merge-pipeline verb. args[0] is the verb.
