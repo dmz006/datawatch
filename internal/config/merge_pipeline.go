@@ -251,6 +251,50 @@ func (c MergePipelineConfig) EffectiveConflictPolicy(project string) string {
 	return ConflictPolicyMechanicalAndModel
 }
 
+// Built-in release approval defaults, used when neither the project nor the
+// global setting names a mode for a size.
+const (
+	DefaultReleaseApprovalPatch = ReleaseApprovalAuto
+	DefaultReleaseApprovalMinor = ReleaseApprovalAuto
+	DefaultReleaseApprovalMajor = ReleaseApprovalAsk
+)
+
+// EffectiveReleaseApproval returns the approval mode for a release of the
+// given size: the project's override, else the global value, else the
+// built-in default. An unknown or empty size returns ReleaseApprovalAsk, so a
+// release is never shipped quietly because the size was not understood.
+func (c MergePipelineConfig) EffectiveReleaseApproval(project, size string) string {
+	o := c.override(project).ReleaseApproval
+	var proj, glob, def string
+	switch size {
+	case ReleaseSizePatch:
+		proj, glob, def = o.Patch, c.ReleaseApproval.Patch, DefaultReleaseApprovalPatch
+	case ReleaseSizeMinor:
+		proj, glob, def = o.Minor, c.ReleaseApproval.Minor, DefaultReleaseApprovalMinor
+	case ReleaseSizeMajor:
+		proj, glob, def = o.Major, c.ReleaseApproval.Major, DefaultReleaseApprovalMajor
+	default:
+		return ReleaseApprovalAsk
+	}
+	if proj != "" {
+		return proj
+	}
+	if glob != "" {
+		return glob
+	}
+	return def
+}
+
+// EffectiveReleaseApprovalModes returns the resolved approval mode for all
+// three release sizes.
+func (c MergePipelineConfig) EffectiveReleaseApprovalModes(project string) ReleaseApprovalModes {
+	return ReleaseApprovalModes{
+		Patch: c.EffectiveReleaseApproval(project, ReleaseSizePatch),
+		Minor: c.EffectiveReleaseApproval(project, ReleaseSizeMinor),
+		Major: c.EffectiveReleaseApproval(project, ReleaseSizeMajor),
+	}
+}
+
 // EffectivePostShip returns the post-ship block as a copy. An unset
 // block reads as: disabled, no hooks, no targets.
 func (c MergePipelineConfig) EffectivePostShip() PostShipConfig {
