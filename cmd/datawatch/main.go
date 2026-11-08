@@ -11928,6 +11928,14 @@ func newConfigSetCmd() *cobra.Command {
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
 			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"Merge pipeline release approval keys: autonomous.merge_pipeline.release_approval.<size> " +
+			"(the global value) and autonomous.merge_pipeline.projects.<project>.release_approval.<size> " +
+			"(one project's value; unset inherits the global value), where <size> is patch, minor or major " +
+			"and the value is one of:\n" +
+			"  auto    - ship the release without waiting for the operator (default for patch and minor)\n" +
+			"  ask     - ask the operator before the release ships (default for major)\n" +
+			"  manual  - leave the release for the operator to ship\n" +
+			"Any other value is refused and the error names the key.\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
@@ -11973,6 +11981,10 @@ func newConfigGetCmd() *cobra.Command {
 
 func runConfigSet(cfg *config.Config, key, value string) error {
 	url := loopbackBaseURL(cfg) + "/api/config"
+	if isMergePipelineReleaseApprovalKey(key) {
+		// auto|ask|manual only; refused here before anything is sent.
+		return runMergePipelineReleaseApprovalSet(url, cfg.Server.Token, key, value)
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and
