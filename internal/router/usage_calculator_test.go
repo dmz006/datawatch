@@ -567,6 +567,61 @@ func TestUsageCalcConfigureThroughRouter(t *testing.T) {
 	}
 }
 
+// The three auto-lanes keys travel through the same generic configure path,
+// and the configure help lists them so an operator on the chat channel can
+// discover them. Pin both: the key reaches the config sink untouched, and
+// the help reply names all three.
+func TestUsageCalcConfigureAutoLanesThroughRouter(t *testing.T) {
+	r, _ := usageCalcStandInAdvice(t)
+
+	var gotKey, gotVal string
+	var ok bool
+	r.SetConfigureFunc(func(key, value string) error {
+		gotKey, gotVal, ok = key, value, true
+		return nil
+	})
+
+	for _, tc := range []struct{ key, value string }{
+		{"usage.calculator.auto_lanes", "true"},
+		{"usage.calculator.auto_lanes_max", "4"},
+		{"usage.calculator.auto_lanes_special_priority", "0"},
+	} {
+		ok = false
+		out := r.HandleTestMessage("configure " + tc.key + "=" + tc.value)
+		if len(out) == 0 {
+			t.Fatal("no reply")
+		}
+		if !ok {
+			t.Fatalf("configure did not reach the config sink; reply: %v", out)
+		}
+		if gotKey != tc.key || gotVal != tc.value {
+			t.Fatalf("got %s=%s, want %s=%s", gotKey, gotVal, tc.key, tc.value)
+		}
+		if !strings.Contains(out[0], tc.key) {
+			t.Fatalf("reply = %q, wants the key acknowledged", out[0])
+		}
+	}
+}
+
+func TestUsageCalcConfigureHelpListsAutoLanesKeys(t *testing.T) {
+	r, _ := usageCalcStandInAdvice(t)
+	// A sink must exist or handleConfigure replies "not available" before
+	// the help; this test only checks the help text.
+	r.SetConfigureFunc(func(key, value string) error { return nil })
+	// Only the two-word form reaches handleConfigure("configure ...", "list");
+	// a bare "configure" is treated as an implicit session send.
+	out := r.HandleTestMessage("configure list")
+	if len(out) == 0 {
+		t.Fatal("no reply")
+	}
+	reply := strings.Join(out, " ")
+	for _, want := range []string{"usage.calculator.auto_lanes", "auto_lanes_max", "auto_lanes_special_priority"} {
+		if !strings.Contains(reply, want) {
+			t.Errorf("configure-list help lacks %q:\n%s", want, reply)
+		}
+	}
+}
+
 func TestUsageCalcParseBurnGuard(t *testing.T) {
 	for _, in := range []string{"usage burn-guard", "usage burnguard"} {
 		cmd := router.Parse(in)
