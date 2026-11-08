@@ -712,3 +712,21 @@ func TestMergePipelineConfig_ReleaseApprovalValidateAcceptsValidModes(t *testing
 		t.Fatalf("unset release_approval: err=%v zero=%v", err, unset.IsZero())
 	}
 }
+
+// TestMergePipelineReleaseApprovalValidateLoaded checks that a bad release
+// approval mode in config.yaml is refused on load, not only on PUT.
+func TestMergePipelineReleaseApprovalValidateLoaded(t *testing.T) {
+	cfg := DefaultConfig()
+	applyDefaults(cfg)
+	if err := validateLoaded(cfg); err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	cfg.Autonomous.MergePipeline.ReleaseApproval.Major = "sometimes"
+	err := validateLoaded(cfg)
+	if err == nil {
+		t.Fatal("validateLoaded with a bad global release_approval.major: want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "release_approval.major") {
+		t.Errorf("error %q does not name the key", err)
+	}
+}
