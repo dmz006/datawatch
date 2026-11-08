@@ -115,6 +115,16 @@ datawatch alerts --mark-all-read
 
 4. **Alerts tab.** Navigate to the **Alerts** page from the sidebar.
    This is the full-screen alert manager:
+   - A meta row above the list: the list's state text on the left
+     (`Cached` badge when the list came from this browser's storage,
+     `Last updated N s ago`, a small `Loading…` while a refresh runs)
+     and, at the right edge of the **same row**, the round `?` help
+     link. It opens this howto in a new tab — same destination, tooltip
+     and accessible name (`Help`) as before — and gets a 40 × 40 px
+     minimum tap target on touch devices. It no longer sits in its own
+     top-right row above the list; that separate row mis-rendered on
+     narrow touch viewports (reported with a screenshot from Chrome on
+     Android), which is why the link moved onto the meta row.
    - Three tabs: **Active**, **Historical**, **System**
    - Filter chips: all / prompts / errors / warn / info
    - Search bar (searches title + body)
@@ -413,6 +423,15 @@ tool, and Settings > Detection timing in the PWA.
   Settings → Devices. Push only fires for `waiting_input` and `error`
   level events; `info` and `warn` are not pushed to mobile by default.
 
+- **The `?` help link still shows in its own top-right row above the
+  list, or mis-renders on a phone.** That is the pre-fix layout. The
+  PWA is embedded in the daemon binary, so a rebuilt daemon is needed
+  for the new layout to be served: `go build -o bin/datawatch
+  ./cmd/datawatch/`, restart, then hard-refresh the PWA tab. After the
+  fix the link sits at the right edge of the list's meta row (beside
+  the `Last updated` text) and has a 40 × 40 px tap target on touch
+  devices.
+
 ## Linked references
 
 - [`comm-channels.md`](comm-channels.md) — configure Telegram, Signal,
@@ -437,6 +456,7 @@ tool, and Settings > Detection timing in the PWA.
 - [ ] Dock panel open with mixed error/warn/info cards (expanded, showing ×N coalesce and ▸ more toggle)
 - [ ] Alerts tab — Active sub-tab with prompt card highlighted yellow and quick-reply dropdown
 - [ ] Alerts tab — System sub-tab with pipeline failure alert
+- [ ] Alerts tab — header meta row at a 390 px phone viewport: the age text and the round `?` help link on one row, link to the right of the age text, no horizontal overflow (covered by the story `scripts/test-stories/alerts-header-row.sh`; add a screenshot of the post-fix row)
 - [ ] Mobile app Alerts screen (Android) — Active tab with waiting_input push badge
 
 ---
