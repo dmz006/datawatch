@@ -11,6 +11,9 @@
 //	compute node detail <name>
 //	compute pin                   → show pin_check_seconds
 //	compute pin <seconds>         → set pin_check_seconds (0 = keeper off)
+//	compute placement             → list pending placement asks
+//	compute placement approve <id> → approve an ask (one-shot)
+//	compute placement deny <id>    → deny an ask (one-shot)
 
 package router
 
@@ -32,6 +35,9 @@ const computeUsage = `Usage:
   compute node update <name> [k=v ...]             update (replaces the node; repeat node_pinned_model and the tls_ keys to keep them)
   compute pin                                      show pin_check_seconds (0 = keeper off)
   compute pin <seconds>                            set pin_check_seconds
+  compute placement                                list pending placement asks (missing-model "ask" policy)
+  compute placement approve <id>                    approve a placement ask (one-shot)
+  compute placement deny <id>                       deny a placement ask (one-shot)
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
@@ -88,7 +94,15 @@ func (r *Router) handleComputeCmd(cmd Command) {
 		r.handleComputePinCmd(arg)
 		return
 	}
-	if verb != "node" {
+	if verb == "placement" || verb == "placements" {
+		arg := ""
+		if len(parts) > 1 {
+			arg = strings.TrimSpace(parts[1])
+		}
+		r.handleComputePlacementCmd(arg)
+		return
+	}
+		if verb != "node" {
 		r.reply("compute", computeUsage)
 		return
 	}
@@ -292,6 +306,43 @@ func (r *Router) handleComputePinCmd(arg string) {
 	r.reply("compute pin", fmt.Sprintf("pin_check_seconds = %d. Takes effect after the next daemon restart.", secs))
 }
 
+// handleComputePlacementCmd lists or decides a placement ask
+// (missing-model policy = "ask"). It proxies the placement REST surface:
+//
+//	compute placement                → GET  /api/compute/placements
+//	compute placement approve <id>   → POST /api/compute/placements/<id>/approve
+//	compute placement deny <id>      → POST /api/compute/placements/<id>/deny
+//
+// Setting the policy itself goes through the generic configure verb:
+// `configure compute_placement.missing_model=ask` and friends.
+func (r *Router) handleComputePlacementCmd(arg string) {
+	bits := strings.Fields(arg)
+	if len(bits) == 0 || bits[0] == "list" {
+		out, err := r.commGet("/api/compute/placements", nil)
+		if err != nil {
+			r.reply("compute placement", err.Error())
+			return
+		}
+		r.reply("compute placement", prettyJSON(out))
+		return
+	}
+	action := strings.ToLower(bits[0])
+	if action != "approve" && action != "deny" {
+		r.reply("compute placement", "Usage: compute placement [list|approve <id>|deny <id>]")
+		return
+	}
+	if len(bits) != 2 || bits[1] == "" {
+		r.reply("compute placement "+action, "Usage: compute placement "+action+" <ask-id>")
+		return
+	}
+	id := bits[1]
+	out, err := r.commJSON("POST", "/api/compute/placements/"+strings.Trim(id, "/")+"/"+action, "")
+	if err != nil {
+		r.reply("compute placement "+action+" "+id, err.Error())
+		return
+	}
+	r.reply("compute placement "+action+" "+id, prettyJSON(out))
+}
 // withTLSSummary pretty-prints a node reply and appends a one-line summary
 // of how the node's certificate is checked. Anything that is not a single
 // node object (an error body, a list) comes back unchanged.
