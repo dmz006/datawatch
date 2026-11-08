@@ -300,6 +300,11 @@ curl -sk -i -X POST \
 # invalid discussion id
 ```
 
+**Operator review:** discussion ids created before this rule with other characters (spaces, `/`,
+non-ASCII) stay on disk but are no longer reachable through the API. List the discussion folders
+with `ls ~/.datawatch/discussions` (memory scopes) and `ls ~/.datawatch/files/discussions` (file folders; the root is shown by `GET /api/files/meta`), and rename or migrate any such folder to a valid id.
+See also [file-service.md](file-service.md) for the same rule on the file routes.
+
 ---
 
 ## Security model
