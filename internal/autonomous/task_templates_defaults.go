@@ -43,6 +43,10 @@ const (
 	TemplateFinalGate = "final_gate"
 	// TemplateVersionBumpLeftToMerge is the no-edit version note.
 	TemplateVersionBumpLeftToMerge = "version_bump_left_to_merge"
+	// TemplateBoundedLoadStep is the bounded-load-step posture note; the
+	// same rule text the decompose prompt and the decompose-lint rule
+	// carry (see load_step_rules.go).
+	TemplateBoundedLoadStep = "bounded_load_step"
 )
 
 // BuiltInTaskTemplates returns the built-in task-template pack fresh
@@ -77,6 +81,15 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Kind:  "docs",
 			AppliesWhen: "Offered whenever the slice changes operator-visible " +
 				"behavior that the docs already describe.",
+		},
+		{
+			ID:    TemplateBoundedLoadStep,
+			Title: "Bounded load-step rule for {{feature}}",
+			Spec: "Record the bounded-load-step posture for '{{feature}}': " + boundedLoadStepRule +
+				" This is a note, not a change: it writes no files and touches nothing else (no files).",
+			Kind: "note",
+			AppliesWhen: "Always offered as a posture note: any story that could " +
+				"carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task).",
 		},
 		{
 			ID:       TemplateFinalGate,

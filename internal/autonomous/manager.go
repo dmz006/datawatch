@@ -2917,6 +2917,8 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+
+	prompt += m.loadStepSuffix(prd)
 	prompt += m.generatedArtefactPlanSuffix()
 	// Decompose guidance (decompose_guidance.go): the operator's
 	// autonomous.decompose_guidance — literal text, or a file whose
@@ -3096,6 +3098,8 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+
+	prompt += m.loadStepSuffix(prd)
 	prompt += m.generatedArtefactPlanSuffix()
 	// Decompose guidance (decompose_guidance.go) — identical to
 	// Decompose()'s call above; one source for the block's format.
