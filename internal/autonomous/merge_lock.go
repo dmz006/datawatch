@@ -118,12 +118,14 @@ func (m *MergeLocks) Acquire(repo string, h MergeLockHolder) (MergeLockStatus, e
 	return cloneStatus(st), nil
 }
 
-// Release frees repo when runID holds it; otherwise it changes nothing.
+// Release frees repo when runID holds it; otherwise it changes nothing. An
+// empty runID never releases anything, so a caller without a run id cannot
+// free a lock whose holder did not record one.
 func (m *MergeLocks) Release(repo, runID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, ok := m.locks[repo]
-	if !ok || cur.RunID != runID {
+	if !ok || runID == "" || cur.RunID != runID {
 		return nil
 	}
 	delete(m.locks, repo)

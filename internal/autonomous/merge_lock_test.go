@@ -87,6 +87,20 @@ func TestMergeLockRelease(t *testing.T) {
 	}
 }
 
+func TestMergeLockEmptyRunCannotRelease(t *testing.T) {
+	m, _ := newTestLocks(t)
+	// A holder that recorded no run id still takes the lock.
+	if _, err := m.Acquire("/r", MergeLockHolder{AutomatonID: "a1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Release("/r", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Status("/r"); !ok {
+		t.Fatal("an empty run id must not free a lock")
+	}
+}
+
 func TestMergeLockReposIndependent(t *testing.T) {
 	m, _ := newTestLocks(t)
 	if _, err := m.Acquire("/r1", MergeLockHolder{RunID: "run1", AutomatonID: "a1"}); err != nil {
