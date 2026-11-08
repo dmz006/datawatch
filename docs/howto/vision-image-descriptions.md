@@ -81,6 +81,8 @@ What the daemon does with the image depends on the outcome:
 | **Timeout, error, or an empty description** | the tag degrades to a bare `@<path>` reference — the message is still delivered, and the session can read the file itself |
 | File missing or unreadable, or a path the daemon will not serve | the original `[image:<path>]` tag is left unchanged |
 
+When the image tag is the last thing in the message, the bare `@<path>` reference is followed by one space so the session's file autocomplete closes and a single Enter sends the message, while a tag in the middle of the text is unchanged.
+
 So a slow describe call is never a hard failure of the message: the image
 travels as a file reference and the model reads it directly. That is also why
 the default is a small 5 seconds — the fallback is cheap, and a longer wait in
