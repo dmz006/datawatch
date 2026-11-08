@@ -475,7 +475,7 @@ func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, t
 // attempt number named by the caller, for callers that create the work
 // before consuming the retry budget.
 func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVerdict, targetStoryID string, attempt int) (*Story, *Task, error) {
-	title := fmt.Sprintf("Auto-fix: %s findings (attempt %d)", verdict.Guardrail, attempt)
+	title := autoFixTaskTitlePrefix + fmt.Sprintf("%s findings (attempt %d)", verdict.Guardrail, attempt)
 	spec := contentFixHint(verdict)
 
 	var storyID string

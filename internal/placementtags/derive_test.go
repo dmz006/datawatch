@@ -104,6 +104,114 @@ func TestPlacementTags_EmptyValueSkipped(t *testing.T) {
 	equalTags(t, "empty value skipped", Derive(f, DefaultSettings()), want)
 }
 
+// TestPlacementTags_AutomationAxes: the automaton, automation, stage and kind
+// axes each yield their tag when the fact is set, yield nothing when the fact
+// is empty, and yield nothing when the axis is disabled.
+func TestPlacementTags_AutomationAxes(t *testing.T) {
+	axes := []struct {
+		name    string
+		set     func(*PlacementFacts)
+		wantTag string
+		disable func(*Settings)
+	}{
+		{"automaton", func(f *PlacementFacts) { f.Automaton = "aut1" }, "automaton:aut1", func(s *Settings) { s.Automaton.Enabled = false }},
+		{"automation", func(f *PlacementFacts) { f.Automation = "ama1" }, "automation:ama1", func(s *Settings) { s.Automation.Enabled = false }},
+		{"stage", func(f *PlacementFacts) { f.Stage = "build" }, "stage:build", func(s *Settings) { s.Stage.Enabled = false }},
+		{"kind", func(f *PlacementFacts) { f.Kind = "task" }, "kind:task", func(s *Settings) { s.Kind.Enabled = false }},
+	}
+	for _, ax := range axes {
+		t.Run(ax.name, func(t *testing.T) {
+			f := PlacementFacts{}
+			ax.set(&f)
+
+			got := Derive(f, DefaultSettings())
+			if !containsTag(got, ax.wantTag) {
+				t.Fatalf("axis %q enabled with fact set should yield %q, got %q", ax.name, ax.wantTag, got)
+			}
+
+			if got := Derive(PlacementFacts{}, DefaultSettings()); containsTag(got, ax.wantTag) {
+				t.Fatalf("axis %q with an empty fact must not yield a tag, got %q", ax.name, got)
+			}
+
+			s := DefaultSettings()
+			ax.disable(&s)
+			if got := Derive(f, s); containsTag(got, ax.wantTag) {
+				t.Fatalf("axis %q disabled must not yield a tag, got %q", ax.name, got)
+			}
+		})
+	}
+}
+
+func TestPlacementTags_AllAutomationAxes(t *testing.T) {
+	f := PlacementFacts{Role: "worker", Automaton: "aut1", Automation: "ama1", Stage: "build", Kind: "task"}
+	want := []string{"automation:ama1", "automaton:aut1", "kind:task", "role:worker", "stage:build"}
+	equalTags(t, "all automation axes", Derive(f, DefaultSettings()), want)
+}
+
+func TestPlacementTags_CustomAxisCanReadAutomationFields(t *testing.T) {
+	s := Settings{
+		Custom: []CustomAxis{
+			{Name: "stage", Field: "Stage", Template: "in-{value}", Enabled: true},
+			{Name: "automaton", Field: "Automaton", Template: "by-{value}", Enabled: true},
+		},
+	}
+	f := PlacementFacts{Automaton: "aut1", Stage: "build", Fields: map[string]string{"Stage": "build", "Automaton": "aut1"}}
+	got := Derive(f, s)
+	want := []string{"by-aut1", "in-build"}
+	equalTags(t, "custom axis reads automation fields", got, want)
+}
+
+func TestSessionFields_IncludesAutomationContext(t *testing.T) {
+	for _, field := range []string{"Automaton", "Automation", "Stage", "Kind"} {
+		if !IsSessionField(field) {
+			t.Fatalf("%q should be an allowed session field for custom axes", field)
+		}
+	}
+	if IsSessionField("Nope") {
+		t.Fatalf("%q should not be an allowed session field", "Nope")
+	}
+}
+
+func TestIsBuiltinAxis(t *testing.T) {
+	for _, axis := range []string{"compute", "peer", "backend", "lane", "role", "project", "automaton", "automation", "stage", "kind"} {
+		if !IsBuiltinAxis(axis) {
+			t.Fatalf("%q should be a built-in axis", axis)
+		}
+	}
+	for _, axis := range []string{"", "node", "env", "value"} {
+		if IsBuiltinAxis(axis) {
+			t.Fatalf("%q should not be a built-in axis", axis)
+		}
+	}
+}
+
+func TestDefaultTemplate(t *testing.T) {
+	cases := map[string]string{
+		"compute":    "compute:{node}",
+		"peer":       "peer:{peer}",
+		"backend":    "backend:{backend}",
+		"lane":       "lane:{lane}",
+		"role":       "role:{role}",
+		"project":    "project:{project}",
+		"automaton":  "automaton:{automaton}",
+		"automation": "automation:{automation}",
+		"stage":      "stage:{stage}",
+		"kind":       "kind:{kind}",
+	}
+	for axis, want := range cases {
+		got, ok := DefaultTemplate(axis)
+		if !ok {
+			t.Fatalf("DefaultTemplate(%q) not found", axis)
+		}
+		if got != want {
+			t.Fatalf("DefaultTemplate(%q) = %q, want %q", axis, got, want)
+		}
+	}
+	if _, ok := DefaultTemplate("nope"); ok {
+		t.Fatalf("DefaultTemplate(\"nope\") should report not found")
+	}
+}
+
 func TestPlacementTags_CustomAxisFromFileFields(t *testing.T) {
 	s := Settings{
 		Compute: AxisSetting{Enabled: true, Template: "compute:{node}"},
@@ -126,6 +234,17 @@ func TestPlacementTags_CustomAxisEmptyFieldSkipped(t *testing.T) {
 	got := Derive(PlacementFacts{Compute: "node1"}, s)
 	want := []string{"compute:node1"}
 	equalTags(t, "empty custom field skipped", got, want)
+}
+
+func TestPlacementTags_CustomAxisDisabledSkipped(t *testing.T) {
+	s := Settings{
+		Compute: AxisSetting{Enabled: true, Template: "compute:{node}"},
+		Custom:  []CustomAxis{{Name: "env", Field: "env", Template: "env:{value}", Enabled: false}},
+	}
+	f := PlacementFacts{Compute: "node1", Fields: map[string]string{"env": "prod"}}
+	got := Derive(f, s)
+	want := []string{"compute:node1"}
+	equalTags(t, "disabled custom axis skipped", got, want)
 }
 
 func TestPlacementTags_TemplateChange(t *testing.T) {
@@ -154,6 +273,16 @@ func TestPlacementTags_ZeroSettingsYieldsNoTags(t *testing.T) {
 	}
 }
 
+// TestPlacementTags_EmptyTagSkipped: a template that substitutes to the empty
+// string yields no tag.
+func TestPlacementTags_EmptyTagSkipped(t *testing.T) {
+	s := Settings{Compute: AxisSetting{Enabled: true, Template: ""}}
+	got := Derive(PlacementFacts{Compute: "node1"}, s)
+	if len(got) != 0 {
+		t.Fatalf("empty tag should be skipped, got %q", got)
+	}
+}
+
 func TestValidateSettings_Valid(t *testing.T) {
 	s := DefaultSettings()
 	s.Custom = []CustomAxis{{Name: "env", Field: "env", Template: "env:{value}", Enabled: true}}
@@ -168,6 +297,10 @@ func TestValidateSettings_InvalidTemplateRejected(t *testing.T) {
 		"custom missing placeholder": func(s *Settings) {
 			s.Compute.Template = "compute:{node}"
 			s.Custom = []CustomAxis{{Name: "env", Field: "env", Template: "env:value", Enabled: true}}
+		},
+		"unnamed custom missing placeholder": func(s *Settings) {
+			s.Compute.Template = "compute:{node}"
+			s.Custom = []CustomAxis{{Field: "env", Template: "env:value", Enabled: true}}
 		},
 	}
 	for name, mutate := range cases {

@@ -2,7 +2,9 @@ package autonomous
 
 import (
 	"log"
+	"strings"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/placementtags"
 )
@@ -17,15 +19,18 @@ type Placement struct {
 	Node string
 	// Peer is the federated peer name for work that runs on a remote
 	// datawatch peer; empty for work that runs locally.
-	Peer string
+	Peer    string
 	Backend string
 	Model   string
 	Lane    string // "gpu" | "claude" | ""
 	Role    string // "worker" | "verifier" | "planner" | "judge" | ""
 	Project string
-	// Automation is the PRD/Automaton (or Automation) the work belongs to:
-	// the fact the custom axes read under "PRDID" and "Automation".
+	// Automation is the Automation the work runs under (empty for work that
+	// has none): the fact the custom axes read under "Automation".
 	Automation string
+	// Automaton is the Automaton (PRD) the work belongs to: the fact the
+	// custom axes read under "PRDID".
+	Automaton string
 	// Stage is the stage of the work (empty when it is not stage-typed).
 	Stage string
 	// Kind is the kind of the work ("task", "decompose", ...; empty when
@@ -43,13 +48,20 @@ func (p Placement) ToFacts() placementtags.PlacementFacts {
 		Lane:    p.Lane,
 		Role:    p.Role,
 		Project: p.Project,
+		// The stage and kind facts ride along when the work has them; a field
+		// left empty takes no tag.
+		Automaton:  p.Automaton,
+		Automation: p.Automation,
+		Stage:      p.Stage,
+		Kind:       p.Kind,
 		Fields: map[string]string{
 			"Model":      p.Model,
 			"Node":       p.Node,
 			"Backend":    p.Backend,
 			"Role":       p.Role,
 			"Project":    p.Project,
-			"PRDID":      p.Automation,
+			"PRDID":      p.Automaton,
+			"Automaton":  p.Automaton,
 			"Automation": p.Automation,
 			"Stage":      p.Stage,
 			"Kind":       p.Kind,
@@ -65,12 +77,16 @@ func placementTagsSettings(pc config.PlacementConfig) placementtags.Settings {
 		return placementtags.AxisSetting{Enabled: a.Enabled, Template: a.Template}
 	}
 	s := placementtags.Settings{
-		Compute: ax(pc.Compute),
-		Peer:    ax(pc.Peer),
-		Backend: ax(pc.Backend),
-		Lane:    ax(pc.Lane),
-		Role:    ax(pc.Role),
-		Project: ax(pc.Project),
+		Compute:    ax(pc.Compute),
+		Peer:       ax(pc.Peer),
+		Backend:    ax(pc.Backend),
+		Lane:       ax(pc.Lane),
+		Role:       ax(pc.Role),
+		Project:    ax(pc.Project),
+		Automaton:  ax(pc.Automaton),
+		Automation: ax(pc.Automation),
+		Stage:      ax(pc.Stage),
+		Kind:       ax(pc.Kind),
 	}
 	if len(pc.Custom) > 0 {
 		s.Custom = make([]placementtags.CustomAxis, 0, len(pc.Custom))
@@ -125,6 +141,56 @@ func ApplyPlacementTags(sink SystemTagsSink, node NodeChooser, taskID, sessionID
 	return sink.SetSystemTags(sessionID, tags)
 }
 
+// workerLaunchPlacement is the placement fact a task worker carries at
+// launch (and on every retry: the same two facts, re-derived, ride the
+// re-tag of the same or a new session): the node it landed on, the backend
+// and model it runs under, the lane that backend serves, the worker role,
+// the kind of work (task or auto-fix, the caller's TaskLaunchKind), the
+// project it works in, and the Automaton, Automation and stage the
+// work runs under (stage empty when the Automaton is not stage-typed).
+func (m *Manager) workerLaunchPlacement(prd *PRD, placedNode, backend, model, project, kind string) Placement {
+	return Placement{
+		Node:       placedNode,
+		Backend:    backend,
+		Model:      model,
+		Lane:       laneForBackend(backend),
+		Role:       string(capacity.RoleWorker),
+		Project:    project,
+		Automaton:  prd.ID,
+		Automation: prd.AutomationID,
+		Stage:      m.StageOfPRD(prd),
+		Kind:       kind,
+	}
+}
+
+// autoFixTaskKind is the launch kind an auto-fix worker session carries —
+// the "auto-fix" member of the server's launch-kind vocabulary (see
+// validateSessionLaunch in internal/server/session_launch_tags.go), so a
+// fix attempt reads as auto-fix on the Automata page, not as an ordinary
+// task.
+const autoFixTaskKind = "auto-fix"
+
+// autoFixTaskTitlePrefix is the title prefix the synthesized corrective
+// tasks carry (synthesizeCorrectiveWorkAttempt), which is what marks a
+// freshly spawned corrective task as an auto-fix launch.
+const autoFixTaskTitlePrefix = "Auto-fix: "
+
+// TaskLaunchKind is the launch kind a task worker session carries:
+// "auto-fix" when the launch is an auto-fix attempt — a re-run of a
+// previous failed attempt that carries the fix context (retryHint), or a
+// synthesized corrective task the content auto-fix created — and "task" on
+// a genuine first run of a new task. The value stays inside the server's
+// launch-kind vocabulary.
+func TaskLaunchKind(t *Task, retryHint string) string {
+	if strings.TrimSpace(retryHint) != "" {
+		return autoFixTaskKind
+	}
+	if t != nil && strings.HasPrefix(t.Title, autoFixTaskTitlePrefix) {
+		return autoFixTaskKind
+	}
+	return "task"
+}
+
 // laneForBackend names the execution lane a worker backend serves, as far
 // as the placement side can tell from the backend alone: the local/LLM
 // backends ride the gpu lane, the Claude backend rides the claude lane.
@@ -170,7 +236,6 @@ func (m *Manager) TagTaskPlacement(taskID, sessionID string, p Placement) {
 		log.Printf("[autonomous] placement tags: task=%s session=%s: %v", taskID, sessionID, err)
 	}
 }
-
 
 // SetPlacementTagSink wires the sink TagTaskPlacement writes the placement
 // tags through (session.Manager implements it). Wired by the daemon; nil

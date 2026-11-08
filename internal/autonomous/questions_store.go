@@ -129,6 +129,12 @@ type QuestionStore struct {
 	// writeFn writes one chunk to the open append file; a test replaces it
 	// to simulate a write that fails part way.
 	writeFn func(f *os.File, b []byte) (int, error)
+
+	// objectTagDeriver, when wired (the Manager that owns this store's
+	// Automata does), replaces a question's SystemTags with the derived
+	// list on Raise and Update (see ObjectTagDeriver). A nil deriver
+	// leaves SystemTags untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 // questionWithdrawMeta is the (actor, reason) of a question's withdrawal.
@@ -475,6 +481,12 @@ func (s *QuestionStore) raise(q Question, dedupe raiseDedupe) (Question, bool, e
 	if err := ValidateNewQuestion(&q); err != nil {
 		return Question{}, false, err
 	}
+	if d := s.objectTagDeriver; d != nil {
+		// Object system tags: the full derived list replaces the stored
+		// one (no-op when equal) before the append is committed; derived
+		// outside s.mu because the fact read is a PRD store read.
+		q.SystemTags = replaceSystemTags(q.SystemTags, d.ObjectTagsForQuestion(&q))
+	}
 	s.mu.Lock()
 	if dedupe == dedupeSourceLine && q.SourceLineSHA256 != "" {
 		for _, have := range s.questions {
@@ -535,6 +547,13 @@ func (s *QuestionStore) raise(q Question, dedupe raiseDedupe) (Question, bool, e
 	})
 	s.emitChange(QuestionChange{Kind: QuestionChangeRaised, Question: q})
 	return q, true, nil
+}
+
+// SetObjectTagDeriver wires object-derived system tags into Raise and
+// Update: the question's SystemTags are replaced with the derived list
+// before the write (see ObjectTagDeriver and replaceSystemTags).
+func (s *QuestionStore) SetObjectTagDeriver(d ObjectTagDeriver) {
+	s.objectTagDeriver = d
 }
 
 // Answer records an answer to the question. The quote is scanned for
@@ -775,7 +794,17 @@ func (s *QuestionStore) Update(id string, patch QuestionPatch, actor string) (Qu
 		s.mu.Unlock()
 		return Question{}, err
 	}
+	if d := s.objectTagDeriver; d != nil {
+		// Re-derive on every update: the full derived list replaces the
+		// stored one, no-op when it is unchanged.
+		updated.SystemTags = replaceSystemTags(updated.SystemTags, d.ObjectTagsForQuestion(&updated))
+	}
 	changed := changedQuestionFields(*q, updated)
+	if !tagsEqual(q.SystemTags, updated.SystemTags) {
+		// A tag-list change is a change in its own right: an otherwise
+		// no-op update still writes the refreshed tags.
+		changed = append(changed, "system_tags")
+	}
 	if len(changed) == 0 {
 		out := cloneQuestion(*q)
 		s.mu.Unlock()

@@ -1983,8 +1983,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Backend: q.Get("backend"),
 		Alive:   q.Get("alive"),
 	}
-	// Tags repeatable; own or inherited. tag_match is any (default) or all; a
-	// value outside that set is rejected before anything is read.
+	// Tags repeatable; own, system and inherited tags count. tag_match is any
+	// (default) or all; a value outside that set is rejected before anything is
+	// read.
 	tagSeen := map[string]bool{}
 	for _, v := range q["tag"] {
 		for _, part := range strings.Split(v, ",") {
@@ -1992,6 +1993,21 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			if part != "" && !tagSeen[part] {
 				tagSeen[part] = true
 				filter.Tags = append(filter.Tags, part)
+			}
+		}
+	}
+	// Axis shortcuts expand to axis:value tag filters and combine with the
+	// explicit tag list under tag_match. Empty values are ignored. backend is
+	// not expanded here: it stays the BL361 session-backend filter, which
+	// also accepts the backend:<value> placement tag (a session matches on
+	// its family name OR that tag, see Manager.sessionMatchesBackend), so
+	// no earlier result is lost and ?backend=<axis value> works.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
+		if v := strings.TrimSpace(q.Get(axis)); v != "" {
+			tag := axis + ":" + v
+			if !tagSeen[tag] {
+				tagSeen[tag] = true
+				filter.Tags = append(filter.Tags, tag)
 			}
 		}
 	}
@@ -4971,9 +4987,22 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Tags (BL461) — the session's own tag IDs. Each must exist in the
 		// tag registry; an unknown ID refuses the start.
 		Tags []string `json:"tags,omitempty"`
+		// Launch tagging (2026-11-06-automata-pages-redesign.md §12) —
+		// optional session-launch facts: the role the session plays, the
+		// kind of work it does, the Automaton (PRD) it runs for and the
+		// Automaton stage it belongs to. Absent = no launch tags, exactly
+		// as before. All handling lives in session_launch_tags.go.
+		LaunchRole      string `json:"launch_role,omitempty"`
+		LaunchKind      string `json:"launch_kind,omitempty"`
+		LaunchAutomaton string `json:"launch_automaton,omitempty"`
+		LaunchStage     string `json:"launch_stage,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := validateSessionLaunch(req.LaunchRole, req.LaunchKind); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	startTags, tagErr := s.manager.ValidateTagIDs(req.Tags)
@@ -5469,6 +5498,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		to := memory.ScopeRef{Scope: memory.ScopeSessionLocal, SessionID: sess.FullID}
 		_, _ = memory.Seed(s.memoryBackend, from, to, memory.SeedFilter{RolePrefix: rolePrefix}, seedMax)
 	}
+	// Launch tagging (2026-11-06-automata-pages-redesign.md §12) — the only
+	// call api.go makes: no launch fields → no-op, otherwise the placement
+	// tags land in the session's system tags before we broadcast.
+	s.applySessionLaunchTags(sess, launchFacts{
+		Role:      req.LaunchRole,
+		Kind:      req.LaunchKind,
+		Automaton: req.LaunchAutomaton,
+		Stage:     req.LaunchStage,
+	})
 	s.broadcastSessionsAsync()
 	// GH#201 Phase 4 — session lifecycle was the plan's own leading
 	// example of a state-changing action access-logging alone can't
@@ -7617,6 +7655,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Does this PUT touch the tags.placement block at all? The sweep trigger
+	// after the save keys off this, so a request that changes no placement
+	// key never sweeps.
+	placementChanged := false
+	for k := range patch {
+		if strings.HasPrefix(k, "autonomous.tags.placement") {
+			placementChanged = true
+			break
+		}
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
@@ -7714,6 +7762,31 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// The tags.placement block (autonomous.tags.placement.*) follows the
+	// live config without a restart: new placements already read it on every
+	// derivation (SetPlacementTagSettings), and one tag-sweep pass
+	// re-derives the existing sessions' and records' system tags under the
+	// new block — turning an axis off strips its tag, a template change
+	// re-stamps it where the fact exists; the operator's own tags are a
+	// separate field the sweep never touches. The pass runs in the
+	// background after the config is saved, so the PUT answers without
+	// waiting on the whole-history sweep; a request that changed no
+	// placement key never reaches this point.
+	if placementChanged && s.autonomousMgr != nil {
+		if a, ok := s.autonomousMgr.(tagSweepAPI); ok {
+			go func() {
+				res := a.SweepTags(false)
+				log.Printf("[autonomous] tag sweep (placement settings changed): sessions %d/%d changed, automata %d/%d, automations %d/%d, tasks %d/%d, templates %d/%d, decision records %d/%d, questions %d/%d",
+					res.Sessions.Changed, res.Sessions.Examined,
+					res.Automata.Changed, res.Automata.Examined,
+					res.Automations.Changed, res.Automations.Examined,
+					res.Tasks.Changed, res.Tasks.Examined,
+					res.Templates.Changed, res.Templates.Examined,
+					res.DecisionRecords.Changed, res.DecisionRecords.Examined,
+					res.Questions.Changed, res.Questions.Examined)
+			}()
+		}
 	}
 	// A config write can create a model-to-node collision, so re-check and log
 	// every one that now exists.
@@ -9158,7 +9231,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			"autonomous.tags.placement.backend.enabled", "autonomous.tags.placement.backend.template",
 			"autonomous.tags.placement.lane.enabled", "autonomous.tags.placement.lane.template",
 			"autonomous.tags.placement.role.enabled", "autonomous.tags.placement.role.template",
-			"autonomous.tags.placement.project.enabled", "autonomous.tags.placement.project.template":
+			"autonomous.tags.placement.project.enabled", "autonomous.tags.placement.project.template",
+			"autonomous.tags.placement.automaton.enabled", "autonomous.tags.placement.automaton.template",
+			"autonomous.tags.placement.automation.enabled", "autonomous.tags.placement.automation.template",
+			"autonomous.tags.placement.stage.enabled", "autonomous.tags.placement.stage.template",
+			"autonomous.tags.placement.kind.enabled", "autonomous.tags.placement.kind.template":
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to

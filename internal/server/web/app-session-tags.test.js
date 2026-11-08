@@ -443,6 +443,31 @@ test('a failed registry load does not repaint', async () => {
   assert.equal(paints, 0);
 });
 
+test('a failed inventory load latches: repeated repaints send exactly one request', async () => {
+  const sb = loadApp();
+  run(sb, `state.activeView = 'sessions';`);
+  const urls = [];
+  sb.apiFetch = u => { urls.push(u); return Promise.reject(new Error('down')); };
+  run(sb, `_sessionTagInventoryRefresh()`);
+  await flushAsync(10);
+  // Several repaints afterwards — the failed load must be latched in state,
+  // not re-queued on every render (that looped: render → fetch → repaint →
+  // render). Nothing repaints after a failure either.
+  sb.renderSessionsView = () => {};
+  sb._sessionTagsRepaint();
+  run(sb, `_sessionTagInventoryRefresh()`);
+  await flushAsync(10);
+  sb.renderSessionsView();
+  run(sb, `_sessionTagsRepaint()`);
+  assert.equal(urls.filter(u => u === '/api/sessions/tags').length, 1,
+    'one request across the whole sequence of repaints');
+  const inv = run(sb, `state._sessionTagInventory`);
+  assert.equal(inv.loaded, true, 'a failed load is recorded as loaded with a failure flag');
+  assert.equal(inv.failed, true);
+  assert.equal(run(sb, `state._sessionTagInventory.entries`).length, 0,
+    'with no data the tag filter stays hidden instead of looping');
+});
+
 // ── Locales ──────────────────────────────────────────────────────────────────
 
 const NEW_KEYS = [

@@ -64,18 +64,21 @@ func putTagPatch(t *testing.T, s *Server, body map[string]interface{}) *httptest
 }
 
 // defaultPlacementDisplay is the autonomous.tags.placement object a default
-// config renders: every built-in axis on with its conventional template, except
-// project, which is off by default.
+// config renders: every built-in axis on with its conventional template.
 func defaultPlacementDisplay() map[string]interface{} {
 	return map[string]interface{}{
 		"enabled": true,
 		"axes": map[string]interface{}{
-			"compute": map[string]interface{}{"enabled": true, "template": "compute:{node}"},
-			"peer":    map[string]interface{}{"enabled": true, "template": "peer:{peer}"},
-			"backend": map[string]interface{}{"enabled": true, "template": "backend:{backend}"},
-			"lane":    map[string]interface{}{"enabled": true, "template": "lane:{lane}"},
-			"role":    map[string]interface{}{"enabled": true, "template": "role:{role}"},
-			"project": map[string]interface{}{"enabled": false, "template": "project:{project}"},
+			"compute":    map[string]interface{}{"enabled": true, "template": "compute:{node}"},
+			"peer":       map[string]interface{}{"enabled": true, "template": "peer:{peer}"},
+			"backend":    map[string]interface{}{"enabled": true, "template": "backend:{backend}"},
+			"lane":       map[string]interface{}{"enabled": true, "template": "lane:{lane}"},
+			"role":       map[string]interface{}{"enabled": true, "template": "role:{role}"},
+			"project":    map[string]interface{}{"enabled": true, "template": "project:{project}"},
+			"automaton":  map[string]interface{}{"enabled": true, "template": "automaton:{automaton}"},
+			"automation": map[string]interface{}{"enabled": true, "template": "automation:{automation}"},
+			"stage":      map[string]interface{}{"enabled": true, "template": "stage:{stage}"},
+			"kind":       map[string]interface{}{"enabled": true, "template": "kind:{kind}"},
 		},
 		"custom": []interface{}{},
 	}

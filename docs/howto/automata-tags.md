@@ -68,9 +68,13 @@ by area — browse them by group, and see at a glance which ones need you.
   tags are shared too; see [automata-tag-registry](automata-tag-registry.md).
 - A second kind of tag is written by the **machine**, not by you: **placement
   tags** (system tags) record where a piece of work ran — which node, which
-  federated peer, which backend, lane and role, and which project. They are
-  read-only everywhere: you filter by them and group by them, but you do not
-  rename, move or delete them. See [Placement tags](#placement-tags-the-system-tags).
+  federated peer, which backend, lane and role, and which project — and which
+  Automaton and Automation the work belongs to, in which stage and of what
+  kind. They are stamped on every session and also carried by the objects the
+  Automata own (Automata, tasks, Automations, decision records, held
+  questions, templates). They are read-only everywhere: you filter by them
+  and group by them, but you do not rename, move or delete them. See
+  [Placement tags](#placement-tags-the-system-tags).
 - Tags only organise. They never start, stop or schedule anything.
 
 ## Base requirements
@@ -304,13 +308,16 @@ without a restart.
 
 Everything above is about tags **you** name, assign and edit. Placement tags
 are the other kind: the machine derives them from **where a piece of work
-ran** and stamps them on every session it starts, as **system tags** in the
-tag registry. You never assign them yourself and you can't rename, move or
-delete them; you use them to see at a glance which node ran what, on which
-peer, under which backend or lane — and to filter and group the session
-list, the dashboard and the Gantt by exactly that.
+ran** and stamps them on every session it starts, and records them as the
+**system tags** of the objects the Automata own — Automata, their tasks,
+Automations, decision records, held questions and templates. You never assign
+them yourself and you can't rename, move or delete them; you use them to see
+at a glance which node ran what, on which peer, under which backend or lane,
+and which Automaton and stage the work belongs to — and to filter and group
+the session list, the object lists, the dashboard and the Gantt by exactly
+that.
 
-### The six axes
+### The ten axes
 
 | Axis | Default tag shape | Records |
 |---|---|---|
@@ -320,10 +327,20 @@ list, the dashboard and the Gantt by exactly that.
 | `lane` | `lane:<name>` | the lane that ran the session |
 | `role` | `role:<name>` | the capacity role (e.g. `worker`) |
 | `project` | `project:<name>` | the project the work belongs to |
+| `automaton` | `automaton:<name>` | the Automaton the work belongs to |
+| `automation` | `automation:<name>` | the Automation the work runs under |
+| `stage` | `stage:<name>` | the stage the work runs in |
+| `kind` | `kind:<name>` | the kind of work (e.g. `task`) |
 
-**Defaults:** `compute`, `peer`, `backend`, `lane` and `role` are **on**.
-`project` is **off** — that axis is the one you opt into, because it repeats
-other information you already have. A master switch covers all of them.
+**Defaults:** every axis is **on** — `compute`, `peer`, `backend`, `lane`,
+`role`, `project`, `automaton`, `automation`, `stage` and `kind` — so a task
+that sets all its facts is tagged along every axis by default; turn an axis
+off with `enabled: false`. A master switch covers all of them.
+
+The two axes with a fixed vocabulary: `role` takes one of `worker`,
+`verifier`, `planner`, `judge`, `supervisor`, and `kind` one of `task`,
+`decompose`, `review`, `rejudge`, `auto-fix`. The rest take the name of
+whatever the engine records for them.
 
 A tag is written **per enabled axis with a value**. A missing value is not an
 error and produces no tag: local work writes **no `peer:` tag at all**, and
@@ -336,6 +353,53 @@ name comes only from the **peer name in the explicit placement record** the
 daemon wrote for that session — never inferred from a DNS name, an IP
 address or a hostname. So the tag always says the peer's name as the daemon
 knows it, and a value no operator typed can never leak into a tag.
+
+### Which objects carry which axes
+
+Five of the axes — `project`, `automation`, `automaton`, `stage` and
+`kind` — are recorded on the objects the Automata own, not only on sessions.
+The other five — `compute`, `peer`, `backend`, `lane` and `role` — describe
+a session run; an object never runs, so those axes never put a tag on an
+object, no matter how the block is configured.
+
+| Object | Carries |
+|---|---|
+| **Automaton** | its project, its Automation (none when it stands alone) and itself. No stage and no kind: the stage belongs to a member slot, the kind to a run. |
+| **Task** | the fact of its Automaton (project, Automation, Automaton), plus the stage its member slot carries (no stage when the Automaton is a standalone or has no typed slot). |
+| **Automation** | itself, and the project of its first resolvable member (none when it can't name one). It has no Automaton or stage axis of its own. |
+| **Decision record** and **held question** | the fact of the Automaton they name (project, Automation, Automaton). One that names no Automaton — or whose Automaton is gone — carries no axis, and that is not an error. |
+| **Template** | the fact of the Automaton it was cloned from, when one is recorded; a hand-written template carries no axis. |
+
+An object's system tags are re-derived from its stored facts under the
+in-force block whenever the object is saved, so they stay in step with the
+settings. The tags **you** assign to an object and the tags its sessions
+inherit are separate fields that none of this reads or rewrites.
+
+### Filtering by a tag or an axis
+
+Every axis can be used as a filter on every surface:
+
+- **The session list.** `GET /api/sessions` takes `?tag=` (repeatable) with
+  `?tag_match=any` (default) or `all`; a session's own, system and inherited
+  tags all count. The CLI adds the axis shortcuts `--project`, `--automaton`,
+  `--automation`, `--stage`, `--kind`, `--role`; the MCP `list_sessions`
+  tool takes the same six plus `lane` and `compute`. Each shortcut expands
+  to an `<axis>:<value>` tag under the same `tag_match`, and they combine
+  with the `tags` list. `backend` is the session's own backend filter, not
+  an axis shortcut — to filter the backend axis, pass `backend:<value>` as
+  a tag.
+- **The objects.** The list routes for Automata (`GET /api/autonomous/prds`),
+  Automations, templates, decision records and held questions share one
+  object-tag filter: `?tag=<axis>:<value>` (repeatable), `?tag_match=any|all`,
+  the single-value shortcuts `?project=`, `?automation=`, `?automaton=`, and
+  `?tag_id=` for a registry tag id. The legacy bare `?tag=<id>` id form keeps
+  working on the Automata list. For example
+  `GET /api/autonomous/prds?tag=stage:task&tag=project:web&tag_match=all`.
+- **The tags in use.** `GET /api/sessions/tags` (MCP `session_tag_list`,
+  comm `autonomous session-tags list`) lists every tag in use across live and
+  archived sessions with its axis, its value and the number of sessions that
+  carry it — the quickest way to see what values an axis actually has before
+  filtering on one.
 
 ### Templates
 
@@ -365,8 +429,8 @@ The YAML config file can declare additional axes, one block per axis, under
 
 | Field | Rule |
 |---|---|
-| `name` | lowercase letters, digits and hyphens; unique; not one of the six built-in axis names |
-| `field` | one of the session fields: `Name`, `Backend`, `Model`, `Node`, `PRDID`, `Role`, `Project` |
+| `name` | lowercase letters, digits and hyphens; unique; not one of the ten built-in axis names |
+| `field` | one of the record fields: `Name`, `Backend`, `Model`, `Node`, `PRDID`, `Role`, `Project`, `Automaton`, `Automation`, `Stage`, `Kind` |
 | `template` | must contain the placeholder `{value}`, replaced by the field's value |
 | `enabled` | on or off for that axis |
 
@@ -406,10 +470,54 @@ tree:
   backfill pass derives tags for the live sessions the daemon still holds
   a lease on, from the lease's facts (node, backend, model, project).
   Finished sessions and sessions the daemon no longer owns are skipped;
-  rerunning the pass at the next startup changes nothing.
+  rerunning the pass at the next startup changes nothing. Right after it,
+  the one-time tag sweep below re-derives the tags of every session and
+  record still on disk against the in-force block.
 - **Turning the switch off clears.** When you set the master switch (or one
   axis) to `false`, the next time a session is (re-)stamped the placement
   tags (or that axis's tag) are removed instead of rewritten.
+
+### The tag sweep
+
+The tag sweep applies the in-force `tags.placement` block to **everything
+that already exists**: one pass over every session (live and archived) and
+every record the Automata own — Automata, tasks, Automations, decision
+records, templates and held questions — re-deriving each one's system tags
+from its stored facts and writing only the ones that changed.
+
+It is safe to run any time:
+
+- **Idempotent.** A second pass changes nothing, so the sweep never breaks
+  what is already consistent.
+- **Follows the block.** Turning an axis off removes that axis's tags,
+  turning it on adds them, and a template change re-stamps the tag where
+  the fact exists.
+- **Never touches your tags.** The tags you assign yourself and the tags a
+  session inherits are separate fields the sweep never reads or writes.
+
+It runs on its own in two cases:
+
+- **When you save a change under `autonomous.tags.placement.*`.** The save
+  answers first, and the pass runs in the background right after the write;
+  a change that touched no placement key runs no sweep.
+- **At daemon startup**, once, after the lease backfill. The daemon
+  remembers the last block it swept, so a restart sweeps again only when the
+  block has actually changed since.
+
+And it is available on demand, on every surface:
+
+| Surface | How |
+|---|---|
+| **REST** | `POST /api/autonomous/tags/sweep`, with `?dry_run=true` or `dry_run` in the JSON body for a no-write pass |
+| **MCP** | `autonomous_tag_sweep` (`dry_run`) |
+| **CLI** | `datawatch autonomous tags sweep [--dry-run]` (alias `tag-sweep`) |
+| **Comm channel** | `autonomous tags sweep [dry-run]` |
+| **PWA** | the sweep button in Settings → General → Automata → **Placement tags** |
+
+The reply is a **per-kind tally** — sessions, automata, automations, tasks,
+templates, decision records, held questions — each with examined, changed,
+unchanged and failed. `dry_run` reports the same tally without writing a
+single tag.
 
 ### Inherited by sessions and Automata
 
@@ -451,7 +559,7 @@ Under `autonomous.tags.placement`, one key per axis, plus the master:
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.tags.placement.enabled` | `true` | master switch; `false` turns the whole block off |
-| `autonomous.tags.placement.<axis>.enabled` | `true` (`project` is `false`) | on/off for that axis (`<axis>` is `compute`, `peer`, `backend`, `lane`, `role`, `project`) |
+| `autonomous.tags.placement.<axis>.enabled` | `true` | on/off for that axis (`<axis>` is `compute`, `peer`, `backend`, `lane`, `role`, `project`, `automaton`, `automation`, `stage`, `kind`) |
 | `autonomous.tags.placement.<axis>.template` | `<axis>:<placeholder>` (see the table above) | the tag text with the axis's placeholder |
 | `autonomous.tags.placement.custom` | empty list | user-defined axes (YAML file or full config write) |
 | `autonomous.inherited_tags_cache_seconds` | `15` | lifetime of the shared inherited-tags read (the section above); `0` means the default, negative turns the cache off — note this one lives directly under `autonomous`, not under `tags.placement` |
@@ -462,7 +570,9 @@ group, `datawatch config set|get autonomous.tags.placement.…`, the MCP
 `config_set`/`config_get` tools, and the comm channel's `configure` /
 `config get` with the same keys. An invalid template (one missing its axis's
 placeholder) or an invalid custom block is refused on every surface with the
-same message and nothing written. Changes apply without a restart.
+same message and nothing written. Changes apply without a restart, and
+saving a change under this block runs one tag sweep over the existing
+sessions and records right after the save — see [The tag sweep](#the-tag-sweep).
 
 ### Tuning the shared read: `inherited_tags_cache_seconds`
 
@@ -507,6 +617,9 @@ the CLI `tag-list` takes `--axis`.
 | The attention group | `GET /api/autonomous/attention` | `autonomous_attention_list` | `attention` | `attention` |
 | A session's own tags | `POST /api/sessions/tags` (`{id, tag_ids}`) | `session_set_tags` | `session tags <session-id> --tags <id1,id2>` | `session-tags <session-id> <id1,id2>` |
 | List Automata under a tag | `GET /api/autonomous/prds?tag=<id>[&include_sub=false]` | — | — | — |
+| List Automata by an object axis | `GET /api/autonomous/prds?tag=stage:task[&tag_match=all]` (also `?project=`, `?automation=`, `?automaton=`, `?tag_id=`) | — | — | — |
+| Sweep the in-force tag settings | `POST /api/autonomous/tags/sweep[?dry_run=true]` | `autonomous_tag_sweep` (`dry_run`) | `tags sweep [--dry-run]` (alias `tag-sweep`) | `tags sweep [dry-run]` |
+| The tags in use on sessions | `GET /api/sessions/tags` | `session_tag_list` | — | `session-tags list` |
 
 An empty tag list clears an Automaton's or a session's own tags.
 
@@ -533,6 +646,12 @@ An empty tag list clears an Automaton's or a session's own tags.
 - **Looking for a `peer:` tag on local work.** Local sessions run on this
   daemon and write no peer tag; `peer:<name>` appears only when the session
   ran on another daemon.
+- **Expects a `stage:` or `kind:` tag on an Automaton.** An Automaton carries
+  its own project, its Automation and itself; the stage rides on its tasks
+  and the kind on the runs. Filter a task or session list by the axis.
+- **Expects the sweep to touch its own tags.** The operator-assigned tags
+  and the tags a session inherits are separate fields the sweep never reads
+  or writes; only the derived system tags are re-derived.
 
 ## Next steps
 

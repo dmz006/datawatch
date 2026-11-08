@@ -30,8 +30,20 @@ func TestPlacementConfigDefaults(t *testing.T) {
 	if got, want := p.Role, (PlacementAxis{Enabled: true, Template: "role:{role}"}); got != want {
 		t.Errorf("role default = %+v, want %+v", got, want)
 	}
-	if got, want := p.Project, (PlacementAxis{Enabled: false, Template: "project:{project}"}); got != want {
+	if got, want := p.Project, (PlacementAxis{Enabled: true, Template: "project:{project}"}); got != want {
 		t.Errorf("project default = %+v, want %+v", got, want)
+	}
+	if got, want := p.Automaton, (PlacementAxis{Enabled: true, Template: "automaton:{automaton}"}); got != want {
+		t.Errorf("automaton default = %+v, want %+v", got, want)
+	}
+	if got, want := p.Automation, (PlacementAxis{Enabled: true, Template: "automation:{automation}"}); got != want {
+		t.Errorf("automation default = %+v, want %+v", got, want)
+	}
+	if got, want := p.Stage, (PlacementAxis{Enabled: true, Template: "stage:{stage}"}); got != want {
+		t.Errorf("stage default = %+v, want %+v", got, want)
+	}
+	if got, want := p.Kind, (PlacementAxis{Enabled: true, Template: "kind:{kind}"}); got != want {
+		t.Errorf("kind default = %+v, want %+v", got, want)
 	}
 	if len(p.Custom) != 0 {
 		t.Errorf("custom axes default empty, got %v", p.Custom)
@@ -40,12 +52,27 @@ func TestPlacementConfigDefaults(t *testing.T) {
 	// The templates are the derivation package's own templates, so the config
 	// block and the derivation cannot drift apart.
 	def := placementtags.DefaultSettings()
-	if p.Compute.Template != def.Compute.Template || p.Peer.Template != def.Peer.Template ||
-		p.Backend.Template != def.Backend.Template || p.Lane.Template != def.Lane.Template ||
-		p.Role.Template != def.Role.Template || p.Project.Template != def.Project.Template {
-		t.Errorf("axis templates %q,%q,%q,%q,%q,%q do not match the derivation package templates",
-			p.Compute.Template, p.Peer.Template, p.Backend.Template,
-			p.Lane.Template, p.Role.Template, p.Project.Template)
+	pairs := []struct{
+		axis string
+		got  string
+		def  string
+	}{
+		{"compute", p.Compute.Template, def.Compute.Template},
+		{"peer", p.Peer.Template, def.Peer.Template},
+		{"backend", p.Backend.Template, def.Backend.Template},
+		{"lane", p.Lane.Template, def.Lane.Template},
+		{"role", p.Role.Template, def.Role.Template},
+		{"project", p.Project.Template, def.Project.Template},
+		{"automaton", p.Automaton.Template, def.Automaton.Template},
+		{"automation", p.Automation.Template, def.Automation.Template},
+		{"stage", p.Stage.Template, def.Stage.Template},
+		{"kind", p.Kind.Template, def.Kind.Template},
+	}
+	for _, e := range pairs {
+		if e.got != e.def {
+			t.Errorf("%s template %q does not match the derivation package template %q",
+				e.axis, e.got, e.def)
+		}
 	}
 }
 
@@ -57,7 +84,7 @@ func TestPlacementConfigEffectiveFillsUnsetAxes(t *testing.T) {
 	if got.Enabled != true || got.Compute.Enabled != false {
 		t.Fatalf("Effective changed a set value: %+v", got)
 	}
-	if got.Project != (PlacementAxis{Enabled: false, Template: "project:{project}"}) {
+	if got.Project != (PlacementAxis{Enabled: true, Template: "project:{project}"}) {
 		t.Fatalf("Effective did not fill the unset project axis: %+v", got.Project)
 	}
 	// A never-set block takes all defaults, master switch included.
@@ -140,7 +167,7 @@ func TestPlacementConfigMasterSwitchOff(t *testing.T) {
 		t.Fatalf("custom axis = %+v", got)
 	}
 	// The axes the file did not set keep their defaults.
-	if p.Project != (PlacementAxis{Enabled: false, Template: "project:{project}"}) {
+	if p.Project != (PlacementAxis{Enabled: true, Template: "project:{project}"}) {
 		t.Fatalf("unset project axis reloaded as %+v", p.Project)
 	}
 	if p.Lane != (PlacementAxis{Enabled: true, Template: "lane:{lane}"}) {

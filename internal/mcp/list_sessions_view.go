@@ -58,6 +58,9 @@ func listSessionsViewQuery(req mcpsdk.CallToolRequest) (q url.Values, ok bool, e
 			q.Add("tag", v)
 		}
 	}
+	for _, tag := range sessionTagShortcuts(req) {
+		q.Add("tag", tag)
+	}
 	if tm := req.GetString("tag_match", ""); tm != "" {
 		if tm != "any" && tm != "all" {
 			return nil, false, `Error: tag_match: must be "any" or "all".`

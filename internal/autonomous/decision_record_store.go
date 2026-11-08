@@ -79,6 +79,12 @@ type DecisionRecordStore struct {
 	// writeFn writes one chunk to the open append file; a test replaces it
 	// to simulate a write that fails part way.
 	writeFn func(f *os.File, b []byte) (int, error)
+
+	// objectTagDeriver, when wired (Manager.SetDecisionRecords does),
+	// replaces a record's SystemTags with the derived list on Create and
+	// Update (see ObjectTagDeriver). A nil deriver leaves SystemTags
+	// untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 // NewDecisionRecordStore opens (or starts, when the file is missing) the
@@ -359,6 +365,11 @@ func (s *DecisionRecordStore) Create(in DecisionRecord) (DecisionRecord, error) 
 	if err := ValidateNewDecisionRecord(&r); err != nil {
 		return DecisionRecord{}, err
 	}
+	if d := s.objectTagDeriver; d != nil {
+		// Object system tags: the full derived list replaces the stored
+		// one (no-op when equal) before the write is committed.
+		r.SystemTags = replaceSystemTags(r.SystemTags, d.ObjectTagsForDecisionRecord(&r))
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r.Source != "" && r.SourceRef != "" {
@@ -404,11 +415,23 @@ func (s *DecisionRecordStore) Update(id string, in DecisionRecord) (DecisionReco
 	}
 	c.ID = cur.ID
 	c.ContentSHA256 = c.ContentHash()
+	if d := s.objectTagDeriver; d != nil {
+		// Re-derive on every update: the full derived list replaces the
+		// stored one (no-op when equal) before the write is committed.
+		c.SystemTags = replaceSystemTags(c.SystemTags, d.ObjectTagsForDecisionRecord(&c))
+	}
 	now := s.now()
 	if err := s.commitLocked(decisionStoreLine{Type: decisionLineUpdated, Record: &c, At: &now}); err != nil {
 		return DecisionRecord{}, err
 	}
 	return s.records[id].clone(), nil
+}
+
+// SetObjectTagDeriver wires object-derived system tags into Create and
+// Update: the record's SystemTags are replaced with the derived list
+// before the write (see ObjectTagDeriver and replaceSystemTags).
+func (s *DecisionRecordStore) SetObjectTagDeriver(d ObjectTagDeriver) {
+	s.objectTagDeriver = d
 }
 
 // openRecordLocked returns the record when it exists and is open.

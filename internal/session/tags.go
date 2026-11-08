@@ -101,6 +101,30 @@ func (m *Manager) SetSystemTags(id string, tags []string) error {
 	return m.store.Save(sess)
 }
 
+// SetSystemTagsAny replaces the system tags of a session whether it is still
+// active or already in the archive and persists — the tag sweep's write path,
+// which re-derives the tags of every Automata-owned session and a session of
+// any age may need the refresh. Active sessions take the active-store save;
+// archived ones take the archive line append (the last line for an id wins,
+// the file stays append-only). As in SetSystemTags the operator's Tags and
+// the inherited tags are never touched, and the session is known neither way
+// when the id is not one the store holds at all.
+func (m *Manager) SetSystemTagsAny(id string, tags []string) error {
+	sess, ok := m.GetSession(id)
+	if ok {
+		sess.SystemTags = dedupeTagIDs(tags)
+		sess.UpdatedAt = time.Now()
+		return m.store.Save(sess)
+	}
+	sess, ok = m.store.GetArchived(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+	}
+	sess.SystemTags = dedupeTagIDs(tags)
+	sess.UpdatedAt = time.Now()
+	return m.store.UpdateArchived(sess)
+}
+
 // InheritedTags returns the tag IDs a session inherits from the Automaton
 // that spawned it (sess.PRDID). The set is computed on every call and is
 // never stored. A session outside any Automaton gets an empty, non-nil slice.

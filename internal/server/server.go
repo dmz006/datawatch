@@ -451,6 +451,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Tag registry endpoints.
 	apiMux.HandleFunc("/api/autonomous/tags", api.handleAutonomousTags)
 	apiMux.HandleFunc("/api/autonomous/tags/", api.handleAutonomousTags)
+	// Tag sweep: apply the in-force tag settings to everything that already
+	// exists (POST, dry_run optional) — re-derives the owned sessions'
+	// and records' system tags from their stored facts.
+	apiMux.HandleFunc("/api/autonomous/tags/sweep", api.handleTagSweep)
+	apiMux.HandleFunc("/api/autonomous/tags/sweep/", api.handleTagSweep)
 	// Shared tag registry: the keeper snapshot, forwarded peer writes and the
 	// merge-note dismissal. The exact paths win over the /tags/ subtree above.
 	apiMux.HandleFunc("/api/autonomous/tags/registry", api.handleTagRegistrySnapshot)

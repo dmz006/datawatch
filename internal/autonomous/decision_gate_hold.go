@@ -41,6 +41,13 @@ var decisionWaitPoll = 30 * time.Second
 // config (read on every scan, so a config write takes effect without a
 // restart). With no config function the gate is off.
 func (m *Manager) SetDecisionGate(store *QuestionStore, cfg func() config.AutonomousQuestionsConfig) {
+	// The gate's store saves held questions, so it takes the object system
+	// tag derivation like every other store the Manager wires (see
+	// ObjectTagDeriver): every Raise and Update re-derives the question's
+	// tags under the live tags.placement block.
+	if store != nil {
+		store.SetObjectTagDeriver(m)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.decisionStore = store

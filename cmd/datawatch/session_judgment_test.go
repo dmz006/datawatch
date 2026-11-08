@@ -218,7 +218,7 @@ func TestRunOneShotJSONSession_SpawnPollRelocate(t *testing.T) {
 
 	got, err := runOneShotJSONSession(cfg, "prd-1", projectDir, "claude-code", "sonnet",
 		"autonomous:test", "do the thing, write JSON to "+outputFile, outputFile, "test-output.json",
-		10*time.Second)
+		10*time.Second, launchTags{})
 	if err != nil {
 		t.Fatalf("runOneShotJSONSession: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestRunOneShotJSONSession_ReusesExistingOutputOnRestart(t *testing.T) {
 	cfg.DataDir = dataDir
 
 	got, err := runOneShotJSONSession(cfg, "prd-2", projectDir, "claude-code", "",
-		"autonomous:test", "unused", outputFile, "test-output-restart.json", 10*time.Second)
+		"autonomous:test", "unused", outputFile, "test-output-restart.json", 10*time.Second, launchTags{})
 	if err != nil {
 		t.Fatalf("runOneShotJSONSession: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestRunOneShotJSONSession_FailedStateWithNoOutputIsAnError(t *testing.T) {
 	cfg.DataDir = dataDir
 
 	_, err := runOneShotJSONSession(cfg, "prd-3", projectDir, "claude-code", "sonnet",
-		"autonomous:test", "unused", outputFile, "test-output-failed.json", 10*time.Second)
+		"autonomous:test", "unused", outputFile, "test-output-failed.json", 10*time.Second, launchTags{})
 	if err == nil {
 		t.Fatal("expected an error when the session ends failed with no output file")
 	}
@@ -305,7 +305,7 @@ func TestRunOneShotJSONSession_CompleteStateWithNoOutputIsAnError(t *testing.T) 
 	cfg.DataDir = dataDir
 
 	_, err := runOneShotJSONSession(cfg, "prd-5", projectDir, "pi-prompt", "prov/model:64k",
-		"autonomous:test", "unused", outputFile, "test-output-complete.json", 10*time.Second)
+		"autonomous:test", "unused", outputFile, "test-output-complete.json", 10*time.Second, launchTags{})
 	if err == nil {
 		t.Fatal("expected an error when the session completes with no output file")
 	}
@@ -337,7 +337,7 @@ func TestRunOneShotJSONSessionCaptureID_ReturnsSpawnedSessionID(t *testing.T) {
 
 		got, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-capture-ok", projectDir, "claude-code", "sonnet", "",
 			"autonomous:test", "do the thing, write JSON to "+outputFile, outputFile, "test-output-capture-ok.json",
-			10*time.Second)
+			10*time.Second, launchTags{})
 		if err != nil {
 			t.Fatalf("runOneShotJSONSessionCaptureID: %v", err)
 		}
@@ -362,7 +362,7 @@ func TestRunOneShotJSONSessionCaptureID_ReturnsSpawnedSessionID(t *testing.T) {
 
 		_, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-capture-failed", projectDir, "claude-code", "sonnet", "",
 			"autonomous:test", "unused", outputFile, "test-output-capture-failed.json",
-			10*time.Second)
+			10*time.Second, launchTags{})
 		if err == nil {
 			t.Fatal("expected an error when the session ends failed with no output file")
 		}
@@ -425,7 +425,7 @@ func TestRunOneShotJSONSession_PiPromptStartBodyCarriesModelVerbatim(t *testing.
 	cfg.DataDir = dataDir
 
 	got, err := runOneShotJSONSessionWithEffort(cfg, "prd-4", projectDir, "pi-prompt", model, "",
-		"autonomous:verify", "verify the thing", outputFile, "verify-pi.json", 10*time.Second, "")
+		"autonomous:verify", "verify the thing", outputFile, "verify-pi.json", 10*time.Second, "", launchTags{})
 	if err != nil {
 		t.Fatalf("runOneShotJSONSessionWithEffort: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestRunOneShotJSONSession_DecomposeWaitingInputIsKilledBeforeTimeout(t *tes
 	const timeout = 60 * time.Second
 	start := time.Now()
 	_, err := runOneShotJSONSession(cfg, "prd-wait", projectDir, "claude-code", "sonnet",
-		decomposeSessionName, "unused", outputFile, "decompose-output.json", timeout)
+		decomposeSessionName, "unused", outputFile, "decompose-output.json", timeout, launchTags{})
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -545,7 +545,7 @@ func TestRunOneShotJudgeSession_KeepsProjectOutputAndCopiesToScratch(t *testing.
 
 	got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judge", projectDir, "claude-code", "sonnet", "",
 		"autonomous:guardrail:unit-1", "judge it, write JSON to "+outputFile, outputFile, "guardrail-unit-1-sec.json",
-		10*time.Second, "")
+		10*time.Second, "", launchTags{})
 	if err != nil {
 		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 	}
@@ -601,7 +601,7 @@ func TestRunOneShotJudgeSession_ReusesPresentOutputWithoutStarting(t *testing.T)
 	for call := 1; call <= 2; call++ {
 		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judged", projectDir, "claude-code", "sonnet", "",
 			"autonomous:guardrail:unit-2", "unused", outputFile, "guardrail-unit-2-sec.json",
-			10*time.Second, "")
+			10*time.Second, "", launchTags{})
 		if err != nil {
 			t.Fatalf("call %d: runOneShotJudgeSessionCaptureID: %v", call, err)
 		}
@@ -694,7 +694,7 @@ func TestPlanningSessionStartRequestSkipsSnapshot(t *testing.T) {
 
 		got, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-decomp-skip", projectDir, "claude-code", "sonnet", "",
 			decomposeSessionName, "decompose it, write JSON to "+outputFile, outputFile, "decompose-output.json",
-			10*time.Second)
+			10*time.Second, launchTags{})
 		if err != nil {
 			t.Fatalf("runOneShotJSONSessionCaptureID: %v", err)
 		}
@@ -718,7 +718,7 @@ func TestPlanningSessionStartRequestSkipsSnapshot(t *testing.T) {
 
 		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judge-skip", projectDir, "claude-code", "sonnet", "",
 			"autonomous:guardrail:skip-unit", "judge it, write JSON to "+outputFile, outputFile, "guardrail-skip-unit-sec.json",
-			10*time.Second, "")
+			10*time.Second, "", launchTags{})
 		if err != nil {
 			t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 		}
@@ -788,7 +788,7 @@ func TestRunOneShotJudgeSession_AdoptsLiveSessionInsteadOfSpawning(t *testing.T)
 
 	got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-adopt", projectDir, "claude-code", "sonnet", "",
 		adoptName, "judge it, write JSON to "+outputFile, outputFile, "guardrail-adopt.json",
-		10*time.Second, "")
+		10*time.Second, "", launchTags{})
 	if err != nil {
 		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 	}
@@ -842,7 +842,7 @@ func TestRunOneShotJudgeSession_AdoptLookupOnlyForJudgeNames(t *testing.T) {
 		name := "autonomous:verify:t9"
 		got, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-nook", projectDir, "claude-code", "sonnet", "",
 			name, "verify it, write JSON to "+outputFile, outputFile, "verify.json",
-			10*time.Second)
+			10*time.Second, launchTags{})
 		if err != nil {
 			t.Fatalf("runOneShotJSONSessionCaptureID: %v", err)
 		}
@@ -875,7 +875,7 @@ func TestRunOneShotJudgeSession_AdoptLookupOnlyForJudgeNames(t *testing.T) {
 		name := judgeSessionNamePrefix + ":fresh-u1"
 		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-none", projectDir, "claude-code", "sonnet", "",
 			name, "judge it, write JSON to "+outputFile, outputFile, "guardrail-fresh.json",
-			10*time.Second, "")
+			10*time.Second, "", launchTags{})
 		if err != nil {
 			t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 		}

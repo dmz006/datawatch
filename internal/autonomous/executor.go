@@ -1781,6 +1781,32 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if verr := m.gateVerifierPrestart(prd, t, taskDir); verr != nil {
 				return verr
 			}
+			// retryHint is the fix context this spawn carries (a failed
+			// verification, a guardrail's findings, or a prior attempt's
+			// report). A non-empty hint is what marks the launch as an
+			// auto-fix attempt: TaskLaunchKind reads the same value as the
+			// launch session's kind.
+			retryHint := m.escalationRetryHint(prd, t, hint)
+			// prd is the shared map pointer: while this task builds its spawn
+			// request a sibling task of the same PRD may be writing
+			// prd.Git.PushState/PushWarning via recordPushOutcome under
+			// store.WithLock. The raw reads of prd.Git, prd.ProjectProfile and
+			// prd.WriteDirs below would race that write under -race, so take a
+			// value snapshot under the store lock (TaskSnapshot discipline) and
+			// build the git-related spawn fields from it.
+			var snapGit GitWorkflow
+			var snapProjectProfile string
+			var snapWriteDirs []string
+			m.store.WithLock(func() {
+				snapGit = prd.Git
+				snapProjectProfile = prd.ProjectProfile
+				snapWriteDirs = append([]string(nil), prd.WriteDirs...)
+			})
+			snapAutoCommits := prdAutoCommits(&PRD{
+				Git:            snapGit,
+				ProjectProfile: snapProjectProfile,
+				WriteDirs:      snapWriteDirs,
+			})
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:           t.ID,
@@ -1794,15 +1820,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Model:            model,
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
-				RetryHint:        m.escalationRetryHint(prd, t, hint),
-				ProjectProfile:   prd.ProjectProfile,               // v5.26.19
+				RetryHint:        retryHint,
+				ProjectProfile:   snapProjectProfile,               // v5.26.19
 				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
-				Branch:           prd.Git.Branch,                   // BL407 Phase 4
-				Git:              prdAutoCommits(prd) && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				Branch:           snapGit.Branch,                   // BL407 Phase 4
+				Git:              snapAutoCommits && !readOnly,     // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
 				ContextPrepend:   contextPrepend,                   // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
-				SkipDirtyCapture: prd.Git.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
+				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
 				WriteScope:       readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
 				AttemptRefs:      t.AttemptRefs,                                                // preserved attempt work to restore
 				CleanRestart:     t.CleanRestart,                                               // operator clean restart: skip the restore once
@@ -1859,16 +1885,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// the same session: SetSystemTags replaces the whole list, so the
 			// old node's compute and peer tags are gone. Master switch off
 			// clears the list instead of writing (TagTaskPlacement).
-			m.TagTaskPlacement(t.ID, sr.SessionID, Placement{
-				Node:       placedNode,
-				Backend:    backend,
-				Model:      model,
-				Lane:       laneForBackend(backend),
-				Role:       string(capacity.RoleWorker),
-				Project:    path.Base(taskDir),
-				Automation: prd.AutomationID,
-				Kind:       "task",
-			})
+			// An auto-fix launch is read as an auto-fix, not a task: a
+			// re-run carrying the fix context (retryHint) or a synthesized
+			// "Auto-fix: " corrective task gets kind auto-fix; an ordinary
+			// first run keeps kind task.
+			m.TagTaskPlacement(t.ID, sr.SessionID, m.workerLaunchPlacement(prd, placedNode, backend, model, path.Base(taskDir), TaskLaunchKind(t, retryHint)))
 			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)

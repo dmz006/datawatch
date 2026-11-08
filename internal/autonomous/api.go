@@ -661,6 +661,18 @@ func (a *API) SessionIDsForPRD(prdID string) []string {
 	return out
 }
 
+// TasksForSelection returns the task listing of prd narrowed to the object
+// tag selection sel: a task is kept when its own system tags (its
+// Automaton's project, Automation and Automaton, and the member slot's
+// stage) carry the requested tag(s), under any-match (the default) or
+// all-match. An empty selection returns every task, so the caller can always
+// invoke this with a zero selection without special-casing. This is the
+// API-layer counterpart of the server's detail=tasks?tag= filter and shares
+// the ObjectTagSelection matcher.
+func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
+	return FilterTasksView(BuildTasksView(prd), sel)
+}
+
 func (a *API) ListPRDs() []any {
 	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }
@@ -1617,7 +1629,10 @@ func (a *API) ListTemplates() []any {
 }
 
 func (a *API) CreateTemplate(title, description, spec, typ string, tags []string) (any, error) {
-	return a.M.Templates().Create(title, description, spec, typ, tags)
+	// An operator-created template names no source Automaton: empty
+	// sourcePRDID, so its object system tags derive to nothing (that is
+	// the record-only path; CloneToTemplate records the source).
+	return a.M.Templates().Create(title, description, spec, typ, "", tags)
 }
 
 func (a *API) GetTemplate(id string) (any, bool) {
@@ -2253,6 +2268,17 @@ func (a *API) ShippedBackfillOnce(dryRun bool) (any, error) {
 		return nil, err
 	}
 	return report, nil
+}
+
+// SweepTags re-derives the system tags of every existing Automata object
+// and session under the tags.placement settings in effect now (see
+// Manager.SweepTags for the full contract): the REST tag-sweep route and
+// the MCP autonomous_tag_sweep tool funnel through this entry point, and
+// from it through Manager.SweepTags, the single implementation. dryRun
+// performs the full re-derivation and reports the would-be counts but
+// writes nothing.
+func (a *API) SweepTags(dryRun bool) SweepResult {
+	return a.M.SweepTags(dryRun)
 }
 
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {

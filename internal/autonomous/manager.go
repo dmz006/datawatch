@@ -1214,6 +1214,14 @@ type GuardrailInvocation struct {
 	// GuardrailBackend is the global default fallback
 	// (cfg.VerificationBackend) or nothing resolved.
 	GuardrailPinned bool
+	// Rejudge marks this invocation as a re-judgment of the same decision —
+	// autonomous.RejudgeCompletionGuardrail re-running the completion
+	// rules review after the operator asks for the call to be judged
+	// again. Set for tagging only: the judge prompt, model choice and
+	// budget accounting are identical to a first judgment, and the launch
+	// side uses it to tag the one-shot judge session launch_kind rejudge
+	// instead of review (2026-11-06-automata-pages-redesign.md §12).
+	Rejudge bool
 	// Prompt, when set, is the whole judge prompt, used instead of the
 	// generated guardrail prompt. The plan-review judge sets it: its reply
 	// uses the same outcome/severity/summary/issues JSON, but it judges a
@@ -1332,6 +1340,11 @@ type Manager struct {
 	// the inherited_tags read field (placement_tags_inherit.go). Wired by
 	// the daemon; nil = no inherited tags.
 	inheritedTagReader SessionSystemTagReader
+	// tagSweepSessions backs the tag sweep's session pass (tag_sweep.go):
+	// it lists every Automata-owned session (live and archived) and writes
+	// each one's re-derived object system tag. Wired by the daemon; nil =
+	// the sweep examines no sessions (the object passes still run).
+	tagSweepSessions TagSweepSessionStore
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
 	// defect intake (defect_intake.go): the DefectIntake implementation; the
@@ -2641,6 +2654,16 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
 	m.installDefaultMergeResolver()
+	// Object system tags — the plan's "anything we can tag should be
+	// tagged": the Manager holds the live tags.placement source, so it
+	// wires itself into the save paths of the stores it owns. Every
+	// SavePRD/SaveTask, Automation Create/Update and Template
+	// Create/Update then re-derives the object's tags under that live
+	// source and replaces the stored list (no-op when unchanged). See
+	// ObjectTagDeriver and replaceSystemTags.
+	st.SetObjectTagDeriver(m)
+	automs.SetObjectTagDeriver(m)
+	m.templates.SetObjectTagDeriver(m)
 	return m, nil
 }
 
@@ -6749,7 +6772,7 @@ func (m *Manager) CloneToTemplate(prdID, description, actor string) (*Template, 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	return m.templates.Create(prd.Title, description, prd.Spec, "", nil)
+	return m.templates.Create(prd.Title, description, prd.Spec, "", prd.ID, nil)
 }
 
 // InstantiateFromTemplateStore (BL221 v6.2.0) — substitutes vars in a

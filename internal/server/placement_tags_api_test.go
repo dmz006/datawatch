@@ -30,8 +30,8 @@ func TestPlacementTags_APIRoundTrip(t *testing.T) {
 	s, _ := newTagSettingsServer(t)
 
 	// A default config carries the placement block: the master switch on,
-	// every built-in axis on with its conventional template except project,
-	// which is off, and no custom axes.
+	// every built-in axis on with its conventional template, and no custom
+	// axes.
 	if got, want := placementDisplay(t, s), defaultPlacementDisplay(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("GET placement = %v, want %v", got, want)
 	}
@@ -231,5 +231,94 @@ func TestPlacementTags_SessionRefusesSystemTag(t *testing.T) {
 	got := decodeSessionTagsFields(t, w)
 	if !reflect.DeepEqual(got.Tags, []string{tg.ID}) {
 		t.Errorf("own tags = %v, want [%s]", got.Tags, tg.ID)
+	}
+}
+
+// TestPlacementTags_NewAxesRoundTrip covers the four Automata placement axes
+// (automaton, automation, stage, kind) on the REST config surface: PUT→GET
+// round trips per key and for a whole block, and template refusals with the
+// shared validator's text.
+func TestPlacementTags_NewAxesRoundTrip(t *testing.T) {
+	s, _ := newTagSettingsServer(t)
+
+	// Per-key round trip: each of the new axes is accepted, stored and
+	// returned with its enabled/template pair.
+	rr := putTagPatch(t, s, map[string]interface{}{
+		"autonomous.tags.placement.automaton.enabled":  false,
+		"autonomous.tags.placement.automaton.template": "at-{automaton}",
+		"autonomous.tags.placement.automation.enabled": true,
+		"autonomous.tags.placement.stage.enabled":      false,
+		"autonomous.tags.placement.kind.template":      "K-{kind}",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT new axes: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	placement := s.cfg.Autonomous.Tags.Placement
+	if placement.Automaton.Enabled {
+		t.Errorf("stored Automaton.Enabled = true, want false")
+	}
+	if placement.Automaton.Template != "at-{automaton}" {
+		t.Errorf("stored Automaton.Template = %q, want at-{automaton}", placement.Automaton.Template)
+	}
+	if !placement.Automation.Enabled {
+		t.Errorf("stored Automation.Enabled = false, want true")
+	}
+	if placement.Stage.Enabled {
+		t.Errorf("stored Stage.Enabled = true, want false")
+	}
+	if placement.Kind.Template != "K-{kind}" {
+		t.Errorf("stored Kind.Template = %q, want K-{kind}", placement.Kind.Template)
+	}
+	got := placementDisplay(t, s)
+	axes := got["axes"].(map[string]interface{})
+	if ax := axes["automaton"].(map[string]interface{}); ax["enabled"] != false || ax["template"] != "at-{automaton}" {
+		t.Errorf("GET placement axes.automaton = %v, want {enabled:false template:at-{automaton}}", ax)
+	}
+	if ax := axes["stage"].(map[string]interface{}); ax["enabled"] != false || ax["template"] != "stage:{stage}" {
+		t.Errorf("GET placement axes.stage = %v, want {enabled:false template:stage:{stage}}", ax)
+	}
+	if ax := axes["kind"].(map[string]interface{}); ax["enabled"] != true || ax["template"] != "K-{kind}" {
+		t.Errorf("GET placement axes.kind = %v, want {enabled:true template:K-{kind}}", ax)
+	}
+
+	// The comm channel and the CLI send values as strings: true and false
+	// forms all land for the new axes.
+	rr = putTagBody(t, s, `{"autonomous.tags.placement.automaton.enabled":"true","autonomous.tags.placement.automation.enabled":"false","autonomous.tags.placement.stage.enabled":"true","autonomous.tags.placement.kind.template":"{kind}"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT new axes strings: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	placement = s.cfg.Autonomous.Tags.Placement
+	if !placement.Automaton.Enabled || placement.Automation.Enabled || !placement.Stage.Enabled || placement.Kind.Template != "{kind}" {
+		t.Fatalf("stored placement after string PUT = %+v", placement)
+	}
+
+	// Templates missing the axis' own placeholder are refused with exactly
+	// the shared validator's text, and nothing is applied.
+	before := s.cfg.Autonomous.Tags
+	rejects := map[string]string{
+		"autonomous.tags.placement.automaton.template":  `"at-"`,
+		"autonomous.tags.placement.automation.template": `"aut:{stage}"`,
+		"autonomous.tags.placement.stage.template":      `"stage-"`,
+		"autonomous.tags.placement.kind.template":       `"{automaton}"`,
+		"autonomous.tags.placement.automaton.enabled":   `"yes"`,
+		"autonomous.tags.placement.kind.switch":         `"true"`,
+	}
+	for key, value := range rejects {
+		rr := putTagBody(t, s, `{"`+key+`":`+value+`}`)
+		want := config.ValidateTagSetting(key, strings.Trim(value, `"`))
+		if want == nil {
+			t.Fatalf("test bug: %s accepts %v", key, value)
+		}
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("PUT %s: got %d %s, want 400", key, rr.Code, rr.Body.String())
+			continue
+		}
+		if got := strings.TrimSpace(rr.Body.String()); got != want.Error() {
+			t.Errorf("PUT %s: REST message = %q, want the shared validator text %q", key, got, want.Error())
+		}
+	}
+	gotBlock := s.cfg.Autonomous.Tags
+	if !reflect.DeepEqual(gotBlock, before) {
+		t.Fatalf("a refused new-axis PUT changed the block: %+v", before)
 	}
 }

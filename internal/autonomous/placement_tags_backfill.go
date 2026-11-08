@@ -70,9 +70,9 @@ func BackfillPlacementTags(led BackfillLedger, store BackfillSessionStore, pc co
 			continue
 		}
 		p := Placement{
-			Node:       ls.Node,
-			Model:      ls.Model,
-			Automation: ls.PRDID,
+			Node:      ls.Node,
+			Model:     ls.Model,
+			Automaton: ls.PRDID,
 		}
 		tags := DerivePlacementTags(p, pc)
 		if tagsEqual(sess.SystemTags, tags) {

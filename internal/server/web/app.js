@@ -3211,7 +3211,27 @@ function loadSessionsList() {
     clearTimeout(l.timer);
     if (l.error || !state.connected) l.timer = setTimeout(() => { if (state.activeView === 'sessions') loadSessionsList(); }, SESSIONS_POLL_MS);
     if (rows.length) onSessionsUpdated();
-    if (state.activeView === 'sessions') renderSessionsView();
+    if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
+    if (state.activeView === 'sessions') {
+      renderSessionsView();
+      // Rows just changed, so the counts in the toolbar tag filter may have:
+      // load (or reload) the inventory and paint the chips once it arrives —
+      // but only when the tag filter button is or can be visible (some
+      // session tagged, or the inventory already carries tags), so an empty
+      // resync costs no extra request. On a failed load this repaint is
+      // skipped (the failure is latched in state), so a bad endpoint cannot
+      // loop into itself.
+      const invNow = state._sessionTagInventory;
+      const tagBtn = (invNow && invNow.loaded)
+        ? (invNow.entries || []).length > 0
+        : state.sessions.some(_sessionHasTags);
+      if (tagBtn) {
+        _sessionTagInventoryRefresh().then(() => {
+          const inv2 = state._sessionTagInventory;
+          if (state.activeView === 'sessions' && inv2 && inv2.loaded && !inv2.failed) renderSessionsView();
+        });
+      }
+    }
     return rows;
   });
   return l.promise;
@@ -3272,6 +3292,99 @@ function _ensureFullSession(sessionId, sess) {
     }
   }).catch(() => { delete state._fullSessionFetch[sess.full_id]; });
 }
+
+// ── Sessions toolbar tag filter ─────────────────────────────────────────────
+// The canonical order of the tag axes for the toolbar chip groups; axes
+// outside the list (custom axes) sort after, tags with no axis go under
+// the Other group.
+const _SESSION_TAG_AXIS_ORDER = ['project', 'automaton', 'automation', 'stage', 'kind', 'role', 'lane', 'backend', 'compute'];
+
+// How long a failed inventory load stays latched before _sessionTagInventoryRefresh
+// may retry on its own. An explicit invalidation (stale = true, set by a
+// sessions refresh or a tag_update frame) bypasses the latch, which is what
+// lets operator-initiated reloads retry immediately.
+const _TAG_INVENTORY_RETRY_MS = 60000;
+
+// _sessionTagInventoryFetch reads the tag inventory (GET /api/sessions/tags):
+// every tag a live or archived session carries, with its axis, value and the
+// session count. Cached in state so a toolbar paint never blocks on a
+// request. A failed load is recorded, not re-thrown: the cache ends up
+// loaded + failed, so a repaint can never re-queue the fetch, and the next
+// retry waits for _TAG_INVENTORY_RETRY_MS or an explicit stale mark.
+function _sessionTagInventoryFetch() {
+  return apiFetch('/api/sessions/tags').then(d => {
+    state._sessionTagInventory = { loaded: true, failed: false, stale: false, at: Date.now(), entries: (d && d.tags) || [] };
+  }).catch(() => {
+    const prev = state._sessionTagInventory || { entries: [] };
+    state._sessionTagInventory = { loaded: true, failed: true, stale: false, at: Date.now(), entries: prev.entries || [] };
+  });
+}
+
+// _sessionTagInventoryRefresh loads the inventory on first use and again
+// whenever it was marked stale (tag updates, session churn). It never
+// repaints on its own — the caller paints (or the load path does so once
+// the data arrives) — so it cannot feed back into itself. Concurrent
+// callers share one in-flight request, so a render, a save and a
+// tag_update in the same tick produce one request rather than one per call
+// site.
+function _sessionTagInventoryRefresh() {
+  const inv = state._sessionTagInventory;
+  if (inv && inv.loaded && !inv.stale) return Promise.resolve();
+  if (inv && inv.inflight) return inv.inflight;
+  if (inv && inv.failed && !inv.stale && Date.now() - (inv.at || 0) < _TAG_INVENTORY_RETRY_MS) return Promise.resolve();
+  const p = _sessionTagInventoryFetch().then(
+    () => { const cur = state._sessionTagInventory; if (cur) delete cur.inflight; },
+    () => { const cur = state._sessionTagInventory; if (cur) delete cur.inflight; });
+  state._sessionTagInventory = Object.assign({}, inv, { inflight: p });
+  return p;
+}
+
+// _sessionTagFilterPanelHTML draws the toolbar tag filter: chips grouped by
+// axis (canonical order, custom axes after, tags with no axis under Other),
+// each chip its value with the session count, plus the any/all mode and a
+// clear action. The selection lives in _tagBrowse.session, so the same
+// server-side tag query, client-side _sessionTagFilter and header Tags menu
+// all apply it. Empty before the inventory loads — the button is hidden
+// anyway until it arrives.
+function _sessionTagFilterPanelHTML() {
+  const inv = state._sessionTagInventory;
+  const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
+  if (!entries.length) return '';
+  const groups = {};
+  entries.forEach(e => { if (e && e.tag) (groups[e.axis || ''] = groups[e.axis || ''] || []).push(e); });
+  const axes = _SESSION_TAG_AXIS_ORDER.filter(a => (groups[a] || []).length);
+  axes.push(...Object.keys(groups).filter(a => a && !axes.includes(a)).sort((a, b) => a.localeCompare(b)));
+  const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
+  const label = e => {
+    if (e.axis) return escHtml(e.value);
+    const reg = (typeof _tagsState !== 'undefined' && _tagsState.byId) ? _tagsState.byId[e.tag] : null;
+    return escHtml((reg && reg.name) ? reg.name : e.tag);
+  };
+  const chip = e => {
+    const on = sel.indexOf(e.tag) >= 0;
+    return `<button type="button" class="backend-filter-badge ${on ? 'active' : ''}" title="${escHtml(t('session_tag_chip_tip', [e.tag, e.count || 0]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${label(e)}<span class="badge-count">${e.count || 0}</span></button>`;
+  };
+  const head = ax => `<span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text2);margin-left:6px;">${escHtml(ax)}</span>`;
+  const body = axes.map(a => head(a) + groups[a].map(chip).join('')).join('');
+  const other = groups[''] ? head(t('tag_filter_group_other')) + groups[''].map(chip).join('') : '';
+  const mode = (typeof _tagBrowseMode === 'function') ? _tagBrowseMode('session') : 'any';
+  const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
+  const actions = `<button type="button" class="backend-filter-badge ${mode === 'all' ? 'active' : ''}" title="${escHtml(t('tag_browse_mode_title'))}" aria-pressed="${mode === 'all'}" onclick="tagBrowseToggleMode('session')">${escHtml(modeLabel)}</button>` +
+    (sel.length ? `<button type="button" class="backend-filter-badge" title="${escHtml(t('session_tag_clear_tip'))}" onclick="tagBrowseClear('session')">${escHtml(t('tags_menu_clear'))}</button>` : '');
+  return body + other + `<span style="flex-basis:100%;display:flex;gap:4px;align-items:center;">${actions}</span>`;
+}
+
+// sessionTagChipToggle flips one inventory tag in the session tag selection.
+// Placement tags are their "axis:value" name, operator tags their registry
+// id; both travel through the same tag query and client-side filter.
+window.sessionTagChipToggle = function(tag) {
+  if (typeof _tagBrowse === 'undefined' || !_tagBrowse.session) return;
+  const sc = _tagBrowse.session;
+  const i = sc.sel.indexOf(tag);
+  if (i < 0) sc.sel.push(tag); else sc.sel.splice(i, 1);
+  _tagBrowseSave('session');
+  _tagBrowseRepaint('session');
+};
 
 function renderSessionsView() {
   const view = document.getElementById('view');
@@ -3403,6 +3516,23 @@ function renderSessionsView() {
     const isActive = chip === c.key;
     return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
   }).join('');
+  // Tag filter — chip list grouped by axis, drawn from the tag inventory
+  // (GET /api/sessions/tags). Shown only while some session carries a tag:
+  // an empty control would just be noise. Selection lives in
+  // _tagBrowse.session, so the server-side tag query, the client-side
+  // _sessionTagFilter and the header Tags menu all stay in step.
+  if (state._tagFilterOpen === undefined) state._tagFilterOpen = false;
+  const tagInv = state._sessionTagInventory;
+  const tagInvLoaded = !!(tagInv && tagInv.loaded);
+  const tagInvEntries = tagInvLoaded ? (tagInv.entries || []) : [];
+  let tagFilterBtn = '', tagFilterPanel = '';
+  if (tagInvLoaded && tagInvEntries.length > 0) {
+    const tagSel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
+    const tagBtnCount = tagSel.length || (tagInvLoaded ? tagInvEntries.length : state.sessions.length);
+    tagFilterBtn = `<button class="backend-filter-badge ${state._tagFilterOpen ? 'active' : ''}${tagSel.length ? ' active' : ''}" onclick="state._tagFilterOpen=!state._tagFilterOpen;renderSessionsView()" title="${escHtml(t('session_tag_filter_tip'))}">${escHtml(t('session_tag_filter_btn', [tagBtnCount]))} ${state._tagFilterOpen ? '▾' : '▸'}</button>
+    <a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+    tagFilterPanel = `<div class="tag-filter-chips filter-chips-collapse${state._tagFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
+  }
 
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
     <div class="session-filter-wrap" style="flex:1.1;">
@@ -3413,11 +3543,12 @@ function renderSessionsView() {
     </div>
     ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
     <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
+    ${tagFilterBtn}
     <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
     ${_sessionsGroupControl()}
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
     <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
-    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
+    ${tagFilterPanel}    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
       ${t('session_tree_btn')||'Tree'}
@@ -9507,6 +9638,13 @@ const DOCS_ONBOARDING_REPORT_LINKS = [
   [['onboarding_report.', 'settings_onboarding_report_', 'onboarding_report_'], DOCS_DEFINITIONS + '#onboarding-report'],
 ];
 
+// Placement tags: every row of the Placement tags group — the axis toggles
+// and the per-axis template fields — links to the placement-tags section of
+// the Automata tags howto, which owns the tag settings surface.
+const DOCS_PLACEMENT_TAGS_LINKS = [
+  [['autonomous.tags.placement.', 'settings_placement_'], 'howto/automata-tags.md#placement-tags-the-system-tags'],
+];
+
 // Post-ship hooks: the Post-ship hooks card settings and the card itself map
 // to sections of the Post-ship hooks howto. The first matching prefix wins,
 // so the specific ones come first. These keys sit under
@@ -9568,6 +9706,9 @@ function docsLinkForKey(key) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_PLACEMENT_TAGS_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   return null;
@@ -18494,6 +18635,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.auto_tags.kind_labels', label: 'Kind labels (kind:label, comma-separated)', labelKey: 'settings_auto_tags_kind_labels', type: 'text', placeholder: 'feature:feature, bug:bug, other:maintenance', default: 'feature:feature, bug:bug, other:maintenance' },
     // Placement tags — machine-derived system tags, one per axis
     // (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
+    // automaton:<id>, automation:<name>, stage:<stage>, kind:<label>,
     // project:<name>). Stamped on every session the machine creates so the
     // session list, dashboard and Gantt can group and filter by axis.
     { label: 'Placement tags', labelKey: 'settings_placement_group', type: 'group', hintKey: 'settings_placement_group_help' },
@@ -18503,12 +18645,20 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.tags.placement.backend.enabled', label: 'backend axis', labelKey: 'settings_placement_backend', type: 'toggle' },
     { key: 'autonomous.tags.placement.lane.enabled', label: 'lane axis', labelKey: 'settings_placement_lane', type: 'toggle' },
     { key: 'autonomous.tags.placement.role.enabled', label: 'role axis', labelKey: 'settings_placement_role', type: 'toggle' },
-    { key: 'autonomous.tags.placement.project.enabled', label: 'project axis', labelKey: 'settings_placement_project', type: 'toggle' },
+    { key: 'autonomous.tags.placement.automaton.enabled', label: 'Automaton axis', labelKey: 'settings_placement_automaton', type: 'toggle', helpKey: 'settings_placement_automaton_help', docsKey: 'autonomous.tags.placement.automaton.enabled' },
+    { key: 'autonomous.tags.placement.automation.enabled', label: 'Automation axis', labelKey: 'settings_placement_automation', type: 'toggle', helpKey: 'settings_placement_automation_help', docsKey: 'autonomous.tags.placement.automation.enabled' },
+    { key: 'autonomous.tags.placement.stage.enabled', label: 'stage axis', labelKey: 'settings_placement_stage', type: 'toggle', helpKey: 'settings_placement_stage_help', docsKey: 'autonomous.tags.placement.stage.enabled' },
+    { key: 'autonomous.tags.placement.kind.enabled', label: 'kind axis', labelKey: 'settings_placement_kind', type: 'toggle', helpKey: 'settings_placement_kind_help', docsKey: 'autonomous.tags.placement.kind.enabled' },
+    { key: 'autonomous.tags.placement.project.enabled', label: 'project axis', labelKey: 'settings_placement_project', type: 'toggle', default: true },
     { key: 'autonomous.tags.placement.compute.template', label: 'compute tag template', labelKey: 'settings_placement_compute_template', type: 'text', placeholder: 'compute:auto' },
     { key: 'autonomous.tags.placement.peer.template', label: 'peer tag template', labelKey: 'settings_placement_peer_template', type: 'text', placeholder: 'peer:auto' },
     { key: 'autonomous.tags.placement.backend.template', label: 'backend tag template', labelKey: 'settings_placement_backend_template', type: 'text', placeholder: 'backend:auto' },
     { key: 'autonomous.tags.placement.lane.template', label: 'lane tag template', labelKey: 'settings_placement_lane_template', type: 'text', placeholder: 'lane:auto' },
     { key: 'autonomous.tags.placement.role.template', label: 'role tag template', labelKey: 'settings_placement_role_template', type: 'text', placeholder: 'role:auto' },
+    { key: 'autonomous.tags.placement.automaton.template', label: 'Automaton tag template', labelKey: 'settings_placement_automaton_template', type: 'text', placeholder: 'automaton:{automaton}', helpKey: 'settings_placement_automaton_help', docsKey: 'autonomous.tags.placement.automaton.template' },
+    { key: 'autonomous.tags.placement.automation.template', label: 'Automation tag template', labelKey: 'settings_placement_automation_template', type: 'text', placeholder: 'automation:{automation}', helpKey: 'settings_placement_automation_help', docsKey: 'autonomous.tags.placement.automation.template' },
+    { key: 'autonomous.tags.placement.stage.template', label: 'stage tag template', labelKey: 'settings_placement_stage_template', type: 'text', placeholder: 'stage:{stage}', helpKey: 'settings_placement_stage_help', docsKey: 'autonomous.tags.placement.stage.template' },
+    { key: 'autonomous.tags.placement.kind.template', label: 'kind tag template', labelKey: 'settings_placement_kind_template', type: 'text', placeholder: 'kind:{kind}', helpKey: 'settings_placement_kind_help', docsKey: 'autonomous.tags.placement.kind.template' },
     { key: 'autonomous.tags.placement.project.template', label: 'project tag template', labelKey: 'settings_placement_project_template', type: 'text', placeholder: 'project:auto' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
@@ -47635,11 +47785,17 @@ function _sessionTagsRefresh() {
       .then(full => { if (full && full.full_id) { delete full.truncated_fields; applySessionUpdate(full); } })
       .catch(() => {});
   }
-  return Promise.all([_tagsLoad(true), rows]).then(() => _sessionTagsRepaint());
+  // A tag_update frame means the counts behind the toolbar chips may have
+  // changed, so the cached inventory is invalidated (which also clears the
+  // failed latch) and reloaded in the same tick.
+  if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
+  return Promise.all([_tagsLoad(true), rows, _sessionTagInventoryRefresh()]).then(() => _sessionTagsRepaint());
 }
 
 // _sessionTagsRepaint redraws whichever session view is on screen from the
-// sessions held in state.
+// sessions held in state. It never fetches on its own: the caller (the
+// tag_update handler, the save flow) is responsible for whatever has to be
+// reloaded, so a repaint can not feed back into itself.
 function _sessionTagsRepaint() {
   _tagsMenuRefresh();
   if (state.activeView === 'sessions') renderSessionsView();

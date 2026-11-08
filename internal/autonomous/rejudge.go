@@ -56,6 +56,7 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, back
 		return GuardrailVerdict{}, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
 	}
 	inv, resErr := m.prdRulesReviewInvocation(ctx, prd)
+	inv.Rejudge = true // re-judgment of the same rules-review decision (not a first judgment) — launch-tag only, see GuardrailInvocation.Rejudge
 	backend = strings.TrimSpace(backend)
 	if resErr != nil && backend == "" {
 		// v9.10.18 — no judge model resolvable at any level: loud,

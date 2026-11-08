@@ -52,6 +52,10 @@ type heldQuestionOpenEntry struct {
 	RecommendedOption string     `json:"recommended_option,omitempty"`
 	Default           string     `json:"default,omitempty"`
 	CreatedAt         *time.Time `json:"created_at,omitempty"`
+	// SystemTags is the placement-derived tag set the held question
+	// carries (the fact of the Automaton its PRDID names); it is what the
+	// project / automation / automaton query filters match against.
+	SystemTags []string `json:"system_tags,omitempty"`
 }
 
 // heldQuestionShadowEntry is one shadow note the daemon logged for a held
@@ -59,9 +63,13 @@ type heldQuestionOpenEntry struct {
 // option it recommends and when the note landed.
 type heldQuestionShadowEntry struct {
 	PRDID             string    `json:"prd_id"`
-	State             string     `json:"state"`
+	State             string    `json:"state"`
 	RecommendedOption string    `json:"recommended_option,omitempty"`
 	At                time.Time `json:"at"`
+	// SystemTags is the placement-derived tag set of the Automaton the note
+	// belongs to, the same fact its open-question sibling derives; it is
+	// what the project / automation / automaton query filters match against.
+	SystemTags []string `json:"system_tags,omitempty"`
 }
 
 // heldQuestionsResponse is the full report: the mode in effect and the
@@ -111,6 +119,16 @@ func (s *Server) handleHeldQuestions(w http.ResponseWriter, r *http.Request) {
 			strings.Join(config.AllHeldStates, ", "), stateFilter), http.StatusBadRequest)
 		return
 	}
+	// The object tag selection — the repeatable tag / tag_id with the
+	// tag_match any|all rule and the project / automation / automaton
+	// shortcuts — narrows both views against the tags each entry carries;
+	// an entry with no axes (no project, no Automation) is absent from any
+	// such result.
+	tagSel, terr := objectTagSelectionFromRequest(r)
+	if terr != nil {
+		http.Error(w, terr.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// One pass over every Automaton feeds both views: the PRD lookup enriches
 	// the open entries with the owning Automation name and the Automaton
@@ -140,7 +158,11 @@ func (s *Server) handleHeldQuestions(w http.ResponseWriter, r *http.Request) {
 			if !ok || (stateFilter != "" && entry.State != stateFilter) {
 				continue
 			}
+			if !tagSel.MatchesObjectTags(p.SystemTags, nil) {
+				continue
+			}
 			entry.PRDID = p.ID
+			entry.SystemTags = p.SystemTags
 			shadow = append(shadow, entry)
 		}
 	}
@@ -157,6 +179,9 @@ func (s *Server) handleHeldQuestions(w http.ResponseWriter, r *http.Request) {
 		if stateFilter != "" && state != stateFilter {
 			continue
 		}
+		if !tagSel.MatchesObjectTags(q.SystemTags, nil) {
+			continue
+		}
 		entry := heldQuestionOpenEntry{
 			QuestionID: q.ID,
 			State:      state,
@@ -165,6 +190,7 @@ func (s *Server) handleHeldQuestions(w http.ResponseWriter, r *http.Request) {
 			Reason:     heldQuestionReason(q.Text),
 			Default:    q.Default,
 			CreatedAt:  q.CreatedAt,
+			SystemTags: q.SystemTags,
 		}
 		if q.Recommendation != nil {
 			entry.RecommendedOption = q.Recommendation.OptionID

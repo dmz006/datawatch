@@ -83,8 +83,10 @@ func hasPeerTag(tags []string) bool {
 
 // TestPlacementTags_LocalNode: a task that lands on a local node takes the
 // compute tag for that node — resolved through the fake node chooser — and
-// no peer tag, because the work runs on the daemon's own machine. The
-// backend, lane, role and project axes ride along by default.
+// no peer tag, because the work runs on the daemon's own machine. Every fact
+// the placement carries — backend, lane, role, project, and the
+// automation-context facts (Automaton, Automation, stage, kind) — rides
+// along as a tag by default.
 func TestPlacementTags_LocalNode(t *testing.T) {
 	store := &fakePlacementStore{}
 	node, _ := newFakeNodeChooser()
@@ -95,13 +97,19 @@ func TestPlacementTags_LocalNode(t *testing.T) {
 		Lane:       "gpu",
 		Role:       "worker",
 		Project:    "datawatch",
-		Automation: "prd1",
+		Automaton:  "prd1",
+		Automation: "auto1",
+		Stage:      "build",
+		Kind:       "task",
 	}
 	if err := ApplyPlacementTags(store, node, "task1", "sess1", p, pc); err != nil {
 		t.Fatalf("ApplyPlacementTags: %v", err)
 	}
 	tags := store.tags("sess1")
-	for _, want := range []string{"compute:node-a", "backend:pi", "lane:gpu", "role:worker"} {
+	// Every axis with a fact is on by default (config.DefaultPlacementConfig),
+	// project and the automation-context axes included.
+	for _, want := range []string{"compute:node-a", "backend:pi", "lane:gpu", "role:worker",
+		"project:datawatch", "automaton:prd1", "automation:auto1", "stage:build", "kind:task"} {
 		if !store.has("sess1", want) {
 			t.Fatalf("placement tag %q missing; got %q", want, tags)
 		}
@@ -109,12 +117,35 @@ func TestPlacementTags_LocalNode(t *testing.T) {
 	if hasPeerTag(tags) {
 		t.Fatalf("local work must not yield a peer tag, got %q", tags)
 	}
-	// The project axis is off by default (config.DefaultPlacementConfig); when
-	// the operator turns it on, the tag follows the placement.
-	projPC := pc
-	projPC.Project.Enabled = true
-	if got := DerivePlacementTags(p, projPC); !listContains(got, "project:datawatch") {
-		t.Fatalf("project tag missing once the axis is enabled; got %q", got)
+	// When the operator turns an axis off, only that axis's tag stops being
+	// derived — the other facts still take their tags. The direct-derive
+	// placement below carries the node fact itself, because the node chooser
+	// only resolves on the ApplyPlacementTags path.
+	d := p
+	d.Node = "node-a"
+	offPC := pc
+	offPC.Project.Enabled = false
+	got := DerivePlacementTags(d, offPC)
+	if listContains(got, "project:datawatch") {
+		t.Fatalf("project tag must be gone once the axis is disabled; got %q", got)
+	}
+	for _, want := range []string{"compute:node-a", "backend:pi", "lane:gpu", "role:worker",
+		"automaton:prd1", "automation:auto1", "stage:build", "kind:task"} {
+		if !listContains(got, want) {
+			t.Fatalf("disabling the project axis must drop only its own tag; %q missing from %q", want, got)
+		}
+	}
+
+	// Same contract on another axis: the stage tag is the only casualty of
+	// turning the stage axis off.
+	offStage := pc
+	offStage.Stage.Enabled = false
+	got = DerivePlacementTags(d, offStage)
+	if listContains(got, "stage:build") {
+		t.Fatalf("stage tag must be gone once the axis is disabled; got %q", got)
+	}
+	if !listContains(got, "kind:task") || !listContains(got, "automaton:prd1") {
+		t.Fatalf("disabling the stage axis must keep the other tags; got %q", got)
 	}
 }
 
@@ -139,11 +170,11 @@ func TestPlacementTags_RetryOnAnotherNode(t *testing.T) {
 
 	// First placement: node-a, on a remote peer.
 	first := Placement{
-		Node:  "",
-		Peer:  "peerA",
+		Node:    "",
+		Peer:    "peerA",
 		Backend: "claude",
-		Lane:  "claude",
-		Role:  "worker",
+		Lane:    "claude",
+		Role:    "worker",
 		Project: "datawatch",
 	}
 	if err := ApplyPlacementTags(store, node, "task1", "sess1", first, pc); err != nil {

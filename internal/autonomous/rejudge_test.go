@@ -13,20 +13,21 @@ import (
 // and returns one fixed (verdict, error) pair, so a test can assert both
 // the judgment's effect and whether the judge was asked at all.
 type rejudgeJudge struct {
-	calls       int
-	v           GuardrailVerdict
-	err         error
-	lastBackend string
-	lastPinned  bool
+	calls        int
+	v            GuardrailVerdict
+	err          error
+	lastBackend  string
+	lastPinned   bool
+	lastRejudge  bool // the invocation's Rejudge mark (launch-kind tag for the judge one-shot)
 }
 
 func (r *rejudgeJudge) fn(_ context.Context, inv GuardrailInvocation) (GuardrailVerdict, error) {
 	r.calls++
 	r.lastBackend = inv.GuardrailBackend
 	r.lastPinned = inv.GuardrailPinned
+	r.lastRejudge = inv.Rejudge
 	return r.v, r.err
 }
-
 // newRejudgePassJudge / newRejudgeBlockJudge build the fixed verdict the
 // fake returns, following newRecordedVerdictJudge's pattern: the verdict
 // carries a judge session id and a JudgeOutputPath pointing at a real
@@ -471,6 +472,42 @@ func TestRejudgeRerouteEnablesRunWhenNoTierResolves(t *testing.T) {
 	}
 	if rec.calls != 1 {
 		t.Fatalf("judge calls = %d, want 1 (the reroute names the backend directly)", rec.calls)
+	}
+}
+
+// TestRejudgeInvocationCarriesRejudgeMark — the re-judgment invocation
+// (RejudgeCompletionGuardrail → judgeCompletionRulesReview) carries
+// Rejudge=true while a first rules-review judgment does not: the launch
+// side tags the one-shot judge session launch_kind rejudge versus review
+// on that mark (2026-11-06-automata-pages-redesign.md §12). The mark is
+// a launch-tag fact only — the judgment itself runs the identical path.
+func TestRejudgeInvocationCarriesRejudgeMark(t *testing.T) {
+	// First judgment — unmarked.
+	mFirst, prdFirst := newRulesReviewVerdictPRD(t)
+	first := newRecordedVerdictJudge(t, "pass")
+	mFirst.SetGuardrail(first.fn)
+	if _, _, err := mFirst.runPRDCompletionRulesReview(context.Background(), prdFirst); err != nil {
+		t.Fatalf("runPRDCompletionRulesReview: %v", err)
+	}
+	if len(first.invs) != 1 {
+		t.Fatalf("first-judgment judge calls = %d, want 1", len(first.invs))
+	}
+	if first.invs[0].Rejudge {
+		t.Errorf("first-judgment invocation Rejudge = true, want false")
+	}
+
+	// Re-judgment of the same decision — marked.
+	mRe, prdRe, _ := newRejudgeBlockedPRD(t, TaskCompleted, TaskCompleted)
+	rj := newRejudgePassJudge(t)
+	mRe.SetGuardrail(rj.fn)
+	if _, err := mRe.RejudgeCompletionGuardrail(context.Background(), prdRe.ID, "operator", ""); err != nil {
+		t.Fatalf("RejudgeCompletionGuardrail: %v", err)
+	}
+	if rj.calls != 1 {
+		t.Fatalf("re-judgment judge calls = %d, want 1", rj.calls)
+	}
+	if !rj.lastRejudge {
+		t.Errorf("re-judgment invocation Rejudge = false, want true")
 	}
 }
 

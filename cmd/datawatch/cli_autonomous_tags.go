@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
@@ -52,6 +54,11 @@ func newAutonomousTagListCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&counts, "counts", false, "add subtree and direct counts (Automata and sessions) per tag, plus an untagged total")
 	cmd.Flags().StringVar(&system, "system", "", "true or false: keep only the system tags (true) or only the operator tags (false); omit to keep every tag")
 	cmd.Flags().StringVar(&axis, "axis", "", "keep only the tags of one placement axis (e.g. lane), i.e. its \"<axis>:<value>\" names; omit to keep every axis")
+	// The sweep is the \"apply the in-force tag settings to what already
+	// exists\" pass; it hangs under the tags group so both
+	// `datawatch autonomous tags sweep` and `datawatch autonomous
+	// tag-list sweep` reach it.
+	cmd.AddCommand(newAutonomousTagsSweepCmd())
 	return cmd
 }
 
@@ -187,15 +194,21 @@ func newAutonomousPRDSetTagsCmd() *cobra.Command {
 	return cmd
 }
 
-// newSessionTagsCmd sets the tags a session carries itself. Inherited tags
-// come from the owning Automaton and are not set here.
+// newSessionTagsCmd lists the tags sessions carry with counts (no session
+// id), or replaces the tags a session itself carries (with a session id and
+// --tags; an empty --tags value clears them). Inherited tags come from the
+// owning Automaton and are not set here.
 func newSessionTagsCmd() *cobra.Command {
 	var tags string
+	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "tags <session-id> --tags <id1,id2,...>",
-		Short: "Replace the tags a session carries itself (an empty --tags value clears them)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "tags [session-id] [--tags <id1,id2,...>]",
+		Short: "List the tags sessions carry (with counts), or replace the tags a session itself carries (--tags <ids>; empty clears)",
+		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return runSessionTagInventory(asJSON)
+			}
 			if !cmd.Flags().Changed("tags") {
 				return cmd.Usage()
 			}
@@ -204,7 +217,51 @@ func newSessionTagsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tag IDs (empty clears)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "for the listing: print the raw JSON reply instead of the table")
 	return cmd
+}
+
+// sessionTagEntry is one row of the GET /api/sessions/tags reply: one tag
+// name and how many sessions (live or archived) carry it.
+type sessionTagEntry struct {
+	Tag   string `json:"tag"`
+	Axis  string `json:"axis"`
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+// runSessionTagInventory fetches GET /api/sessions/tags and prints the tag
+// names with their counts; --json prints the raw reply.
+func runSessionTagInventory(asJSON bool) error {
+	body, err := daemonJSONBody(http.MethodGet, "/api/sessions/tags", nil)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		_, err = os.Stdout.Write(append(body, '\n'))
+		return err
+	}
+	var reply struct {
+		Tags []sessionTagEntry `json:"tags"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		fmt.Println(strings.TrimSpace(string(body)))
+		return nil
+	}
+	if len(reply.Tags) == 0 {
+		fmt.Println("no tags on any session")
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "TAG\tAXIS\tVALUE\tCOUNT"); err != nil {
+		return err
+	}
+	for _, e := range reply.Tags {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", e.Tag, e.Axis, e.Value, e.Count); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }
 
 // parseTagIDList splits a comma-separated tag-ID list, dropping blanks. An
@@ -266,4 +323,109 @@ func registryObjectFromTagsReply(body []byte) ([]byte, error) {
 		return nil, fmt.Errorf("tags reply has no registry object")
 	}
 	return reply.Registry, nil
+}
+
+// tagsSweepTally is one kind's row of the tag sweep's reply (POST
+// /api/autonomous/tags/sweep): how many objects of that kind the sweep read,
+// re-derived, left alone or failed to write.
+type tagsSweepTally struct {
+	Examined  int `json:"examined"`
+	Changed   int `json:"changed"`
+	Unchanged int `json:"unchanged"`
+	Failed    int `json:"failed"`
+}
+
+// tagsSweepResult is the sweep's reply as the daemon sends it (the
+// autonomous.SweepResult): one tally per kind of object the sweep covers.
+type tagsSweepResult struct {
+	Sessions        tagsSweepTally `json:"sessions"`
+	Automata        tagsSweepTally `json:"automata"`
+	Automations     tagsSweepTally `json:"automations"`
+	Tasks           tagsSweepTally `json:"tasks"`
+	Templates       tagsSweepTally `json:"templates"`
+	DecisionRecords tagsSweepTally `json:"decision_records"`
+	Questions       tagsSweepTally `json:"questions"`
+}
+
+// printTagSweepTally renders the sweep's reply as a short per-kind table:
+// one row per kind with its examined / changed / unchanged / failed counts.
+func printTagSweepTally(body []byte) error {
+	var res tagsSweepResult
+	if err := json.Unmarshal(body, &res); err != nil {
+		return fmt.Errorf("decode sweep result: %w", err)
+	}
+	rows := []struct {
+		name string
+		c    tagsSweepTally
+	}{
+		{"sessions", res.Sessions},
+		{"automata", res.Automata},
+		{"automations", res.Automations},
+		{"tasks", res.Tasks},
+		{"templates", res.Templates},
+		{"decision records", res.DecisionRecords},
+		{"held questions", res.Questions},
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "KIND\tEXAMINED\tCHANGED\tUNCHANGED\tFAILED"); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", r.name, r.c.Examined, r.c.Changed, r.c.Unchanged, r.c.Failed); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
+}
+
+// newAutonomousTagsSweepCmd is the `tags sweep` subcommand (registered under
+// the tag-list command, so it is reachable as `autonomous tags sweep` and
+// `autonomous tag-list sweep`): apply the in-force tag settings to every
+// existing Automata session and record and print the per-kind tally. The
+// daemon does the whole pass (POST /api/autonomous/tags/sweep); this command
+// only sends dry_run and renders the reply. `--json` prints the reply
+// (the SweepResult) untouched; the default prints the short per-kind table.
+func newAutonomousTagsSweepCmd() *cobra.Command {
+	var dryRun, asJSON bool
+	cmd := &cobra.Command{
+		Use:   "sweep",
+		Short: "Apply the in-force tag settings to every existing Automata session and record",
+		Long: `Apply the in-force tag settings (autonomous.tags.placement) to
+everything that already exists under them: one pass over every session and
+record the Automata own, re-deriving each one's system tags from its stored
+facts. Turning an axis off removes that axis's tag from everything; turning
+it on adds it where the fact exists.
+
+The daemon does the whole pass; this command only sends dry_run and prints
+the per-kind tally it answers with (sessions, automata, automations, tasks,
+templates, decision records and held questions — each with examined,
+changed, unchanged and failed counts).
+
+Safe to run any time: it only ever writes the derived system tags (the
+operator's own tags are a separate field that never changes) and a second
+pass changes nothing. Use --dry-run to see the tally a run would produce
+without writing a single tag, then run it for real.
+
+--json prints the reply (the SweepResult) as JSON; the default prints the
+short per-kind table.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			path := autonomousTagsPath + "/sweep"
+			if dryRun {
+				path += "?dry_run=true"
+			}
+			body, err := daemonJSONBody(http.MethodPost, path, nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = os.Stdout.Write(append(body, '\n'))
+				return err
+			}
+			return printTagSweepTally(body)
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report the tally without writing any tag")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the SweepResult reply as JSON instead of the table")
+	return cmd
 }

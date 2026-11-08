@@ -4810,7 +4810,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
 			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
-				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
+				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
+				launchTagsForDecompose(req.PRDID))
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// One live-config snapshot for this invocation (see
@@ -6380,7 +6381,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				sessionTask := sessionJudgmentTask(deliverPrompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode,
+					launchTagsForVerify(prd.ID, task.StoryID))
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -6556,7 +6558,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							sessionTask := sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)
 							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode)
+								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
+								launchTagsForJudge(req.PRDID, req.Rejudge))
 							if serr != nil {
 								att.TimedOut = isOneShotTimeout(serr)
 								// BL410 Phase 0 — the SESSION itself failed (timeout,
@@ -7362,6 +7365,26 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				log.Printf("[autonomous] placement tags backfill: %d of %d lease tag writes failed", res.Failed, res.Leases)
 			} else if res.Backfilled > 0 {
 				log.Printf("[autonomous] placement tags backfill: restored system tags on %d running session(s)", res.Backfilled)
+			}
+			// Tag sweep — once per tags.placement settings change: re-derive the
+			// system tags of every existing session and record under the live
+			// block ("anything we can tag should be tagged"), guarded by a done
+			// marker holding the settings hash it last ran against, so a restart
+			// with unchanged settings does not repeat the pass and a settings
+			// change does.
+			if swept, res, err := amgr.SweepTagsOnce(autonomouspkg.PlacementSettingsHash(cfg.Autonomous.Tags.Placement)); err != nil {
+				log.Printf("[autonomous] tag sweep: marker write: %v", err)
+			} else if swept {
+				log.Printf("[autonomous] tag sweep: sessions %d/%d changed, automata %d/%d, automations %d/%d, tasks %d/%d, templates %d/%d, decision records %d/%d, questions %d/%d",
+					res.Sessions.Changed, res.Sessions.Examined,
+					res.Automata.Changed, res.Automata.Examined,
+					res.Automations.Changed, res.Automations.Examined,
+					res.Tasks.Changed, res.Tasks.Examined,
+					res.Templates.Changed, res.Templates.Examined,
+					res.DecisionRecords.Changed, res.DecisionRecords.Examined,
+					res.Questions.Changed, res.Questions.Examined)
+			} else {
+				log.Printf("[autonomous] tag sweep: settings unchanged since last sweep, skipping")
 			}
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
@@ -11850,7 +11873,11 @@ func newConfigSetCmd() *cobra.Command {
 			"plugins.services.backlog_growth_pulls (>= 1), plugins.services.node_load_ratio (> 0), " +
 			"plugins.services.small_model_max_params_billions (> 0), plugins.services.small_model_context_tokens (>= 1), " +
 			"plugins.services.per_service.<service> (attach_only|managed; empty clears it) — the daemon validates " +
-			"each against the same rules a config load runs and refuses a value that breaks the block.",
+			"each against the same rules a config load runs and refuses a value that breaks the block.\n\n" +
+			"Automata placement tag keys: autonomous.tags.placement.enabled (true|false; the master switch), " +
+			"and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind) " +
+			"autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template " +
+			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -12222,6 +12249,11 @@ func newSessionCmd() *cobra.Command {
 	var listTagMatch string
 	sessionListCmd.Flags().StringArrayVar(&listTags, "tag", nil, "filter to sessions carrying this tag (repeatable); own or inherited from the Automaton that spawned it")
 	sessionListCmd.Flags().StringVar(&listTagMatch, "tag-match", "", "match at least one --tag (any, default) or every --tag (all)")
+	// Axis shortcuts: each adds one "<axis>:<value>" tag, combined with --tag
+	// under the same --tag-match rule.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role"} {
+		sessionListCmd.Flags().String(axis, "", "axis shortcut: filter by tag "+axis+":<value> (same as --tag "+axis+":<value>)")
+	}
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"

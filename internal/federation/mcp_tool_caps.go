@@ -577,6 +577,7 @@ var MCPToolCap = map[string]string{
 	"session_rollback":                    CapSessionsWrite,
 	"session_set_state":                   CapSessionsWrite,
 	"session_summarize":                   CapSessionsWrite,
+	"session_tag_list":                    CapSessionsList,
 	"session_timeline":                    CapSessionsRead,
 	"sessions_stale":                      CapSessionsList,
 	"set_identity":                        CapConfigWrite,
@@ -627,6 +628,8 @@ var MCPToolCap = map[string]string{
 	// Automata tag registry status and note dismissal.
 	"autonomous_tag_registry_status":       CapAutonomousRead,
 	"autonomous_tag_registry_dismiss_note": CapAutonomousWrite,
+	// Automata tag sweep: re-derives existing objects' system tags.
+	"autonomous_tag_sweep": CapAutonomousWrite,
 }
 
 // RequiredCapForMCPTool returns the capability required to invoke

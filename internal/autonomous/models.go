@@ -351,6 +351,11 @@ type PRD struct {
 	// before BL451; load tolerates the missing field.
 	Rev   int     `json:"rev,omitempty"`
 	Story []Story `json:"stories,omitempty"` // populated after Decompose
+	// SystemTags is the placement-derived tag set this Automaton carries
+	// (project, Automation, itself): derived by ObjectTagsForPRD under
+	// the daemon's tags.placement block. Empty = no project or automation
+	// to name, or the tags not yet derived.
+	SystemTags []string `json:"system_tags,omitempty"`
 
 	// BL191 Q1 (v5.2.0) — review/approve gate. Manager.Run refuses
 	// unless Status == PRDApproved (or the legacy PRDActive for back-
@@ -869,6 +874,16 @@ type Template struct {
 	UpdatedAt   time.Time     `json:"updated_at"`
 	LastUsedAt  *time.Time    `json:"last_used_at,omitempty"`
 	UseCount    int           `json:"use_count,omitempty"`
+	// SourcePRDID is the Automaton this template was cloned from ('pr-' id).
+	// Empty = none recorded (a hand-written or built-in template), and
+	// object-tag derivation then names no axes and derives no tags.
+	SourcePRDID string `json:"source_prd_id,omitempty"`
+	// SystemTags is the placement-derived tag set this template carries:
+	// the fact of the Automaton it was cloned from (that Automaton's
+	// project, Automation and itself), derived by ObjectTagsForTemplate
+	// under the daemon's tags.placement block. Empty = no source Automaton
+	// recorded, the Automaton gone, not yet derived, or the tags disabled.
+	SystemTags []string `json:"system_tags,omitempty"`
 }
 
 // ExtractVars scans spec for {{var_name}} placeholders and returns
@@ -1197,6 +1212,12 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// SystemTags is the placement-derived tag set this task carries (its
+	// Automaton's project, Automation and Automaton, plus the stage the
+	// Automaton's member slot carries): derived by ObjectTagsForTask under
+	// the daemon's tags.placement block. Empty = nothing to name, or the
+	// tags not yet derived.
+	SystemTags []string `json:"system_tags,omitempty"`
 	// Per-task LLM overrides — empty = inherit from PRD then global.
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
