@@ -1614,6 +1614,11 @@ curl http://localhost:8080/api/sessions | jq '.[] | {id,state,task}'
 only the newest ended sessions kept); `?states=active` and
 `?since=<RFC3339|unix>` narrow it further. See
 [api/sessions.md](api/sessions.md#compact-session-list-viewsummary).
+Each summary row also carries the session's chips — its own `tags`, the
+inherited `inherited_tags` and the placement `system_tags` (see
+[howto/automata-tags.md](howto/automata-tags.md#placement-tags-the-system-tags))
+— which is what lets the PWA draw the placement chips on the session cards
+at first load of the Sessions page, without a fetch of each full record:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
