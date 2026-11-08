@@ -108,7 +108,7 @@ you already have a daemon you can talk to.
 | [Alert Rules](alert-rules.md) | Create and manage threshold-based alert rules; firings log; PWA + Android + CLI/REST/MCP |
 | [Result Panel](result-panel.md) | Scheduled jobs post structured results (status, metrics, tables, history); Status tab panel + Integration status dashboard card; CLI / REST / MCP / comm read surfaces |
 | [Native ACME / Let's Encrypt](letsencrypt-acme.md) | Daemon obtains + auto-renews its own browser-trusted TLS cert; HTTP-01, staging-first, no DNS management; PWA + CLI/REST/MCP/comm |
-| [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab, CLI / REST / MCP / comm surfaces, mobile push |
+| [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab (meta row with the round `?` help link), CLI / REST / MCP / comm surfaces, mobile push |
 | [Channel Routing](channel-routing.md) | Route inbound channel messages (Telegram, Signal, …) to federation peers via pattern rules; owner_peer attribution on sessions + PRDs |
 | [File Service](file-service.md) | Upload, list, and delete files across federation peers; peers/ and discussions/ subdirs; config:read/write caps |
 | [Discussion Scopes](discussion-scopes.md) | Per-discussion memory namespaces with WAL, federated sync, conflict detection, and 60 ops/min throttle |

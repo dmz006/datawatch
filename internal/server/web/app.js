@@ -1262,7 +1262,7 @@ function apiFetch(path, opts = {}) {
 }
 
 // ── listLoader: shared load-state helper for list views ─────────────────────
-// listLoader({key, url, render, el, pollMs, timeoutMs}) owns the whole
+// listLoader({key, url, render, el, pollMs, timeoutMs, metaExtra}) owns the whole
 // loading lifecycle of one list: an immediate skeleton + localized "Loading"
 // label, the last good response for `key` from localStorage (badged "cached"
 // with its age) while the fresh request runs, a ticking "Last updated N s
@@ -1271,6 +1271,9 @@ function apiFetch(path, opts = {}) {
 // older than pollMs and no first load is in flight. A superseded request is
 // aborted (AbortController) and a sequence number guards late responses.
 // render(data) must return an HTML string; el is an element or element id.
+// Optional metaExtra(data) returns an HTML string (e.g. a link) rendered on
+// the right of the meta row; when it is absent or returns empty HTML the
+// meta row keeps exactly its default markup.
 // Each loader is independent, so listLoaderAll([a, b]) loads several in
 // parallel and one failure never blanks the others (load() never rejects).
 const LIST_CACHE_PREFIX = 'cs_list_';
@@ -1325,7 +1328,21 @@ function listLoader(opts) {
       meta += `<span class="list-state-age" data-list-age="1">${escHtml(ageText())}</span>`;
       if (st.loading) meta += ` <span class="list-state-refreshing">${escHtml(t('loading'))}</span>`;
       if (isStale()) meta += ` <span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
-      h += `<div class="list-state-meta">${meta}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+      let extra = '';
+      if (typeof opts.metaExtra === 'function') {
+        // A throwing or non-string metaExtra must never break the paint;
+        // it just falls back to the default meta row.
+        try { extra = String(opts.metaExtra(st.data) || ''); } catch (e) { extra = ''; }
+      }
+      if (extra) {
+        // metaExtra row: the meta spans wrapped in one main span (left), the
+        // loader's extra HTML after it (right). .list-state-meta-row styles
+        // the split; without metaExtra the markup stays byte-identical to
+        // the default row below.
+        h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+      } else {
+        h += `<div class="list-state-meta">${meta}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+      }
     }
     return h;
   }
@@ -39141,23 +39158,36 @@ function _alertsBuildHtml(result) {
   return tabsRow + topBar + bodyHTML + moreHTML;
 }
 
+// The alerts help link: the "?" round glyph in the top-right of the Alerts
+// tab, pointing at the Alerts howto. Rendered through the loader's metaExtra
+// option (see listLoader) so it sits on the meta row and keeps its tap target
+// via the .alerts-help-link coarse-pointer rule in style.css.
+function _alertsHelpLinkHtml() {
+  return `<a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" class="alerts-help-link" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+}
+// The loader is cached per key in window._listLoaders, so build it through
+// this helper: the first call creates it (with the metaExtra help link), and
+// later calls return the cached loader, so the link never drops off.
+function _alertsLoader(server) {
+  const lkey = 'alerts:' + (server || 'local');
+  const cur = window._listLoaders && window._listLoaders[lkey];
+  if (cur) return cur;
+  return listLoader({
+    key: lkey, el: 'alertsList', pollMs: 30000,
+    fetch: _alertsFetch, render: _alertsBuildHtml,
+    metaExtra: () => _alertsHelpLinkHtml(),
+    active: () => !!document.getElementById('alertsList'),
+  });
+}
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `<div class="view-content">
-    <div style="display:flex;justify-content:flex-end;padding:6px 12px 0;">
-      <a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
-    </div>
     <div id="alertsList" style="padding:12px;"></div></div>`;
   _injectServerPickerBar(view, renderAlertsView); // BL312 S3
   // Cached alerts paint at once with a "Cached" badge; the fetch runs behind
   // them and a failure shows a banner with Retry above whatever is cached.
-  const lkey = 'alerts:' + (state.activeServer || 'local');
-  const ctl = window._listLoaders[lkey] || listLoader({
-    key: lkey, el: 'alertsList', pollMs: 30000,
-    fetch: _alertsFetch, render: _alertsBuildHtml,
-    active: () => !!document.getElementById('alertsList'),
-  });
+  const ctl = _alertsLoader(state.activeServer || 'local');
   ctl.load();
 }
 

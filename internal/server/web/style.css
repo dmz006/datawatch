@@ -7123,6 +7123,18 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   border: 1px solid var(--error); color: var(--error); background: var(--bg2);
 }
 .list-state-meta { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+/* metaExtra row: the loader's meta spans sit left, the loader's extra HTML
+   (opts.metaExtra, e.g. a link) sits right. */
+.list-state-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+@media (pointer: coarse) {
+  /* Touch: a link inside the metaExtra row keeps a >=40x40px tap target
+     (mobile-fit TAP_MIN=40), same form as the #statsPanel link rule. */
+  .list-state-meta-row a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
+  /* The alerts help link ("?") rides the alerts loader's metaExtra row; the
+     class is what guarantees the 40px tap target even if the row markup
+     changes. */
+  a.alerts-help-link { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
+}
 .list-state-cached {
   display: inline-block; padding: 0 6px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--bg3); color: var(--text2);
