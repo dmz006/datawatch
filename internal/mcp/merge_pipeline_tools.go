@@ -37,7 +37,7 @@ func MergePipelineToolNames() []string {
 
 func (s *Server) toolAutonomousMergePipelineGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_pipeline_get",
-		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
+		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the release settings in effect (the release size by kind, the major release trigger, the release cadence and the version scheme), the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional — the project name; default is the merge base repository")),
 		mcpsdk.WithString("format", mcpsdk.Enum("text", "json"), mcpsdk.Description("Optional — text (default) or json")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
@@ -313,7 +313,10 @@ func (s *Server) handleAutonomousMergePipelineValidate(_ context.Context, req mc
 
 // mergePipelineConfigFields are the settings of the autonomous.merge_pipeline
 // block; each is an autonomous_config_set argument named merge_pipeline_<name>.
-var mergePipelineConfigFields = []string{"file_name", "source_order", "fallback_on_bad_file", "conflict_policy", "conflict_model", "version_files"}
+var mergePipelineConfigFields = []string{
+	"file_name", "source_order", "fallback_on_bad_file", "conflict_policy", "conflict_model", "version_files",
+	"release_size_map", "major_trigger", "release_cadence", "version_scheme",
+}
 
 // mergePipelineConfigOptions are the autonomous_config_set arguments for the
 // autonomous.merge_pipeline block. They are sent as dotted keys on PUT
@@ -329,6 +332,10 @@ func mergePipelineConfigOptions() []mcpsdk.ToolOption {
 		mcpsdk.WithString("merge_pipeline_conflict_policy", mcpsdk.Description("autonomous.merge_pipeline.conflict_policy — what a merge does on a conflict; the daemon names the valid policies in its refusal")),
 		mcpsdk.WithString("merge_pipeline_conflict_model", mcpsdk.Description("autonomous.merge_pipeline.conflict_model — the model that proposes conflict resolutions, a name from the LLM registry; empty means none")),
 		mcpsdk.WithArray("merge_pipeline_version_files", mcpsdk.Description("autonomous.merge_pipeline.version_files — files that hold the version, relative to the project. The value replaces the whole list."), mcpsdk.WithStringItems()),
+		mcpsdk.WithString("merge_pipeline_release_size_map", mcpsdk.Description("autonomous.merge_pipeline.release_size_map — the release size each Automaton kind adds, as kind=size pairs such as feature=minor,bug=patch, or a JSON object. Sizes are patch, minor, major or none; the pairs add to or override the built-in map (feature minor, bug patch). An empty value adds nothing.")),
+		mcpsdk.WithString("merge_pipeline_major_trigger", mcpsdk.Enum("manual", "milestone", "never"), mcpsdk.Description("autonomous.merge_pipeline.major_trigger — when a major release step is raised: manual (the default, only when the operator names it), milestone (when the Automation the Automaton belongs to is a completed milestone) or never")),
+		mcpsdk.WithString("merge_pipeline_release_cadence", mcpsdk.Description("autonomous.merge_pipeline.release_cadence — how often a release is cut: per_merge (the only value available today; the default). batch and manual are refused until they exist, and the refusal names the value to use.")),
+		mcpsdk.WithString("merge_pipeline_version_scheme", mcpsdk.Description("autonomous.merge_pipeline.version_scheme — how versions are numbered: semver (the only value available today; the default). Other schemes are refused until they exist, and the refusal names the value to use.")),
 	}
 }
 
