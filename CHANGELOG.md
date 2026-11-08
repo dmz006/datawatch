@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sending an image from the terminal no longer hangs it.** The vision describe call in the websocket input path was unbounded: a slow or hung vision backend blocked the connection read loop, so while one image send waited on the model, every other input on the same terminal was stuck — and a backend that ignored cancellation could hold it indefinitely. Now (1) each describe request runs under a per-request deadline — `vision.describe_timeout_seconds` (default 5 seconds; `0` or negative keeps the default) — enforced by the caller, so a backend that ignores its context still cannot hold the wait; on timeout or error the `[image:path]` tag becomes the `@path` reference used when no vision backend is configured, so the session can still read the image itself. And (2) an image-bearing send expands its tags on a per-connection input worker goroutine instead of the read loop, so later messages on the same connection are processed while the image send is still waiting, and the session still receives inputs in the order they were sent — a plain send never overtakes an earlier still-expanding image send.
+  - **How it shows up:** a PWA/terminal image send resolves within the describe timeout even when the vision backend hangs — a slow description degrades to the `@<path>` reference rather than a frozen terminal — while the rest of the connection keeps responding to other sends and input order into the session is unchanged. A fast backend still produces the usual `"[image: <description> | path: ...]"` text.
+  - **Migration:** none. If your vision backend is routinely slower than 5 seconds, raise `vision.describe_timeout_seconds` so slow-but-valid descriptions are kept instead of falling back to `@path`; otherwise the 5-second default applies on upgrade.
+  - **Reuse audit:** bounds the existing `expandImageTags`/vision-`Describe` path with a standard context deadline and reuses the existing per-connection WS input queue; no new primitive.
+
 ## v9.109.0 — Track imap-mcp as a service-kind plugin
 
 ### Added
