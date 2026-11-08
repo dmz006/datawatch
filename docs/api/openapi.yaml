@@ -9912,13 +9912,14 @@ components:
       description: One task template. A same-`id` operator template replaces the built-in template at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
       required: [id]
       properties:
-        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, final_gate, version_bump_left_to_merge"}
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, bounded_load_step, final_gate, version_bump_left_to_merge"}
         title: {type: string}
         spec: {type: string, description: "Task body; supports the slots {{feature}}, {{files}} and {{files_list}}"}
         files: {type: string, description: "Files the generated task declares"}
         kind: {type: string, description: "Task kind the generated task carries"}
         read_only: {type: boolean, description: "Flag the generated task read-only"}
         verification_script: {type: string, description: "Copied verbatim onto the generated task, once. It must name one repo-relative script file that already exists in the project as an executable (for example scripts/verify.sh) — a command string such as 'go build ./... && go test ./...' is refused at config write with a 400 naming the template id, and a template that still carries one is skipped when the templates are applied so it never becomes a task the pre-start verifier cannot start. The built-in final_gate ships without one: it is read-only and verified through its report_path instead"}
+        verification_script_reason: {type: string, description: "Optional. The B124 exemption for a script-less task: when the generated task has no verification_script, this text is copied onto it as the recorded reason it has none. At verification a no-change finish is then accepted on that reason (verdict OK, severity low, the reason quoted) — but only when the script field is empty. The built-in note templates bounded_load_step and version_bump_left_to_merge ship one; a script-less task without a recorded reason still fails with no output and, at planning, earns the missing_verification structural finding"}
         report_path: {type: string, description: "For a read-only template, the one repo-relative file under .datawatch/reports/ the generated task may write its verdict to (slots supported; {{feature}} is slugged into a file-name-safe form). Absent = the task writes nothing. Only honored on a read-only template. Required for the final-gate pack member, whose built-in template ships with it pointing at .datawatch/reports/<feature>-final-gate.txt"}
         depends_on: {type: array, items: {type: string}, description: "Other template ids (or task ids) this one depends on; wired into a real depends_on edge at apply time"}
         applies_when: {type: string, description: "Scope guard; the built-in pack applies to every feature"}

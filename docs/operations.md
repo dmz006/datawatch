@@ -978,7 +978,7 @@ its spec says to write its verdict to `.datawatch/reports/<feature>-final-
 gate.txt`, `report_path` names the same file, and it carries **no**
 verification script — a read-only task verified by exactly one output, the
 report itself. (The companion version-note task is a note the verifier
-reads rather than runs, and it carries no verification script either.)
+accepts on its recorded exemption reason rather than a run — see below.)
 
 **The verifier's acceptance rule.** When a read-only task that declares a
 report path finishes with no tree changes, the verifier looks for the
@@ -992,6 +992,20 @@ task's own `verification_script`, when present, is still run and must exit
 0 — a failing script fails the task even with a good report. A task that
 did produce real changes does not use this rule; the usual verification
 path handles its diff.
+
+**No-change notes with a recorded exemption.** There is a separate pass
+route for tasks that are notes by design: a task that carries no
+verification script **and** records the reason in its
+`verification_script_reason` field is accepted on that reason when it
+finishes with no tree changes — verdict OK, severity `low`, the reason
+quoted. That is how the built-in note templates ride on it:
+`version_bump_left_to_merge` and `bounded_load_step` each ship a reason
+and write no files. The exemption is narrow: it applies only when the
+script field is empty (a task that still carries a script must pass that
+script), only on a no-change finish (real work still verifies the usual
+way), and it is recorded explicitly in the config and the task record —
+the verifier never infers one. A script-less task with no recorded reason
+still fails with the no-output failure above.
 
 **Recovering a blocked Automaton — make the task verifiable.** While the
 Automaton is blocked the held task can be patched in place. Edit-task

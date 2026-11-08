@@ -3996,11 +3996,18 @@ autonomous:
     # (per-project overrides below can still force a project on/off).
     enabled: true
     # Operator template definitions (empty = the built-in pack,
-    # unmodified). {id, title, spec, files, kind, read_only, depends_on,
-    # applies_when}. verification_script must be one repo-relative script
-    # file (for example scripts/verify.sh), never a command string such as
-    # "go build ./... && go test ./...": the PUT that carries it is refused,
-    # and a template that still carries one is never applied.
+    # unmodified). {id, title, spec, files, kind, read_only,
+    # report_path, verification_script, verification_script_reason,
+    # depends_on, applies_when}. verification_script must be one
+    # repo-relative script file (for example scripts/verify.sh), never a
+    # command string such as "go build ./... && go test ./...": the PUT
+    # that carries it is refused, and a template that still carries one is
+    # never applied. verification_script_reason is the B124 exemption for
+    # a script-less task: copied onto the generated task as the recorded
+    # reason it has no verification script, and at verification a
+    # no-change finish is accepted on that reason only when the script
+    # field is empty (the built-in note templates bounded_load_step and
+    # version_bump_left_to_merge ship one).
     templates: []
     # Per-project overrides, keyed by project directory or alias. An absent
     # flag means follow the global; a new project inherits the global

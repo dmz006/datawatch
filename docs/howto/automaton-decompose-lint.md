@@ -233,11 +233,12 @@ detected, and nothing is added twice. Slots `{{feature}}`, `{{files}}` and
 story's task files; a template's `depends_on` lists *template* ids it must
 run after, and the resulting task also depends on the story's other tasks.
 
-The **built-in pack** is the floor — five templates, written to hold three
+The **built-in pack** is the floor — six templates, written to hold three
 hard properties for every feature name a story can carry: no blocking
 decompose-lint finding, no hosting-CLI side effects, and no verification
 script that is not genuinely a script file (the read-only ones verify
-through their report instead) — so a decomposed Automaton's closing tasks
+through their report, the note ones carry a recorded exemption reason
+instead) — so a decomposed Automaton's closing tasks
 reach the verifier and pass it, instead of being rejected at pre-start.
 
 | Template id | What it adds |
@@ -245,8 +246,22 @@ reach the verifier and pass it, instead of being rejected at pre-start.
 | `changelog_entry` | a changelog entry for the feature (`CHANGELOG.md`) |
 | `parity_issue_draft` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
 | `docs_set` | the feature's docs into shape, over the story's own files |
+| `bounded_load_step` | the bounded load-step posture note — the bounds any CPU-load or stress step must satisfy (niced, a quarter of the cores, hard timeout, trap-cleanup) — a note that writes no files; no verification script, its recorded exemption reason being what passes it at verification — see [orphan reaping and host load](automata-orphan-reaping.md) |
 | `final_gate` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
-| `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit, and no verification script: the verifier reads it rather than runs it |
+| `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit; no verification script, it carries a recorded exemption reason instead, which is what passes it at verification |
+
+**No-change note templates: the exemption reason, not a script.** A
+template that generates a script-less task — the note templates do — sets
+`verification_script_reason`; that text is copied onto the generated task
+as the recorded reason it has no verification script. At verification, a
+task that finishes with no changes is **accepted on that reason** when its
+script field is empty — the verdict reads `verifier: task changed nothing
+by design (no verification script; reason: …)`, severity `low`. The
+built-in note templates
+`bounded_load_step` and `version_bump_left_to_merge` both ship one; a
+script-less task *without* a recorded reason still fails with "no changes
+detected", and at planning a task with neither a script nor a reason earns
+the B124 `missing_verification` structural finding.
 
 Templates are applied in **shadow and enforce** (off applies nothing), and
 `autonomous.task_templates.enabled` (default **true**) gates them globally.
@@ -259,8 +274,9 @@ executable (for example `scripts/verify.sh`) — the verifier's pre-start
 check runs it *as a file*, so a command string such as `go build ./... &&
 go test ./...` is not a valid script and a task carrying it dies before it
 can run. The built-in pack never uses one for that reason: the final gate
-verifies through its read-only report, and the version note is read, not
-run. A template whose `verification_script` looks like a command
+verifies through its read-only report, and the note templates carry their
+exemption reasons instead. A template whose `verification_script` looks
+like a command
 (whitespace, shell operators, an absolute path, a parent reference or the
 project root itself) is refused at config write with an error naming the
 template id — nothing is stored — and a template that still carries such a
