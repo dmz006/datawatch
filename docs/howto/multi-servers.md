@@ -137,43 +137,40 @@ store raw tokens in config files.
 
 ## Switch between servers (per-tab picker)
 
-Every main view (Sessions, Alerts, Automata, Observer, Dashboard) has a
-**server chip bar** injected at the top. The chips are:
+Every main view (Sessions, Alerts, Automata, Observer, Settings, Dashboard)
+has a **server chip bar** injected at the top. The chips are:
 
 | Chip | Behaviour |
 |------|-----------|
 | **All** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
-| **Local** | Show only this daemon's data (default) |
+| **Local** (labelled with this daemon's hostname — never the word "Local") | Show only this daemon's data (default) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
+
+Observer and Settings are the two tabs whose picker offers no **All** chip
+at all — only the local and federated chips.
 
 The active chip persists in `state.activeServer` for the duration of the
 session.
 
 **Selecting a chip acts on the page you are on, immediately.** Choosing a
 federated host re-renders the tab you are currently looking at — Sessions,
-Alerts, Automata, Observer or Dashboard — in place, against that server:
+Alerts, Automata, Observer, Settings or Dashboard — in place, against that
+server:
 the **Showing: \<name\>** line above the view updates to the host you
 picked and the list/content becomes that host's data, without you leaving
 and re-opening the view. Picking **Local** or **All** takes the same page
 back to that view the same way.
 
-> **Confirm this on your setup before relying on it.** The in-place fix is
-> recorded under **[Unreleased] → Fixed** in the
-> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry notes
-> that no live verification had been run when it was recorded; the
-> 2026-11-08 code change is also not present in this worktree's
-> `internal/server/web/app.js` (the branch carries only the changelog entry
-> and these docs). On this source tree a chip change already updates the
-> **Showing:** line and the connection, re-fetches the Sessions list and
-> re-renders the Alerts view (the reconnect resync does that
-> unconditionally — the Alerts picker behaviour fixed in v8.73.5, 2026-10-08),
-> so the entry's tab list — which includes Alerts — is best read as the
-> operator's report of which pages didn't follow the chip, not a per-tab
-> audit of this tree. Confirm the in-place switch on a two-host setup, and
-> check the **Automata** tab's **Automation** sub-tab separately: nothing in
-> the change confirms that sub-tab re-renders on a chip change yet. The full
-> checklist is in [operations.md](../operations.md), under
-> "Still to review (operator)" in the multi-server section.
+> **Confirm this on your setup before relying on it.** The in-place switch
+> is recorded under **[Unreleased] → Fixed** in the
+> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry records
+> that no live verification had been run when it was recorded. It is
+> implemented in this tree's `internal/server/web/app.js` — `selectServer`
+> re-renders the tab you're on, and the **Automata** re-render spans the
+> whole tab, **Automation** sub-tab included — with PWA tests for the
+> re-render. Confirm it live on a two-host setup; the full checklist is in
+> [operations.md](../operations.md), under "Still to review (operator)"
+> in the multi-server section.
 
 Behaviours worth knowing:
 
@@ -204,8 +201,9 @@ Selecting **All** uses two dedicated endpoints that fan out in parallel:
 Each item in the response carries a `server` field (e.g. `"server":"nas"`)
 identifying its origin. The PWA renders a **[nas]** tag on each card.
 
-Observer and Dashboard views use the picker to switch — they don't have a
-separate "All" aggregation; "All" falls back to local data on those views.
+The Observer and Settings pickers offer no **All** chip at all (only the
+local and federated chips), and the Dashboard has no separate "All"
+aggregation — **All** falls back to local data on that view.
 
 ## Proxy mode (specific server)
 
