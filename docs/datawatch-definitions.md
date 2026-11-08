@@ -1003,7 +1003,7 @@ See [`howto/channel-routing.md`](howto/channel-routing.md).
 
 #### Vision System
 
-Configurable image-description backend that extends the comms router, MCP tools, skills, and Council Mode to understand image/photo attachments.
+Configurable image-description backend that extends the comms router, session input, MCP tools, skills, and Council Mode to understand image/photo attachments.
 
 **Config (`datawatch.yaml`):**
 
@@ -1016,6 +1016,7 @@ vision:
   model: llava             # must be vision-capable
   default_prompt: ""       # defaults to "Describe this image concisely."
   max_image_bytes: 0       # 0 = 10 MB limit
+  describe_timeout_seconds: 0  # 0 or negative = 5s default per describe call
 ```
 
 **How it integrates:**
@@ -1024,6 +1025,7 @@ vision:
 |---|---|
 | **Comms router** | Image/photo attachments from Signal/Telegram/etc. are read, described, and prepended to the message text as `[image: <desc>]` before command parsing. Works with all comms commands. |
 | **`remember: [image]`** | Sending `remember:` alongside an image attachment stores the description in episodic memory: `remember: [image: <desc>] <caption>`. |
+| **Session input (PWA / terminal / WebSocket `send:`)** | `[image:<path>]` in the sent text is replaced with `[image: <desc> \| path: <path>]` before delivery. Each describe call is bounded by `describe_timeout_seconds` (5 s default). On timeout, error, or empty description (or no vision service at all) the tag degrades to a bare `@<path>` — the message is still delivered and the model reads the file itself — but an unreadable file never degrades: the `[image:<path>]` tag passes through unchanged. Over a WebSocket, the expansion runs on the connection's input worker (FIFO), so the socket's read loop — and the terminal — stays responsive; a later plain send to the *same* session over the *same connection* waits for the still-expanding image send instead of overtaking it (the wait is per connection, not global per session). |
 | **`POST /api/vision/describe`** | REST endpoint for on-demand image description. Multipart `image` field + optional `prompt`. |
 | **MCP `vision_describe`** | `vision_describe(image_path, prompt)` tool — agents call it from within a session. |
 | **`start_session` / `send_input` MCP** | Accept `image_paths: string[]`; descriptions are prepended to the task/text before delivery. |
