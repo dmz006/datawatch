@@ -105,6 +105,27 @@ exemption only*; the real gates for these PRs remain the required CI checks and
 the `dependency-review` job. Review the diff regardless of who claims
 authorship.
 
+**What moved in the latest round of major bumps.** Three groups of upstream
+majors were reviewed, and each review is kept under `docs/plans/reports/`. The
+mcp-go Go module moved from v0.46.0 to v1.5.0: the one change the code needed
+was that both server constructors now pass the legacy server-initiated-requests
+option, because v1 otherwise refuses sampling and elicitation requests for
+clients on the 2026-07-28 protocol; the tool-result size limit stays off by
+default, the registry replacement is harmless because resources and prompts are
+added only at startup, and the existing test suites passed unchanged despite the
+empty-array and integer-request-ID changes. The channel bridge packages moved
+the MCP SDK from 1.31.0 to 1.32.0 (with its transitive packages such as zod
+4.3.6 to 4.6.7 and qs 6.16.0 to 6.17.0), and the only change that touches the
+bridge code is that a tool call may now arrive without an `arguments` field, so
+the handlers that destructure it need a `?? {}` guard; the other packages are
+not called directly. The workflow actions moved upload-artifact from v5 to
+v7.0.2, setup-qemu from v3 to v4.4.0, golangci-lint-action from v8 to v9, and
+the ZAP baseline and full-scan actions from v0.9.0 to v0.15.0 and v0.13.0, with
+no workflow input needing to change (the Node 24 runtime matters only on
+self-hosted runners); the only edits required are to correct the now-stale
+version comments on the two ZAP pins and to decide whether the API-scan action,
+still on v0.9.0, should move with them.
+
 ## Handling the upstream-watch issue
 
 The workflow `.github/workflows/upstream-watch.yaml` (daily 06:15 UTC, plus
