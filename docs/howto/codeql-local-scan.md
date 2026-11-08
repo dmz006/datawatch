@@ -13,6 +13,11 @@ dependency, a workflow or a script (`.go`, `go.mod`, `go.sum`, `channel/**`,
 `.github/workflows/**` and `scripts/**`). Scheduled (Monday) and manual runs
 have no path filter and always run the gate.
 
+The list is not a convention: `tests/test-codeql-trigger-listing.sh` (run by
+`make test`) checks the workflow's triggers, schedule and permissions against
+exactly this shape, so an edit that re-widens the gate or adds a permission
+scope fails the test. The script needs `python3` with PyYAML on the machine.
+
 ## What it is and why
 
 - **CI side.** GitHub default setup analyzes every push in four languages:
