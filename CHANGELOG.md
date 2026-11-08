@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.4 — Stop a slow image description from costing the operator an extra Enter
+
+### Fixed
+
+- **A message ending in an image tag no longer needs a second Enter once its tag has degraded to a file reference.** Found 2026-11-08, right after the per-image describe timeout landed: when vision is off or the describe times out, errors or comes back empty, a `[image:<path>]` tag at the very end of the message degrades to a bare `@<path>` reference that left an open file candidate behind, so the session's file autocomplete swallowed the first Enter. That trailing form now gets exactly one space after the path, which terminates the `@<path>` reference and closes the autocomplete — one Enter sends the message.
+  - **How it shows up:** in the PWA, terminal and comm channels, only sends whose last thing is an image tag that took the fallback path — those now go out with a single Enter. Tags in the middle of the text are unchanged (the following text supplies the separation); a successful description (`[image: <description> | path: <path>]`) carries no trailing space, and tags left unchanged (unreadable files, paths outside the file service) never got one. With the same tag twice at the end, only the last occurrence takes the space.
+  - **Migration:** none. It applies from the very next message, with no setting to change; the [vision image descriptions howto](docs/howto/vision-image-descriptions.md) states the rule.
+
 ## v9.112.3 — CodeQL gate runs only when code could change
 
 ### Changed
