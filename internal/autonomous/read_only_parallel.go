@@ -103,7 +103,43 @@ func (m *Manager) readOnlyTreeStatus(ctx context.Context, prd *PRD, t *Task) (st
 	if err != nil {
 		return "", false
 	}
-	return strings.TrimSpace(string(out)), true
+	filtered := dropDaemonOnlyStatusEntries(ctx, root, string(out), m.baseCommitRunner())
+	return strings.TrimSpace(filtered), true
+}
+
+// dropDaemonOnlyStatusEntries removes from raw porcelain text every entry
+// for a tracked file whose only difference from HEAD is the daemon's own
+// marked sections (daemonSectionsOnlyChange). Entries are "XY path"; untracked
+// ("??"), rename/copy ("->" in the path or R/C status), quoted-path and
+// malformed entries are always kept. The baseline and the final status both
+// come from readOnlyTreeStatus, so both sides are filtered alike.
+func dropDaemonOnlyStatusEntries(ctx context.Context, root, porcelain string, run driftGitRunner) string {
+	lines := strings.Split(porcelain, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if isDaemonOnlyStatusEntry(ctx, root, l, run) {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// isDaemonOnlyStatusEntry reports whether one porcelain line is a modified
+// tracked file that differs from HEAD only by daemon sections.
+func isDaemonOnlyStatusEntry(ctx context.Context, root, line string, run driftGitRunner) bool {
+	line = strings.TrimRight(line, "\r")
+	if len(line) < 4 || line[2] != ' ' {
+		return false
+	}
+	xy, p := line[:2], line[3:]
+	if xy == "??" || xy == "!!" || strings.ContainsAny(xy, "RC") || strings.Contains(p, " -> ") {
+		return false
+	}
+	if strings.HasPrefix(p, "\"") { // git-quoted path: cannot parse safely, keep
+		return false
+	}
+	return daemonSectionsOnlyChange(ctx, root, p, run)
 }
 
 // readOnlyViolation returns an error when the tree gained a status entry

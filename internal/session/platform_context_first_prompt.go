@@ -21,6 +21,19 @@ func FirstPromptContext(family string, alreadyDelivered, enabled bool) string {
 	return ""
 }
 
+// FirstPromptContextFor is FirstPromptContext plus the claude-code fallback:
+// a claude-code session whose local file was not written (localFileWritten is
+// false) gets the platform context as a first-prompt prefix, once.
+func FirstPromptContextFor(family string, alreadyDelivered, enabled, localFileWritten bool) string {
+	if p := FirstPromptContext(family, alreadyDelivered, enabled); p != "" {
+		return p
+	}
+	if enabled && !alreadyDelivered && !localFileWritten && family == "claude-code" {
+		return platformcontext.PlatformContext
+	}
+	return ""
+}
+
 // prependPlatformContextOnce returns prompt with the platform context prefixed
 // when this is the session's first prompt for a first_prompt backend, and marks
 // the session record so later prompts are left alone. It is called from Start,
@@ -33,7 +46,7 @@ func (m *Manager) prependPlatformContextOnce(sess *Session, family, prompt strin
 	if m.cfg != nil {
 		enabled = enabled && m.cfg.PlatformContext.EffectiveEnabled(m.projectPolicyFor(sess.ProjectDir))
 	}
-	prefix := FirstPromptContext(family, sess.PlatformContextDelivered, enabled)
+	prefix := FirstPromptContextFor(family, sess.PlatformContextDelivered, enabled, sess.PlatformContextLocalFile)
 	if prefix == "" {
 		return prompt
 	}
