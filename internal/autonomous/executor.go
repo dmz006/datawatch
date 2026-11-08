@@ -1603,6 +1603,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			story := findStory(prd, t.StoryID)
 			auto := m.AutomationForPRD(prd)
 			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			// autonomous.first_attempt: a first attempt of a kind with a
+			// configured pair runs on that pair, unless the task or its
+			// Automaton pinned a worker. Retries never use it.
+			var firstAttemptReason string
+			backend, model, execSource, firstAttemptReason = applyFirstAttempt(m.cfg, t, m.escalationFailureCount(t), backend, model, execSource)
+			if firstAttemptReason != "" {
+				log.Printf("[autonomous] prd=%s task=%s %s: backend=%s model=%s", prd.ID, t.ID, firstAttemptReason, backend, model)
+			}
 			effort := resolveTaskEffort(t, story, prd, auto)
 			// Failure escalation: the ladder step that the failed attempts so
 			// far select replaces the worker for this attempt only. Backend,
@@ -3188,6 +3196,9 @@ const (
 	// ExecutorSourceEscalation marks an attempt whose worker was chosen by a
 	// failure escalation step rather than by the levels above.
 	ExecutorSourceEscalation = "escalation"
+	// ExecutorSourceFirstAttempt marks a first attempt whose worker was chosen
+	// by autonomous.first_attempt for the task's kind.
+	ExecutorSourceFirstAttempt = "first_attempt"
 )
 
 // recordAdmittedWorker stores the worker an attempt is admitted with on a task

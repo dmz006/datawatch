@@ -150,6 +150,10 @@ type Config struct {
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
 	ExecutionBackend string `json:"execution_backend,omitempty"`
+	// FirstAttempt maps a task kind (implementation, docs, note, final_gate)
+	// to the backend and model its first attempt runs on. An absent entry
+	// keeps the normally resolved worker. Mirrors autonomous.first_attempt.
+	FirstAttempt map[string]config.FirstAttemptChoice `json:"first_attempt,omitempty"`
 	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
 	PlanningEffort     string `json:"planning_effort,omitempty"`
 	VerificationEffort string `json:"verification_effort,omitempty"`
