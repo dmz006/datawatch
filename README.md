@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.3 (2026-11-08).** The CodeQL alert-gate workflow no longer starts on documents-only pushes or pull requests that touch no code. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.4 (2026-11-08).** Discussion folder paths are now built through one cleaned-path helper that checks the id and the join together; the open CodeQL path-injection alert is confirmed closed only by the next gate run. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

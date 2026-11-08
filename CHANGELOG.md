@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.4 — Discussion folder paths are built through one cleaned-path helper for the last open CodeQL alert
+
+### Fixed
+
+- **The last open high code scanning alert (alert #768, go/path-injection) is fixed on main — the discussion id check now sits visibly where the folder path is built, and closing the alert is confirmed when the next "Open high/critical alerts" gate run reports it gone (operator-review item still open in `docs/operations.md`).** Building a path into the discussion folder now goes through one helper (`discussionFolderPath`, `internal/server/discussion_folder.go`): it validates the discussion id, refuses anything carrying a `/`, a `\`, or exactly `.`/`..`, and refuses the cleaned join unless it is still a direct child of the cleaned base folder — the containment check sits explicitly at the join, which is the guard the scanner reads on the data flow.
+  - **How it shows up:** day-to-day nothing changes — a valid discussion id behaves exactly as before, and a traversal or malformed id is still refused before any file is touched. On the scanner: alert #768 drops out of the open findings on the next code-scanning run of main; code-scanning engines report on the next analysis, not immediately, so until that gate run is confirmed green, nothing in this repository should be read as claiming it closed.
+  - **Migration:** none.
+  - **Docs:** the [discussion scopes](docs/howto/discussion-scopes.md) and [file service](docs/howto/file-service.md) how-tos name the shared helper and the cleaned-path containment check; `docs/operations.md` keeps the operator-review items open.
+
 ## v9.112.3 — CodeQL gate runs only when code could change
 
 ### Changed
