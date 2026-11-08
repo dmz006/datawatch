@@ -12,8 +12,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 )
 
 // uncommittedRollupReason is the status-change reason of a roll-up that
@@ -37,6 +40,9 @@ const UncommittedCauseAutomatonFinished = "files were still uncommitted when the
 // work branch, no cluster profile and a project directory. Scope filtering
 // does not apply here (the scope setting governs only the per-task check), and
 // nothing is committed.
+//
+// The daemon's own generated documents a person has not changed do not count
+// as uncommitted work, and the question lists only the files that count.
 func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD) (blocked bool, err error) {
 	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy == config.UncommittedWorkPolicyOff {
@@ -52,6 +58,7 @@ func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD
 		log.Printf("[autonomous] %s uncommitted-work: roll-up check skipped: %v", prd.ID, derr)
 		return false, nil
 	}
+	files = dropUneditedGeneratedFiles(prd.ProjectDir, files)
 	if len(files) == 0 {
 		return false, nil
 	}
@@ -73,6 +80,44 @@ func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD
 	})
 	return true, nil
 }
+
+// excludeUneditedGeneratedArtefacts removes from the files the finished check
+// looks at the generated artefacts the daemon itself wrote and nobody has
+// edited since — together with the recording hash sidecar of each of them.
+// They are the daemon's own records, not work the Automaton left uncommitted.
+func excludeUneditedGeneratedArtefacts(dir string, files []UncommittedFile) []UncommittedFile {
+	if dir == "" {
+		return files
+	}
+	kept := make([]UncommittedFile, 0, len(files))
+	for _, f := range files {
+		if uneditedGeneratedFile(dir, f.Path) {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return kept
+}
+
+// uneditedGeneratedFile reports whether rel (relative to dir) is a generated
+// artefact or its recording hash sidecar, and the daemon wrote it unedited:
+// the artefact still carries the marker and no edited line, and its body
+// still matches the hash recorded beside it. A person edit (or any other
+// change) to either file makes both count as uncommitted work again.
+func uneditedGeneratedFile(dir, rel string) bool {
+	base := filepath.Base(rel)
+	if strings.HasSuffix(base, generatedSidecarSuffix) {
+		// The sidecar is exempt with its artefact: reverse the sidecar name
+		// (dir/.name.genhash -> dir/name) and test that.
+		artefact := filepath.Join(filepath.Dir(rel), strings.TrimPrefix(strings.TrimSuffix(base, generatedSidecarSuffix), "."))
+		return genartifacts.IsUneditedGenerated(dir, artefact)
+	}
+	return genartifacts.IsUneditedGenerated(dir, rel)
+}
+
+// generatedSidecarSuffix is the suffix of the recording hash file the daemon
+// keeps next to a generated artefact (<dir>/.<name>.genhash).
+const generatedSidecarSuffix = ".genhash"
 
 // uncommittedRollupBlockedReason is the plain sentence stored as the
 // Automaton's blocked reason after the roll-up check held it: the cause, the
