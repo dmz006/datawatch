@@ -669,3 +669,5 @@ An empty tag list clears an Automaton's or a session's own tags.
   federated daemons, the keeper, stale copies and merge notes.
 - [autonomous-planning](autonomous-planning.md) — create and run Automata.
 - [automata-capacity](automata-capacity.md) — how queued Automata wait.
+
+> **Operator review:** the tag-match docs were updated alongside the code-scanning fix, but the commit that fixed `internal/autonomous/object_tag_filter.go` recorded that verification was not run before commit. Please run `go test ./internal/autonomous/ -run 'ObjectTags|FilterTasksView'` and confirm the match ANY/ALL behavior before release.
