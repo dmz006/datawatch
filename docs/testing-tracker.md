@@ -5033,3 +5033,14 @@ Two new read/set surfaces over the already-built auto-lanes loop (the daemon app
 | MCP: `usage_autolanes_status` | `TestUsageCalcAutoLanesStatusProxiesGet` | `env -u TMUX -u TMUX_TMPDIR go test ./internal/mcp/ -count=1 -run 'TestUsageCalcAutoLanes'` | Proxies `GET /api/usage/autolanes` with no body and no query and returns the daemon's status bytes | Go unit | **Yes** (`internal/mcp/usage_calculator_test.go`) | Pass, 2026-11-02 | No | A live MCP call on a daemon with auto-lanes enabled is owed |
 | MCP: capability mapping | `TestMCPToolCap_UsageAutoLanesStatusIsUsageRead` | `env -u TMUX -u TMUX_TMPDIR go test ./internal/federation/ -count=1 -run 'UsageAutoLanesStatus'` | `usage_autolanes_status` maps to `usage:read` in `internal/federation/mcp_tool_caps.go`; `usage:read` covers it and `config:read` alone does not | Go unit | **Yes** (`internal/federation/mcp_tool_caps_autolanes_test.go`) | Pass, 2026-11-02 | No | same cap the burn-guard status reads use; the tool itself is registered unconditionally in `internal/mcp/server.go` |
 | Docs and help text | `docs/howto/usage-calculator.md` (*Auto-lanes* section), `docs/mcp.md`, `docs/cursor-mcp.md`, `CHANGELOG.md` | `bash scripts/check-no-internal-refs.sh` (via `make lint`) | The help text names both setting keys and the config path; the howto, both MCP tables and the changelog record the two surfaces; no tracker identifiers in the operator-facing prose | Docs | **Yes** | Pass, 2026-11-02 | No | The settings' own rows already exist under `usage.calculator` in `docs/config-reference.yaml` |
+
+## Usage calculator auto lanes, unreleased
+
+Tests for the auto-lanes feature, one line per interface. Run each package with `env -u TMUX -u TMUX_TMPDIR go test <pkg> -count=1 -run 'AutoLanes'`.
+
+- REST: `TestAutoLanesDisabled`, `TestAutoLanesEnabled`, `TestAutoLanesEnabledUnchanged`, `TestAutoLanesEnabledServiceMissing`, `TestAutoLanesRecentChanges`, `TestAutoLanesRecentChangesCap`, `TestAutoLanesReadOnly`, `TestAutoLanesRequiresUsageRead` (`internal/server/usage_autolanes_test.go`)
+- MCP: `TestUsageCalcAutoLanesStatusProxiesGet` (`internal/mcp/usage_calculator_test.go`), `TestMCPToolCap_UsageAutoLanesStatusIsUsageRead` (`internal/federation/mcp_tool_caps_autolanes_test.go`)
+- CLI: `TestUsageAutoLanesStatusSendsGet`, `TestUsageAutoLanesSetOnSendsConfigSet`, `TestUsageAutoLanesSetOffAndMaxSendsBothKeys`, `TestUsageAutoLanesSetValidationRefusesBeforeAnyRequest`, `TestUsageAutoLanesSetMaxBoundaryAccepted` (`cmd/datawatch/cli_usage_test.go`)
+- comm: `TestUsageCalcConfigureAutoLanesThroughRouter`, `TestUsageCalcConfigureHelpListsAutoLanesKeys` (`internal/router/usage_calculator_test.go`)
+- YAML: `TestUsageCalcConfigAutoLanes` (`internal/server/usage_calculator_config_test.go`)
+- PWA: the settings fields and status line in `app.js` have no auto-lanes-specific test yet (owed); the surrounding calculator settings are covered by `internal/server/web/app-usage-calculator-settings.test.js`
