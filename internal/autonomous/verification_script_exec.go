@@ -83,20 +83,47 @@ func runVerificationScript(scriptRelPath, projectDir string) (output string, exi
 	return runVerificationScriptCapped(scriptRelPath, projectDir, nil)
 }
 
-// runVerificationScriptCapped is runVerificationScript run inside the
-// ceiling launch l (nil = no ceiling). It records the path actually used
-// back on l.
-func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaunch) (output string, exitCode int, err error) {
+// resolveVerificationScriptPath validates scriptRelPath against projectDir
+// (relative, resolving inside projectDir) and returns the resolved path.
+func resolveVerificationScriptPath(scriptRelPath, projectDir string) (string, error) {
 	if scriptRelPath == "" {
-		return "", -1, errors.New("verification script path is empty")
+		return "", errors.New("verification script path is empty")
 	}
 	if filepath.IsAbs(scriptRelPath) {
-		return "", -1, fmt.Errorf("verification script path %q must be relative to the project dir", scriptRelPath)
+		return "", fmt.Errorf("verification script path %q must be relative to the project dir", scriptRelPath)
 	}
 	scriptPath := filepath.Clean(filepath.Join(projectDir, scriptRelPath))
 	rel, relErr := filepath.Rel(filepath.Clean(projectDir), scriptPath)
 	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", -1, fmt.Errorf("verification script path %q escapes the project dir", scriptRelPath)
+		return "", fmt.Errorf("verification script path %q escapes the project dir", scriptRelPath)
+	}
+	return scriptPath, nil
+}
+
+// verificationScriptMissing reports whether the script a task/story names is
+// absent from the worktree (or not a regular file) — the same condition the
+// runner reports as ErrVerificationScriptMissing before it would launch
+// bash — checked WITHOUT executing the script. An empty or unsafe path is a
+// path error, not a missing file, so it returns false.
+func verificationScriptMissing(scriptRelPath, projectDir string) bool {
+	if scriptRelPath == "" {
+		return false
+	}
+	scriptPath, err := resolveVerificationScriptPath(scriptRelPath, projectDir)
+	if err != nil {
+		return false
+	}
+	info, statErr := os.Stat(scriptPath)
+	return statErr != nil || !info.Mode().IsRegular()
+}
+
+// runVerificationScriptCapped is runVerificationScript run inside the
+// ceiling launch l (nil = no ceiling). It records the path actually used
+// back on l.
+func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaunch) (output string, exitCode int, err error) {
+	scriptPath, pathErr := resolveVerificationScriptPath(scriptRelPath, projectDir)
+	if pathErr != nil {
+		return "", -1, pathErr
 	}
 	if info, statErr := os.Stat(scriptPath); statErr != nil || !info.Mode().IsRegular() {
 		return "", -1, fmt.Errorf("%w: %s", ErrVerificationScriptMissing, scriptRelPath)
