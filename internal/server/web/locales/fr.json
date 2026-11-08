@@ -4324,5 +4324,18 @@
   "automation.review.judgeOutcome.foundProblem": "Le juge a trouvé un problème",
   "automation.review.judgeOutcome.next.couldNotStart": "Rien à faire : une nouvelle tentative est lancée.",
   "automation.review.judgeOutcome.next.timedOut": "Rien à faire : une nouvelle tentative est lancée, ou consultez Événements.",
-  "automation.review.judgeOutcome.next.foundProblem": "Ouvrez le constat."
+  "automation.review.judgeOutcome.next.foundProblem": "Ouvrez le constat.",
+  "automaton_release_size_label": "Taille de la version",
+  "automaton_release_size_patch": "correctif",
+  "automaton_release_size_minor": "mineure",
+  "automaton_release_size_major": "majeure",
+  "automaton_release_size_none": "aucune",
+  "automaton_release_size_resolve": "Recalculer",
+  "automaton_release_size_hint": "Correctif, mineure ou majeure ajoute cette étape à la version ; aucune n’ajoute rien. Recalculer retire la taille définie et laisse décider les niveaux inférieurs.",
+  "automaton_release_breaking_label": "Changement incompatible",
+  "automaton_release_breaking_hint": "Un changement incompatible fait passer sa version en mode d’approbation majeure, il n’est donc jamais fusionné discrètement.",
+  "automaton_release_source_explicit": "défini sur cet automate",
+  "automaton_release_source_project": "table des tailles du projet",
+  "automaton_release_source_default": "valeur par défaut intégrée",
+  "automation_release_source_milestone": "jalon de l’automatisation"
 }

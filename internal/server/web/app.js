@@ -14746,6 +14746,70 @@ window.shippedChipLabel = shippedChipLabel;
 // shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
 // the release + merge metadata in the tooltip and the shipped_chip docs
 // link. Returns '' for non-shipped records.
+// Release size of an Automaton (Phase 4). The list row and the detail header
+// show the resolved size with the layer that decided it, and a breaking-change
+// badge when the flag is set. A none or unresolved size with the flag off
+// shows nothing. An explicit release_size is layer 1 and is already resolved;
+// the other layers arrive as the server's read-only release_size_resolved and
+// release_size_source.
+const AUTOMATON_RELEASE_SIZES = ['patch', 'minor', 'major'];
+const AUTOMATON_RELEASE_SOURCE_KEYS = {
+  explicit: 'automaton_release_source_explicit',
+  automation_milestone: 'automation_release_source_milestone',
+  project_map: 'automaton_release_source_project',
+  built_in_default: 'automaton_release_source_default',
+};
+function automatonReleaseInfo(rec) {
+  const explicit = String((rec && rec.release_size) || '').trim().toLowerCase();
+  let size = '';
+  let source = '';
+  if (explicit === 'none' || AUTOMATON_RELEASE_SIZES.includes(explicit)) {
+    size = explicit;
+    source = 'explicit';
+  } else {
+    const resolved = String((rec && rec.release_size_resolved) || '').trim().toLowerCase();
+    if (AUTOMATON_RELEASE_SIZES.includes(resolved)) {
+      size = resolved;
+      source = String((rec && rec.release_size_source) || '').trim().toLowerCase();
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(AUTOMATON_RELEASE_SOURCE_KEYS, source)) source = '';
+  const breaking = !!(rec && rec.breaking_change);
+  return {
+    size,
+    source,
+    showSize: AUTOMATON_RELEASE_SIZES.includes(size),
+    showBreaking: breaking,
+  };
+}
+function automatonReleaseSizeLabel(size) {
+  if (size === 'patch') return t('automaton_release_size_patch');
+  if (size === 'minor') return t('automaton_release_size_minor');
+  if (size === 'major') return t('automaton_release_size_major');
+  return t('automaton_release_size_none');
+}
+// automatonReleaseBadgesHtml renders the release-size chip and the breaking
+// badge for an Automaton row or header. It returns '' when there is nothing to
+// show, so an empty status leaves the markup unchanged.
+function automatonReleaseBadgesHtml(rec) {
+  const info = automatonReleaseInfo(rec);
+  if (!info.showSize && !info.showBreaking) return '';
+  const base = 'font-size:10px;padding:2px 7px;border-radius:8px;margin-left:6px;font-weight:600;white-space:nowrap;display:inline-block;vertical-align:middle;';
+  let html = '';
+  if (info.showSize) {
+    const label = t('automaton_release_size_label');
+    const sizeText = automatonReleaseSizeLabel(info.size);
+    const sourceText = info.source ? t(AUTOMATON_RELEASE_SOURCE_KEYS[info.source]) : '';
+    const text = sourceText ? sizeText + ' · ' + sourceText : sizeText;
+    html += `<span class="automaton-release-chip" data-release-size="${escHtml(info.size)}" data-release-source="${escHtml(info.source)}" style="${base}border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);" title="${escHtml(label + ': ' + text)}">${escHtml(label)}: ${escHtml(text)}</span>`;
+  }
+  if (info.showBreaking) {
+    html += `<span class="automaton-breaking-badge" style="${base}border:1px solid #ef4444;color:#fff;background:#ef4444;" title="${escHtml(t('automaton_release_breaking_hint'))}">${escHtml(t('automaton_release_breaking_label'))}</span>`;
+  }
+  return html;
+}
+window.automatonReleaseBadgesHtml = automatonReleaseBadgesHtml;
+
 function shippedChipHtml(rec) {
   if (!_shippedState.enabled || !_shippedState.show_chip) return '';
   if (!shippedCarriesState(rec)) return '';
@@ -15127,7 +15191,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -17481,6 +17545,8 @@ function openPRDSettingsModal(prdID) {
       const cur = {
         type:                 prd.type || '',
         kind:                 prd.kind || '',
+        release_size:         prd.release_size || '',
+        breaking_change:      !!prd.breaking_change,
         lane_preference:      prd.lane_preference || 'any',
         backend:              prd.backend || '',
         effort:               prd.effort || '',
@@ -17598,6 +17664,23 @@ function openPRDSettingsModal(prdID) {
               <label class="wizard-label">${escHtml(t('prd_settings_priority_label')||'Capacity queue priority (higher runs first)')}</label>
               <input type="number" id="prdSettingsPriority" class="form-input" min="-100" max="100" value="${cur.priority}" placeholder="0" style="width:80px;" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_priority_hint')||'Used when tasks wait for free capacity.')}</div>
+            </div>
+            <div class="wizard-grid-mobile" style="margin-top:2px;">
+              <div class="wizard-field">
+                <label class="wizard-label" for="prdSettingsReleaseSize">${escHtml(t('automaton_release_size_label'))}</label>
+                <select id="prdSettingsReleaseSize" class="form-select">
+                  <option value="" ${!cur.release_size?'selected':''}>${escHtml(t('automaton_release_size_resolve'))}</option>
+                  ${['patch','minor','major','none'].map(v => `<option value="${v}" ${cur.release_size===v?'selected':''}>${escHtml(automatonReleaseSizeLabel(v))}</option>`).join('')}
+                </select>
+                <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('automaton_release_size_hint'))}</div>
+              </div>
+              <div class="wizard-field">
+                <label class="wizard-label" style="display:flex;gap:6px;align-items:center;">
+                  <input type="checkbox" id="prdSettingsBreakingChange" ${cur.breaking_change?'checked':''} />
+                  ${escHtml(t('automaton_release_breaking_label'))}
+                </label>
+                <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('automaton_release_breaking_hint'))}</div>
+              </div>
             </div>
             <div class="wizard-field" style="margin-top:2px;">
               <label class="wizard-label">${escHtml(t('prd_settings_write_dirs_label')||'Writable directories (comma-separated, absolute; empty = project dir)')}</label>
@@ -17765,6 +17848,22 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_kind', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ kind: newKind }),
+            }));
+          }
+          // Release size and breaking flag (Phase 4). An empty release_size
+          // resolves the size again from the layers below it.
+          const newReleaseSize = document.getElementById('prdSettingsReleaseSize')?.value || '';
+          if (newReleaseSize !== cur.release_size) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_release_size', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ release_size: newReleaseSize }),
+            }));
+          }
+          const newBreakingChange = !!document.getElementById('prdSettingsBreakingChange')?.checked;
+          if (newBreakingChange !== cur.breaking_change) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_breaking_change', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ breaking_change: newBreakingChange }),
             }));
           }
           const newLanePreference = document.getElementById('prdSettingsLanePreference')?.value || 'any';
@@ -26939,7 +27038,7 @@ function _renderDetailContent(prd) {
 
   // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
   const tab = _automataDetailTab || 'overview';
-  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd), tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
+  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd) + automatonReleaseBadgesHtml(prd),tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);

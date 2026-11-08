@@ -19,6 +19,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Migration:** none — every new setting is unset and reads the built-in defaults (feature minor, bug patch, major `manual`), so an existing project resolves exactly as it did before. Choose your milestone and size-map settings when you want a project or an arc to raise a major.
   - **MCP:** `autonomous_config_set` takes `merge_pipeline_release_size_map`, `merge_pipeline_major_trigger`, `merge_pipeline_release_cadence` and `merge_pipeline_version_scheme` (with `merge_pipeline_project` for one project). `autonomous_merge_pipeline_get` shows the release settings in effect, in text and in JSON. A cadence or scheme that is not available yet is refused as a tool error that names the value to use.
 
+### Automata show their release size and breaking change in the web UI (part of finishing review and merge by the daemon, Phase 4)
+
+- **The Automaton list row and detail header show the release size and its source layer.** A `patch`, `minor` or `major` size shows as a chip naming the layer that decided it (set on this Automaton, Automation milestone, project size map, or built-in default). An Automaton with no size, or a size of `none`, shows nothing unless its breaking-change flag is set.
+- **A breaking-change badge** shows on the row and header when the flag is set, so a change that breaks users is visible before it merges.
+- **The settings modal sets both values:** the explicit release size (resolve again, patch, minor, major or none) and the breaking-change flag, through the existing `set_release_size` and `set_breaking_change` actions.
+- **Layers beyond the explicit size need a server field.** The web UI reads a resolved size from `release_size_resolved` and `release_size_source` when the server reports them. Until the server adds those fields, an Automaton with no explicit size shows no chip.
+- Labels are in all five locale bundles (en, de, es, fr, ja).
+
 ## v9.112.3 — CodeQL gate runs only when code could change
 
 ### Changed

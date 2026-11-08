@@ -4324,5 +4324,18 @@
   "automation.review.judgeOutcome.foundProblem": "El juez encontró un problema",
   "automation.review.judgeOutcome.next.couldNotStart": "No hay nada que hacer: se reintenta.",
   "automation.review.judgeOutcome.next.timedOut": "No hay nada que hacer: se reintenta, o consulte Eventos.",
-  "automation.review.judgeOutcome.next.foundProblem": "Abra el hallazgo."
+  "automation.review.judgeOutcome.next.foundProblem": "Abra el hallazgo.",
+  "automaton_release_size_label": "Tamaño de la versión",
+  "automaton_release_size_patch": "parche",
+  "automaton_release_size_minor": "menor",
+  "automaton_release_size_major": "mayor",
+  "automaton_release_size_none": "ninguno",
+  "automaton_release_size_resolve": "Volver a resolver",
+  "automaton_release_size_hint": "Parche, menor o mayor añade ese paso a la versión; ninguno no añade nada. Volver a resolver quita el tamaño fijado y deciden los niveles inferiores.",
+  "automaton_release_breaking_label": "Cambio que rompe compatibilidad",
+  "automaton_release_breaking_hint": "Un cambio que rompe compatibilidad eleva su versión al modo de aprobación mayor, así nunca se fusiona en silencio.",
+  "automaton_release_source_explicit": "fijado en este autómata",
+  "automaton_release_source_project": "mapa de tamaños del proyecto",
+  "automaton_release_source_default": "valor predeterminado integrado",
+  "automation_release_source_milestone": "hito de la automatización"
 }

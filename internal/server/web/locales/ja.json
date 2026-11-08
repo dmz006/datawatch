@@ -4324,5 +4324,18 @@
   "automation.review.judgeOutcome.foundProblem": "判定で問題が見つかりました",
   "automation.review.judgeOutcome.next.couldNotStart": "対応は不要です。再試行されます。",
   "automation.review.judgeOutcome.next.timedOut": "対応は不要です。再試行されます。または「イベント」を確認してください。",
-  "automation.review.judgeOutcome.next.foundProblem": "検出内容を開いてください。"
+  "automation.review.judgeOutcome.next.foundProblem": "検出内容を開いてください。",
+  "automaton_release_size_label": "リリースサイズ",
+  "automaton_release_size_patch": "パッチ",
+  "automaton_release_size_minor": "マイナー",
+  "automaton_release_size_major": "メジャー",
+  "automaton_release_size_none": "なし",
+  "automaton_release_size_resolve": "再判定",
+  "automaton_release_size_hint": "パッチ、マイナー、メジャーはそのステップをバージョンに加えます。なしは何も加えません。再判定は設定済みのサイズを消去し、下位の階層で決めます。",
+  "automaton_release_breaking_label": "破壊的変更",
+  "automaton_release_breaking_hint": "破壊的変更はリリースをメジャーの承認モードに上げるため、静かにマージされることはありません。",
+  "automaton_release_source_explicit": "このオートマトンで設定",
+  "automaton_release_source_project": "プロジェクトのサイズ対応表",
+  "automaton_release_source_default": "組み込みの既定値",
+  "automation_release_source_milestone": "オートメーションのマイルストーン"
 }
