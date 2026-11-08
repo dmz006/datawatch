@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### The release size a merge adds is now decided by rules, not by convention (part of finishing review and merge by the daemon, Phase 4)
+
+- **The release size of an Automaton — the version step its merge adds (patch, minor, major or none) — is resolved in layers, most specific first.** (1) An explicit `release_size` on the Automaton wins, including an explicit `none` and an explicit major. (2) When the Automation (arc) an Automaton belongs to is marked as a milestone and has completed, and the project's `major_trigger` is `milestone`, the step is raised to major — the arc is the major feature being grown out of the minors and patches that land under it. (3) The project's kind-to-size setting (`autonomous.merge_pipeline.release_size_map`, with the per-project override in `autonomous.merge_pipeline.projects`) — by default feature is a minor and bug is a patch. (4) The built-in default: feature minor, bug patch, anything else no release step.
+  - **A major is never inferred from a diff or a kind.** A `major` entry in the size map only counts when the operator wrote it, and the breaking-change flag on an Automaton (`breaking_change`) raises its release to the major approval mode whatever the size, so a breaking change is never merged quietly.
+  - **New settings, all overridable per project.** `autonomous.merge_pipeline.major_trigger` — `manual` (default), `milestone` or `never`: when a major release step is raised. `autonomous.merge_pipeline.release_size_map` — kind to size, adding to or overriding the built-in map. `autonomous.merge_pipeline.release_cadence` (default `per_merge`) and `autonomous.merge_pipeline.version_scheme` (default `semver`) are reserved: only `per_merge` and `semver` are accepted today; `batch`, `manual` and other schemes are refused until they exist, so a refused value names exactly what to change.
+  - **How it shows up:** an Automaton record now carries its explicit `release_size` and `breaking_change`, an Automation (arc) carries its `milestone` mark, and resolving one Automaton's size is a pure function of those values plus the project settings — the same answer on every surface, before the merge's version step consumes it. Setting an unknown size, an unknown major trigger or a not-yet-available cadence or scheme is refused at the setting's own path (for example `autonomous.merge_pipeline.projects.p.release_size_map.docs`) and nothing is stored; unset settings read the defaults above.
+  - **Migration:** none — every new setting is unset and reads the built-in defaults (feature minor, bug patch, major `manual`), so an existing project resolves exactly as it did before. Choose your milestone and size-map settings when you want a project or an arc to raise a major.
+
 ## v9.112.3 — CodeQL gate runs only when code could change
 
 ### Changed
