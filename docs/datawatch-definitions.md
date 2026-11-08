@@ -1311,7 +1311,7 @@ See [`howto/file-service.md`](howto/file-service.md).
 
 #### Discussion Scopes (v8.4.0)
 
-Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
+Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID (1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected); anything else gets HTTP 400 `invalid discussion id` on the scope, sync and file-service routes) and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
 
 **Scope name:** `ScopeDiscussion`
 
@@ -1319,7 +1319,7 @@ Per-discussion memory namespaces that are durable, federated, and conflict-aware
 
 **Card:** Settings → General → Discussion Scopes. Lists all known discussion IDs; provides a New Discussion form and per-discussion Recall + Participants controls.
 
-**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `/api/push/<discussion-id>`. Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention).
+**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `POST /api/memory/discussion/{id}/receive` (not `/api/push`, which is the ntfy topic route and does not apply the discussion ID rules). Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention).
 
 **Throttle:** 60 write operations per minute per peer, enforced via a per-peer token bucket. Exceeding the limit returns HTTP 429. Local daemon writes are not throttled.
 

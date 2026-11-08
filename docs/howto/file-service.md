@@ -148,7 +148,8 @@ curl -sk \
   https://datawatch.local:8443/api/files/peers/nas-peer | jq .
 # [{"name":"build-output.txt","size":4096,"modified":"2026-05-19T12:00:00Z"}]
 
-# List files under discussions/<id>/.
+# List files under discussions/<id>/. The id must be 1-128 characters of letters, digits, '.', '_' or '-';
+# anything else returns 400 "invalid discussion id".
 curl -sk \
   -H "Authorization: Bearer $TOKEN" \
   https://datawatch.local:8443/api/files/discussions/disc-abc123 | jq .
