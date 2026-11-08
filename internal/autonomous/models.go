@@ -435,6 +435,15 @@ type PRD struct {
 	// derive at read time (old records keep working). See EffectiveKind.
 	Kind string `json:"kind,omitempty"`
 
+	// ReleaseSize is the explicit release size of this Automaton: patch,
+	// minor, major or none. Empty means unset, and the size is then
+	// resolved from the Automation, the project and the built-in default.
+	// See release_size.go.
+	ReleaseSize string `json:"release_size,omitempty"`
+	// BreakingChange marks an Automaton whose change breaks users. It raises
+	// the release to the major approval mode so it is never merged quietly.
+	BreakingChange bool `json:"breaking_change,omitempty"`
+
 	// DefectIntake records the defect-intake outcome when this Automaton
 	// was filed kind bug (defect_intake.go): one of the DefectIntake* outcome
 	// constants. nil = the intake path never ran for this record.
