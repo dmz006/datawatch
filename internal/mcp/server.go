@@ -355,7 +355,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		server.WithPromptCapabilities(false),
 		// mcp-go v1.x refuses RequestSampling/RequestElicitation for clients on
 		// protocol 2026-07-28+ unless this is set; the repo relies on both.
-		server.WithLegacyServerInitiatedRequests(),
+		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
 	)
 
 	// BL302 S3 — enable sampling so connected clients see the capability

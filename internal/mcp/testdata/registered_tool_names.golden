@@ -173,6 +173,7 @@ autonomous_tag_registry_status
 autonomous_tag_rename
 autonomous_tag_set_color
 autonomous_tag_set_parent
+autonomous_tag_sweep
 autonomous_template_create
 autonomous_template_delete
 autonomous_template_get
@@ -417,7 +418,15 @@ plugin_enable
 plugin_get
 plugin_install
 plugin_run_subcommand
+plugin_service_restart
+plugin_service_start
+plugin_service_status
+plugin_service_stop
 plugin_test
+plugin_token_list
+plugin_token_rotate
+plugin_widget_get
+plugin_widget_list
 plugins_list
 plugins_reload
 post_result
@@ -506,6 +515,7 @@ session_rollback
 session_set_state
 session_set_tags
 session_summarize
+session_tag_list
 session_timeline
 sessions_stale
 set_identity
@@ -556,6 +566,7 @@ trace_session
 trace_stats
 update_identity
 usage_advice
+usage_autolanes_status
 usage_backoff_clear
 usage_backoff_recheck
 usage_backoff_set

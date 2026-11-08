@@ -136,7 +136,7 @@ func (d *SamplingDispatcher) Sample(ctx context.Context, req SamplingRequest) (*
 	}
 
 	start := time.Now()
-	raw, err := d.srv.RequestSampling(ctx, sdkReq)
+	raw, err := d.srv.RequestSampling(ctx, sdkReq) //nolint:staticcheck // deprecated in protocol 2026-07-28; still used for older clients
 	latency := time.Since(start).Milliseconds()
 
 	entry := &samplingLogEntry{

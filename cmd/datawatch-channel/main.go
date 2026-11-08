@@ -136,7 +136,7 @@ func main() {
 		server.WithHooks(mcpHooks),
 		// Keep sampling/createMessage usable for 2026-07-28+ clients (mcp-go v1.x
 		// refuses server-initiated requests by default).
-		server.WithLegacyServerInitiatedRequests(),
+		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
 		server.WithInstructions(`You are connected to the datawatch monitoring system.
 Events arrive as <channel source="datawatch" ...>. Read and act on them.
 When you have a response, use the reply tool to send it back.
