@@ -273,8 +273,8 @@ func TestDecomposeLintOperatorOverride(t *testing.T) {
 		},
 	}
 	got := EffectiveRules(cfg)
-	if len(got) != 9 {
-		t.Fatalf("got %d rules, want 8 built-in + 1 new", len(got))
+	if len(got) != 10 {
+		t.Fatalf("got %d rules, want 9 built-in + 1 new", len(got))
 	}
 	// replaced at its original position (index 1)
 	if got[1].ID != "runs_hosting_cli" || got[1].Message != "Operator-local guidance for hosting CLI use." {
@@ -331,8 +331,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		t.Fatalf("Validate with bare disabled rules: %v", err)
 	}
 	gotA := EffectiveRules(cfgA)
-	if ids := idsOf(gotA); len(ids) != 6 {
-		t.Fatalf("disabled-flag: got %v, want the 6 non-disabled built-ins", ids)
+	if ids := idsOf(gotA); len(ids) != 7 {
+		t.Fatalf("disabled-flag: got %v, want the 7 non-disabled built-ins", ids)
 	}
 	absent(t, gotA, "runs_hosting_cli", "names_tracker_id")
 
@@ -341,8 +341,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		DisabledRules: []string{"edits_version_variable", "no_verification_script"},
 	}
 	gotB := EffectiveRules(cfgB)
-	if ids := idsOf(gotB); len(ids) != 6 {
-		t.Fatalf("disabled-list: got %v, want the 6 non-listed built-ins", ids)
+	if ids := idsOf(gotB); len(ids) != 7 {
+		t.Fatalf("disabled-list: got %v, want the 7 non-listed built-ins", ids)
 	}
 	absent(t, gotB, "edits_version_variable", "no_verification_script")
 
@@ -354,8 +354,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		},
 	}
 	gotC := EffectiveRules(cfgC)
-	if ids := idsOf(gotC); len(ids) != 8 {
-		t.Fatalf("operator rule disabled: got %v, want the 8 built-ins", ids)
+	if ids := idsOf(gotC); len(ids) != 9 {
+		t.Fatalf("operator rule disabled: got %v, want the 9 built-ins", ids)
 	}
 	absent(t, gotC, "operator_rule")
 
@@ -366,8 +366,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		Rules:         []config.DecomposeLintRule{{ID: "runs_hosting_cli", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}}},
 	}
 	gotD := EffectiveRules(cfgD)
-	if len(gotD) != 7 {
-		t.Fatalf("list-wins: got %v, want 7 rules", idsOf(gotD))
+	if len(gotD) != 8 {
+		t.Fatalf("list-wins: got %v, want 8 rules", idsOf(gotD))
 	}
 	absent(t, gotD, "runs_hosting_cli")
 }
