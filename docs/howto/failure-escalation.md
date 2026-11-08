@@ -48,7 +48,10 @@ you make it, with the evidence in front of you.
 ## Why this exists
 
 A worker that fails the same task three times usually fails the fourth time
-too, for the same reason. Retrying it unchanged wastes time and tokens. A
+too, for the same reason. Retrying it unchanged costs time, and it used to
+cost a lot more than it does today: a non-final attempt is now charged on far
+less input than the first attempt's cold start (see
+[What a non-final attempt costs](#what-a-non-final-attempt-costs) below). A
 different worker, or the same worker with the earlier failures in its prompt,
 has a real chance of getting past the problem. When even that does not work,
 the honest answer is "this needs a human," and the daemon should say so once,
@@ -164,6 +167,40 @@ count again from zero, so the ladder starts over at step 1. The exception is a
 review retry that changes the worker: the worker you chose is kept for the
 attempts after it, and the ladder does not replace it. A review retry without a
 worker change lets the ladder apply again.
+
+## What a non-final attempt costs
+
+Every worker session begins with a fixed starting context. Measured on the
+sessions it runs on, a task session starts at around 85,000 input tokens of
+context, with the MCP tool definitions alone about 36,000 of that. Before
+this, every retry and every hop to the next worker on the ladder spawned a
+fresh session like that, so a task that failed up to three times paid the full
+starting context up to three times — up to about 285,000 tokens for work
+that had already shown it would not succeed.
+
+Now every non-final attempt — a retry, or an escalation to the next worker on
+the ladder — works on far less input instead of re-paying the whole starting
+context:
+
+- **The tokens the attempt is charged.** A failed task's retries and worker
+  hops show up as a fraction of the first attempt's start in the [cost
+  report](cost-report.md) and wherever an attempt's tokens appear — not as up
+to two more full starts.
+- **A first-try success is unchanged.** Only the extra cost of a failed
+  attempt is lower; a task that succeeds on its first attempt costs exactly
+  what it did before.
+- **The failure flow itself is exactly as before.** The attempt order, the
+  ladder, the reports the next worker receives, the `review_needed` hold and
+  its alert are all unchanged.
+
+There is no setting to change and nothing to migrate: it applies from the
+next retry or escalation.
+
+**Operator note.** If your budgeting assumed each failed attempt re-pays the
+full starting context (up to about 85,000 extra tokens per retry or worker
+hop), that assumption no longer holds. When you price a failing task's worst
+case, read a few real failed attempts in the cost report rather than
+multiplying the first attempt by the attempt count.
 
 ## When a task needs review
 
