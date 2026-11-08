@@ -178,10 +178,14 @@ test('the session list fetch carries the session selection', async () => {
   assert.match(urls[1], /&tag=k1&tag_match=all$/);
 });
 
-test('the header Tags menu groups the session tags too', () => {
-  const html = loadApp()._tagsMenuHTML();
-  assert.match(html, /data-tag-group="automation"/);
+test('the header Tags menu groups the session tags and leaves placement tags to the placement section', () => {
+  const sb = loadApp();
+  const html = sb._tagsMenuHTML();
+  assert.doesNotMatch(html, /data-tag-group="automation"/);
   assert.match(html, /data-tag-group="other"/);
+  assert.match(html, /automation:nightly/);
+  // The option is opt-in: the default rows still list the system tags.
+  assert.match(sb._tagFilterRowsHTML('session'), /data-tag-group="automation"/);
 });
 
 // ── dashboard ────────────────────────────────────────────────────────────────

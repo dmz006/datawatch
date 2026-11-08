@@ -47467,7 +47467,7 @@ function toggleTagsMenu() {
 // watch and tag-edit actions for that session.
 function _tagsMenuHTML() {
   const watched = `<label class="tags-menu-row"><input type="checkbox" ${state.sessionWatchFilter ? 'checked' : ''} onchange="toggleSessionWatchFilter()"><span>${escHtml(t('tags_menu_watched_only'))}</span></label>`;
-  const rows = _tagFilterRowsHTML('session');
+  const rows = _tagFilterRowsHTML('session', undefined, { hidePlacementTags: true });
   const list = rows
     ? `<div class="tags-menu-list">${rows}</div>`
     : `<div class="tag-multi-empty">${escHtml(t('tags_menu_no_tags'))}</div>`;
@@ -48737,11 +48737,17 @@ function _tagFilterGroupOf(tag) {
 }
 
 // _tagFilterRowsHTML draws the checkbox rows of a scope grouped by
-// _tagFilterGroupOf, each non-empty group under its heading.
-function _tagFilterRowsHTML(scope, counts) {
+// _tagFilterGroupOf, each non-empty group under its heading. The optional
+// third argument is an options object; { hidePlacementTags: true } skips every
+// system tag that has a placement axis (the tags _tagsPlacementMenuHTML draws),
+// before grouping, so a group left empty draws no heading. System tags with no
+// axis and all operator tags stay listed. Unset, the output is unchanged.
+function _tagFilterRowsHTML(scope, counts, opts) {
   const sc = _tagBrowse[scope];
+  const hidePlacement = !!(opts && opts.hidePlacementTags);
   const groups = {};
   _tagTreeOrder(_tagsState.list).forEach(({ tag, depth }) => {
+    if (hidePlacement && tag.system === true && _placementAxisOf(tag.name)) return;
     const g = _tagFilterGroupOf(tag);
     (groups[g] = groups[g] || []).push({ tag, depth: g === 'other' ? depth : 0 });
   });
