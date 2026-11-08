@@ -2662,7 +2662,7 @@ Fixed: select-all / select-none scoped to filtered visible sessions. Counter, se
 
 ## PWA Image Vision Injection (v8.19.3 + v8.19.4)
 
-Fixed: `expandImageTags()` replaces `[image:<path>]` in all `send_input` text (REST + WebSocket) with `[image: <description> | path: <path>]` via the vision backend. Fallback: tag passes through unchanged if vision is disabled or file is unreadable.
+Fixed: `expandImageTags()` replaces `[image:<path>]` in all `send_input` text (REST + WebSocket) with `[image: <description> | path: <path>]` via the vision backend. Fallback: the tag degrades to a bare `@<path>` if vision is disabled, the file is unreadable, the description is empty, or the describe call fails/times out (bounded — see the bounded-describe section below).
 
 | Test case | Tested | Live-validated | Coverage details | Notes |
 |---|---|---|---|---|
@@ -2675,6 +2675,29 @@ Fixed: `expandImageTags()` replaces `[image:<path>]` in all `send_input` text (R
 | Multiple tags in one message | **Yes** | No | `TestExpandImageTags_MultipleTags` | Unit test: 2 tags both replaced |
 | PWA: upload image → attach → send → vision runs before session receives | **Yes** | Yes | TS-762 (PWA/Playwright): structural check verifies `[image:<path>]` tag construction from `_pendingAttachments` in all three send paths in app.js; `stateHasArray` confirmed live | PASS |
 | WebSocket path (WS send_input) also runs expandImageTags | **Yes** | Yes | TS-763 (PWA/Playwright): structural check confirms `send_input` reference + `_clearAllAttachments` called after send; `state._pendingAttachments` live array verified | PASS |
+
+## Bounded image describe + non-blocking session input
+
+Builds on the rows above (the v8.19.x “pass-through” fallback notes there
+are superseded: a failed, timed-out or empty describe now degrades the
+tag to a bare `@<path>`, and the no-visioner conversion to `@<path>` was
+live-validated in v8.27.11). Two guarantees: (1) every describe call in
+`expandImageTags` is bounded by `vision.describe_timeout_seconds`
+(0 or negative = `config.DefaultVisionDescribeTimeout` = 5 s), enforced
+on the caller side in a goroutine + `select`, so even a backend that
+ignores context cancellation cannot exceed it; (2) a WebSocket send that
+carries an image tag is expanded on the connection's input worker
+(per-connection FIFO; `awaitInputForSession` keeps per-session order)
+instead of in the socket read loop, so the terminal stays responsive.
+
+| Component | Unit tested | Live tested | Unit test coverage | Notes |
+|---|---|---|---|---|
+| `vision.describe_timeout_seconds` — 0/negative → 5 s default, positive → as-configured | Yes | No | `TestVisionConfig_EffectiveDescribeTimeout` in `internal/config/vision_describe_timeout_test.go` | `EffectiveDescribeTimeout()` on `VisionConfig`. Config round-trip follows the standard `vision.*` key path (YAML/CLI/REST/comm as with the other vision keys). |
+| Hanging backend bounded to the deadline (wall time) | Yes | No | `TestDescribeTimeout_HangingBackend_BoundedWallTime` in `internal/server/vision_describe_timeout_test.go` | Backend sleeps 3 s while ignoring context against a 1 s deadline: `expandImageTags` returns in ≤ 2 s and the tag degrades to `@path`. |
+| Fast backend — description preserved | Yes | No | `TestDescribeTimeout_FastBackend_DescriptionPreserved` | `[image: <desc> | path: <path>]` shape unchanged on the happy path. |
+| Backend error / timeout → `@<path>` fallback | Yes | No | `TestDescribeTimeout_BackendError_FallsBackToAtPath`, `TestExpandImageTags_DescribeTimeout` (updated), `TestExpandImageTags_VisionerError` (updated), `TestExpandImageTags_FileNotFound`, `TestExpandImageTags_EmptyDescription` (updated) | Message is delivered; bare `@path` lets a vision-capable model read the file itself. |
+| WebSocket connection not stalled by a hanging backend | Yes | No | `TestDescribeTimeout_WSConnection_NotStalledByHangingBackend` | Read loop keeps servicing frames while the image job expands. |
+| Per-connection input worker: FIFO order, same-session await, drain-on-stop | Yes | No | `TestClientInputWorker_FIFO`, `TestClientInputWorker_AwaitOnlyBlocksSameSession`, `TestClientInputWorker_StopDrainsThenRejects` in `internal/server/ws_input_worker_test.go` | A later plain send to the same session cannot overtake a still-expanding image send; jobs for other sessions are unaffected; accepted jobs still deliver during teardown. |
 
 ## Multi-provider web search registry (BL391, v8.39.0)
 

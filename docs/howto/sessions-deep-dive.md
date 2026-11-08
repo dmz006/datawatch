@@ -422,6 +422,55 @@ The Playwright story TS-816 (group `wire`) checks these budgets
 automatically against the seeded fixture. See
 [testing/README.md](../testing/README.md).
 
+### 5g. Image attachments in session input
+
+You can send an image to a running session by putting `[image:<path>]`
+in the input text — the PWA's attach control builds that tag from your
+upload automatically, so all of the following work the same way:
+
+```sh
+# REST — path first uploaded via POST /api/files, or any file the daemon can read
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"<full-id>","text":"what do you think about this?\n[image:/home/<user>/dw_attach_photo.jpg]"}' \
+  $BASE/api/sessions/send
+```
+
+**What the daemon does with the tag.** Before the text is typed into
+the session, every `[image:<path>]` is read from disk and described by
+the vision backend (requires `vision.enabled: true`; see the Vision
+System entry in [datawatch-definitions.md](../datawatch-definitions.md)),
+and the tag becomes `[image: <description> | path: <path>]` — so the model
+gets both the description and the path.
+
+**Every describe call is bounded.** A single describe runs for at most
+`vision.describe_timeout_seconds` (a value of 0 or less uses the 5-second
+default), enforced on the caller side, so even a backend that ignores
+cancellation cannot exceed it. The setting is read on every send — no
+restart needed:
+
+```sh
+datawatch config set vision.describe_timeout_seconds 15
+```
+
+**What the message looks like when the describe fails.** If a call
+times out, the backend errors, the description comes back empty, the file
+cannot be read, or there is no vision service at all, the tag degrades to
+a bare `@<path>` in the delivered text. The message is still delivered —
+nothing is dropped — and a vision-capable model (for example Claude Code)
+can then read the file at that path with its own image pipeline.
+
+**The terminal cannot freeze.** Over a WebSocket, a send that carries an
+image tag is expanded on the connection's input worker instead of in the
+socket's read loop, so the terminal keeps rendering, scrolling and
+typing while the describe runs. Order is preserved per session: a later
+plain send to the *same* session waits for the still-expanding image send
+to finish rather than overtaking it; sends to other sessions are never
+blocked. The REST `POST /api/sessions/send` endpoint runs inline, within the same bounded
+timeout. If the PWA or terminal appears to wait on an image send, the
+wait is the describe itself taking its full budget — cap it with
+`vision.describe_timeout_seconds` if your backend is slow.
+
 ## Diagram
 
 ```
