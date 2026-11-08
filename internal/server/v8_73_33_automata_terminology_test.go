@@ -183,6 +183,10 @@ var pendingTranslationKeys = map[string]bool{
 	"held_question_failed":          true,
 	"held_question_settings_mode":   true,
 	"held_question_settings_states": true,
+	// Host load check settings labels: English until the app translation lands.
+	"settings_host_load_alert_mode":     true,
+	"settings_host_load_alert_multiple": true,
+	"settings_host_load_alert_minutes":  true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

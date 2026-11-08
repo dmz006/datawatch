@@ -55,7 +55,11 @@ for (const key of ['settings_host_load_alert_mode', 'settings_host_load_alert_mu
       assert.ok(typeof v === 'string' && v.trim().length > 0, 'key present and non-empty');
       assert.ok(!/\bPRDs?\b/.test(v), 'never says PRD');
       assert.ok(!/\b(?:BL|B|F|S)\d{1,6}\b/.test(v), 'no tracker IDs');
-      if (lang !== 'en') assert.notEqual(v, JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'))[key], 'translated, not the English text');
+      if (lang !== 'en') {
+        // English placeholder until the app translation lands (AGENT.md rule: ship EN
+        // while the translation is pending, never a half-translated value).
+        assert.equal(v, JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'))[key], 'English placeholder while the app translation is pending');
+      }
     });
   }
 }
