@@ -40,6 +40,9 @@ const UncommittedCauseAutomatonFinished = "files were still uncommitted when the
 // work branch, no cluster profile and a project directory. Scope filtering
 // does not apply here (the scope setting governs only the per-task check), and
 // nothing is committed.
+//
+// The daemon's own generated documents a person has not changed do not count
+// as uncommitted work, and the question lists only the files that count.
 func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD) (blocked bool, err error) {
 	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy == config.UncommittedWorkPolicyOff {
@@ -55,7 +58,7 @@ func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD
 		log.Printf("[autonomous] %s uncommitted-work: roll-up check skipped: %v", prd.ID, derr)
 		return false, nil
 	}
-	files = excludeUneditedGeneratedArtefacts(prd.ProjectDir, files)
+	files = dropUneditedGeneratedFiles(prd.ProjectDir, files)
 	if len(files) == 0 {
 		return false, nil
 	}
