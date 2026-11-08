@@ -1,4 +1,6 @@
-# datawatch-app parity: Automata tags — axes, counts, and the sweep
+Issue: dmz006/datawatch-app#394
+
+Issue URL: https://github.com/dmz006/datawatch-app/issues/394
 
 **Parity:** The Compose app mirrors the PWA (and the REST/MCP surface behind it). This issue covers the tag placement axes (`automaton`, `automation`, `stage`, `kind`) that are on by default, the placement tags (system tags) that every Automata object now carries, the tag/axis filter query parameters on the session and Automaton list endpoints, the two new read endpoints (`GET /api/sessions/tags`, `POST /api/autonomous/tags/sweep`), the two MCP tools behind them, and every new locale key.
 **PWA parity rule:** datawatch-app has to reflect the same surface: settings rows, list filters, and the locale keys below.
@@ -186,6 +188,8 @@ Every locale file — `en`, `de`, `es`, `fr`, `ja` — gets the new keys. The ap
 - The app carries the locale keys above for every locale it ships, matching the neighboring rows' style; the two MCP tools (`autonomous_tag_sweep`, `session_tag_list`) are documented as the agent-facing equivalents.
 
 ## Filing record
+
+Filed 2026-11-07 as [datawatch-app#394](https://github.com/dmz006/datawatch-app/issues/394). The command used was:
 
 ```
 gh issue create --repo dmz006/datawatch-app \
