@@ -143,8 +143,15 @@ type DecomposeLintMatch struct {
 	// emits nothing to inspect when it fails. Use it with
 	// verification_script_empty to flag such tasks. Absent (false) = do
 	// not check.
-	ReportPathEmpty bool   `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
-	FilesRegex      string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	ReportPathEmpty bool `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
+	// VerificationScriptUnexecutable asserts the task's verification
+	// script is not a runnable file: a command string, or (when the
+	// project directory is known) a path that is missing, not
+	// executable, shebang-less or outside the project. A script the
+	// task lists in its own files is not flagged. Absent (false) = do
+	// not check.
+	VerificationScriptUnexecutable bool   `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
+	FilesRegex                     string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.
