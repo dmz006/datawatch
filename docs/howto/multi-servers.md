@@ -151,15 +151,27 @@ session.
 
 **Selecting a chip acts on the page you are on, immediately.** Choosing a
 federated host re-renders the tab you are currently looking at — Sessions,
-Alerts, Automata (including its Automation sub-tab), Observer or Dashboard —
-in place, against that server: the **Showing: \<name\>** line above the view
-updates to the host you picked and the list/content becomes that host's
-data, without you leaving and re-opening the view. Picking **Local** or
-**All** takes the same page back to that view the same way. (Before the
-fix recorded on 2026-11-08, a chip selection on Alerts, Automata, Observer
-and Dashboard only set the active server and reconnected — the tab kept
-showing the previous server's data until you navigated away and back; the
-current view now follows the chip on all five tabs.)
+Alerts, Automata, Observer or Dashboard — in place, against that server:
+the **Showing: \<name\>** line above the view updates to the host you
+picked and the list/content becomes that host's data, without you leaving
+and re-opening the view. Picking **Local** or **All** takes the same page
+back to that view the same way.
+
+> **Confirm this on your setup before relying on it.** The in-place fix is
+> new and recorded under **[Unreleased] → Fixed** in the
+> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry notes
+> that no live verification had been run when it was recorded. On builds
+> that predate the fix — and, as of the date of these docs, on the source
+> tree these docs describe, where the picker's `selectServer` only
+> re-fetches the Sessions view (plus the **Showing:** line and the
+> connection) on a chip change — a chip selection on the Alerts, Automata,
+> Observer and Dashboard tabs only set the active server and reconnected,
+> and the tab kept showing the previous server's data until you navigated
+> away and back. Confirm the in-place switch on a two-host setup, and check
+> the **Automata** tab's **Automation** sub-tab separately: nothing in the
+> change confirms that sub-tab re-renders on a chip change yet. The full
+> checklist is in [operations.md](../operations.md), under
+> "Still to review (operator)" in the multi-server section.
 
 Behaviours worth knowing:
 
