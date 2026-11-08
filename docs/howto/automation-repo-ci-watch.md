@@ -52,13 +52,6 @@ agree over several episodes.
 
 For each repository in `repos`, one poll reads:
 
-| What | How | Default |
-|---|---|---|
-| The head of `main` | `git rev-parse origin/main` (or the default branch) and then the CI runs on that SHA | always, for listed repos |
-| The newest release tags | the newest `tag_count` tags in the repository, each of the shape `v\u003cmajor\u003e.\u003cminor\u003e.\u003cpatch\u003e` (`v2` does not count as a release tag) | 5 (0 = no tags) |
-
-For every one of those refs the pass lists the runs on that ref's head commit — every workflow that ran on that SHA — not a fixed workflow name. So a poll covers the head of `main` plus the newest `tag_count` release tags, each across every workflow that ran there. A run belongs to the (repository, ref, workflow) triple it ran on, and each one gets at most one watch record.
-
 The alert gate runs on a push to `main` that changes a code, dependency, workflow
 or script file, on a pull request to `main` that changes one of those files, every
 Monday at 04:17 UTC (the scheduled run is weekly), and when it is started by
@@ -68,6 +61,13 @@ changes none of the code, dependency, workflow or script files starts none
 either, because a documents-only change cannot add a code-scanning alert.
 Nothing is silently skipped beyond that: a pull request that touches `go.mod`
 or `go.sum`, such as a dependabot dependency bump, still starts a run.
+
+| What | How | Default |
+|---|---|---|
+| The head of `main` | `git rev-parse origin/main` (or the default branch) and then the CI runs on that SHA | always, for listed repos |
+| The newest release tags | the newest `tag_count` tags in the repository, each of the shape `v\u003cmajor\u003e.\u003cminor\u003e.\u003cpatch\u003e` (`v2` does not count as a release tag) | 5 (0 = no tags) |
+
+For every one of those refs the pass lists the runs on that ref's head commit — every workflow that ran on that SHA — not a fixed workflow name. So a poll covers the head of `main` plus the newest `tag_count` release tags, each across every workflow that ran there. A run belongs to the (repository, ref, workflow) triple it ran on, and each one gets at most one watch record.
 
 ## The record states
 
