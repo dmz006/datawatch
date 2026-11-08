@@ -110,6 +110,7 @@ More: [skills](docs/skills.md) · [MCP](docs/mcp.md) · [Claude Code hooks](docs
 - AI tools: claude-code, aider, pi, goose, gemini, opencode, ollama, openwebui and shell
 - Docker and Kubernetes workers
 - Rate-limit recovery, network monitoring, Prometheus metrics and a Tailscale network
+- A usage calculator that sizes the parallel lanes to your weekly Claude allowance, with an option for the daemon to apply that advice itself within a cap you set (auto-lanes, off by default)
 
 Everything else is in the [Documentation index](#documentation-index).
 
