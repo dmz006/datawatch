@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Placement decisions are recorded in the audit log.** The audit log gains five events for the lifecycle of a model placement decision: `placement_asked` (posed to the operator under the ask policy), `placement_approved` and `placement_denied` (the operator's answer to an ask), `placement_loaded` (a model loaded onto a node) and `placement_refused` (a placement refused under the refuse policy, or a load offered to no usable node). Every entry carries the node, the model, the placement policy in force (`ask`, `auto_load` or `refuse`) and the reason text, and each gets its own CEF signature (65–69) so SOC forwards distinguish them.
+
 - **The model loader pulls a model a node does not have, then loads it.** When admission picks a node and the worker's model is not downloaded on that node, `ModelLoader.Ensure` now pulls it first — bounded by the loader's wait, with progress reported through the wait callback — and only then loads it, so the worker never pays a not-found load after an implicit pick. Nodes that already have the model load it as before, and a pinned node still pulls and loads its pin first. The Ollama `/api/pull` streaming loop has one implementation in the inference package (`PullModel`) shared by the model loader and the marketplace pull task; the marketplace task keeps the same status values (`pending | in_progress | done | failed`), the same progress reports, and the same terminal error texts for a failed pull.
 
 ## v9.67.0 — Cost report
