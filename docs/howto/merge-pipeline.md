@@ -6,7 +6,7 @@ exec_params:
   - {name: project, required: false, description: "Project name; leave empty for the merge base repository"}
 exec_steps:
   - tool: autonomous_merge_pipeline_get
-    description: Read the pipeline in effect for the project, where it came from and why, the conflict policy and model, and any per-project overrides
+    description: Read the pipeline in effect for the project, where it came from and why, the conflict policy and model, the release approval modes in effect, and any per-project overrides
     args: {project: "{{params.project}}"}
     read_only: true
   - tool: autonomous_merge_pipeline_validate
@@ -145,7 +145,8 @@ To see the result:
 
 The answer names the source in effect (project file, daemon record or built-in
 default), the reason in plain language, any problem found with the file even if
-another source was used, the steps in order, and the conflict policy and model.
+another source was used, the steps in order, the conflict policy and model, and
+the release approval modes in effect for the project.
 
 ## Choose the conflict policy
 
@@ -180,6 +181,8 @@ sure the name you give exists. If you run a model of your own, name that one.
 
 The defaults are patch `auto`, minor `auto`, major `ask`: a major release is never shipped quietly, and a release whose size cannot be read resolves to `ask` rather than being shipped. Until the daemon's own review-and-merge step lands, a release is made exactly as before (the supervisor reviews and the operator approves a major); this setting is the first piece of that step, and it is the value the daemon's merge path will honour. A mode is only `auto`, `ask` or `manual` — anything else is refused with the key named rather than stored, wherever it is set.
 
+You can see where the inheritance lands for a project: the read answer carries `release_approval_in_effect` with the resolved mode per size (the project's value, else the global one, else the default above), its text answers (`show` on the command line, the chat verb and the MCP tool's text) add a `Release approval: patch …, minor …, major …` line, and `GET /api/config` reads the block's effective `release_approval` back with the same per-size resolution.
+
 Each size inherits when unset, in this order — a project's value in `autonomous.merge_pipeline.projects.<project>.release_approval`, then the global `release_approval`, then the defaults above. For example, to leave the defaults in place and make one project ship minor releases manually:
 
 ```yaml
@@ -191,7 +194,7 @@ autonomous:
           minor: manual
 ```
 
-Set or read a mode with `datawatch config set autonomous.merge_pipeline.release_approval.major ask`, `PUT /api/config` with `{"autonomous.merge_pipeline.release_approval.major": "ask"}`, MCP `config_set`, or the comm channel `configure autonomous.merge_pipeline.release_approval.major=ask`. Moving a size toward `auto` — above all `major`, which is the operator's by default — is a decision to make deliberately and record with its evidence: once the daemon's merge runs, `auto` means it ships that size without anyone.
+Set or read a mode with `datawatch config set autonomous.merge_pipeline.release_approval.major ask`, `PUT /api/config` with `{"autonomous.merge_pipeline.release_approval.major": "ask"}`, MCP `config_set`, or the comm channel `configure autonomous.merge_pipeline.release_approval.major=ask`; sending `null` for a size clears it back to inheriting. Moving a size toward `auto` — above all `major`, which is the operator's by default — is a decision to make deliberately and record with its evidence: once the daemon's merge runs, `auto` means it ships that size without anyone.
 
 ## How a model proposal is tested before use
 
