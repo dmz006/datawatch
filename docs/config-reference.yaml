@@ -2061,6 +2061,14 @@ autonomous:
   #   or changes a registry entry.
   # version_files: project files, relative to the project, that carry the
   #   `var Version = "X.Y.Z"` line the release-version step sets. Default none.
+  # release_approval: one mode per size of release - release_approval.patch,
+  #   .minor and .major - each auto | ask | manual (anything else is refused
+  #   with the key named). Defaults: patch auto, minor auto, major ask; a
+  #   release whose size cannot be read resolves to ask, never to shipping.
+  #   An unset size inherits the project's
+  #   autonomous.merge_pipeline.projects.<project>.release_approval, then the
+  #   global value, then that default. First step of the daemon finishing the
+  #   review and merge by itself; the daemon's merge path honours these modes.
   # merge_pipeline:
   #   file_name: .datawatch/merge-pipeline.yaml
   #   source_order: [file, record]
@@ -2068,6 +2076,10 @@ autonomous:
   #   conflict_policy: mechanical_and_model
   #   conflict_model: claude-opus-5-5
   #   version_files: []
+  #   release_approval:
+  #     patch: auto
+  #     minor: auto
+  #     major: ask
   #   projects: {}
 
   # Post-ship hooks (autonomous.merge_pipeline.post_ship): the small steps a

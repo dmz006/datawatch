@@ -21,7 +21,8 @@ shipped: checks, merge, version bump, changelog, tag, push and deploy. Every
 project has one. You can keep it in a file in the project's own repository,
 keep it as a record the daemon holds, or do neither and use the built-in
 pipeline. This guide shows how to define it each way, which one wins, how to see
-what is in effect, and how merge conflicts are handled.
+what is in effect, how merge conflicts are handled and who approves a release
+before it ships.
 
 This how-to belongs to the tutorial and onboarding material. The
 [onboarding report](onboarding-report.md) points at it when a project still uses
@@ -167,6 +168,31 @@ Leave it unset to use the built-in default name; set it to an empty string for
 no model. The setting never adds, edits or removes a registry entry, so make
 sure the name you give exists. If you run a model of your own, name that one.
 
+## Choose the release approval
+
+`autonomous.merge_pipeline.release_approval` decides, for each size of release, who has to approve it before the release ships. There is one key per size — `patch`, `minor` and `major` — and each takes one of three modes:
+
+| Mode | What happens |
+|---|---|
+| `auto` | The release ships without waiting for anyone. |
+| `ask` | The operator is asked before the release ships. |
+| `manual` | The release is left for the operator to ship. |
+
+The defaults are patch `auto`, minor `auto`, major `ask`: a major release is never shipped quietly, and a release whose size cannot be read resolves to `ask` rather than being shipped. Until the daemon's own review-and-merge step lands, a release is made exactly as before (the supervisor reviews and the operator approves a major); this setting is the first piece of that step, and it is the value the daemon's merge path will honour. A mode is only `auto`, `ask` or `manual` — anything else is refused with the key named rather than stored, wherever it is set.
+
+Each size inherits when unset, in this order — a project's value in `autonomous.merge_pipeline.projects.<project>.release_approval`, then the global `release_approval`, then the defaults above. For example, to leave the defaults in place and make one project ship minor releases manually:
+
+```yaml
+autonomous:
+  merge_pipeline:
+    projects:
+      myproject:
+        release_approval:
+          minor: manual
+```
+
+Set or read a mode with `datawatch config set autonomous.merge_pipeline.release_approval.major ask`, `PUT /api/config` with `{"autonomous.merge_pipeline.release_approval.major": "ask"}`, MCP `config_set`, or the comm channel `configure autonomous.merge_pipeline.release_approval.major=ask`. Moving a size toward `auto` — above all `major`, which is the operator's by default — is a decision to make deliberately and record with its evidence: once the daemon's merge runs, `auto` means it ships that size without anyone.
+
 ## How a model proposal is tested before use
 
 Your project is never touched while a model is working. For each conflict the
@@ -203,9 +229,12 @@ project under `autonomous.merge_pipeline.projects.<project>.<key>`.
 | `fallback_on_bad_file` | `record` |
 | `conflict_policy` | `mechanical_and_model` |
 | `conflict_model` | the built-in default model name |
+| `release_approval` | patch `auto`, minor `auto`, major `ask`; one mode per key, each `auto`, `ask` or `manual`; a project's `release_approval` takes precedence over the global one |
 | `version_files` | none; a pipeline that bumps the version fails that step until you name the files that carry the version line |
 
 Set them with `datawatch config set`, the `autonomous_config_set` MCP tool (its
 `merge_pipeline_*` arguments), the `configure` chat verb, or Settings >
-Automation > Merge pipeline in the PWA. Each help link there opens the matching
+Automation > Merge pipeline in the PWA (`release_approval` uses the same
+surfaces' generic config paths: `datawatch config set`, `PUT /api/config`,
+MCP `config_set` and the comm channel `configure`). Each help link there opens the matching
 entry in [the definitions](../datawatch-definitions.md#merge-pipeline).

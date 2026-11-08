@@ -68,6 +68,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
+  - [Release approval](#release-approval)
   - [Onboarding report](#onboarding-report)
   - [Onboarding report checks](#onboarding-report-checks)
   - [Onboarding report next steps](#onboarding-report-next-steps)
@@ -2136,6 +2137,12 @@ Where a project's pipeline comes from, and what happens when that source is bad.
 ### Merge conflict model
 
 **Merge conflict model** (`autonomous.merge_pipeline.conflict_model`, a built-in default model name) — the LLM registry entry that proposes a conflict resolution. An unset key uses the default name; an explicit empty string means no model. The setting never adds, edits or deletes a registry entry, so the name must already exist. The proposal is worked out in a scratch worktree and tested there; the project is touched only when the test step passes.
+
+### Release approval
+
+**Release approval** (`autonomous.merge_pipeline.release_approval`, one mode per size of release) — who has to approve a release before it ships, as a setting instead of a convention. One key per size — `patch`, `minor`, `major` — each `auto` (ships without waiting), `ask` (asks the operator before it ships) or `manual` (left for the operator to ship). The defaults are patch `auto`, minor `auto`, major `ask`, so a major is never shipped quietly; a release whose size cannot be read resolves to `ask`, never to shipping. An unset size inherits in this order: the project's value under `autonomous.merge_pipeline.projects.<project>.release_approval`, the global value, then the default. Any other mode is refused with the key named, wherever it is set.
+
+Set it with `datawatch config set autonomous.merge_pipeline.release_approval.<size> <mode>`, `PUT /api/config`, MCP `config_set` or the comm channel `configure`; read it back through any of them. This is the first step of the daemon finishing the review and merge by itself (Phase 4 of the autonomy handover); the daemon's merge path honours this value, and until it lands a release is made exactly as before. Moving a size toward `auto` — above all `major`, which stays the operator's unless the operator changes it — should be a recorded decision with its evidence. See [howto/merge-pipeline.md](howto/merge-pipeline.md) for the walkthrough.
 
 ### Onboarding report
 
