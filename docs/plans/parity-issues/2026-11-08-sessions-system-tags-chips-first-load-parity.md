@@ -1,6 +1,6 @@
 # [sync] Sessions page: every session's placement (system) tag chips on the first load — mobile parity (datawatch app)
 
-**Not filed yet.** — this is the tracked draft; the GitHub issue (or
+**Filed 2026-11-08 as https://github.com/dmz006/datawatch-app/issues/401 (release v9.112.8).** Original note: — this is the tracked draft; the GitHub issue (or
 follow-up comment) is opened when the operator files it. Filing the issue
 does not change a line of this repo. This draft is a file write only: it
 never runs any hosting CLI and creates nothing on any host.
