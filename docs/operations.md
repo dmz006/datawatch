@@ -2772,6 +2772,7 @@ root is never described, and the tag is delivered as the literal
 | Method | How |
 |--------|-----|
 | **YAML** | `vision.describe_timeout_seconds` in `datawatch.yaml` |
+| **Web UI** | web app Settings → LLM → Vision (Image Descriptions) → Describe timeout |
 | **CLI** | `datawatch config set vision.describe_timeout_seconds 15` |
 | **REST API** | `PUT /api/config` with `{"vision.describe_timeout_seconds": 15}` |
 | **Comm channel** | `configure vision.describe_timeout_seconds=15` |
