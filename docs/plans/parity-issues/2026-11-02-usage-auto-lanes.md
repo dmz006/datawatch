@@ -1,6 +1,6 @@
-Issue: dmz006/datawatch-app#TBD (not yet filed; the filing record at the end gives the command)
+Issue: dmz006/datawatch-app#393
 
-Issue URL: TBD, fill in after filing
+Issue URL: https://github.com/dmz006/datawatch-app/issues/393
 
 # [sync] usage calculator: auto-lanes settings and status
 
@@ -52,9 +52,9 @@ The PWA bundles already carry de, es, fr and ja text; Android should check its t
 | Comm channel | Not touched | Existing config verbs |
 | YAML/config | Changed | Three keys |
 | PWA | Changed | Controls and status line |
-| Android | Pending, issue to file | This text |
-| iPhone | Pending, issue to file | Joins #286 |
+| Android | Pending, issue filed (#393) | This text |
+| iPhone | Pending, issue filed (#393) | Joins #286 |
 
 ## Filing record
 
-Not filed yet by the author of this text: no matching issue was found by `gh issue list -R dmz006/datawatch-app --state all --search 'auto lanes'` on 2026-11-07 (only #286 and #365 returned, neither about auto-lanes). File once with `gh issue create -R dmz006/datawatch-app --title "[sync] usage calculator: auto-lanes settings and status" --body-file <this file>`, then replace the first line with the issue number.
+Filed on 2026-11-07 as dmz006/datawatch-app#393 (https://github.com/dmz006/datawatch-app/issues/393). A search on the same day found no earlier auto-lanes issue; #286 (calculator) is related, and the iPhone app work joins it.
