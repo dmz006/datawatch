@@ -25,6 +25,18 @@ on:
       - '**/*.md'
   pull_request:
     branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'channel/**' # the channel package and its lock file
+      - 'internal/server/web/**' # the web app files
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.mjs'
+      - '**/*.py'
+      - '.github/workflows/**'
+      - 'scripts/**'
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
