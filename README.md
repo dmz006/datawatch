@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.110.0 (2026-11-07).** Every object the Automata own now carries machine-managed placement tags, every list filters by tag or axis, and a tag sweep re-derives the tags of existing work. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.110.1 (2026-11-07).** A daemon started with its own data_dir now keeps all of its state under that directory instead of the home directory (GitHub issue 252). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

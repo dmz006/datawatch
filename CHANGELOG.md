@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.110.1 — Server state paths follow the configured data directory
+
+### Changed
+
+- **The file secret provider's default folder is now derived from the configured data directory, not the home directory.** `secrets.NewFileProvider` no longer falls back to `~/.datawatch/secrets` when given an empty base directory — callers must pass the folder. A new `secrets.DefaultFileProviderDir(dataDir)` returns `<data_dir>/secrets` (with `~` expansion), and the daemon's startup wiring uses it, so the effective default location (`<data_dir>/secrets`, which is `~/.datawatch/secrets` under the default data directory) is unchanged.
+
+### Fixed
+
+- **The daemon's state paths now follow the configured data directory (GitHub issue 252).** A daemon started with its own `data_dir` used to read and write most of its state — channel routing, dashboard layout, smoke-run records, discussion history and participants, merge pipeline records, usage readings, encryption state, migration status, the default automaton worktree directory and the tmux socket directory — from the process home directory (`$HOME/.datawatch`, or the `DATAWATCH_DATA_DIR` environment variable) anyway, silently ignoring the configured data directory. Every datawatch-owned state path now resolves from the configured `data_dir` through a single helper, falling back to `~/.datawatch` only when no data directory is set, and the `DATAWATCH_DATA_DIR` environment fallback is gone. A static guard test blocks any new home-derived state path in the server package, an isolation test requires a decoy home tree to stay byte-identical across the full handler surface, and `scripts/state-data-dir-live-check.sh` proves it end to end against a sandbox daemon.
+  - **How it shows up:** a daemon started with a custom `data_dir` now serves its state from that directory — `GET /api/channel/routing`, `GET /api/dashboard/layout`, `GET /api/smoke/progress` and `GET /api/security/encryption/status` all reflect the files under the data directory — and the home tree is left untouched, while a daemon on the default data directory (`~/.datawatch`) looks exactly as it did before. The automaton worktree directory defaults to `<data_dir>/prd-worktrees` and the secrets file provider to `<data_dir>/secrets` (see the entry above).
+  - **Migration:** if you set `data_dir` and rely on state that used to live under `$HOME/.datawatch` (channel routing, dashboard layout, smoke runs, discussions, merge records, usage readings, encryption state, or the default worktree directory), move those files into the data directory before upgrading — otherwise the daemon starts with an empty state there. With the default `~/.datawatch` data directory there is nothing to do.
+
 ## v9.110.0 — Tag everything the Automata system can tag
 
 ### Added
