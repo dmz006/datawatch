@@ -136,19 +136,22 @@ func placementAskKey(taskID, model, node string) string {
 // placementGate applies the live missing_model policy to the planner's
 // verdict. It is called from admitPreferring, before the lease, so the lease
 // is granted on the node placement approved. It returns the target node to
-// lease and load on, or a *PlacementRefused error when the policy declines.
+// lease and load on, or "" when the gate has no target (admission proceeds
+// exactly as before, and the ledger still ranks the nodes). A
+// *PlacementRefused error means the policy declined the load.
 //
-// The gate is nil-safe: with no advisor (tests, capacity off) it returns the
-// fallback node and no error, so admission proceeds exactly as before.
+// The gate is nil-safe: with no advisor (tests, capacity off) it has no
+// target and no error, and it never forces a PreferNode — that would outrank
+// NodeChoice.Priority and lock a task that should move to a freer node.
 func (m *Manager) placementGate(ctx context.Context, prd *PRD, t *Task, backend, model, fallbackNode string) (string, error) {
 	a := m.getPlacementAdvisor()
 	if a == nil {
-		return fallbackNode, nil
+		return "", nil // no advisor: gate skipped, admission as before
 	}
 	pinned := t.ComputeNode
 	plan := a.Plan(backend, model, pinned)
 	if !plan.Relevant {
-		return fallbackNode, nil
+		return "", nil // placement has no opinion: gate skipped, admission as before
 	}
 	chosen := plan.Chosen
 	switch plan.Policy {
@@ -171,7 +174,9 @@ func (m *Manager) placementGate(ctx context.Context, prd *PRD, t *Task, backend,
 			m.emitPlacementAudit(audit.ActionPlacementDenied, model, target, config.ComputePlacementAsk, qid)
 			return "", &PlacementRefused{Node: fallbackNode, Model: model, Policy: config.ComputePlacementAsk, QuestionID: qid, Refused: append([]string(nil), plan.Refused...)}
 		}
-		m.markPlacementAskApproved(t.ID, model, target)
+		// The approval's durable record is the answered question in the store;
+		// placementAskApproved reads it back on later attempts of the same
+		// (task, model, node), so no extra bookkeeping happens here.
 		return target, nil
 	default: // auto_load
 		if chosen == "" {
@@ -222,14 +227,6 @@ func (m *Manager) placementAskApproved(taskID, model, node string) bool {
 		}
 	}
 	return false
-}
-
-// markPlacementAskApproved is a no-op: the approval is persisted by the
-// question store itself (the answered question is the record). It exists for
-// clarity at the call site.
-func (m *Manager) markPlacementAskApproved(taskID, model, node string) {
-	// The approval is already persisted: the question is answered.
-	_ = placementAskKey(taskID, model, node)
 }
 
 // placementAsk raises the operator question and polls until it is answered,
