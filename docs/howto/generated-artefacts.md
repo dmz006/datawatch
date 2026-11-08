@@ -80,6 +80,14 @@ Every generated file starts with this marker line:
 `<automaton-id>` is replaced with the Automaton id. The paths are relative to
 the project directory, and the daemon creates the folders.
 
+One thing to know about the reports folder: it is also where a read-only
+task may leave its report files. After such a task finishes, datawatch
+settles every new untracked file there — moved into the task's report folder
+under `.datawatch/reports/`, or deleted when a file of the same name is
+already there — before the task's dirty check, and a `read_only_report_moved`
+decision names every file moved or deleted. See
+[howto/automaton-parallel-tasks.md](automaton-parallel-tasks.md#allow-a-read-only-task-one-report-file).
+
 ### Gate report: counts only
 
 A table of numbers and nothing else, so a reader can see the size of the

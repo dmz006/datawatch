@@ -993,6 +993,17 @@ task's own `verification_script`, when present, is still run and must exit
 did produce real changes does not use this rule; the usual verification
 path handles its diff.
 
+**Report files left in the old folder are settled before the check.** Before
+the read-only violation check runs, every new untracked file the task left
+under `docs/plans/reports/` (the old reports folder) is moved into the folder
+of the task's report path under `.datawatch/reports/` — name kept, folder
+created — or deleted when a file of the same name is already there, with a
+`read_only_report_moved` decision naming every file moved or deleted. So a
+task that wrote its report to the old path still passes, and a name clash
+keeps the existing file and drops the new copy; anything else the task left
+changed — a tracked source edit, a new file outside that folder — still fails
+it.
+
 **Recovering a blocked Automaton — make the task verifiable.** While the
 Automaton is blocked the held task can be patched in place. Edit-task
 patches the held task while it is held — its `spec`, its read-only mark and

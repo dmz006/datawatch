@@ -54,8 +54,12 @@ An explicit `false` is kept; only an absent key reads the default.
 
 A read-only task still **cannot** make any other filesystem change: after it
 finishes, datawatch re-checks the tree with `git status --porcelain
---untracked-files=all` and fails the task if it is dirty — unless the change is
-exactly the one report file below. Only new dirt fails a read-only task: a path that was already dirty before the task started, or one that disappears while it runs, never counts against it.
+--untracked-files=all` and fails the task if it is dirty — unless the change
+is exactly the one report file below, or a report file left in the old
+`docs/plans/reports/` folder that is settled into the task's report folder
+before the check. Only new dirt fails a read-only task: a path that was already
+dirty before the task started, or one that disappears while it runs, never
+counts against it.
 
 ## Allow a read-only task one report file
 
@@ -74,6 +78,21 @@ report).
   `git status` selection excludes `.datawatch` (as before) and exactly the report
   path, so writing the report completes the task while any other stray change
   still fails it.
+- **Report files left in the old folder are settled, not failed.** If the task
+  left a new, untracked file under `docs/plans/reports/` — the old reports
+  folder, where the gate report is tracked — datawatch settles it before the
+  dirty check: the file is moved into the folder of the task's report path
+  under `.datawatch/reports/` (the file name is kept, the folder is created),
+  so writing the report to the old path does not fail the task. When a file of
+  the same name is already there, the new copy is deleted and the existing one
+  is kept. Every file moved or deleted is named in a `read_only_report_moved`
+  decision on the Automaton's decision log — read it to see which copy won a
+  name clash, and check the kept file is the one you wanted.
+
+Settling is the only exception besides the declared report path: an edit to a
+tracked source file, a new file anywhere else in the tree, and a symlink or a
+path that resolves outside the tree are all left in place by the settling and
+still fail the read-only task.
 
 Set it next to the task's `read_only` mark, from the same surfaces as above:
 
