@@ -39,10 +39,33 @@ func (m *Manager) loadWorkerNode(ctx context.Context, prd *PRD, t *Task, backend
 		return nil
 	}
 	var excluded []string
+	askApproved := make(map[string]bool) // nodes the operator approved this attempt
 	for {
 		node := m.heldNode(t.ID)
 		if node == "" {
 			return nil
+		}
+		// The placement gate applies the live missing_model policy to the
+		// planner's verdict for this node before the load, so the loaded node
+		// is always one placement approved (see placement_admission.go).
+		g := m.placementGate(ctx, prd, t, backend, model, node, askApproved)
+		switch g.action {
+		case placementGateStop:
+			if refused, ok := g.err.(*PlacementRefused); ok {
+				raisePlacementAlert(sink, refused)
+			}
+			m.releaseCapacity(t.ID)
+			return g.err
+		case placementGateReroute:
+			m.releaseCapacity(t.ID)
+			excluded = append(excluded, node)
+			if !nodeLeft(choices, excluded) {
+				return fmt.Errorf("node load: placement chose %s, but no other node of this LLM entry is left", g.target)
+			}
+			if aerr := m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, excluded, g.target); aerr != nil {
+				return aerr
+			}
+			continue
 		}
 		lerr := m.loadOnNode(ctx, t, loader, node, model)
 		if lerr == nil {

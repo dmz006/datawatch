@@ -908,6 +908,13 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
+	// The admission placement gate: before the load step happens, the load
+	// asks the planner where a missing model may go and applies the live
+	// missing_model policy — refuse, auto-load, or ask the operator (nil
+	// advisor = gate skipped, status quo).
+	if amgr != nil {
+		amgr.SetPlacementAdvisor(newPlacementAdvisor(cfg, httpServer))
+	}
 	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
 	amgr.SetPatternsStatus(mgr.RateLimitGuardStatus)
@@ -1443,4 +1450,137 @@ func addressHost(addr string) string {
 	}
 	host, _, _ := strings.Cut(addr, "/")
 	return host
+}
+
+// placementAdvisor is the daemon implementation of
+// autonomous.PlacementAdvisor: it reads the live config, the LLM entry's
+// node list, the compute registry (node capacity, RBAC, pins) and the
+// observer's latest payload per node, and hands them to the pure
+// compute.PlaceMissingModel planner — which itself never touches the
+// registries, the network, or the clock.
+type placementAdvisor struct {
+	cfg   *config.Config
+	entry func(backend, model string) inference.LLM
+	nodes func() *compute.Registry
+	peers func() server.PeerRegistryAPI
+	now   func() time.Time
+}
+
+// placementConsumer is the consumer name admission presents to the nodes'
+// RBAC matrix when planning where a missing model may be loaded.
+const placementConsumer = "autonomous"
+
+// newPlacementAdvisor wires the planner supplier over the daemon's live
+// registries. The config is read on every Plan call, so a missing_model
+// change takes effect at the next load gate without a restart.
+func newPlacementAdvisor(cfg *config.Config, httpServer *server.HTTPServer) *placementAdvisor {
+	return &placementAdvisor{
+		cfg: cfg,
+		entry: func(backend, model string) inference.LLM {
+			e, _, gated := hostingEntry(httpServer.InferenceRegistry(), backend, model)
+			if !gated {
+				return inference.LLM{}
+			}
+			return e
+		},
+		nodes: httpServer.ComputeRegistry,
+		peers: httpServer.PeerRegistry,
+		now:   time.Now,
+	}
+}
+
+// Plan implements autonomous.PlacementAdvisor. A single-node hosting entry is
+// not relevant: placement only adjudicates between nodes, so the status-quo
+// single-node load path never asks it.
+func (a *placementAdvisor) Plan(backend, model string) autonomous.PlacementPlan {
+	entry := a.entry(backend, model)
+	if len(entry.ComputeNodes) < 2 {
+		return autonomous.PlacementPlan{}
+	}
+	cands, ok := a.candidates(entry.ComputeNodes, model)
+	if !ok {
+		return autonomous.PlacementPlan{}
+	}
+	cp := a.cfg.ComputePlacement
+	memPct := cp.MemHeadroomPct
+	if memPct == 0 {
+		memPct = config.ComputePlacementDefaultMemHeadroomPct
+	}
+	diskGB := cp.DiskHeadroomGB
+	if diskGB == 0 {
+		diskGB = config.ComputePlacementDefaultDiskHeadroomGB
+	}
+	plan := compute.PlaceMissingModel(compute.PlacementRequest{
+		Model:             nodeModelName(model),
+		Consumer:          placementConsumer,
+		MemHeadroomPct:    memPct,
+		DiskHeadroomGB:    diskGB,
+		ModelSizeGB:       cp.AssumeModelSizeGB,
+		Now:               a.now(),
+		Candidates:        cands,
+	})
+	return autonomous.PlacementPlan{
+		Relevant: true,
+		Chosen:   plan.Node,
+		Policy:   cp.EffectiveMissingModel(),
+		Refused:  plan.Refusal,
+	}
+}
+
+// AskTimeout implements autonomous.PlacementAdvisor.
+func (a *placementAdvisor) AskTimeout() time.Duration {
+	mins := a.cfg.ComputePlacement.AskTimeoutMinutes
+	if mins == 0 {
+		mins = config.ComputePlacementDefaultAskTimeoutMinutes
+	}
+	return time.Duration(mins) * time.Minute
+}
+
+// candidates builds the planner input per node: the registry's node (capacity,
+// RBAC, pin — a node whose pinned model is the one being loaded is the node
+// that serves it) plus the observer's latest payload (live memory and disk in
+// use). A node that left the registry is dropped: it can't be assigned anyway.
+func (a *placementAdvisor) candidates(names []string, model string) ([]compute.PlacementCandidate, bool) {
+	reg := a.nodes()
+	if reg == nil {
+		return nil, false
+	}
+	var pr server.PeerRegistryAPI
+	if a.peers != nil {
+		pr = a.peers()
+	}
+	bare := nodeModelName(model)
+	out := make([]compute.PlacementCandidate, 0, len(names))
+	for _, name := range names {
+		n, err := reg.Get(name)
+		if err != nil || n == nil {
+			continue
+		}
+		c := compute.PlacementCandidate{Node: n}
+		if n.NodePinnedModel != "" && strings.EqualFold(n.NodePinnedModel, bare) {
+			c.ServesModel = true
+		}
+		if pr != nil {
+			peerName := n.Name
+			if n.ObserverPeer != "" {
+				peerName = n.ObserverPeer
+			}
+			if snap := pr.LastPayload(peerName); snap != nil {
+				c.MemTotalBytes = snap.Mem.TotalBytes
+				if snap.Mem.TotalBytes > snap.Mem.UsedBytes {
+					c.MemFreeBytes = snap.Mem.TotalBytes - snap.Mem.UsedBytes
+				}
+				for _, d := range snap.Disk {
+					if f := d.TotalBytes - d.UsedBytes; f > c.DiskFreeBytes {
+						c.DiskFreeBytes = f
+					}
+				}
+			}
+		}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
 }
