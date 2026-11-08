@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.111.0 (2026-11-07).** The daemon can now set the Claude lane count itself from the usage calculator's advice (default off, never above the operator maximum, every change recorded with its reason). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.111.1 (2026-11-07).** The CodeQL alert gate backs off while waiting for analyses and treats a GitHub rate limit as wait-and-retry instead of a red check. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

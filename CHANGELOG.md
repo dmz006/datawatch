@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.111.1 — Alert gate waits with a growing interval and reads rate limits as wait-and-retry
+
+### Fixed
+
+- **The "Open high/critical alerts" check no longer exhausts the repository's GitHub API rate limit and fails as a red check with no finding.** The CodeQL workflow's alert-gate job used to poll the code-scanning API on a fixed 30-second schedule while waiting for the analyses, and Dependabot rebases every open pull request on each push to main — so about fifteen jobs of the same installation polled the one rate limit at once, exhausted it, and the step failed with a rate-limit error that looked like a broken check. Waiting now backs off (60 s, doubling to 300 s, within a 25-minute budget), and both steps treat a rate-limited response as wait-and-retry: the gate asks GitHub for the core rate-limit reset time, waits until it, and retries within the budget. The open-alerts read is a single read, not a polling loop; it retries only on a rate limit, and a read failure is reported as a failure — never as a zero-alert result.
+  - **How it shows up:** a red check whose step log says `Rate limited` with a reset time is an API wait, not a code finding — wait until the reset time, then push a new commit or rerun the check. A `No analysis for` line is the real missing-analysis timeout and the one worth investigating. The gate's exit codes are unchanged, and it still fails on open high or critical alerts exactly as before; nothing in the log is a code finding unless it names an alert.
+  - **How it reads in CI watch:** such a red run is recorded by Automation the way any failing security run is recorded — as a record, with no special classification and no rerun; the job log is the check that tells the two reds apart.
+  - **Migration:** none; the defaults apply on upgrade. See the *Red check from a rate limit* section of [docs/howto/codeql-local-scan.md](docs/howto/codeql-local-scan.md) and the CI-watch how-to.
+
 ## v9.111.0 — Automatic Claude lane count inside the operator's setting
 
 ### Added
