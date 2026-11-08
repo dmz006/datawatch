@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Retry resume decision helper.** `internal/autonomous/retry_resume_decision.go` adds `decideRetryResume`, a pure function that decides whether a retried attempt resumes the previous backend session. It resumes only when the session is alive, the backend supports resume, resume is enabled (`MaxContextTokens > 0`), and the context is at or under the limit (an unknown context of 0 resumes). Each outcome returns an operator-readable reason. Not yet wired into the retry path.
+
 - **`autonomous.first_attempt` now picks the worker for a task's first attempt.** A first attempt whose task kind (`implementation`, `docs`, `note`, `final_gate`) has a configured backend runs on that backend and model. A task or Automaton that pins its own worker, a story or PRD pin, and a burn-guard route all still win, and retries never use the first-attempt pair. Kinds with no entry keep today's choice.
 
 - **Config keys for the cost of a task's first attempt and its retries.** `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model its first attempt runs on; an absent or empty entry keeps today's choice. `autonomous.first_attempt_escalate_after_failures` (default `1`, range `0`–`20`) sets how many failures move the next attempt to the stronger choice. `autonomous.retry_resume_max_context_tokens` (default `150000`, range `0`–`2000000`) caps the prior context a retry may resume with; `0` starts every retry fresh. One shared validator refuses an unknown kind, a model-less backend that needs a model, and out-of-range numbers, naming the key each time.
