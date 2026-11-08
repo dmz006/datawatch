@@ -110,6 +110,14 @@ type TaskAttempt struct {
 	// pinned" or "default choice" (see describeAttemptBackendReason). Attempts
 	// stored before it existed leave it empty.
 	BackendReason string `json:"backend_reason,omitempty"`
+	// Resumed is true when this attempt continued the previous session with the
+	// failure summary instead of starting a fresh session. Attempts stored
+	// before it existed read as false.
+	Resumed bool `json:"resumed,omitempty"`
+	// ResumeReason says why the retry resumed or did not resume: the retry
+	// decision's reason (see decideRetryResume). Empty when no retry decision
+	// was made, including on a record stored before the field existed.
+	ResumeReason string `json:"resume_reason,omitempty"`
 	// RunnerExitStatus is pi's exit status when the pane showed it; nil when
 	// no pi exit status was seen.
 	RunnerExitStatus *int `json:"runner_exit_status,omitempty"`

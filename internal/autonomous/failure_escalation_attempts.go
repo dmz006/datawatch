@@ -70,6 +70,13 @@ type attemptRun struct {
 	// AttemptsBefore is len(t.Attempts) when the attempt began; the executor's
 	// exit hook uses it to tell whether the attempt was already recorded.
 	AttemptsBefore int
+	// Resumed is true when the attempt continued the previous session with the
+	// failure summary instead of starting a fresh one (see tryRetryResume).
+	Resumed bool
+	// ResumeReason is the retry-resume decision's reason for this attempt: the
+	// outcome of decideRetryResume, or the fallback reason when a decision to
+	// resume could not be carried out. Empty when no retry decision was made.
+	ResumeReason string
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -184,6 +191,8 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		SnapshotRef:     ref,
 		Escalated:       run.Escalated,
 		BackendReason:   backendReason,
+		Resumed:         run.Resumed,
+		ResumeReason:    run.ResumeReason,
 		SessionID:       sessionID,
 		TmuxSession:     tmux,
 		EndReason:       deriveAttemptEndReason(f, adopted),

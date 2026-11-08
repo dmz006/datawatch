@@ -74,10 +74,15 @@ func (m *Manager) cfgExecutionBackend() string {
 // hook and returns true; the caller then waits on the same session. It
 // returns false when the session should not be resumed or the send fails, and
 // the caller starts a fresh session as it always has.
-func (m *Manager) tryRetryResume(prd *PRD, t *Task, hint string) bool {
+//
+// The reason is the outcome the attempt carries onto its record: the
+// decideRetryResume reason, or the fallback reason when a decision to resume
+// could not be carried out. A task with no session has nothing to resume, so
+// that case reports the same reason decideRetryResume gives for a dead one.
+func (m *Manager) tryRetryResume(prd *PRD, t *Task, hint string) (resumed bool, reason string) {
 	sessionID := t.SessionID
 	if sessionID == "" {
-		return false
+		return false, sessionEndedResumeReason
 	}
 	m.mu.Lock()
 	aliveFn, contextFn := m.sessionAliveFn, m.sessionContextTokensFn
@@ -99,19 +104,19 @@ func (m *Manager) tryRetryResume(prd *PRD, t *Task, hint string) bool {
 	})
 	if !resume {
 		log.Printf("[autonomous] %s/%s retry: session %s not resumed: %s", prd.ID, t.ID, sessionID, reason)
-		return false
+		return false, reason
 	}
 	if sendFn == nil {
 		log.Printf("[autonomous] %s/%s retry: session %s not resumed: no send-input hook; starting a fresh attempt", prd.ID, t.ID, sessionID)
-		return false
+		return false, resumeFallbackNoSendReason
 	}
 	line := retryResumeLine(m.escalationRetryHint(prd, t, hint))
 	if err := sendFn(sessionID, line); err != nil {
 		log.Printf("[autonomous] %s/%s retry: send into session %s failed, starting a fresh attempt: %v", prd.ID, t.ID, sessionID, err)
-		return false
+		return false, resumeFallbackSendFailedReason
 	}
 	log.Printf("[autonomous] %s/%s retry: resumed session %s with the failure summary", prd.ID, t.ID, sessionID)
-	return true
+	return true, reason
 }
 
 // retryResumeLine joins the resume framing and the retry prompt text into one

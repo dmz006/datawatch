@@ -24,7 +24,9 @@ type resumeFlowRun struct {
 	sentSIDs   []string
 	sentLines  []string
 	verifySIDs []string
-	err        error
+	// attempts is the task's stored attempt records after the run.
+	attempts []TaskAttempt
+	err      error
 }
 
 // runRetryResumeFlow drives executeOne through a first attempt that spawns a
@@ -79,6 +81,11 @@ func runRetryResumeFlow(t *testing.T, maxTokens int, alive bool, ctxTokens int, 
 
 	task := &prd.Story[0].Tasks[0]
 	out.err = m.executeOne(context.Background(), prd, task, spawnFn, verifyFn, 2, pipeline.QualityGateConfig{}, nil)
+	if stored, ok := m.Store().GetPRD(prd.ID); ok {
+		if st, _ := findTaskInPRD(stored, task.ID); st != nil {
+			out.attempts = st.Attempts
+		}
+	}
 	return out
 }
 
