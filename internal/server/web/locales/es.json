@@ -730,6 +730,7 @@
   "image_upload_failed": "Error al subir la imagen",
   "image_upload_ok": "Imagen adjunta: se enviará con tu próximo mensaje",
   "image_wait_upload": "Espera a que termine la subida de la imagen",
+  "image_send_pending": "Enviando la imagen…",
   "image_uploading": "subiendo…",
   "input_ph_command": "Enviar comando o entrada…",
   "input_ph_message": "Enviar mensaje…",
