@@ -7053,6 +7053,24 @@ type VisionConfig struct {
 	// MaxImageBytes is the maximum allowed image size before rejection.
 	// 0 defaults to 10 MB.
 	MaxImageBytes int64 `yaml:"max_image_bytes,omitempty" json:"max_image_bytes,omitempty"`
+
+	// DescribeTimeoutSeconds bounds a single image description request.
+	// 0 or negative = default of 5 seconds (see EffectiveDescribeTimeout).
+	DescribeTimeoutSeconds int `yaml:"describe_timeout_seconds,omitempty" json:"describe_timeout_seconds,omitempty"`
+}
+
+// DefaultVisionDescribeTimeout is the describe-request timeout applied when
+// VisionConfig.DescribeTimeoutSeconds is unset (0) or negative.
+const DefaultVisionDescribeTimeout = 5 * time.Second
+
+// EffectiveDescribeTimeout returns the configured describe-request timeout:
+// DescribeTimeoutSeconds as a duration when it is >0, otherwise the default
+// of 5 seconds.
+func (v VisionConfig) EffectiveDescribeTimeout() time.Duration {
+	if v.DescribeTimeoutSeconds > 0 {
+		return time.Duration(v.DescribeTimeoutSeconds) * time.Second
+	}
+	return DefaultVisionDescribeTimeout
 }
 
 // DefaultScheduleHistoryLimit is the per-schedule result history size
