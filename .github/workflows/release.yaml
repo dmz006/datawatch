@@ -55,7 +55,7 @@ jobs:
         # exercised by `make lint` in ci.yaml anyway.
         run: make check-internal-refs
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
           args: --timeout=5m
