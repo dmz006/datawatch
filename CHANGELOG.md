@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Auto-lanes CLI and MCP status — `datawatch usage auto-lanes` and `usage_autolanes_status`.** Two new read paths over the existing auto-lanes surface: `datawatch usage auto-lanes status` reads `GET /api/usage/autolanes` (enabled, the policy in force, the operator maximum from `usage.calculator.auto_lanes_max`, the cap the daemon applies now, what a fresh advice's decision would do to that cap, the settings' last change, and the loop's recent decisions), and `datawatch usage auto-lanes set` writes its settings through the normal config set path — `--on`/`--off` for `usage.calculator.auto_lanes` and `--max N` (1 to 8) for `usage.calculator.auto_lanes_max`, each value validated by the daemon the way any `config set` value is, with a refused one storing nothing; `--on` and `--off` together are refused before any request, as are a `--max` outside 1–8. The read-only MCP tool `usage_autolanes_status` (no arguments, `usage:read`) returns the same status bytes, and `docs/mcp.md`, `docs/cursor-mcp.md` and the usage calculator howto ([howto/usage-calculator.md](docs/howto/usage-calculator.md), new *Auto-lanes* section) record both surfaces.
+
 ## v9.67.0 — Cost report
 
 ### Added
