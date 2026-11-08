@@ -154,6 +154,11 @@ type Config struct {
 	// to the backend and model its first attempt runs on. An absent entry
 	// keeps the normally resolved worker. Mirrors autonomous.first_attempt.
 	FirstAttempt map[string]config.FirstAttemptChoice `json:"first_attempt,omitempty"`
+	// FirstAttemptEscalateAfterFailures is how many failed attempts of a
+	// task move its next attempt off the first-attempt pair. Mirrors
+	// autonomous.first_attempt_escalate_after_failures. 0 and 1 both mean
+	// the first failure escalates (see firstAttemptEscalated).
+	FirstAttemptEscalateAfterFailures int `json:"first_attempt_escalate_after_failures,omitempty"`
 	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
 	PlanningEffort     string `json:"planning_effort,omitempty"`
 	VerificationEffort string `json:"verification_effort,omitempty"`

@@ -17,10 +17,11 @@ import (
 
 // firstAttemptChoice returns the backend and model that the first attempt of t
 // runs on, taken from cfg.FirstAttempt for taskAttemptKind(t). ok is true only
-// when failedAttempts is 0 and the kind names a non-empty backend. Otherwise ok
-// is false and the caller keeps its own choice.
+// while firstAttemptEscalated is false for failedAttempts and
+// cfg.FirstAttemptEscalateAfterFailures, and the kind names a non-empty
+// backend. Otherwise ok is false and the caller keeps its own choice.
 func firstAttemptChoice(cfg Config, t *Task, failedAttempts int) (backend, model, reason string, ok bool) {
-	if failedAttempts != 0 {
+	if firstAttemptEscalated(failedAttempts, cfg.FirstAttemptEscalateAfterFailures) {
 		return "", "", "", false
 	}
 	kind := taskAttemptKind(t)
