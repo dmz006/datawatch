@@ -4555,6 +4555,14 @@ Read the effective settings from the chat channel with `autonomous host-load`;
 it reports the mode, the limit and the duration in plain text and changes
 nothing.
 
+Note for the operator: the alert names the 5 busiest process groups — there may
+be more on the host; attribution only covers processes whose evidence points
+into a worktree or scratch folder of a session this daemon knows; `reap` acts
+only when the check raises its alert, at the first sustained breach after it
+was switched on; and a process that ignores the end signal survives, counted in
+the session-end reaper's `session_end_reap` audit. See
+[howto/host-load-check.md](howto/host-load-check.md).
+
 ---
 
 ## Pinning a model on a GPU node
