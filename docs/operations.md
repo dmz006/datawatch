@@ -2772,7 +2772,7 @@ See [setup.md](setup.md#optional-set-up-voice-input-whisper) for installation an
 
 When a session input (PWA image send, WebSocket `send:`, or REST
 `POST /api/sessions/send`) carries an `[image:<path>]` tag, the daemon describes the file
-with the vision backend before typing the text into the session. Two
+with the vision backend before typing the text into the session. Three
 properties matter operationally:
 
 - **Every describe call is bounded.** Each call runs for at most
@@ -2790,6 +2790,16 @@ properties matter operationally:
   taking its full budget — give it more (or less) room with
   `vision.describe_timeout_seconds` (0 or negative reverts to the 5 s
   default).
+- **A last-tag fallback ends in one space.** When the `[image:<path>]` tag
+  is the last thing in the text and its describe took the bare path (no
+  vision backend, or the timeout, error and empty-description fallbacks),
+  the delivered `@<path>` reference ends in exactly one space. That space
+  terminates the session's `@` file reference, so the file autocomplete
+  closes and a single Enter sends the message instead of the first Enter
+  being spent dismissing the open completion. A tag followed by any text is
+  unchanged (the following text supplies the separation), and with the same tag
+  twice only the last occurrence takes the space — a successful
+  description carries no trailing space.
 
 **Fallback:** if the describe times out, errors, returns empty, or
 `vision.enabled` is false, the tag is delivered as a bare `@<path>`
@@ -2819,15 +2829,18 @@ root. Check the backend and the path, then either raise
 Vision System entry in [datawatch-definitions.md](datawatch-definitions.md)
 and [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md) (section 5g).
 
-**Still to review (operator).** The two behaviors above are deliberate,
-not bugs, and neither is guarded anywhere else — confirm they fit your
+**Still to review (operator).** The behaviors above are deliberate,
+not bugs, and none is guarded anywhere else — confirm they fit your
 workflow before relying on them: (1) for an unreadable file the model
 receives the literal `[image:<path>]` tag; only the `@<path>` form is
 picked up by a model's own `@` file-reading, so a model without that
 capability may not act on the tag at all — verify paths the PWA uploads
 are readable by the daemon; (2) the send-ordering wait is per WebSocket
 connection, so two clients sending to the same session can interleave —
-serialise from one client if order matters.
+serialise from one client if order matters; (3) a last-tag `@<path>`
+fallback ends in exactly one space on purpose — it closes the session's
+`@` completion so one Enter sends; confirm nothing downstream compares the
+typed session input byte for byte before deciding to send.
 
 ### Browser Auto-Refresh
 

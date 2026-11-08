@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [vision, image description, image attachment, describe timeout, describe_timeout_seconds, fallback, "@path", signal, telegram, websocket, settings, config, rest, cli, comm, mcp]
+  topics: [vision, image description, image attachment, describe timeout, describe_timeout_seconds, fallback, "@path", trailing space, single Enter, signal, telegram, websocket, settings, config, rest, cli, comm, mcp]
 exec_params:
   - {name: image_path, required: false, description: "Absolute local path to a local image file (jpeg/png/webp/gif) to describe; leave empty to skip the describe step. Requires vision.enabled: true"}
 exec_steps:
@@ -80,6 +80,8 @@ What the daemon does with the image depends on the outcome:
 | Description in time | the text carries `[image: <description> \| path: <path>]` |
 | **Timeout, error, or an empty description** | the tag degrades to a bare `@<path>` reference — the message is still delivered, and the session can read the file itself |
 | File missing or unreadable, or a path the daemon will not serve | the original `[image:<path>]` tag is left unchanged |
+
+One detail worth knowing — the **trailing-space rule**, which is what keeps a fallback from costing you an extra Enter. Whatever put a message on the bare path (no vision backend, or the timeout, error and empty-description fallbacks), the `@<path>` reference carries exactly one space after the path *when the `[image:<path>]` tag is the last thing in the text*. That space terminates the session's `@<path>` file reference, so the file autocomplete closes and a single Enter sends the message — without it, the first Enter is spent dismissing the open completion instead of sending. The space only appears at the end of the text: with the same tag twice, only the last occurrence takes it, and a tag followed by any text is left exactly as-is. It is never added anywhere else — the successful description form (`[image: <description> | path: <path>]`) carries no trailing space, and the `[image:<path>]` tags left unchanged (unreadable files, paths the daemon will not serve) never got one.
 
 So a slow describe call is never a hard failure of the message: the image
 travels as a file reference and the model reads it directly. That is also why
@@ -173,6 +175,11 @@ curl -sk -X PUT -H "Content-Type: application/json" \
 - **The Settings field and the file both read 0 as "default 5".** If you want
   5 seconds explicitly, write 5 — 0 is a stand-in for the default, not a
   distinct value.
+- **The trailing space belongs to the fallback, not to you.** A last-tag
+  `@<path>` reference ending the text ends in exactly one space on purpose —
+  it closes the session's `@<path>` completion so one Enter sends. A consumer
+  that compares session input byte for byte will see that space; it is
+  deliberate, not stray padding.
 
 ## See also
 

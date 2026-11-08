@@ -5941,6 +5941,13 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // directly via their own vision pipeline.
 // If the file cannot be read or described, the tag is left as-is.
 //
+// Trailing-space rule: every bare '@<path>' form (no vision backend, and the
+// timeout, error and empty-description fallbacks) gets exactly one space appended
+// after the path when the matched [image:<path>] tag ends at the very end of the
+// input text, so the session's @ file-reference is terminated. A tag followed by
+// any text is unchanged (the following text supplies the separation). Successful
+// descriptions, unreadable files and path-traversal rejections are unaffected.
+//
 // Each vision describe request is bounded: it runs under a context derived from
 // s.cfg.Vision.EffectiveDescribeTimeout() (5s when s.cfg is nil) and is executed in
 // a goroutine so a backend that ignores its context cannot block the caller past the
@@ -5954,17 +5961,13 @@ func (s *Server) expandImageTags(text string) string {
 	if s.visioner == nil {
 		// No server-side vision backend — convert to @ notation so Claude Code
 		// sessions pick up the image via their built-in file-reading capability.
-		re := regexp.MustCompile(`\[image:([^\]]+)\]`)
-		return re.ReplaceAllString(text, "@$1")
+		return replaceImageTags(text, func(match, rawPath string, atEnd bool) string {
+			return bareImageRef(rawPath, atEnd)
+		})
 	}
 	root := s.fileServiceRoot()
-	re := regexp.MustCompile(`\[image:([^\]]+)\]`)
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		sub := re.FindStringSubmatch(match)
-		if len(sub) < 2 {
-			return match
-		}
-		imgPath := strings.TrimSpace(sub[1])
+	return replaceImageTags(text, func(match, rawPath string, atEnd bool) string {
+		imgPath := strings.TrimSpace(rawPath)
 		if err := checkPathTraversal(root, imgPath); err != nil {
 			return match
 		}
@@ -5993,10 +5996,40 @@ func (s *Server) expandImageTags(text string) string {
 		if res.err != nil || res.desc == "" {
 			// Bounded describe failed, timed out, or produced nothing — fall back
 			// to the @ notation so the image is still available to the session.
-			return "@" + imgPath
+			return bareImageRef(imgPath, atEnd)
 		}
 		return "[image: " + res.desc + " | path: " + imgPath + "]"
 	})
+}
+
+var imageTagRe = regexp.MustCompile(`\[image:([^\]]+)\]`)
+
+// replaceImageTags rewrites each [image:<path>] tag in text using fn, which gets
+// the whole match, the raw captured path, and whether the match ends at the very
+// end of text.
+func replaceImageTags(text string, fn func(match, rawPath string, atEnd bool) string) string {
+	locs := imageTagRe.FindAllStringSubmatchIndex(text, -1)
+	if len(locs) == 0 {
+		return text
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range locs {
+		b.WriteString(text[last:m[0]])
+		b.WriteString(fn(text[m[0]:m[1]], text[m[2]:m[3]], m[1] == len(text)))
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+// bareImageRef returns the bare '@<path>' form, with exactly one trailing space
+// when the tag was at the very end of the input.
+func bareImageRef(path string, atEnd bool) string {
+	if atEnd {
+		return "@" + path + " "
+	}
+	return "@" + path
 }
 
 // visionDescribeTimeout returns the per-request describe deadline: the configured
