@@ -64,6 +64,7 @@ datawatch-desktop:  app/renderer/src (server picker and page header)
 - Operator checklist: `docs/operations.md` ("Still to review (operator)", multi-server section).
 - Changelog: `CHANGELOG.md` [Unreleased] → Fixed.
 - PWA code: `internal/server/web/app.js` (`selectServer`, `_serverPickerBar`, `renderServerHeaderLine`).
+- Story test: `internal/server/web/app-select-server-rerender.test.js` — runs the re-render, All-skip, no-op and stale-list-reset cases above with `env -u TMUX -u TMUX_TMPDIR node --test`.
 - Sibling draft: `docs/plans/2026-11-03-server-select-parity-issue.md` (dmz006/datawatch-app#349).
 
 ## Filing record
