@@ -167,18 +167,20 @@ for ten minutes ends two processes of an already-ended session:
 # the episode alert arrives:
 Host load high: Automata may be slowed
 Load average 7.50 is above 6.00 (1.5 x cores) for 10 minute(s). Mode: reap.
-...
-# and the reap is audited the same way as a session-end reap:
-{"action":"session_end_reap","ended":2,"survivors":0}
+# two processes of the ended session are ended by exact pid — but unlike
+# the session-end path, this reap writes no record: no session_end_reap
+# audit entry, no task decision, no survivors count
 ```
 
 What `reap` may and may not end — the load check never touches a process of
 a **running** session, and it never signals by name: it applies the
 reaper's evidence rule to each ended session's folders, exactly like the
-session-end step. A process that ignores its end signal is only counted as
-a survivor in the `session_end_reap` audit, not re-signalled by this path.
-`autonomous.host_load_alert` is the only switch for the check; there is no
-separate "enable reaping" toggle.
+session-end step. A process that ignores its end signal survives: this path
+does not re-signal it and keeps no record of it either — it is *not* counted
+as a survivor in the `session_end_reap` audit (that audit trail belongs to
+the session-end pass only), so after a load-check reap you confirm the room
+is clean by hand. `autonomous.host_load_alert` is the only switch for the
+check; there is no separate "enable reaping" toggle.
 
 ### Setting and reading it — every surface
 
@@ -212,9 +214,11 @@ Read the current values:
 3. Leave `multiple` and `minutes` where they are for a while; the alert text
    already tells you *which* groups are driving the load, so you only raise
    `multiple` (e.g. to 2) when your own baseline legitimately runs hot.
-4. After the first sustained breach, read the `session_end_reap` audit
-   entries (`audit_query(action="session_end_reap")`) and confirm only
-   ended-session processes were ended.
+4. After the first sustained breach, read the alert's group list — the
+   reap itself writes no `session_end_reap` record — and confirm the
+   ended-session processes it named are actually gone (for example
+   `ps -eo pid,ppid,cmd` plus `ls -l /proc/<pid>/cwd` in the session's
+   worktree or scratch folder).
 5. If the host is a shared box and you would rather know than act, set
    `mode` back to `alert` — the alerts keep coming, nothing is ended.
 
@@ -292,10 +296,10 @@ ends, the step is either already dead or ended by the session-end reap.
    and confirm all three values.
 2. The next minute tick uses the new values — no restart needed.
 3. When the host first breaches under the new values, you should get the
-   "Host load high" alert within the episode; under `reap`, follow it with
-   `audit_query(action="session_end_reap", since=<episode start>)` and
-   confirm the ended pids are what the alert named as ended-session
-   folders.
+   "Host load high" alert within the episode; under `reap`, that alert's
+   group list is your only record — the load check's reap writes no
+   `session_end_reap` entry — so confirm the named ended-session folders
+   no longer hold their processes (`ps` and `ls -l /proc/<pid>/cwd`).
 4. If you raised `multiple` or `minutes` and see nothing for a known
    overload, check the alert list — a lower breach earlier in the episode
    may have already alerted (one alert per episode; the episode resets
@@ -319,9 +323,14 @@ session's processes are visible in the alert but never signalled.
 evidence rule requires same-user ownership plus a strong tie (exe/script
 in the session folder, or ancestry/env to the session; a bare cwd in the
 folder only counts once the process was orphaned from the session). If
-you saw one, read the audit entry for action `session_end_reap` and the
-session it names, and the `session_end_reap` decision line on the task,
-which carries the session id and the ended commands.
+you saw one ended by a *session-end* reap, read the audit entry for
+action `session_end_reap` and the session it names, and the
+`session_end_reap` decision line on the task, which carries the session
+id and the ended commands. If the process was ended by the *host load
+check* in `reap` mode, there is no such entry: that reap keeps no record
+(the audit and task decision above exist only for the session-end path),
+so reconstruct what happened from the "Host load high" alert's group
+list at the moment of the breach.
 
 **A task spec asks for "pin all cores".** That is the
 `unbounded_load_step` warning: the spec should name the bounds
