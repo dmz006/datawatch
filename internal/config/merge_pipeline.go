@@ -43,6 +43,34 @@ const (
 	ConflictPolicyMechanicalAndModel = "mechanical_and_model"
 )
 
+// How a release of a given size is approved.
+const (
+	// ReleaseApprovalAuto ships the release without waiting for the operator.
+	ReleaseApprovalAuto = "auto"
+	// ReleaseApprovalAsk asks the operator before the release ships.
+	ReleaseApprovalAsk = "ask"
+	// ReleaseApprovalManual leaves the release for the operator to ship.
+	ReleaseApprovalManual = "manual"
+)
+
+// The release sizes a release approval mode applies to.
+const (
+	ReleaseSizePatch = "patch"
+	ReleaseSizeMinor = "minor"
+	ReleaseSizeMajor = "major"
+)
+
+// ReleaseApprovalModes holds the approval mode for each release size.
+// An unset size inherits.
+type ReleaseApprovalModes struct {
+	// Patch is the approval mode for patch releases: "auto", "ask" or "manual".
+	Patch string `yaml:"patch,omitempty" json:"patch,omitempty"`
+	// Minor is the approval mode for minor releases: "auto", "ask" or "manual".
+	Minor string `yaml:"minor,omitempty" json:"minor,omitempty"`
+	// Major is the approval mode for major releases: "auto", "ask" or "manual".
+	Major string `yaml:"major,omitempty" json:"major,omitempty"`
+}
+
 // Post-ship hook built-in names. A hook uses exactly one of a built-in and
 // a command; the built-in says which setting provides its target.
 const (
@@ -85,6 +113,8 @@ type MergePipelineOverride struct {
 	ConflictPolicy    string   `yaml:"conflict_policy,omitempty" json:"conflict_policy,omitempty"`
 	ConflictModel     *string  `yaml:"conflict_model,omitempty" json:"conflict_model,omitempty"`
 	VersionFiles      []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
+	// ReleaseApproval holds this project's approval mode per release size.
+	ReleaseApproval ReleaseApprovalModes `yaml:"release_approval,omitempty" json:"release_approval,omitempty"`
 }
 
 // MergePipelineConfig is the autonomous.merge_pipeline block.
@@ -114,6 +144,9 @@ type MergePipelineConfig struct {
 	// built-in or a shell command, and every target a built-in touches is
 	// a setting in this block, never a value in code.
 	PostShip PostShipConfig `yaml:"post_ship,omitempty" json:"post_ship,omitempty"`
+	// ReleaseApproval holds the approval mode per release size. Unset sizes
+	// inherit; a project's override in Projects takes precedence.
+	ReleaseApproval ReleaseApprovalModes `yaml:"release_approval,omitempty" json:"release_approval,omitempty"`
 	// Projects holds per-project overrides keyed by project name.
 	Projects map[string]MergePipelineOverride `yaml:"projects,omitempty" json:"projects,omitempty"`
 }
@@ -122,7 +155,7 @@ type MergePipelineConfig struct {
 func (c MergePipelineConfig) IsZero() bool {
 	return c.FileName == "" && c.SourceOrder == nil && c.FallbackOnBadFile == "" &&
 		c.ConflictPolicy == "" && c.ConflictModel == nil && c.VersionFiles == nil &&
-		c.PostShip.IsZero() && len(c.Projects) == 0
+		c.PostShip.IsZero() && c.ReleaseApproval == (ReleaseApprovalModes{}) && len(c.Projects) == 0
 }
 
 // Clone returns a deep copy.
@@ -132,6 +165,7 @@ func (c MergePipelineConfig) Clone() MergePipelineConfig {
 	out.VersionFiles = cloneStrings(c.VersionFiles)
 	out.ConflictModel = cloneStringPtr(c.ConflictModel)
 	out.PostShip = c.PostShip.Clone()
+	// ReleaseApproval holds only strings, so the struct copy above is a deep copy.
 	if c.Projects != nil {
 		out.Projects = make(map[string]MergePipelineOverride, len(c.Projects))
 		for k, v := range c.Projects {
