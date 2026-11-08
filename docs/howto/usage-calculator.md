@@ -207,7 +207,7 @@ changing the advice.
 
 | Method | How |
 |---|---|
-| **YAML** | `usage.calculator.*` in `~/.datawatch/config.yaml` (policy, variant, `safety_points`, `cost_per_task_points`, `baseline_per_24h`, `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone`, `keeper`) |
+| **YAML** | `usage.calculator.*` in `~/.datawatch/config.yaml` (policy, variant, `safety_points`, `cost_per_task_points`, `baseline_per_24h`, `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone`, `keeper`, `auto_lanes`, `auto_lanes_max`, `auto_lanes_special_priority`) |
 | **CLI** | `datawatch usage advice [--lanes N]` (the what-if), `datawatch usage reading add --percent 42`, `datawatch usage reading list`, `datawatch usage reading delete <id>`, `datawatch usage extra-credit <points>`, `datawatch usage remaining-work <points\|clear>`; settings with `datawatch config set usage.calculator.<key> <value>` |
 | **Web UI** | The calculator card in the PWA and its Settings fields; see [parity status](../parity-status.md) for what has shipped. The reading form has no lanes input: each reading is stamped by the daemon. The card shows a **Claude lanes running now** line (or "not known" when no stamped reading says) and a **What if** stepper beside the policy. The stepper sets the lanes to run in the what-if only, is never saved, and never changes the lanes running. |
 | **REST API** | `GET /api/usage/advice` (`lanes` is the what-if), `GET` and `POST /api/usage/readings` (`lanes` on the body is deprecated and ignored), `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT /api/usage/remaining-work`; settings with `PUT /api/config` |
@@ -256,30 +256,58 @@ Where lanes show up on each method:
 - **A setting snapped back to its default.** A saved value that is no longer
   allowed (for example a retired variant) falls back to the default and the
   daemon logs one line saying so.
-- **Lanes did not change.** By design. The calculator advises only; change the
-  lane count yourself. The what-if lanes on the advice are never saved and
+- **Lanes did not change.** By default, by design. The calculator advises only; change the lane count yourself (the opt-in that applies it instead is [Automatic lane count](#automatic-lane-count)). The what-if lanes on the advice are never saved and
   never start or stop a lane either, and the stamped lanes on a reading only
   record what was running.
 
-## Auto-lanes
+## Automatic lane count
 
 By default the calculator advises only — you change the lane count yourself.
-Auto-lanes is the opt-in that lets the daemon apply that advice to the Claude
-lanes it runs: when it is on and a fresh advice is servable, the daemon moves
-those lanes' maximum concurrency toward the advice's figure for that cycle,
-never above the operator maximum and never below one. Off (the default), it
-leaves the lanes exactly where the operator has them.
+**Automatic lane count** (auto-lanes) is the opt-in that lets the daemon apply
+that advice to the Claude lanes it runs: when it is on, a loop that runs once
+at daemon start and once every hour reads the freshest advice and sets the cap
+those lanes are held to at **the advice's lanes plus one lane for each open
+special item** — never above the operator maximum you set, and never below one
+lane. Off (the default), the loop does nothing and the lane count stays
+exactly where you have it.
 
-Two settings control it:
+**The rule, in plain words.** Every hour the daemon works out three numbers:
+the lanes the active policy advises, the open Automata whose capacity priority
+is at or above the special-priority setting (one lane each), and your maximum.
+The target is the first two added together, brought down to your maximum if it
+runs over, and up to one lane if it runs under. When the target differs from
+the cap in force, the daemon sets it; when it is the same, the cap stays.
 
-| Setting | Meaning |
-|---|---|
-| `usage.calculator.auto_lanes` | on/off (default: off) |
-| `usage.calculator.auto_lanes_max` | the operator maximum the daemon never exceeds, 1 to 8 (default: 2) |
+**What it touches.** The cap it sets is the `max_inflight` of the first enabled
+claude-code LLM entry — the value you would change in an LLM update, saved
+through that same path, and the capacity ledger picks it up live. It never
+starts or ends a running session, and it never touches any other backend.
 
-The CLI reads the state and sets the values through the same config path as
-`datawatch config set` — the daemon validates each value the way it would for
-any key, and a refused one stores nothing:
+Three settings control it, all under `usage.calculator.`:
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `auto_lanes` | on/off; when off the loop never runs | off |
+| `auto_lanes_max` | the operator maximum the daemon never exceeds, a whole number 1 to 8 | 2 |
+| `auto_lanes_special_priority` | the capacity priority at or above which an open Automaton counts as a special item; a whole number 0 or above, where 0 counts every open Automaton | 1 |
+
+Every value goes through the same validation as any config key, so a refused
+value stores nothing — `auto_lanes_max` outside 1 to 8 or a negative priority
+is refused and the setting stays where it was.
+
+**The five access methods.**
+
+| Method | Set the settings | Read the state |
+|---|---|---|
+| **YAML** | `auto_lanes`, `auto_lanes_max` and `auto_lanes_special_priority` under `usage.calculator` in `~/.datawatch/config.yaml` | the keys in `datawatch config get` or `GET /api/config` |
+| **CLI** | `datawatch usage auto-lanes set --on` (or `--off`) and `--max N` (1 to 8); or any of the three keys through `datawatch config set usage.calculator.<key> <value>` | `datawatch usage auto-lanes status` |
+| **Web UI** | the three "Auto-lanes" fields on the usage calculator card in Settings | the read-only status line under them: on or off, the current cap, and the last change |
+| **REST API** | `PUT /api/config` with `{"usage.calculator.auto_lanes": true}` (or any of the three keys) | `GET /api/usage/autolanes` |
+| **Comm channel** | `configure usage.calculator.auto_lanes=true` (and the other two keys the same way) | `GET /api/usage/autolanes` — there is no comm verb for the status |
+
+`datawatch usage auto-lanes status` reads `GET /api/usage/autolanes`, and
+`datawatch usage auto-lanes set` writes through the same config path as
+`datawatch config set`, so both sides behave exactly like the config commands:
 
 ```
 datawatch usage auto-lanes status
@@ -288,11 +316,32 @@ datawatch usage auto-lanes set --max 3
 datawatch usage auto-lanes set --on --max 4    # both at once
 ```
 
-`status` shows whether it is on, the cap the daemon applies now, what a fresh
-advice's decision would do to that cap, the settings' last change, and the
-loop's recent decisions. From the MCP server, `usage_autolanes_status`
-(read-only, `usage:read`) returns the same state; the settings are still
-changed through the config path.
+The status body carries the settings (`enabled`, `policy`, `max`), the cap the
+daemon applies now (`current_max_inflight`), what a fresh advice's decision
+would do to that cap (`target` and `direction`), the open special items counted
+now (`special_items`), the last change that moved the cap (`last_change`), and
+the loop's recent decisions, newest first (`recent_changes`). From the MCP
+server, `usage_autolanes_status` (read-only, `usage:read`) returns the same
+state; the settings are still changed through the config path.
+
+**Reading the change log.** Every decision is appended to `autolanes.json` in
+the data directory, beside the usage series file, and the file keeps the
+newest 500 decisions. Each entry says:
+
+- `at` — when the check ran;
+- `from` → `to` — the cap before and after; equal when the decision was
+  `unchanged`;
+- `direction` — `up`, `down` or `unchanged`, always against the cap that was
+  in force at the time;
+- `reason` — the plain-words line: the advice's lanes for the active policy,
+  the open special items, the sum, and the clamp to the operator maximum;
+- `policy`, `lanes_running` and `special_items` — the inputs of that pass.
+
+The read surfaces show the newest 50 of those entries: `datawatch usage
+auto-lanes status` and `GET /api/usage/autolanes` carry them as
+`recent_changes` (newest first), and `last_change` is the newest entry that
+actually moved the cap. The PWA's status line on the calculator card shows the
+same three things: on or off, the current cap, and the last change.
 
 ## See also
 
