@@ -85,7 +85,7 @@ at the worktree with `git status`:
    task's automatic-retry budget and records no failed attempt, because nothing
    about the work failed; it is waiting for you.
 
-The daemon's own files are never counted: the worker checkpoint note, the
+The daemon's own scratch files are never counted: the worker checkpoint note, the
 decompose output, the advisory tree lock, the session discovery file
 `.mcp.json` and the skills under `.datawatch/skills/` when the daemon wrote them
 (an untracked file only, so a project that tracks `.mcp.json` still sees a change
@@ -93,7 +93,10 @@ to it), the lines the daemon itself adds to an ignore file (a change to
 `.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
 other change to the file is counted), and anything the daemon's staging guard
 refuses to commit. Files git ignores never show up in `git status`, so they are
-not counted either.
+not counted either. Do not confuse this list with the generated artefacts —
+the small documents the daemon renders for your work, which the per-task check
+commits by name as part of the task: at the finished check they count unless
+the daemon is the only one who wrote them (below).
 
 ### The check before an Automaton is reported finished
 
@@ -113,6 +116,25 @@ another backend. If the worktree is dirty:
 The scope setting does not narrow this check: it always covers the whole
 worktree, and it never stages or commits anything. You decide what happens to
 the files.
+
+**The documents the daemon itself generated.** The generated artefacts an
+Automaton writes to their tracked paths as each task ends — the gate report,
+the changelog draft, the parity draft, the tracker rows and the registry row
+(see [the generated-artefacts guide](generated-artefacts.md)) — no longer stop
+this check when the daemon is the only one who wrote them. An artefact counts
+as unedited while it still carries its
+`<!-- generated: datawatch change record; edit freely, a person edit is kept -->`
+marker line, has no `<!-- edited -->` line, and its body still matches the hash the daemon
+recorded in a sidecar file when it last wrote it — and because the daemon
+never overwrites an artefact a person has edited, unedited means "still
+exactly what the daemon wrote." An unedited artefact is left out of the check,
+of the hold listing and of the warning, so an Automaton whose only
+uncommitted work is what the daemon generated reaches `completed` and is
+listed as merge ready as usual, and one already held for nothing but unedited
+artefacts passes the check again when it is re-run. An artefact you edited
+still counts and holds exactly like any other file you touched, under all
+three policies, and every other uncommitted file is treated exactly as
+before.
 
 ## The policies
 
