@@ -50,6 +50,29 @@ type MergeStatus struct {
 	// PipelineRuns lists the merge pipeline runs, newest first, each with the
 	// steps it ran. It is filled whatever the merge-pending mode is.
 	PipelineRuns []MergePipelineRun `json:"pipeline_runs"`
+	// MergeLock is the lock held on the merge base repository by a running
+	// merge; nil when nothing is held. It is filled whatever the mode is.
+	MergeLock *MergeLockStatus `json:"merge_lock,omitempty"`
+}
+
+// heldMergeLock returns the lock on the merge base repository, or nil when
+// no repository is configured, the store cannot be read, or nothing is held.
+// A lock entry that names no run and no Automaton holds nothing, so it is not
+// reported.
+func (m *Manager) heldMergeLock() *MergeLockStatus {
+	repo := m.MergeBaseRepo()
+	if repo == "" {
+		return nil
+	}
+	locks, err := m.MergeLocks()
+	if err != nil {
+		return nil
+	}
+	st, ok := locks.Status(repo)
+	if !ok || (st.RunID == "" && st.AutomatonID == "") {
+		return nil
+	}
+	return &st
 }
 
 // mergeCached returns the cached comparison for branch, without running git.
@@ -82,6 +105,7 @@ func (m *Manager) MergeStatus() MergeStatus {
 		Automata:        []MergeStatusEntry{},
 		ShadowDecisions: []MergeShadowDecision{},
 		PipelineRuns:    m.MergeRuns(0),
+		MergeLock:       m.heldMergeLock(),
 	}
 	if mode != config.MergePendingModeShadow && mode != config.MergePendingModeOn {
 		return out

@@ -55,6 +55,14 @@ func RenderMergeState(ms MergeStatus) string {
 		mode = "off"
 	}
 	fmt.Fprintf(&b, "Automaton merge pending: mode %s (alert threshold: %s)\n", mode, mergeThresholdText(ms.AlertMinutes))
+	if l := ms.MergeLock; l != nil {
+		branches := "no branches"
+		if len(l.Branches) > 0 {
+			branches = "branches " + strings.Join(l.Branches, ", ")
+		}
+		fmt.Fprintf(&b, "Merge lock held: run %s for Automaton %s (%s) since %s\n",
+			l.RunID, l.AutomatonID, branches, mergeTimeText(&l.Since))
+	}
 	if mode == "off" {
 		b.WriteString("The merge-pending check is off, so no Automata are listed.\n")
 		return b.String()
