@@ -1629,6 +1629,15 @@ curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/sessions?view=summary&states=active" | jq '.[] | {id,state,task}'
 ```
 
+**Operator review still owed:** the two datawatch-app parity drafts for this
+fix — the server row shape
+([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md))
+and the PWA drawing discipline
+([plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md))
+— are tracked in this repo but **not filed yet**; the operator opens the
+issue on the app tracker when ready. Nothing else is owed on this daemon:
+no setting, no migration.
+
 ### Allowed project roots
 
 A project directory that comes from a request or a stored record is only
