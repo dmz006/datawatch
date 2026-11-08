@@ -996,6 +996,8 @@ vision:
   default_prompt: ""
   # Maximum image size in bytes before rejection. 0 = 10 MB default.
   max_image_bytes: 0
+  # Per-request timeout for image description, in seconds. 0 or negative = 5 s default.
+  describe_timeout_seconds: 0
 
 # ── Web Search (BL391 — multi-provider registry) ──
 # Inject a web_search MCP tool into opencode and goose agent sessions, backed
