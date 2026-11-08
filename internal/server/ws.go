@@ -136,6 +136,16 @@ type SubscribeData struct {
 	SessionID string `json:"session_id"`
 }
 
+// inputJob is one queued input delivery (see client.enqueueInput): run by
+// the connection's input worker in FIFO order. session names the session
+// the input belongs to ("" = none); the synchronous path waits on it via
+// awaitInputForSession so a later plain input cannot overtake an earlier,
+// still-expanding one.
+type inputJob struct {
+	session string
+	fn      func()
+}
+
 // client represents one WebSocket connection
 type client struct {
 	hub            *Hub
@@ -144,6 +154,15 @@ type client struct {
 	closed         bool                          // true after send channel is closed
 	subscribed     map[string]bool               // session IDs this client is subscribed to
 	captureCancels map[string]context.CancelFunc // per-session screen capture cancel funcs
+	// inputMux guards the field group below: the per-connection FIFO queue
+	// that runs slow input work (expandImageTags) on a worker goroutine so
+	// the connection read loop keeps reading (see handleWS in api.go).
+	inputMux     sync.Mutex
+	inputCond    *sync.Cond
+	inputQueue   chan inputJob     // nil until the first enqueue
+	inputPending map[string]int    // per-session jobs enqueued but not yet completed
+	inputClosed  bool              // set by stopInputWorker; enqueues after this are dropped
+	inputDone    chan struct{}     // closed when the worker has drained the queue and exited
 	// sessionList / sessionView are the modes negotiated by hello (see
 	// ws_session_stream.go). "" means the client never chose: sessionList
 	// then follows server.ws_session_list_default, sessionView is "full".
@@ -153,6 +172,86 @@ type client struct {
 	// follows server.ws_output_scope_default.
 	outputScope string
 	mu          sync.Mutex
+}
+
+// enqueueInput queues job fn on the client's input worker. The worker
+// processes the queue in FIFO order, so a job enqueued here always runs
+// before any later enqueued job. Returns false (job not started) only if
+// the connection is already being torn down.
+func (c *client) enqueueInput(session string, fn func()) bool {
+	c.inputMux.Lock()
+	defer c.inputMux.Unlock()
+	if c.inputClosed {
+		return false
+	}
+	if c.inputQueue == nil {
+		c.inputQueue = make(chan inputJob, 64)
+		c.inputPending = make(map[string]int)
+		c.inputDone = make(chan struct{})
+		c.inputCond = sync.NewCond(&c.inputMux)
+		go c.runInputWorker(c.inputQueue)
+	}
+	c.inputPending[session]++
+	// Blocking while holding inputMux is safe: the worker only ever needs
+	// inputMux for the brief per-job bookkeeping after finishing a job's
+	// fn, which itself never takes inputMux — so a full queue always
+	// drains as the worker runs jobs, and stopInputWorker (which closes
+	// the queue) only runs after the read loop that enqueues has exited.
+	c.inputQueue <- inputJob{session: session, fn: fn}
+	return true
+}
+
+// runInputWorker drains the input queue in FIFO order until it is closed
+// by stopInputWorker, then exits. The queue is passed by value, not read
+// back off the struct: stopInputWorker may nil the field (idempotent
+// teardown) before the worker's first range, and a range over a nil
+// channel would block forever.
+func (c *client) runInputWorker(queue chan inputJob) {
+	for job := range queue {
+		job.fn()
+		c.inputMux.Lock()
+		if c.inputPending[job.session] > 0 {
+			c.inputPending[job.session]--
+		}
+		c.inputCond.Broadcast()
+		c.inputMux.Unlock()
+	}
+	c.inputMux.Lock()
+	close(c.inputDone)
+	c.inputMux.Unlock()
+}
+
+// awaitInputForSession blocks the caller until every queued input job for
+// the session has completed, so a synchronously delivered input cannot
+// overtake an earlier (still-expanding) image input for the same session.
+// No-op if nothing has ever been queued. Always terminates: a closed
+// connection stops only after its queue has drained.
+func (c *client) awaitInputForSession(session string) {
+	c.inputMux.Lock()
+	defer c.inputMux.Unlock()
+	for c.inputQueue != nil && c.inputPending[session] > 0 {
+		c.inputCond.Wait()
+	}
+}
+
+// stopInputWorker marks the queue closed for new jobs, then waits for the
+// worker to deliver whatever is already queued and exit, so accepted image
+// inputs are still delivered but the worker never outlives the connection
+// teardown. No-op if the worker was never started.
+func (c *client) stopInputWorker() {
+	c.inputMux.Lock()
+	if c.inputQueue == nil {
+		c.inputMux.Unlock()
+		return
+	}
+	queue := c.inputQueue
+	done := c.inputDone
+	c.inputQueue = nil // idempotent: a second stop is a no-op
+	c.inputClosed = true
+	c.inputCond.Broadcast()
+	close(queue)
+	c.inputMux.Unlock()
+	<-done
 }
 
 // safeSend sends a message to the client's send channel without panicking
