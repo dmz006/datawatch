@@ -27,3 +27,16 @@ File one `[sync]` issue on datawatch-app covering the three points above: read t
 ## Filing record
 
 Not filed. This is a draft only; no issue was created on any tracker and no hosting CLI was run.
+
+## Parity surface
+
+| Surface | Decision | Why |
+|---------|----------|-----|
+| REST | included | `autonomous.host_load_alert.mode/.multiple/.minutes` round-trip via `GET/PUT /api/config` (and the autonomous config endpoints), with the same defaults and the same 400 refusals naming the key. The snapshot rides the existing `GET /api/stats` and `GET /api/autonomous/status`. |
+| MCP | included | `autonomous_config_get`/`autonomous_config_set` expose the three keys, and `autonomous_status` returns the status body verbatim, which now carries the `host_load` object. |
+| CLI | included | `datawatch autonomous config-set --host-load-alert-*` writes the setting; a separate host-load status-printing CLI surface was deliberately not added (`docs/plans/host-load-status-surfaces.md`, non-applicable row). |
+| comm channel | included | `configure autonomous.host_load_alert.mode=reap` writes; `autonomous host-load` reads the effective values in plain text. |
+| YAML/config | included | The `autonomous.host_load_alert` block in `config.yaml`; the check reads it live each minute, so no restart. |
+| PWA | included | Settings → General → Autonomous form with the three new locale keys in all five bundles; the "Host load high: Automata may be slowed" alert rides the existing alert feed. |
+| Android | excluded | No app code in this repo; capability parity (read/write the three keys, deliver the alert, not present the check as a per-session control) is required and tracked by this draft — implementation parity is not. |
+| iPhone/iOS | excluded | Same as Android — tracked by this draft, no code to write here. |

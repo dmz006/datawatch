@@ -113,6 +113,8 @@ More: [skills](docs/skills.md) · [MCP](docs/mcp.md) · [Claude Code hooks](docs
 - AI tools: claude-code, aider, pi, goose, gemini, opencode, ollama, openwebui and shell
 - Docker and Kubernetes workers
 - Rate-limit recovery, network monitoring, Prometheus metrics and a Tailscale network
+- A host load watch: one warning when the load average stays high for the minutes you set, naming the busiest processes, and in reap mode also ending the leftover processes of already-ended sessions (`autonomous.host_load_alert`; more: [host load check](docs/howto/host-load-check.md))
+- A session-end reap: when a session ends — finished, cancelled or failed — the daemon ends the processes that session left behind, attributing each only by evidence read from `/proc`, never by name (more: [orphan reaping](docs/howto/automata-orphan-reaping.md))
 
 Everything else is in the [Documentation index](#documentation-index).
 

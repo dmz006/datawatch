@@ -113,3 +113,16 @@ the same capability parity on both platforms and no implementation parity
 required. Nothing here changes any REST or MCP contract the clients already
 parse — the work is rendering, mirroring, and the config round-trip — so the
 issue is a display-and-settings story, not an integration story.
+
+## Parity surface
+
+| Surface | Decision | Why |
+|---------|----------|-----|
+| REST | included | The check's keys round-trip via `GET/PUT /api/config` (the autonomous config endpoints accept the same keys), and its read-only state rides the existing `GET /api/stats` and `GET /api/autonomous/status`. The reap's outcomes are observable on the existing audit-log and task-decision endpoints — no new endpoint. |
+| MCP | included | `autonomous_config_get`/`autonomous_config_set` carry the host load alert keys, and the `autonomous_status` tool returns the REST status body verbatim, which now carries the `host_load` snapshot. |
+| CLI | included | `datawatch autonomous config-set` writes `autonomous.host_load_alert.*` and the operator reads the effective values from the CLI. (The deliberately non-applicable monitoring surface is a host-load *status printing* CLI command — a new surface, out of scope per `docs/plans/host-load-status-surfaces.md`.) |
+| comm channel | included | `configure autonomous.host_load_alert.<mode\|multiple\|minutes>` writes the setting and `autonomous host-load` reads the effective values. |
+| YAML/config | included | The `autonomous.host_load_alert` block (`mode`, `multiple`, `minutes`) in `config.yaml`, read live on every check tick so a change needs no restart. |
+| PWA | included | Settings → General → Autonomous gained the three fields (new labels in all five locales); the alert, audit action, task decision and rule/template entries render on existing PWA surfaces. |
+| Android | excluded | No app code lives in this repo. Capability parity is required and is tracked by this draft: config round-trip, alert delivery, `session_end_reap` audit/decision rendering and the new lint-rule and template entries — implementation parity is not. |
+| iPhone/iOS | excluded | Same as Android: no code in this repo, and the same four items are tracked here for the native client. |
