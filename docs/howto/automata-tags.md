@@ -245,7 +245,11 @@ started it.
 
 - **On the list.** Each session card, and each node of the session tree,
   shows its own tags as normal chips. Tags inherited from its Automaton are
-  drawn as dashed chips with a small *inherited* label.
+  drawn as dashed chips with a small *inherited* label. Placement (system)
+  tags are drawn as green chips with a small ⚙️ mark. All three chip kinds
+  appear on the first draw of the page: the summary rows of the session
+  list carry the session's `tags`, `inherited_tags` and `system_tags`, so
+  the chips never wait for the full record to load.
 - **Inherited tags are read-only.** They change when you change the
   Automaton's tags, not on the session. The session editor never sends them.
 - **Edit a session's own tags.** Open the session and choose **Tags → This
@@ -463,6 +467,13 @@ tree:
 - **Filter and group, don't edit.** Every surface can filter by a system
   tag or by a whole axis (`compute:*`); the PWA groups them by axis in the
   header Tags menu, the session list and the dashboard.
+- **Shown on the session card.** The PWA's session list draws each
+  session's placement tags as green chips with a small ⚙️ mark, next to its
+  own tags (normal chips) and its inherited tags (dashed). The summary rows
+  of `GET /api/sessions?view=summary` carry each session's `system_tags`,
+  so the chips are drawn at first load of the Sessions page — not only
+  after the full record arrives — and the group-by-axis control sees them
+  for filtering and grouping.
 
 ### Stamping, re-stamping and the startup backfill
 
