@@ -6799,4 +6799,6 @@ All under `plugins.services` (YAML / `PUT /api/config` / PWA Settings / CLI), wi
 
 ## Discussion ID validation
 
-Every discussion route (`/api/memory/discussion/*`, `/api/push/<id>`, `/api/files/discussions/<id>`) accepts only IDs of 1 to 128 characters made of ASCII letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Other IDs get HTTP 400 `invalid discussion id`. Before upgrading, list existing IDs (`GET /api/memory/discussion`) and rename any that use other characters. See [Discussion scopes](howto/discussion-scopes.md) and [File service](howto/file-service.md).
+Every discussion route (`/api/memory/discussion/*`, `/api/files/discussions/<id>`) accepts only IDs of 1 to 128 characters made of ASCII letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Other IDs get HTTP 400 `invalid discussion id`. Before upgrading, list existing IDs (`GET /api/memory/discussion`) and rename any that use other characters. See [Discussion scopes](howto/discussion-scopes.md) and [File service](howto/file-service.md).
+
+Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule; it only rejects an empty topic or one containing a slash.
