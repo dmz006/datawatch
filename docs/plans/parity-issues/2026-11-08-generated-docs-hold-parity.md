@@ -106,4 +106,8 @@ follow-up.
 
 Not yet filed. File as a datawatch daemon issue (the checks live in internal/autonomous),
 cross-referencing datawatch-app issue #320 for the affected app surface; record the URL
-and date here when filed.
+and date here when filed. Drafted 2026-11-08, and the code-level claims above (the
+exemption wired only into the roll-up via `dropUneditedGeneratedFiles`, the superseded
+helpers still present in `uncommitted_work_rollup.go`, the unchanged per-task check, and
+the matching howto, operations, definitions and CHANGELOG wording) were re-checked against
+the current tree on 2026-11-09 and still hold.
