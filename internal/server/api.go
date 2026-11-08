@@ -370,6 +370,9 @@ type Server struct {
 	// usageCalc is the usage-calculator advice service (nil = not wired);
 	// see usage_calculator_advice.go.
 	usageCalc *usagecalc.Service
+	// autoLanesSpecialCounter counts open items at a priority threshold for
+	// the auto-lanes status (nil = 0); see usage_autolanes.go.
+	autoLanesSpecialCounter func(threshold int) int
 	// burnGuard is the burn guard runner (burn_guard.go); nil until AttachBurnGuard.
 	burnGuard *BurnGuard
 
@@ -9305,7 +9308,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if req, verr := validateRequirementsConfigBlock(v); verr == nil {
 				cfg.Autonomous.Requirements = req
 			}
-		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
+		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.auto_lanes", "usage.calculator.auto_lanes_max", "usage.calculator.auto_lanes_special_priority", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
 			// Validated in handlePutConfig; stored normalized.
 			applyUsageCalculatorPatchKey(&cfg.Usage.Calculator, k, v)
 		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":

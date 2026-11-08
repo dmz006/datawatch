@@ -30,6 +30,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
@@ -51,6 +52,7 @@ run-flat-out policy.`,
 	cmd.AddCommand(newUsageExtraCreditCmd())
 	cmd.AddCommand(newUsageRemainingWorkCmd())
 	cmd.AddCommand(newUsageBurnGuardCmd())
+	cmd.AddCommand(newUsageAutoLanesCmd())
 	return cmd
 }
 
@@ -290,6 +292,96 @@ func newUsageRemainingWorkCmd() *cobra.Command {
 			return daemonJSON(http.MethodPut, "/api/usage/remaining-work", map[string]float64{"points": points})
 		},
 	}
+}
+
+// ----- auto lanes ------------------------------------------------------------
+
+// newUsageAutoLanesCmd is the auto-lanes surface under the usage command:
+// status reads the daemon's GET /api/usage/autolanes, and set goes through
+// the same config set path as `datawatch config set` (PUT /api/config), so
+// the daemon validates both settings exactly the way it would for any key:
+//
+//	 usage auto-lanes status
+//	 usage auto-lanes set --on | --off [--max N]
+func newUsageAutoLanesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auto-lanes",
+		Short: "Auto-lanes: status, or set the two settings (auto_lanes, auto_lanes_max)",
+		Long: "Auto-lanes makes the daemon itself apply the usage calculator's\n" +
+			"lane advice to the Claude lanes it runs (the first enabled claude-code\n" +
+			"entry's max_inflight), capped at the operator maximum. It leaves the\n" +
+			"lanes to the operator while off (the default).\n\n" +
+			"Its two settings, settable through the config set path:\n\n" +
+			"  usage.calculator.auto_lanes        on/off (default: off)\n" +
+			"  usage.calculator.auto_lanes_max    the operator maximum, 1 to 8 (default: 2)\n\n" +
+			"\"auto-lanes status\" shows the daemon's view: those settings, the cap the\n" +
+			"daemon applies now, what the fresh advice's decision would do to it, and\n" +
+			"the loop's recent changes.\n" +
+			"\"auto-lanes set\" writes through PUT /api/config, so the daemon validates\n" +
+			"and stores each value exactly like `datawatch config set` would.",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show the auto-lanes settings, current cap, decision target and recent changes",
+		Long:  "GETs /api/usage/autolanes and prints the body: whether auto-lanes is on (usage.calculator.auto_lanes), the policy and the operator maximum (usage.calculator.auto_lanes_max), the cap the daemon applies now, the advice decision's target and direction when the advice is servable, the last change that moved the cap, and the loop's recent decisions, newest first.",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			return daemonJSON(http.MethodGet, "/api/usage/autolanes", nil)
+		},
+	})
+
+	var on, off bool
+	var max int
+	set := &cobra.Command{
+		Use:   "set",
+		Short: "Set auto-lanes on or off (--on / --off) and its maximum (--max N)",
+		Long: "Sets the auto-lanes settings through the config set path — the same\n" +
+			"PUT /api/config that `datawatch config set <key> <value>` uses — so the\n" +
+			"daemon validates and stores each value the way it would for any key:\n\n" +
+			"  --on            sets usage.calculator.auto_lanes to true\n" +
+			"  --off           sets usage.calculator.auto_lanes to false\n" +
+			"  --max N         sets usage.calculator.auto_lanes_max to N (1 to 8)\n\n" +
+			"Carry at least one flag; --on and --off are exclusive. A refused value\n" +
+			"stores nothing.",
+		Args: cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			if on && off {
+				return fmt.Errorf("carry either --on or --off, not both")
+			}
+			var pairs [][2]string
+			if on {
+				pairs = append(pairs, [2]string{"usage.calculator.auto_lanes", "true"})
+			}
+			if off {
+				pairs = append(pairs, [2]string{"usage.calculator.auto_lanes", "false"})
+			}
+			if c.Flags().Changed("max") {
+				if max < 1 || max > config.UsageMaxLanesMax {
+					return fmt.Errorf("--max must be a whole number from 1 to %d: %d", config.UsageMaxLanesMax, max)
+				}
+				pairs = append(pairs, [2]string{"usage.calculator.auto_lanes_max", strconv.Itoa(max)})
+			}
+			if len(pairs) == 0 {
+				return fmt.Errorf("carry --on or --off (and --max N)")
+			}
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			for _, p := range pairs {
+				if err := runConfigSet(cfg, p[0], p[1]); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	f := set.Flags()
+	f.BoolVar(&on, "on", false, "turn auto-lanes on: set usage.calculator.auto_lanes to true")
+	f.BoolVar(&off, "off", false, "turn auto-lanes off: set usage.calculator.auto_lanes to false")
+	f.IntVar(&max, "max", 0, "the operator maximum the daemon never exceeds, 1 to 8: sets usage.calculator.auto_lanes_max")
+	cmd.AddCommand(set)
+	return cmd
 }
 
 // parseUsagePoints parses a points figure a CLI operator would type: a whole

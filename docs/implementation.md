@@ -232,6 +232,11 @@ block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, de
 `policy` (`use-all` | `pace` | `finish-early`, default `use-all`), `safety_points` (0 to 50,
 default 5), `cost_per_task_points` (above 0, default 0.1, a starting figure to calibrate
 against readings), `baseline_per_24h` (0 to 20, default 3), `max_lanes` (1 to 8, default 3),
+`auto_lanes` (`true` | `false`, default `false` — when on the daemon applies the
+calculator's lane advice itself), `auto_lanes_max` (the operator ceiling the daemon
+never exceeds, 1 to 8, default 2), `auto_lanes_special_priority` (an open automaton
+whose capacity priority is at or above this value counts as a special item while
+auto-lanes weighs the lanes, 0 or above, default 1),
 `reset_weekday` (`sunday`..`saturday`, default `sunday`), `reset_time` (24-hour `HH:MM`,
 default `08:00`), `reset_zone` (IANA zone name, default empty — empty means the zone the
 daemon runs in, falling back to `UTC`; a fixed offset or an unknown name is rejected) and

@@ -253,7 +253,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
-| Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
+| Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set`, `usage_autolanes_status` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Search before create | `autonomous_overlap_search` |
@@ -2701,6 +2701,19 @@ the queue estimate.
 
 Writes (`usage:write`).
 
+### `usage_autolanes_status`
+
+Read-only status of the daemon's auto-lanes loop (the opt-in that applies the
+calculator's lane advice to the lanes it runs, capped by the operator maximum
+in `usage.calculator.auto_lanes_max`): whether it is enabled, the policy in
+force, the operator maximum, the cap currently applied, what a fresh advice's
+decision would do to that cap (target and direction), the settings' last
+change, and the loop's recent decisions, newest first.
+
+**Parameters:** none.
+
+Reads (`usage:read`). Changes go through the config path.
+
 ### Examples
 
 One call per tool:
@@ -2716,6 +2729,7 @@ usage_extra_credit_set(points=25)
 usage_remaining_work_set(points=15.5)
 usage_remaining_work_set()            # points omitted — clears the typed figure
 usage_remaining_work_set(points=null) # same, explicit
+usage_autolanes_status()
 ```
 
 The calculator variant and policy are plain daemon configuration, so they are

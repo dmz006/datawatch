@@ -74,6 +74,12 @@ func usageCalcRows() []struct {
 		{"baseline_per_24h", 20, float64(20)},
 		{"max_lanes", 1, float64(1)},
 		{"max_lanes", 8, float64(8)},
+		{"auto_lanes", true, true},
+		{"auto_lanes", false, false},
+		{"auto_lanes_max", 1, float64(1)},
+		{"auto_lanes_max", 8, float64(8)},
+		{"auto_lanes_special_priority", 0, float64(0)},
+		{"auto_lanes_special_priority", 3, float64(3)},
 		{"reset_weekday", "friday", "friday"},
 		{"reset_weekday", "Saturday", "saturday"},
 		{"reset_time", "19:30", "19:30"},
@@ -90,8 +96,10 @@ func TestUsageCalcConfigDefaultsOnGet(t *testing.T) {
 	// resolved effective zone rather than a fixed value.
 	want := map[string]any{
 		"variant": "all", "policy": "use-all", "safety_points": float64(5), "cost_per_task_points": 0.1,
-		"baseline_per_24h": float64(3), "max_lanes": float64(3), "reset_weekday": "sunday",
-		"reset_time": "08:00", "reset_zone": config.EffectiveUsageCalculator(config.DefaultConfig().Usage.Calculator).ResetZone, "keeper": "",
+		"baseline_per_24h": float64(3), "max_lanes": float64(3),
+		"auto_lanes": false, "auto_lanes_max": float64(2), "auto_lanes_special_priority": float64(1),
+		"reset_weekday": "sunday",
+		"reset_time":    "08:00", "reset_zone": config.EffectiveUsageCalculator(config.DefaultConfig().Usage.Calculator).ResetZone, "keeper": "",
 	}
 	for k, w := range want {
 		if got[k] != w {
@@ -146,6 +154,9 @@ func TestUsageCalcConfigRejectsInvalidValues(t *testing.T) {
 		{"cost_per_task_points", 0}, {"cost_per_task_points", -0.5}, {"cost_per_task_points", "free"},
 		{"baseline_per_24h", -1}, {"baseline_per_24h", 20.5}, {"baseline_per_24h", []int{1}},
 		{"max_lanes", 0}, {"max_lanes", 9}, {"max_lanes", 2.5}, {"max_lanes", "many"}, {"max_lanes", 1e12},
+		{"auto_lanes", "on"}, {"auto_lanes", 1}, {"auto_lanes", "true"},
+		{"auto_lanes_max", 0}, {"auto_lanes_max", 9}, {"auto_lanes_max", 2.5}, {"auto_lanes_max", "many"}, {"auto_lanes_max", true},
+		{"auto_lanes_special_priority", -1}, {"auto_lanes_special_priority", 0.5}, {"auto_lanes_special_priority", "high"},
 		{"reset_weekday", "someday"}, {"reset_weekday", 1},
 		{"reset_time", "24:00"}, {"reset_time", "8:00"}, {"reset_time", "08:61"}, {"reset_time", 800},
 		{"reset_zone", "Mars/Olympus"}, {"reset_zone", "+05:00"}, {"reset_zone", "UTC+5"}, {"reset_zone", "Etc/GMT-3"}, {"reset_zone", "Local"}, {"reset_zone", 5},
@@ -193,10 +204,16 @@ func TestUsageCalcConfigCommConfigure(t *testing.T) {
 			s, _, _ := newMaxConcurrentTasksServer(t)
 			r := router.NewRouter("h", "", nil, nil, 0, nil)
 			r.SetConfigureFunc(func(k, v string) error {
+				// Mirror cmd/datawatch/configureRequestBody: true/false and
+				// whole values go out as JSON literals, the rest as strings.
 				var val any = v
-				var n json.Number
-				if json.Unmarshal([]byte(v), &n) == nil {
-					val = n
+				if v == "true" || v == "false" {
+					val = json.RawMessage(v)
+				} else {
+					var n json.Number
+					if json.Unmarshal([]byte(v), &n) == nil {
+						val = n
+					}
 				}
 				b, _ := json.Marshal(map[string]any{k: val})
 				if rr := usageCalcPutRaw(s, b); rr.Code != http.StatusOK {
@@ -316,6 +333,52 @@ func TestUsageCalcConfigResetZoneServerSource(t *testing.T) {
 		t.Fatalf("config not saved: %v", err)
 	} else if strings.Contains(string(raw), "reset_zone: UTC") {
 		t.Fatalf("resetting the zone to empty kept the old value:\n%s", raw)
+	}
+}
+
+// TestUsageCalcConfigAutoLanes pins the three auto-lanes keys on the full
+// HTTP/comm/tool surface: PUT → GET round-trip, the config_set tool shape,
+// and invalid values refused with a 400 that changes nothing.
+func TestUsageCalcConfigAutoLanes(t *testing.T) {
+	s, _, cfgPath := newMaxConcurrentTasksServer(t)
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{
+		usageCalcPrefix + "auto_lanes":                  true,
+		usageCalcPrefix + "auto_lanes_max":              4,
+		usageCalcPrefix + "auto_lanes_special_priority": 2,
+	})
+	if got := usageCalcGet(t, s); got["auto_lanes"] != true || got["auto_lanes_max"] != float64(4) || got["auto_lanes_special_priority"] != float64(2) {
+		t.Fatalf("GET after PUT = %#v", got)
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("config not saved: %v", err)
+	}
+	for _, want := range []string{"auto_lanes: true", "auto_lanes_max: 4", "auto_lanes_special_priority: 2"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("config.yaml lacks %s:\n%s", want, raw)
+		}
+	}
+	// The generic config_set tool shape: raw value, quoted on refusal.
+	if code := usageCalcConfigSetTool(s, usageCalcPrefix+"auto_lanes", "false"); code != http.StatusOK {
+		t.Fatalf("config_set auto_lanes=false: HTTP %d", code)
+	}
+	if got := usageCalcGet(t, s)["auto_lanes"]; got != false {
+		t.Fatalf("auto_lanes after config_set = %#v, want false", got)
+	}
+	if code := usageCalcConfigSetTool(s, usageCalcPrefix+"auto_lanes_max", "6"); code != http.StatusOK {
+		t.Fatalf("config_set auto_lanes_max=6: HTTP %d", code)
+	}
+	if got := usageCalcGet(t, s)["auto_lanes_max"]; got != float64(6) {
+		t.Fatalf("auto_lanes_max after config_set = %#v, want 6", got)
+	}
+	// Refusals change nothing.
+	for _, c := range []struct{ key, value string }{{"auto_lanes", "yes"}, {"auto_lanes_max", "0"}, {"auto_lanes_max", "9"}, {"auto_lanes_special_priority", "-3"}} {
+		if code := usageCalcConfigSetTool(s, usageCalcPrefix+c.key, c.value); code != http.StatusBadRequest {
+			t.Fatalf("config_set %s=%s: HTTP %d, want 400", c.key, c.value, code)
+		}
+	}
+	if got := usageCalcGet(t, s); got["auto_lanes"] != false || got["auto_lanes_max"] != float64(6) {
+		t.Fatalf("refused config_sets changed settings: %#v", got)
 	}
 }
 

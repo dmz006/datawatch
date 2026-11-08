@@ -7193,6 +7193,37 @@ func (m *Manager) PriorityByKind() map[string]int {
 	return out
 }
 
+// CountOpenPRDsWithPriority counts the PRDs that are both still open and
+// special: capacity priority at or above minPriority. Open means not
+// finished or closed: draft, planning, needs_review, revisions_asked,
+// approved, running (and the legacy active alias), blocked, and paused all
+// count; completed, rejected, cancelled, archived and failed do not. This is
+// the special-item count of the auto-lanes rule
+// (usage.calculator.auto_lanes): an open Automaton whose priority is at or
+// above usage.calculator.auto_lanes_special_priority keeps a lane of its own
+// while the daemon weighs the advice. Each PRD is read under the Manager
+// mutex, exactly like the API's prdStatus, so Status and Priority are never
+// read while a concurrent Run() is mid-mutation.
+func (m *Manager) CountOpenPRDsWithPriority(minPriority int) int {
+	if m.store == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, prd := range m.store.ListPRDs() {
+		if prd == nil || prd.Priority < minPriority {
+			continue
+		}
+		switch NormalizePRDStatus(prd.Status) {
+		case PRDCompleted, PRDRejected, PRDCancelled, PRDArchived, PRDFailed:
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // kindSetAttempts bounds how often SetPRDKind retries after another writer
 // changed the record between its read of the revision and its commit.
 const kindSetAttempts = 3

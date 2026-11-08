@@ -20,7 +20,8 @@ const usageCalculatorKeyPrefix = "usage.calculator."
 // usageCalculatorKeys is every settable usage.calculator key.
 var usageCalculatorKeys = []string{
 	"variant", "policy", "safety_points", "cost_per_task_points", "baseline_per_24h",
-	"max_lanes", "reset_weekday", "reset_time", "reset_zone", "keeper",
+	"max_lanes", "auto_lanes", "auto_lanes_max", "auto_lanes_special_priority",
+	"reset_weekday", "reset_time", "reset_zone", "keeper",
 }
 
 // usageCalculatorPatchString reads a patch value that must be a string.
@@ -75,6 +76,34 @@ func usageCalculatorPatchLanes(v interface{}) (int, error) {
 	return n, config.ValidateUsageCalculatorMaxLanes(n)
 }
 
+// usageCalculatorPatchAutoLanesMax reads auto_lanes_max: a whole number 1 to 8.
+func usageCalculatorPatchAutoLanesMax(v interface{}) (int, error) {
+	f, err := usageCalculatorPatchNumber("auto_lanes_max", v)
+	if err != nil {
+		return 0, err
+	}
+	if f != math.Trunc(f) || f < math.MinInt32 || f > math.MaxInt32 {
+		return 0, fmt.Errorf("usage.calculator.auto_lanes_max: must be a whole number from 1 to %d", config.UsageMaxLanesMax)
+	}
+	n := int(f)
+	return n, config.ValidateUsageCalculatorAutoLanesMax(n)
+}
+
+// usageCalculatorPatchAutoLanesSpecialPriority reads
+// auto_lanes_special_priority: a whole number 0 or above (0 lets every open
+// automaton count as special).
+func usageCalculatorPatchAutoLanesSpecialPriority(v interface{}) (int, error) {
+	f, err := usageCalculatorPatchNumber("auto_lanes_special_priority", v)
+	if err != nil {
+		return 0, err
+	}
+	if f != math.Trunc(f) || f < math.MinInt32 || f > math.MaxInt32 {
+		return 0, fmt.Errorf("usage.calculator.auto_lanes_special_priority: must be a whole number 0 or above")
+	}
+	n := int(f)
+	return n, config.ValidateUsageCalculatorAutoLanesSpecialPriority(n)
+}
+
 // validateUsageCalculatorValue checks one key's patch value.
 func validateUsageCalculatorValue(key string, v interface{}) error {
 	switch key {
@@ -114,6 +143,20 @@ func validateUsageCalculatorValue(key string, v interface{}) error {
 		return config.ValidateUsageCalculatorCostPerTaskPoints(f)
 	case "max_lanes":
 		_, err := usageCalculatorPatchLanes(v)
+		return err
+	case "auto_lanes":
+		// Strict boolean: comm and the CLI send true/false, and the config_set
+		// tool's raw-then-quoted fallback never lands a bool as a string here
+		// anyway, so accepting a "true" string only masks a broken caller.
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("usage.calculator.auto_lanes: must be a boolean (true or false)")
+		}
+		return nil
+	case "auto_lanes_max":
+		_, err := usageCalculatorPatchAutoLanesMax(v)
+		return err
+	case "auto_lanes_special_priority":
+		_, err := usageCalculatorPatchAutoLanesSpecialPriority(v)
 		return err
 	}
 	return nil
@@ -181,6 +224,18 @@ func applyUsageCalculatorPatchKey(c *config.UsageCalculatorConfig, fullKey strin
 		c.BaselinePer24h, _ = usageCalculatorPatchNumber(key, v)
 	case "max_lanes":
 		c.MaxLanes, _ = usageCalculatorPatchLanes(v)
+	case "auto_lanes":
+		if b, ok := v.(bool); ok {
+			c.AutoLanes = b
+		}
+	case "auto_lanes_max":
+		if n, err := usageCalculatorPatchAutoLanesMax(v); err == nil {
+			c.AutoLanesMax = n
+		}
+	case "auto_lanes_special_priority":
+		if n, err := usageCalculatorPatchAutoLanesSpecialPriority(v); err == nil {
+			c.AutoLanesSpecialPriority = n
+		}
 	}
 }
 
@@ -198,17 +253,20 @@ func usageCalculatorForDisplay(c config.UsageCalculatorConfig) map[string]interf
 		source = "server"
 	}
 	return map[string]interface{}{
-		"variant":              e.Variant,
-		"policy":               e.Policy,
-		"safety_points":        e.SafetyPoints,
-		"cost_per_task_points": e.CostPerTaskPoints,
-		"baseline_per_24h":     e.BaselinePer24h,
-		"max_lanes":            e.MaxLanes,
-		"reset_weekday":        e.ResetWeekday,
-		"reset_time":           e.ResetTime,
-		"reset_zone":           zone,
-		"reset_zone_source":    source,
-		"reset_zone_fell_back": fellBack,
-		"keeper":               e.Keeper,
+		"variant":                     e.Variant,
+		"policy":                      e.Policy,
+		"safety_points":               e.SafetyPoints,
+		"cost_per_task_points":        e.CostPerTaskPoints,
+		"baseline_per_24h":            e.BaselinePer24h,
+		"max_lanes":                   e.MaxLanes,
+		"auto_lanes":                  e.AutoLanes,
+		"auto_lanes_max":              e.AutoLanesMax,
+		"auto_lanes_special_priority": e.AutoLanesSpecialPriority,
+		"reset_weekday":               e.ResetWeekday,
+		"reset_time":                  e.ResetTime,
+		"reset_zone":                  zone,
+		"reset_zone_source":           source,
+		"reset_zone_fell_back":        fellBack,
+		"keeper":                      e.Keeper,
 	}
 }

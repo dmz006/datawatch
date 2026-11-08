@@ -2957,6 +2957,8 @@ function navigate(view, sessionId, fromPopstate) {
     if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
     // Supervisor loop card poll (Automaton view, same rule)
     if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
+    // Usage calculator auto-lanes status poll (Settings view, same rule)
+    if (window._usageAutoLanesStatusInterval) { clearInterval(window._usageAutoLanesStatusInterval); window._usageAutoLanesStatusInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -18086,6 +18088,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.calculator.cost_per_task_points', label: 'Usage calculator cost per task (weekly points, above 0, default 0.1)', labelKey: 'settings_usage_calculator_cost_per_task_points', type: 'number', placeholder: '0.1', min: 0.01, step: 0.01, default: '0.1' },
     { key: 'usage.calculator.baseline_per_24h', label: 'Usage calculator idle burn (points per 24 hours, 0 to 20, default 3)', labelKey: 'settings_usage_calculator_baseline_per_24h', type: 'number', placeholder: '3', min: 0, max: 20, step: 0.5, default: '3' },
     { key: 'usage.calculator.max_lanes', label: 'Usage calculator largest lane count (1 to 8, default 3)', labelKey: 'settings_usage_calculator_max_lanes', type: 'number', placeholder: '3', min: 1, max: 8, step: 1, default: '3' },
+    { key: 'usage.calculator.auto_lanes', label: 'Auto-lanes: apply the calculator lane advice automatically', labelKey: 'settings_usage_calculator_auto_lanes', type: 'toggle', default: false, hintKey: 'settings_usage_calculator_auto_lanes_hint' },
+    { key: 'usage.calculator.auto_lanes_max', label: 'Auto-lanes operator maximum (1 to 8, default 2)', labelKey: 'settings_usage_calculator_auto_lanes_max', type: 'number', placeholder: '2', min: 1, max: 8, step: 1, default: '2' },
+    { key: 'usage.calculator.auto_lanes_special_priority', label: 'Auto-lanes special priority (whole number 0 or above, default 1)', labelKey: 'settings_usage_calculator_auto_lanes_special_priority', type: 'number', placeholder: '1', min: 0, step: 1, default: '1' },
     { key: 'usage.calculator.reset_weekday', label: 'Usage calculator reset weekday (default sunday)', labelKey: 'settings_usage_calculator_reset_weekday', type: 'select', options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'], default: 'sunday' },
     { key: 'usage.calculator.reset_time', label: 'Usage calculator reset time (24-hour HH:MM, default 08:00)', labelKey: 'settings_usage_calculator_reset_time', type: 'text', placeholder: '08:00', default: '08:00', hintKey: 'settings_usage_calculator_reset_time_hint' },
     { key: 'usage.calculator.reset_zone', label: "Usage calculator reset time zone (IANA name; empty follows the server's zone)", labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', hintKey: 'settings_usage_calculator_reset_zone_hint' },
@@ -19918,6 +19923,12 @@ function loadGeneralConfig() {
             </div>`;
           }
         }
+        // Usage calculator card: read-only auto-lanes status line. The
+        // daemon's loop owns cap changes; this line only reads
+        // GET /api/usage/autolanes and never writes.
+        if (sec.id === 'usage_calculator') {
+          html += `<div id="gcfg_uc_autolanes_status" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text2);">${escHtml(t('settings_usage_calculator_autolanes_status_loading'))}</div>`;
+        }
         // PWA-only preferences appended to the dw section. Stored in
         // localStorage; not in the YAML config (per-browser choice).
         if (sec.id === 'dw') {
@@ -19933,6 +19944,14 @@ function loadGeneralConfig() {
         el.innerHTML = html;
         if (document.getElementById('rulesContextCard')) loadRulesContextCard();
       }
+      // Usage calculator card: refresh the auto-lanes status line and keep
+      // it current while Settings is open — the loop moves caps hourly, so
+      // poll once a minute on the shared window handle (never a second).
+      if (window._usageAutoLanesStatusInterval) { clearInterval(window._usageAutoLanesStatusInterval); window._usageAutoLanesStatusInterval = null; }
+      if (document.getElementById('gcfg_uc_autolanes_status') && window.refreshUsageAutoLanesStatus) {
+        window.refreshUsageAutoLanesStatus();
+        window._usageAutoLanesStatusInterval = setInterval(window.refreshUsageAutoLanesStatus, 60 * 1000);
+      }
     })
     .catch(e => {
       const msg = _fedMsg(e, null);
@@ -19943,6 +19962,37 @@ function loadGeneralConfig() {
       }
     });
 }
+
+// Read-only auto-lanes status line for the usage calculator Settings
+// card, fed by GET /api/usage/autolanes — a read here, never a write (the
+// daemon's loop owns cap changes). One shared interval handle on
+// window._usageAutoLanesStatusInterval (PWA poll-stacking rule: the handle
+// lives on window, never on a DOM element).
+window.refreshUsageAutoLanesStatus = function() {
+  apiFetch('/api/usage/autolanes')
+    .then(st => {
+      const el = document.getElementById('gcfg_uc_autolanes_status');
+      if (!el || !st) return;
+      const mode = st.enabled
+        ? t('settings_usage_calculator_autolanes_mode_on')
+        : t('settings_usage_calculator_autolanes_mode_off');
+      const cap = (st.current_max_inflight !== null && st.current_max_inflight !== undefined)
+        ? t('settings_usage_calculator_autolanes_cap', [st.current_max_inflight])
+        : t('settings_usage_calculator_autolanes_cap_unset');
+      const lc = (st.last_change && st.last_change.at)
+        ? t('settings_usage_calculator_autolanes_last_change', [
+            new Date(st.last_change.at).toLocaleString(),
+            st.last_change.from, st.last_change.to,
+            st.last_change.reason || '',
+          ])
+        : t('settings_usage_calculator_autolanes_last_change_none');
+      el.textContent = [mode, cap, lc].join(' \u00b7 ');
+    })
+    .catch(() => {
+      const el = document.getElementById('gcfg_uc_autolanes_status');
+      if (el) el.textContent = t('settings_usage_calculator_autolanes_status_error');
+    });
+};
 
 window.toggleDocsLinksPref = function(on) {
   localStorage.setItem('cs_show_docs_links', on ? '1' : '0');

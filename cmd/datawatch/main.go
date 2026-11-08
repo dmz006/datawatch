@@ -7400,6 +7400,22 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if err := httpServer.AttachUsageCalculator(usagecalcQueue{m: amgr}); err != nil {
 				log.Printf("[usage] wire calculator advice service: %v", err)
 			}
+			// The auto-lanes status endpoint's special-item counter:
+			// open Automata at the configured priority threshold.
+			httpServer.SetAutoLanesSpecialCounter(func(threshold int) int {
+				if amgr == nil {
+					return 0
+				}
+				return amgr.CountOpenPRDsWithPriority(threshold)
+			})
+			// Auto-lanes (usage.calculator.auto_lanes): the hourly loop applies the
+			// freshest advice lanes plus the special open Automata, clamped to
+			// auto_lanes_max, to the first enabled claude-code LLM entry's
+			// max_inflight — through the same registry save as the operator's LLM
+			// update, decision logged beside the usage series. When auto_lanes is
+			// false the loop does nothing. The call blocks for the daemon's lifetime
+			// (it owns the hour ticker), so it runs in its own goroutine.
+			go startAutoLanesLoop(ctx, cfg, httpServer, amgr, expandHome(cfg.DataDir))
 			// Burn guard: projects the weekly burn against the pace line and steps the
 			// admission ladder; it never ends a running session.
 			wireBurnGuard(ctx, cfg, httpServer, mgr, capLedger)

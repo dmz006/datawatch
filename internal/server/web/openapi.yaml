@@ -8343,6 +8343,63 @@ paths:
                   what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
         "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
         "503": {description: The calculator is not wired on this daemon}
+  /api/usage/autolanes:
+    get:
+      summary: Auto-lanes status — the usage.calculator.auto_lanes settings, the cap the daemon currently enforces, the auto-lanes decision for the current advice (same rule as the hourly loop), special items, the last change and the daemon's auto-lanes decisions newest first
+      operationId: usageAutoLanesStatus
+      tags: [Singletons]
+      responses:
+        "200":
+          description: The status; target and direction are null while auto_lanes is disabled or the advice cannot be evaluated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, policy, max, special_items, recent_changes]
+                properties:
+                  enabled: {type: boolean, description: usage.calculator.auto_lanes}
+                  policy: {type: string, description: The policy in force (use-all, pace, finish-early)}
+                  max: {type: integer, description: The operator max (usage.calculator.auto_lanes_max)}
+                  current_max_inflight:
+                    type: integer
+                    nullable: true
+                    description: The cap enforced on this daemon — the max_inflight of the first enabled claude-code LLM entry; null when there is none
+                  target:
+                    type: integer
+                    nullable: true
+                    description: The cap the auto-lanes decision lands on for the current advice (operator_max clamps it); null while disabled or when the advice cannot be evaluated
+                  direction:
+                    type: string
+                    nullable: true
+                    enum: [up, down, unchanged]
+                    description: The target relative to current_max_inflight; null together with target
+                  last_change:
+                    type: object
+                    nullable: true
+                    description: The newest recorded decision that actually moved the cap; null until the loop has moved it
+                    properties:
+                      at: {type: string, format: date-time}
+                      from: {type: integer}
+                      to: {type: integer}
+                      reason: {type: string}
+                  special_items:
+                    type: integer
+                    minimum: 0
+                    description: Open items at the configured auto_lanes_special_priority threshold (the auto-lanes guardrail); 0 before the first count is known
+                  recent_changes:
+                    type: array
+                    description: The auto-lanes decision log, newest first, at most 50 entries
+                    items:
+                      type: object
+                      properties:
+                        at: {type: string, format: date-time}
+                        from: {type: integer}
+                        to: {type: integer}
+                        reason: {type: string}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Missing the usage read capability}
+        "405": {description: This endpoint accepts GET only}
+        "503": {description: auto_lanes is enabled but the calculator is not wired on this daemon}
   /api/usage/burn-guard:
     get:
       summary: Burn guard status — state, the current rung, the projection against the pace line and the last decision

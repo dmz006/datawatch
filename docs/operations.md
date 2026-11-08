@@ -693,6 +693,13 @@ readings). Settings apply without a restart.
 
 See [howto/usage-calculator.md](howto/usage-calculator.md).
 
+Automatic lane count (`usage.calculator.auto_lanes`, off by default) is the
+opt-in that lets the daemon apply the advice itself: a loop that runs at daemon
+start and hourly sets the Claude lanes' in-flight cap to the advice's lanes
+plus one per open Automaton at or above `auto_lanes_special_priority` (default
+1), never above `auto_lanes_max` (1 to 8, default 2) and never below one —
+`datawatch usage auto-lanes status` / `set`, or `GET /api/usage/autolanes`.
+
 ### Burn guard
 
 The burn guard compares the projected weekly burn with the usage calculator's

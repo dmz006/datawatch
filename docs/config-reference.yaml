@@ -4348,6 +4348,17 @@ usage:
     baseline_per_24h: 3
     # Largest lane count the planner offers. 1 to 8, default 3.
     max_lanes: 3
+    # Apply the calculator's lane advice automatically. When true the daemon
+    # changes the lanes itself to follow the advice; when false (the default)
+    # the advice is only shown and lane changes stay with the operator.
+    auto_lanes: false
+    # Operator maximum lane count the daemon never exceeds while auto-lanes
+    # is on, even when the advice asks for more. 1 to 8, default 2.
+    auto_lanes_max: 2
+    # An open automaton whose capacity priority is at or above this value
+    # counts as a special item while auto-lanes weighs the lanes. A whole
+    # number 0 or above (0 makes every open automaton special). Default 1.
+    auto_lanes_special_priority: 1
     # When the weekly allowance resets: a weekday (sunday..saturday), a local
     # 24-hour HH:MM clock time and an IANA zone name. The zone's own rules are
     # followed, so a daylight saving change stays correct. A fixed UTC offset

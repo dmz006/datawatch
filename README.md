@@ -132,6 +132,7 @@ More: [skills](docs/skills.md) · [MCP](docs/mcp.md) · [plugin services](docs/p
 - Docker and Kubernetes workers
 - Agent tracing: a timeline of what each agent did (tool calls, model requests, permission decisions, loop warnings, errors) for a session or a whole Automaton, with roll-ups and a per-backend coverage badge. On by default at the summary level; settings under `tracing.*` ([how-to](docs/howto/agent-tracing.md))
 - Rate-limit recovery, network monitoring, Prometheus metrics and a Tailscale network
+- A usage calculator that sizes the parallel lanes to your weekly Claude allowance, with an option for the daemon to apply that advice itself within a cap you set (auto-lanes, off by default)
 
 Everything else is in the [Documentation index](#documentation-index).
 

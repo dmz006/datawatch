@@ -570,6 +570,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolUsageReadingDelete(), tracked(s.handleUsageReadingDelete))         // usage calculator
 	mcpSrv.AddTool(s.toolUsageExtraCreditSet(), tracked(s.handleUsageExtraCreditSet))       // usage calculator
 	mcpSrv.AddTool(s.toolUsageRemainingWorkSet(), tracked(s.handleUsageRemainingWorkSet))   // usage calculator
+	mcpSrv.AddTool(s.toolUsageAutoLanesStatus(), tracked(s.handleUsageAutoLanesStatus))     // usage calculator: auto-lanes (read-only)
 	mcpSrv.AddTool(s.toolBurnGuardStatus(), tracked(s.handleBurnGuardStatus))               // burn guard
 	mcpSrv.AddTool(s.toolBurnGuardRun(), tracked(s.handleBurnGuardRun))                     // burn guard
 	mcpSrv.AddTool(s.toolBurnGuardConfigGet(), tracked(s.handleBurnGuardConfigGet))         // burn guard

@@ -31,15 +31,17 @@ const (
 	UsagePolicyPace        = "pace"
 	UsagePolicyFinishEarly = "finish-early"
 
-	UsageSafetyPointsDefault   = 5.0
-	UsageSafetyPointsMax       = 50.0
-	UsageCostPerTaskDefault    = 0.1
-	UsageBaselinePer24hDefault = 3.0
-	UsageBaselinePer24hMax     = 20.0
-	UsageMaxLanesDefault       = 3
-	UsageMaxLanesMax           = 8
-	UsageResetWeekdayDefault   = "sunday"
-	UsageResetTimeDefault      = "08:00"
+	UsageSafetyPointsDefault             = 5.0
+	UsageSafetyPointsMax                 = 50.0
+	UsageCostPerTaskDefault              = 0.1
+	UsageBaselinePer24hDefault           = 3.0
+	UsageBaselinePer24hMax               = 20.0
+	UsageMaxLanesDefault                 = 3
+	UsageMaxLanesMax                     = 8
+	UsageAutoLanesMaxDefault             = 2
+	UsageAutoLanesSpecialPriorityDefault = 1
+	UsageResetWeekdayDefault             = "sunday"
+	UsageResetTimeDefault                = "08:00"
 	// UsageResetZoneDefault is intentionally empty: an unset reset zone follows
 	// the server's local zone (see ResolveUsageServerZone) rather than a fixed
 	// UTC.
@@ -65,6 +67,16 @@ type UsageCalculatorConfig struct {
 	// MaxLanes is the largest lane count the planner offers, 1 to 8
 	// (default 3).
 	MaxLanes int `yaml:"max_lanes" json:"max_lanes"`
+	// AutoLanes: when true the daemon applies the calculator's lane advice
+	// itself; false (the default) leaves lane changes to the operator.
+	AutoLanes bool `yaml:"auto_lanes" json:"auto_lanes"`
+	// AutoLanesMax is the operator maximum the daemon never exceeds when
+	// auto-lanes is on, 1 to 8 (default 2).
+	AutoLanesMax int `yaml:"auto_lanes_max" json:"auto_lanes_max"`
+	// AutoLanesSpecialPriority: an open automaton whose capacity priority is
+	// at or above this value counts as a special item while auto-lanes
+	// weighs the lanes. 0 or above (default 1).
+	AutoLanesSpecialPriority int `yaml:"auto_lanes_special_priority" json:"auto_lanes_special_priority"`
 	// ResetWeekday: sunday..saturday (default sunday).
 	ResetWeekday string `yaml:"reset_weekday,omitempty" json:"reset_weekday,omitempty"`
 	// ResetTime is the 24-hour HH:MM local clock time of the reset
@@ -96,15 +108,17 @@ type UsageConfig struct {
 // are configured.
 func DefaultUsageCalculator() UsageCalculatorConfig {
 	return UsageCalculatorConfig{
-		Variant:           UsageVariantAll,
-		Policy:            UsagePolicyUseAll,
-		SafetyPoints:      UsageSafetyPointsDefault,
-		CostPerTaskPoints: UsageCostPerTaskDefault,
-		BaselinePer24h:    UsageBaselinePer24hDefault,
-		MaxLanes:          UsageMaxLanesDefault,
-		ResetWeekday:      UsageResetWeekdayDefault,
-		ResetTime:         UsageResetTimeDefault,
-		ResetZone:         UsageResetZoneDefault,
+		Variant:                  UsageVariantAll,
+		Policy:                   UsagePolicyUseAll,
+		SafetyPoints:             UsageSafetyPointsDefault,
+		CostPerTaskPoints:        UsageCostPerTaskDefault,
+		BaselinePer24h:           UsageBaselinePer24hDefault,
+		MaxLanes:                 UsageMaxLanesDefault,
+		AutoLanesMax:             UsageAutoLanesMaxDefault,
+		AutoLanesSpecialPriority: UsageAutoLanesSpecialPriorityDefault,
+		ResetWeekday:             UsageResetWeekdayDefault,
+		ResetTime:                UsageResetTimeDefault,
+		ResetZone:                UsageResetZoneDefault,
 	}
 }
 
@@ -279,6 +293,23 @@ func ValidateUsageCalculatorMaxLanes(v int) error {
 	return nil
 }
 
+// ValidateUsageCalculatorAutoLanesMax requires 1 to 8.
+func ValidateUsageCalculatorAutoLanesMax(v int) error {
+	if v < 1 || v > UsageMaxLanesMax {
+		return fmt.Errorf("invalid usage.calculator.auto_lanes_max %d: must be a whole number from 1 to %d", v, UsageMaxLanesMax)
+	}
+	return nil
+}
+
+// ValidateUsageCalculatorAutoLanesSpecialPriority requires a whole number 0
+// or above (0 lets every open automaton count as special).
+func ValidateUsageCalculatorAutoLanesSpecialPriority(v int) error {
+	if v < 0 {
+		return fmt.Errorf("invalid usage.calculator.auto_lanes_special_priority %d: must be a whole number 0 or above", v)
+	}
+	return nil
+}
+
 // ValidateUsageCalculatorResetWeekday reports an error for a value that is
 // neither empty (the default) nor a weekday name.
 func ValidateUsageCalculatorResetWeekday(v string) error {
@@ -349,6 +380,8 @@ func ValidateUsageCalculator(c UsageCalculatorConfig) error {
 		ValidateUsageCalculatorCostPerTaskPoints(c.CostPerTaskPoints),
 		ValidateUsageCalculatorBaselinePer24h(c.BaselinePer24h),
 		ValidateUsageCalculatorMaxLanes(c.MaxLanes),
+		ValidateUsageCalculatorAutoLanesMax(c.AutoLanesMax),
+		ValidateUsageCalculatorAutoLanesSpecialPriority(c.AutoLanesSpecialPriority),
 		ValidateUsageCalculatorResetWeekday(c.ResetWeekday),
 		ValidateUsageCalculatorResetTime(c.ResetTime),
 		ValidateUsageCalculatorResetZone(c.ResetZone),
@@ -408,6 +441,20 @@ func normalizeUsageCalculator(c UsageCalculatorConfig, warn func(format string, 
 	} else if err := ValidateUsageCalculatorMaxLanes(c.MaxLanes); err != nil {
 		say("[warn] usage.calculator.max_lanes: %d — using %d", c.MaxLanes, d.MaxLanes)
 		out.MaxLanes = d.MaxLanes
+	}
+	// AutoLanes is a plain boolean; false is both the default and the
+	// stored zero value, so it never needs repair. Unset special priority
+	// means 0, a legitimate value ("everything is special"), so only a
+	// negative value is reported and replaced.
+	if c.AutoLanesMax == 0 {
+		out.AutoLanesMax = d.AutoLanesMax
+	} else if err := ValidateUsageCalculatorAutoLanesMax(c.AutoLanesMax); err != nil {
+		say("[warn] usage.calculator.auto_lanes_max: %d — using %d", c.AutoLanesMax, d.AutoLanesMax)
+		out.AutoLanesMax = d.AutoLanesMax
+	}
+	if err := ValidateUsageCalculatorAutoLanesSpecialPriority(c.AutoLanesSpecialPriority); err != nil {
+		say("[warn] usage.calculator.auto_lanes_special_priority: %d — using %d", c.AutoLanesSpecialPriority, d.AutoLanesSpecialPriority)
+		out.AutoLanesSpecialPriority = d.AutoLanesSpecialPriority
 	}
 
 	out.ResetTime = strings.TrimSpace(c.ResetTime)

@@ -84,6 +84,9 @@ type Settings struct {
 	CostPerTask float64
 	// MaxLanes caps the planner's lane counts; 0 means the default.
 	MaxLanes int
+	// AutoLanes keeps the auto lane mode on, so the first note of the advice says the
+	// daemon sets the lane count within the operator maximum instead of the operator.
+	AutoLanes bool
 }
 
 // SettingsGetter returns the live settings at call time. It must be safe for concurrent
@@ -260,6 +263,7 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		BaselinePer24h:    cfg.BaselinePer24h,
 		SafetyPoints:      cfg.SafetyPoints,
 		Policy:            policy,
+		AutoLanes:         cfg.AutoLanes,
 		RemainingWork:     s.remainingWork(o, cfg),
 	}
 

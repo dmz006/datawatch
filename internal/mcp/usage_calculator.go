@@ -191,3 +191,20 @@ func (s *Server) handleUsageRemainingWorkSet(_ context.Context, req mcpsdk.CallT
 	}
 	return textOK(string(out)), nil
 }
+
+func (s *Server) toolUsageAutoLanesStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("usage_autolanes_status",
+		mcpsdk.WithDescription("Read-only status of the daemon's auto-lanes loop (usage.calculator.auto_lanes): whether it is enabled, the policy in force and the operator maximum (usage.calculator.auto_lanes_max) it must never exceed, the cap the daemon applies to the Claude lanes now, what the fresh advice's decision would do to that cap (target and direction) when the advice is servable, the settings' last change when the daemon knows it, and the loop's recent decisions, newest first. Reads only — it stores nothing; to change the settings use the config set path (the CLI's usage auto-lanes set)."),
+	)
+}
+
+// handleUsageAutoLanesStatus proxies GET /api/usage/autolanes. The body is
+// the daemon's byte for byte: enabled, policy, max, current_max_inflight,
+// target, direction, last_change, special_items and recent_changes.
+func (s *Server) handleUsageAutoLanesStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/usage/autolanes", nil)
+	if err != nil {
+		return toolError("usage_autolanes_status", err), nil
+	}
+	return textOK(string(out)), nil
+}
