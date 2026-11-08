@@ -462,7 +462,18 @@ tree:
   keeps pointing at the same registry entry.
 - **Filter and group, don't edit.** Every surface can filter by a system
   tag or by a whole axis (`compute:*`); the PWA groups them by axis in the
-  header Tags menu, the session list and the dashboard.
+  session list and the dashboard.
+- **One row per tag in the Sessions header Tags menu.** The menu lists each
+  tag exactly once: the placement tags (`axis:value`) appear only in the
+  **Placement tags (system)** section, under their own axis heading; the
+  Tags section beneath it carries the remaining system tags (with the
+  padlock mark) and your operator tags, exactly as before. Ticking a
+  placement tag checks its single row, and the match-mode (any/all) toggle
+  and Clear work as before even with a placement tag selected. The tag
+  filter rows elsewhere (Automata, tasks, facets) are unchanged and still
+  show system tags with the padlock. It is display-only: tags, stored
+  selections and the results of an active tag filter are untouched —
+  refresh the PWA and the menu is correct.
 
 ### Stamping, re-stamping and the startup backfill
 
