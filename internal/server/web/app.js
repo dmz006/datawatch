@@ -3162,8 +3162,15 @@ function _mergeSessionFields(cur, row) {
     }
     if (still.length) row.truncated_fields = still; else delete row.truncated_fields;
   }
-  if (!cur || 'task' in row) return Object.assign({}, row);
+  if (!cur || 'task' in row) {
+    const full = Object.assign({}, row);
+    // A row with no system_tags key (an older server shape) keeps the placement
+    // tags already held; a row that carries the key, even empty, wins.
+    if (cur && full.system_tags === undefined && cur.system_tags !== undefined) full.system_tags = cur.system_tags;
+    return full;
+  }
   const out = Object.assign({}, cur);
+  if (row.system_tags === undefined) delete row.system_tags;
   for (const k of SESSION_SUMMARY_KEYS) if (!(k in row)) delete out[k];
   return Object.assign(out, row);
 }
