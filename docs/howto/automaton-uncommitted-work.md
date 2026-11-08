@@ -126,39 +126,39 @@ a name that has a leading dot and the suffix `.genhash`.
 | The plan registry row | `docs/plans/drafts/` |
 | The parity issue draft | `docs/plans/parity-issues/` |
 
-At this check, a document a person has not changed is not counted. It is not
-counted while its first line is the generated marker, it has no edited line, and
-its content still matches the hash in its `.genhash` file. Such a document never
-holds the Automaton and is never listed in the question or the status. A document
-a person has edited — the marker removed, an edited line added, or the content
-changed so the hash no longer matches — counts as uncommitted work like any other
-file and holds the Automaton, and the same is true of a document whose hash file
-is missing or does not match. The per-task check does not ignore these documents.
+**The documents the daemon itself generated.** These artefacts (see
+[the generated-artefacts guide](generated-artefacts.md)) no longer stop this
+check when the daemon is the only one who wrote them. An artefact counts as
+unedited while its first line is still the
+`<!-- generated: datawatch change record; edit freely, a person edit is kept -->`
+marker line, it has no `<!-- edited -->` line, and its body still matches the
+hash the daemon recorded in its `.genhash` sidecar when it last wrote it — and
+because the daemon never overwrites an artefact a person has edited, unedited
+means "still exactly what the daemon wrote."
+
+- An unedited artefact, together with the `.genhash` sidecar that records its
+  hash, is left out of the check, of the hold listing, of the question, of the
+  status and of the warning. An Automaton whose only uncommitted work is what
+  the daemon generated therefore reaches `completed` and is listed as merge
+  ready as usual, and one already held for nothing but unedited artefacts
+  passes the check again when it is re-run.
+- An artefact you edited — the marker removed, an edited line added, or the
+  content changed so the hash in its sidecar no longer matches — counts as
+  uncommitted work like any other file you touched and holds the Automaton,
+  under all three policies. The same is true of an artefact whose `.genhash`
+  sidecar is missing: without it the daemon can no longer prove the document
+  is the one it wrote, so the document counts.
+- The per-task check does not ignore these documents: it commits a task's
+  declared files as before, and a generated artefact counts for it as for any
+  other file.
+- The exemption does not commit the documents: it only stops them from holding
+  the Automaton. After the Automaton completes, an unedited generated document
+  still sits uncommitted in the worktree. Reviewing it and deciding what to do
+  with it — commit it, edit it or remove it — is still yours to do.
 
 The scope setting does not narrow this check: it always covers the whole
 worktree, and it never stages or commits anything. You decide what happens to
-the files.
-
-**The documents the daemon itself generated.** The generated artefacts the
-daemon writes to their tracked paths when the Automaton finishes — the gate
-report, the changelog draft, the parity draft, the tracker rows and the
-registry row (see [the generated-artefacts guide](generated-artefacts.md)) —
-no longer stop
-this check when the daemon is the only one who wrote them. An artefact counts
-as unedited while it still carries its
-`<!-- generated: datawatch change record; edit freely, a person edit is kept -->`
-marker line, has no `<!-- edited -->` line, and its body still matches the hash the daemon
-recorded in a sidecar file when it last wrote it — and because the daemon
-never overwrites an artefact a person has edited, unedited means "still
-exactly what the daemon wrote." An unedited artefact — together with the
-sidecar file that records its hash — is left out of the check,
-of the hold listing and of the warning, so an Automaton whose only
-uncommitted work is what the daemon generated reaches `completed` and is
-listed as merge ready as usual, and one already held for nothing but unedited
-artefacts passes the check again when it is re-run. An artefact you edited
-still counts and holds exactly like any other file you touched, under all
-three policies, and every other uncommitted file is treated exactly as
-before.
+the files that do count.
 
 ## The policies
 
