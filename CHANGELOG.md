@@ -9,7 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **The release workflow's lint step passes again, so the release builds, containers and scans run.** The tag-launch test in `cmd/datawatch/launch_tags_test.go` read a map entry with a needless blank-identifier assignment; the lint step in the release workflow runs a newer linter than a local build and failed on it (staticcheck S1005), which skipped the release build, the container images and the vulnerability scan for the releases built from that code. The lookup is now a plain map read. No product behaviour changes. The releases made while the step was red have tags but no built files; this release carries everything from them.
+- **The release workflow's lint step passes again, so the release builds, containers and scans run.** The tag-launch test in `cmd/datawatch/launch_tags_test.go` read a map entry with a needless blank-identifier assignment; the lint step in the release workflow pins golangci-lint v2.12.2, while a local build can run a different version, and the pinned version failed on it (staticcheck S1005), which skipped the release build, the container images and the vulnerability scan for the releases built from that code. The lookup is now a plain map read. No product behaviour changes. The releases made while the step was red have tags but no built files; this release carries everything from them.
 
 ## v9.111.1 — Alert gate waits with a growing interval and reads rate limits as wait-and-retry
 
