@@ -62,6 +62,10 @@ either, because a documents-only change cannot add a code-scanning alert.
 Nothing is silently skipped beyond that: a pull request that touches `go.mod`
 or `go.sum`, such as a dependabot dependency bump, still starts a run.
 
+The gate's own open review items — whether dependabot bumps keep starting a
+run, and whether the "Open high/critical alerts" job is a required check —
+are recorded in [the trigger-narrowing plan](../plans/2026-11-07-codeql-gate-trigger-narrowing.md).
+
 | What | How | Default |
 |---|---|---|
 | The head of `main` | `git rev-parse origin/main` (or the default branch) and then the CI runs on that SHA | always, for listed repos |
