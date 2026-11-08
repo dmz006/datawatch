@@ -56,7 +56,7 @@ steps:
 | `name` | A label for the step, shown in the run record. |
 | `kind` | `test`, `lint`, `version_bump`, `changelog`, `ship`, `tag`, `deploy`, `post_ship_hook` or `custom`. |
 | `command` | A shell command line. Give this or `action`, never both. |
-| `action` | A built-in: `rebase_onto_main`, `check_branch_versions`, `merge_branches`, `set_release_version`, `insert_changelog_heading`, `commit_release_bump`, `tag_release`, `push_release` or `deploy_latest`. |
+| `action` | A built-in: `rebase_onto_main`, `check_branch_versions`, `merge_branches`, `set_release_version`, `insert_changelog_heading`, `commit_release_bump`, `tag_release`, `validate_release_bump`, `push_release` or `deploy_latest`. |
 | `dir` | A folder inside the project to run in. Empty means the project root. |
 | `on_failure` | `stop` (the default) ends the run at this step; `continue` records the failure and runs the next step. |
 | `requires_make_target` | Run the step only if the project's Makefile defines that target. |
@@ -221,8 +221,9 @@ In order:
 6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version.
 7. `commit-release-bump` (`commit_release_bump`) — one commit of the version files and the changelog.
 8. `tag-release` (`tag_release`) — tag that commit with the new version.
-9. `push-release` (`push_release`) — push main and the tag; fast-forward only.
-10. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
+9. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator: every version file carries the same version, the first changelog heading is that version, it is exactly one patch, minor or major step above the newest local `v` tag, the tag is free on the remote, and the README's `Current release:` line names it. A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
+10. `push-release` (`push_release`) — push main and the tag; fast-forward only.
+11. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
 
 ## How the release version is chosen
 

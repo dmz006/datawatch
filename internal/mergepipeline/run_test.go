@@ -170,12 +170,15 @@ func TestDefaultPipelineMatchesMergeHelperScript(t *testing.T) {
 	runRepo := newMergeRepo(t)
 	ship := &fakeShip{}
 	rec := &memRecorder{}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: runRepo, Project: "p", Ship: ship, Recorder: rec}
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: runRepo, Project: "p", Ship: ship, Recorder: rec}
 	res, err := r.Run(context.Background(), RunRequest{Title: "Add the feature", Branches: []string{"feature"}})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.Run.Result != autonomous.MergeRunOK || res.Run.Source != string(SourceDefault) {
+	// The pipeline is the built-in one minus the validator, which the script
+	// does not have, so it is handed over as a record; the steps it shares
+	// with the script must leave the same repository behind.
+	if res.Run.Result != autonomous.MergeRunOK || res.Run.Source != string(SourceRecord) {
 		t.Fatalf("result %q source %q", res.Run.Result, res.Run.Source)
 	}
 
@@ -203,11 +206,11 @@ func TestDefaultPipelineMatchesMergeHelperScript(t *testing.T) {
 	if got["check-internal-refs"] != autonomous.MergeStepSkipped || got["merge-branches"] != autonomous.MergeStepOK {
 		t.Errorf("step results %v", got)
 	}
-	if len(res.Run.Steps) != len(DefaultDefinition().Steps) {
-		t.Errorf("recorded %d steps, want %d", len(res.Run.Steps), len(DefaultDefinition().Steps))
+	if want := len(definitionWithoutReleaseValidator().Steps); len(res.Run.Steps) != want {
+		t.Errorf("recorded %d steps, want %d", len(res.Run.Steps), want)
 	}
 	for _, s := range res.Run.Steps {
-		if s.End == nil || s.Source != "default" || s.Start.IsZero() {
+		if s.End == nil || s.Source != string(SourceRecord) || s.Start.IsZero() {
 			t.Errorf("step %s record incomplete: %+v", s.Step, s)
 		}
 	}
@@ -384,7 +387,7 @@ func TestShipKindsOnlyRunWhenListedAndOnlyThroughTheRunner(t *testing.T) {
 func TestShipFailureOnPushStopsBeforeDeploy(t *testing.T) {
 	dir := newMergeRepo(t)
 	ship := &fakeShip{fail: "push main v1.2.4"}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship}
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || stepResults(res.Run)["push-release"] != autonomous.MergeStepFailed {
 		t.Fatalf("want push failure, got %v %v", err, stepResults(res.Run))
@@ -504,6 +507,7 @@ func TestPostShipHooksSkipWhenPushReleaseFailsOrTheBlockIsOff(t *testing.T) {
 	dir := newMergeRepo(t)
 	ship := &fakeShip{fail: "push main v1.2.4"}
 	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship,
+		Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()),
 		PostShip: PostShipSettings{Enabled: true, Hooks: []PostShipHook{hook}}}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || stepResults(res.Run)["push-release"] != autonomous.MergeStepFailed {
@@ -717,7 +721,7 @@ func TestMergeLockRefusesSecondRunAndKeepsFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate := &gateShip{fakeShip: fakeShip{}, entered: make(chan struct{}), proceed: make(chan struct{})}
-	first := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: gate, Locks: locks}
+	first := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: gate, Locks: locks}
 
 	type outcome struct {
 		res RunResult
@@ -741,7 +745,7 @@ func TestMergeLockRefusesSecondRunAndKeepsFirst(t *testing.T) {
 	}
 
 	rec := &memRecorder{}
-	second := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks, Recorder: rec}
+	second := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks, Recorder: rec}
 	res, err := second.Run(context.Background(), RunRequest{Title: "t2", Branches: []string{"feature"}, AutomatonID: "a2"})
 	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
 		t.Fatalf("second run should be refused, got %q err %v", res.Run.Result, err)
@@ -775,7 +779,7 @@ func TestMergeLockFreedAfterRunEnds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks}
+	first := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks}
 	if res, err := first.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a1"}); err != nil || res.Run.Result != autonomous.MergeRunOK {
 		t.Fatalf("first run: %q err %v", res.Run.Result, err)
 	}
@@ -832,7 +836,7 @@ func TestMergeLockAfterRestart(t *testing.T) {
 
 	t.Run("different Automaton is refused", func(t *testing.T) {
 		rec := &memRecorder{}
-		r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: after, Recorder: rec}
+		r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: after, Recorder: rec}
 		res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a2"})
 		if err == nil || res.Run.Result != autonomous.MergeRunFailed {
 			t.Fatalf("a different Automaton should be refused, got %q err %v", res.Run.Result, err)
@@ -846,7 +850,7 @@ func TestMergeLockAfterRestart(t *testing.T) {
 	})
 
 	t.Run("same Automaton and branches take it back", func(t *testing.T) {
-		r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: after}
+		r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: after}
 		res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a1"})
 		if err != nil || res.Run.Result != autonomous.MergeRunOK {
 			t.Fatalf("the same Automaton should resume its run: %q err %v", res.Run.Result, err)

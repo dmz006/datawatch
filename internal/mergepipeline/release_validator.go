@@ -52,12 +52,17 @@ const currentReleasePrefix = "Current release:"
 // ReadmeFile and Remote take the defaults CHANGELOG.md, README.md and origin.
 // VersionFiles has no default: a release with no version files fails the
 // version check rather than guessing.
+//
+// ExcludeTag names a tag the validator must not count as the previous
+// release: the tag the run has just made for the version being released.
+// Empty means no tag is excluded.
 type ValidateInput struct {
 	Dir           string
 	VersionFiles  []string
 	ChangelogFile string
 	ReadmeFile    string
 	Remote        string
+	ExcludeTag    string
 }
 
 // ValidateReleaseBump runs all five release-bump checks against the
@@ -214,7 +219,7 @@ func checkOneStepAbove(ctx context.Context, in ValidateInput, version string) au
 	if version == "" {
 		return failCheck(checkOneStepAboveTag, "no version was read to compare with")
 	}
-	last, ok, err := newestReleaseTag(ctx, in.Dir)
+	last, ok, err := newestReleaseTag(ctx, in.Dir, in.ExcludeTag)
 	if err != nil {
 		return failCheck(checkOneStepAboveTag, "could not list tags: "+err.Error())
 	}
@@ -228,8 +233,8 @@ func checkOneStepAbove(ctx context.Context, in ValidateInput, version string) au
 }
 
 // newestReleaseTag returns the highest v-tag of the form vX.Y.Z among the
-// repository's local tags. ok is false when there is none.
-func newestReleaseTag(ctx context.Context, dir string) (string, bool, error) {
+// repository's local tags, skipping exclude. ok is false when there is none.
+func newestReleaseTag(ctx context.Context, dir, exclude string) (string, bool, error) {
 	out, err := gitOutput(ctx, dir, "tag", "--list", "v*")
 	if err != nil {
 		return "", false, err
@@ -239,7 +244,7 @@ func newestReleaseTag(ctx context.Context, dir string) (string, bool, error) {
 	for _, line := range strings.Split(out, "\n") {
 		tag := strings.TrimSpace(line)
 		m := releaseTag.FindStringSubmatch(tag)
-		if m == nil {
+		if m == nil || tag == exclude {
 			continue
 		}
 		nums, err := tagNumbers(m)

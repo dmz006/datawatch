@@ -67,11 +67,14 @@ type MergePipelineRun struct {
 	Reason   string   `json:"reason,omitempty"`
 	// ReleaseVersion is the version the run releases, computed once by the
 	// set-release-version step and used by the later steps of the run.
-	ReleaseVersion string         `json:"release_version,omitempty"`
-	Start          time.Time      `json:"start"`
-	End            *time.Time     `json:"end"`
-	Result         string         `json:"result"`
-	Steps          []MergeStepRun `json:"steps"`
+	ReleaseVersion string `json:"release_version,omitempty"`
+	// Validator is the release-bump validator's result when the run reached
+	// its validate-release-bump step; nil otherwise.
+	Validator *MergeValidatorResult `json:"validator,omitempty"`
+	Start     time.Time             `json:"start"`
+	End       *time.Time            `json:"end"`
+	Result    string                `json:"result"`
+	Steps     []MergeStepRun        `json:"steps"`
 }
 
 // MergeRunRecorder receives a run each time it changes. *MergeRunRecords is
