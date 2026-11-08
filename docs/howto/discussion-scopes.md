@@ -273,10 +273,10 @@ curl -sk -H "Authorization: Bearer $DW_TOKEN" \
 
 ## Discussion id rule
 
-A discussion id is a whole name of 1 to 128 characters from letters, digits, dot, underscore
-and hyphen. The whole id must match; a name that merely contains valid characters plus anything
-else is not accepted. The names `.` and `..` are never accepted, even though they use only
-allowed characters.
+A discussion id is a whole name of 1 to 128 characters from
+letters, digits, dot, underscore and hyphen. The whole id must match; a name that merely
+contains valid characters plus anything else is not accepted. The names `.` and `..` are never
+accepted, even though they use only allowed characters.
 
 Any other id answers HTTP 400 with the plain text `invalid discussion id` before anything is
 written, so a rejected request never creates a scope, a WAL file or a participant list.
@@ -291,7 +291,10 @@ The rule applies to every discussion route:
 
 ```sh
 # An id with a slash is rejected.
-dw -i -X POST $DW_HOST/api/memory/discussion/bad%2Fid \
+curl -sk -i -X POST \
+  -H "Authorization: Bearer $DW_TOKEN" \
+  -H 'Content-Type: application/json' \
+  $DW_HOST/api/memory/discussion/bad%2Fid \
   -d '{"content":"hello"}'
 # HTTP 400
 # invalid discussion id
