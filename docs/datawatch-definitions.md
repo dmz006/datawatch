@@ -410,7 +410,7 @@ Unclaimed items whose lease expires are automatically returned to `pending` stat
 
 ### Discussion id
 
-The name of a discussion scope or file folder: 1 to 128 characters from letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Any other id gets HTTP 400 `invalid discussion id`. Older ids with other characters stay on disk but are unreachable through the API; operators should rename them. See [discussion-scopes](howto/discussion-scopes.md) and [file-service](howto/file-service.md).
+The name of a discussion scope or file folder: 1 to 128 characters from letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Any other id gets HTTP 400 `invalid discussion id`. Because an accepted id can never carry a path separator, any folder path built from it stays a direct child of the discussion base folder, so an id can never resolve outside the discussion directory. Every discussion route builds that folder path through one shared helper, `discussionFolderPath`, centralized and unit-tested in `internal/server/discussion_folder.go`, which runs the validation and the containment check at the join itself; the scope, sync and file-service handlers no longer join the id into a path inline (see [operations](operations.md) for the operator items that remain open). Older ids with other characters stay on disk but are unreachable through the API; operators should rename them. See [discussion-scopes](howto/discussion-scopes.md) and [file-service](howto/file-service.md).
 
 ### Discussion push / subscribe
 
@@ -1350,7 +1350,7 @@ Per-discussion memory namespaces that are durable, federated, and conflict-aware
 
 **CLI:** `datawatch memory discussion list | write | recall | wal | participants`
 
-Path traversal (`..` in a discussion ID) is rejected with 400.
+Path traversal (`..` in a discussion ID) is rejected with 400. Because an accepted id can never carry a path separator, the folder path built from it always resolves as a direct child of the discussion base folder — a stored discussion cannot be addressed outside it.
 
 See [`howto/discussion-scopes.md`](howto/discussion-scopes.md).
 

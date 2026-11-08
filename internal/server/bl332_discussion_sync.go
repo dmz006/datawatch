@@ -41,7 +41,11 @@ func (s *Server) discussionParticipantsPath(id string) (string, error) {
 	if err := validateDiscussionID(id); err != nil {
 		return "", err
 	}
-	dir := s.statePath("discussions", id)
+	base := s.statePath("discussions")
+	dir, err := discussionFolderPath(base, id)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir discussion dir: %w", err)
 	}

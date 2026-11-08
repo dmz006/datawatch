@@ -402,7 +402,11 @@ func (s *Server) handleDiscussionDelete(w http.ResponseWriter, r *http.Request, 
 	// Remove WAL directory.
 	base, err := s.discussionsBaseDir()
 	if err == nil {
-		dir := filepath.Join(base, id)
+		dir, err := discussionFolderPath(base, id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		os.RemoveAll(dir) //nolint:errcheck
 	}
 
@@ -445,7 +449,14 @@ func (s *Server) discussionAppendWALEntry(id, content, role, originPeer string, 
 	if err := validateDiscussionID(id); err != nil {
 		return nil, err
 	}
-	dir := s.statePath("discussions", id)
+	base, err := s.discussionsBaseDir()
+	if err != nil {
+		return nil, err
+	}
+	dir, err := discussionFolderPath(base, id)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("mkdir discussion dir: %w", err)
 	}
@@ -501,7 +512,12 @@ func (s *Server) discussionReadWAL(id string, n int, encKey []byte) ([]discussio
 	if err := validateDiscussionID(id); err != nil {
 		return nil, err
 	}
-	walPath := filepath.Join(s.statePath("discussions", id), "wal.jsonl")
+	base := s.statePath("discussions")
+	dir, err := discussionFolderPath(base, id)
+	if err != nil {
+		return nil, err
+	}
+	walPath := filepath.Join(dir, "wal.jsonl")
 
 	f, err := os.Open(walPath)
 	if err != nil {
