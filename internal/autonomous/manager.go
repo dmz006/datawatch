@@ -1374,6 +1374,9 @@ type Manager struct {
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 	// mergeRunStore is the merge pipeline run history, opened on first use.
 	mergeRunStore *MergeRunRecords
+	// mergeLockStore is the per-repository merge lock store, opened on first
+	// use by MergeLocks.
+	mergeLockStore *MergeLocks
 
 	// Cleanup status (cleanup_status.go) — the in-memory + persisted
 	// record of the two safety-net passes and their disk readings.

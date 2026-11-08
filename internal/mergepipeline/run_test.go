@@ -684,3 +684,172 @@ func TestRunWithoutVersionFilesFailsTheBumpStep(t *testing.T) {
 		t.Fatalf("want a version_files error, got %v", err)
 	}
 }
+
+// ---- repository merge lock ----
+
+// gateShip blocks the tag step until proceed is closed, so a test can start a
+// second run while the first one holds the repository lock.
+type gateShip struct {
+	fakeShip
+	entered chan struct{}
+	proceed chan struct{}
+}
+
+func (g *gateShip) Tag(ctx context.Context, dir, tag, msg string) error {
+	g.entered <- struct{}{}
+	<-g.proceed
+	return g.fakeShip.Tag(ctx, dir, tag, msg)
+}
+
+// customPipeline is a one-step pipeline that touches no git state, so a run
+// that is allowed to start can finish without merging anything.
+func customPipeline() Definition {
+	return Definition{Steps: []Step{{Name: "noop", Kind: KindCustom, Command: "echo ok"}}}
+}
+
+func TestMergeLockRefusesSecondRunAndKeepsFirst(t *testing.T) {
+	dir := newMergeRepo(t)
+	locks, err := autonomous.NewMergeLocks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := &gateShip{fakeShip: fakeShip{}, entered: make(chan struct{}), proceed: make(chan struct{})}
+	first := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: gate, Locks: locks}
+
+	type outcome struct {
+		res RunResult
+		err error
+	}
+	firstDone := make(chan outcome, 1)
+	go func() {
+		res, err := first.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a1"})
+		firstDone <- outcome{res, err}
+	}()
+	// Wait until the first run is inside its tag step, holding the lock. If it
+	// ends first, the select reports that instead of blocking.
+	select {
+	case <-gate.entered:
+	case o := <-firstDone:
+		t.Fatalf("first run ended before the tag step: %v %q", o.err, o.res.Run.Result)
+	}
+	held, ok := locks.Status(dir)
+	if !ok {
+		t.Fatal("the first run should hold the lock while it tags")
+	}
+
+	rec := &memRecorder{}
+	second := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks, Recorder: rec}
+	res, err := second.Run(context.Background(), RunRequest{Title: "t2", Branches: []string{"feature"}, AutomatonID: "a2"})
+	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
+		t.Fatalf("second run should be refused, got %q err %v", res.Run.Result, err)
+	}
+	if !strings.Contains(res.Run.Reason, held.RunID) || !strings.Contains(res.Run.Reason, "a1") {
+		t.Errorf("refusal reason %q should name holder run %s and Automaton a1", res.Run.Reason, held.RunID)
+	}
+	if len(res.Run.Steps) != 0 {
+		t.Errorf("a refused run must not run any step, got %d", len(res.Run.Steps))
+	}
+	if got := rec.only(t); got.Result != autonomous.MergeRunFailed || got.Reason != res.Run.Reason {
+		t.Errorf("the refusal must be recorded, got result %q reason %q", got.Result, got.Reason)
+	}
+	if still, ok := locks.Status(dir); !ok || still.RunID != held.RunID {
+		t.Errorf("the refusal must not change the holder: %+v ok=%v", still, ok)
+	}
+
+	close(gate.proceed)
+	o := <-firstDone
+	if o.err != nil || o.res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("the first run should be unaffected: %q err %v", o.res.Run.Result, o.err)
+	}
+	if o.res.Run.ID != held.RunID {
+		t.Errorf("the lock holder %s should be the first run %s", held.RunID, o.res.Run.ID)
+	}
+}
+
+func TestMergeLockFreedAfterRunEnds(t *testing.T) {
+	dir := newMergeRepo(t)
+	locks, err := autonomous.NewMergeLocks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks}
+	if res, err := first.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a1"}); err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("first run: %q err %v", res.Run.Result, err)
+	}
+	if _, held := locks.Status(dir); held {
+		t.Fatal("a finished run must release the lock")
+	}
+
+	def := customPipeline()
+	second := &Runner{Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Locks: locks}
+	res, err := second.Run(context.Background(), RunRequest{Title: "t2", Branches: []string{"feature"}, AutomatonID: "a2"})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("second run should proceed once the lock is free: %q err %v", res.Run.Result, err)
+	}
+	if _, held := locks.Status(dir); held {
+		t.Error("the second run must release the lock too")
+	}
+}
+
+func TestMergeLockReleasedWhenRunFails(t *testing.T) {
+	dir := newMergeRepo(t)
+	locks, err := autonomous.NewMergeLocks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No version files: the release-version step fails, so the run ends failed.
+	r := &Runner{Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: locks}
+	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a1"})
+	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
+		t.Fatalf("want a failed run, got %q err %v", res.Run.Result, err)
+	}
+	if _, held := locks.Status(dir); held {
+		t.Error("a failed run must release the lock")
+	}
+}
+
+// A lock left held by a daemon that stopped is taken back by the same
+// Automaton and branches after a restart, and refused for a different one.
+func TestMergeLockAfterRestart(t *testing.T) {
+	dir := newMergeRepo(t)
+	lockDir := t.TempDir()
+	before, err := autonomous.NewMergeLocks(lockDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := before.Acquire(dir, autonomous.MergeLockHolder{RunID: "run-before", AutomatonID: "a1", Branches: []string{"feature"}}); err != nil {
+		t.Fatal(err)
+	}
+	// The daemon restarts: a new store opened from the same directory sees
+	// the lock the old daemon left.
+	after, err := autonomous.NewMergeLocks(lockDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("different Automaton is refused", func(t *testing.T) {
+		rec := &memRecorder{}
+		r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: after, Recorder: rec}
+		res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a2"})
+		if err == nil || res.Run.Result != autonomous.MergeRunFailed {
+			t.Fatalf("a different Automaton should be refused, got %q err %v", res.Run.Result, err)
+		}
+		if !strings.Contains(res.Run.Reason, "run-before") || !strings.Contains(res.Run.Reason, "a1") {
+			t.Errorf("refusal reason %q should name run-before and Automaton a1", res.Run.Reason)
+		}
+		if st, held := after.Status(dir); !held || st.RunID != "run-before" {
+			t.Errorf("the old holder must keep the lock, got %+v held=%v", st, held)
+		}
+	})
+
+	t.Run("same Automaton and branches take it back", func(t *testing.T) {
+		r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Locks: after}
+		res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}, AutomatonID: "a1"})
+		if err != nil || res.Run.Result != autonomous.MergeRunOK {
+			t.Fatalf("the same Automaton should resume its run: %q err %v", res.Run.Result, err)
+		}
+		if _, held := after.Status(dir); held {
+			t.Error("the resumed run must release the lock when it ends")
+		}
+	})
+}
