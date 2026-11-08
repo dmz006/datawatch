@@ -2898,6 +2898,11 @@ type AutonomousConfig struct {
 	// (mode fixed). See VerifierPolicyConfig. No omitempty, same round-trip
 	// reason as VerificationBackends.
 	VerifierPolicy VerifierPolicyConfig `yaml:"verifier_policy" json:"verifier_policy"`
+	// HostLoadAlert (autonomous.host_load_alert.*) is the host load check:
+	// mode off|alert|reap, the load-to-cores multiple and the minutes a breach
+	// must last. The zero value reads as alert, 1.5 and 10. See
+	// HostLoadAlertConfig.
+	HostLoadAlert HostLoadAlertConfig `yaml:"host_load_alert" json:"host_load_alert"`
 	// TaskOverrideStatuses (v9.5.5) lists the PRD lifecycle statuses that accept
 	// task-level and story-level LLM override calls (set_task_llm, set_story_llm,
 	// set_task_guardrail_llm, set_task_verification_llm, set_story_verification_llm).
@@ -6813,6 +6818,15 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := ValidateCreateSearchThreshold(cfg.Autonomous.Automation.EffectiveCreateSearchThreshold()); err != nil {
+		return err
+	}
+	if err := ValidateHostLoadAlertMode(cfg.Autonomous.HostLoadAlert.Mode); err != nil {
+		return err
+	}
+	if err := ValidateHostLoadAlertMultiple(cfg.Autonomous.HostLoadAlert.Multiple); err != nil {
+		return err
+	}
+	if err := ValidateHostLoadAlertMinutes(cfg.Autonomous.HostLoadAlert.Minutes); err != nil {
 		return err
 	}
 	if err := ValidateMergePendingMode(cfg.Autonomous.Automation.MergePendingMode); err != nil {

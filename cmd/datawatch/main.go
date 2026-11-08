@@ -4451,6 +4451,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
 			SnapshotNeverStage:               append([]string(nil), acfgIn.SnapshotNeverStage...),
 			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
+			HostLoadAlert:                    acfgIn.HostLoadAlert,
 			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
 			PlanningEffort:                   acfgIn.PlanningEffort,
 			VerificationEffort:               acfgIn.VerificationEffort,
@@ -9013,6 +9014,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 		}
 	}()
+
+	// Host load check — alerts when the load average stays above a multiple of
+	// the core count for the configured minutes. Reads autonomous.host_load_alert
+	// from the live config on every tick, so a change needs no restart.
+	startHostLoadCheck(ctx, hostLoadTickInterval, newHostLoadCheck(
+		func() autonomouspkg.Config {
+			return effectiveAutonomousConfig(autonomousMgrRef, autonomouspkg.Config{HostLoadAlert: cfg.Autonomous.HostLoadAlert})
+		},
+		mgr.ListSessions,
+		hostLoadAlertSink(alertStore),
+	))
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{

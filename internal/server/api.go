@@ -6260,6 +6260,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// stronger-verifier settings. Rendered whole so an unset policy
 			// shows its zero values rather than a missing object.
 			"verifier_policy": verifierPolicyForDisplay(s.cfg.Autonomous.VerifierPolicy),
+			// Host load check: effective mode, multiple and minutes.
+			"host_load_alert": hostLoadAlertForDisplay(s.cfg.Autonomous.HostLoadAlert),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
 			// 4-item default in the PWA rather than an empty field.
 			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
@@ -6837,6 +6839,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if verr := validateTriageAlertMinutes(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
+		}
+	}
+	// Host load alert: mode off | alert | reap, multiple >= 0, whole minutes
+	// >= 0. Any bad value rejects the whole PUT.
+	for _, hk := range hostLoadAlertKeys {
+		if v, ok := patch[hk]; ok {
+			if verr := validateHostLoadAlertPatchKey(hk, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
@@ -8815,6 +8827,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig; a value that fails the check here
 			// is left unchanged.
 			applyVerifierPolicyPatchKey(&cfg.Autonomous.VerifierPolicy, k, v)
+		case "autonomous.host_load_alert.mode", "autonomous.host_load_alert.multiple",
+			"autonomous.host_load_alert.minutes":
+			// Validated in handlePutConfig; a value that fails the check here
+			// is left unchanged.
+			applyHostLoadAlertPatchKey(&cfg.Autonomous.HostLoadAlert, k, v)
 		case "autonomous.automation.idle_alert_minutes":
 			// 0 = off; negative values are skipped, not stored.
 			if n, ok := toInt(v); ok && n >= 0 {
