@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Supervisor shim: the built-in final gate template stores its command string as the verification script path.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+nice -n 19 go build ./...
+nice -n 19 go test ./...
