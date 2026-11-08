@@ -1,6 +1,6 @@
 # [parity] vision fallback: the bare `@path` reference ends in a deliberate space when the tag was last
 
-**Not filed yet.** File on `dmz006/datawatch-app` with `gh issue create` if/when that is wanted; nobody runs a hosting CLI from this draft and nothing is created on any host. Record the issue number and link in the Filing record at the end.
+**Filed 2026-11-08 as https://github.com/dmz006/datawatch-app/issues/399 (release v9.112.5).** Original note: File on `dmz006/datawatch-app` with `gh issue create` if/when that is wanted; nobody runs a hosting CLI from this draft and nothing is created on any host. Record the issue number and link in the Filing record at the end.
 
 Parent release: the datawatch patch carrying the trailing-space rule (work found 2026-11-08, right after the vision describe timeout/fallback shipped; daemon version at planning is v9.109.0, change still under `[Unreleased]`).
 
