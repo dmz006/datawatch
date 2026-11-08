@@ -183,6 +183,30 @@ daemon:
    it. On any failure, timeout, oversized prompt or unreadable reply, the scratch
    tree is thrown away, the project is unchanged and you are asked.
 
+## One merge at a time: the merge lock
+
+Two merge runs must never ship into the same base repository at once. Before a
+run starts, it takes a lock on its repository path; the lock is released when
+the run ends, whatever the result.
+
+- **A second run is refused.** Its run record is marked failed, and its reason
+  names the run that holds the lock, for example `another merge holds this
+  repository: run <id> (Automaton <id>)`. Nothing is merged, and the holder is
+  not touched. Wait for the holding run to finish, then start again.
+- **The held lock is visible.** While a merge runs, the merge status shows the
+  lock: `Merge lock held: run <id> for Automaton <id> (branches …) since <time>`.
+  The same information is in the `merge_lock` field of `GET /api/autonomous/merge`
+  (absent when nothing is held).
+- **The lock survives a restart.** It is kept in `merge-locks.json` in the daemon
+  store directory. After a daemon restart the lock still shows as held. A run
+  that is resumed takes its own lock back, so it is not refused by its own
+  earlier lock.
+- **A broken lock file refuses merges; it never lets them run unlocked.** If
+  `merge-locks.json` is unreadable or corrupt, every merge run is refused with a
+  message that the lock store is unavailable. Repair the file or restore it from
+  a backup in the daemon store directory, then start the run again. Deleting the
+  file clears all locks, so only do that when you are sure no merge is running.
+
 ## After the ship: post-ship hooks
 
 Once the pipeline's push step succeeds, the daemon can run the post-ship
