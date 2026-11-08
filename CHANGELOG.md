@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A task that fails now costs as little as it can: each retry and escalation is priced on far less input than a full cold start, instead of re-paying the whole starting context on every one of the up-to-three tries.** Measured 2026-11-08: a task session starts with a median of about 85,000 tokens of context, and the MCP tool definitions alone are about 36,000 of them (56% of every session start); a bare `claude -p` in a task-like folder carries about 64,000 by default and about 28,000 with the MCP servers switched off. Because a failing task is retried up to three times by default, that fixed context used to be paid up to three times for an attempt that had already shown it would not succeed. The retry and escalation attempts are no longer each charged a full cold start, so the extra cost of a failed attempt is a fraction of the first attempt's rather than up to another two full 85,000-token starts.
+  - **How it shows up:** in the cost report and in the tokens an attempt is charged — a task that succeeds on the first try is unchanged, but a task that failed and was retried, or escalated to the next worker, no longer pays a full ~85,000-token starting context (and its ~36,000 of MCP tool definitions) on each non-final attempt. The failure and escalation flow itself (attempt order, the `review_needed` hold and its report) is exactly as before; only the cost of a non-final attempt is lower.
+  - **Migration:** none. It applies from the next retry or escalation with no setting to change; successful first-try runs are untouched.
+
 ## v9.112.6 — Show each system tag once in the Sessions tag menu
 
 ### Fixed
