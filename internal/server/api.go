@@ -353,6 +353,9 @@ type Server struct {
 	// usageCalc is the usage-calculator advice service (nil = not wired);
 	// see usage_calculator_advice.go.
 	usageCalc *usagecalc.Service
+	// autoLanesSpecialCounter counts open items at a priority threshold for
+	// the auto-lanes status (nil = 0); see usage_autolanes.go.
+	autoLanesSpecialCounter func(threshold int) int
 	// burnGuard is the burn guard runner (burn_guard.go); nil until AttachBurnGuard.
 	burnGuard *BurnGuard
 
