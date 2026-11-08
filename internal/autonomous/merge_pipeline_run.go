@@ -60,15 +60,18 @@ type MergeStepRun struct {
 
 // MergePipelineRun is one run of a merge pipeline.
 type MergePipelineRun struct {
-	ID       string         `json:"id"`
-	Project  string         `json:"project"`
-	Branches []string       `json:"branches"`
-	Source   string         `json:"source"`
-	Reason   string         `json:"reason,omitempty"`
-	Start    time.Time      `json:"start"`
-	End      *time.Time     `json:"end"`
-	Result   string         `json:"result"`
-	Steps    []MergeStepRun `json:"steps"`
+	ID       string   `json:"id"`
+	Project  string   `json:"project"`
+	Branches []string `json:"branches"`
+	Source   string   `json:"source"`
+	Reason   string   `json:"reason,omitempty"`
+	// ReleaseVersion is the version the run releases, computed once by the
+	// set-release-version step and used by the later steps of the run.
+	ReleaseVersion string         `json:"release_version,omitempty"`
+	Start          time.Time      `json:"start"`
+	End            *time.Time     `json:"end"`
+	Result         string         `json:"result"`
+	Steps          []MergeStepRun `json:"steps"`
 }
 
 // MergeRunRecorder receives a run each time it changes. *MergeRunRecords is

@@ -108,7 +108,10 @@ type Runner struct {
 	VersionFiles  []string
 	ChangelogFile string // default CHANGELOG.md
 	ScriptDir     string // relative to Dir; default scripts
-	Now           func() time.Time
+	// ReleaseSize is how much this run's release raises the version. Empty
+	// means a patch release.
+	ReleaseSize ReleaseSize
+	Now         func() time.Time
 }
 
 func (r *Runner) now() time.Time {
@@ -352,7 +355,7 @@ func (s *runState) runPostShipHooks(ctx context.Context) {
 	if !cfg.Enabled || !s.pushReleaseOK || len(cfg.Hooks) == 0 {
 		return
 	}
-	version, verr := s.r.currentVersion()
+	version, verr := s.releaseVersionOf()
 	for _, hk := range cfg.Hooks {
 		if !hk.Enabled {
 			continue
@@ -493,20 +496,9 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 	case ActionMergeBranches:
 		return s.mergeBranches(ctx)
 	case ActionSetReleaseVersion:
-		cur, err := r.currentVersion()
-		if err != nil {
-			return "", err
-		}
-		next, err := nextPatch(cur)
-		if err != nil {
-			return "", err
-		}
-		if err := r.writeVersion(next); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("version %s -> %s", cur, next), nil
+		return s.setReleaseVersion()
 	case ActionInsertChangelog:
-		v, err := r.currentVersion()
+		v, err := s.releaseVersionOf()
 		if err != nil {
 			return "", err
 		}
@@ -685,7 +677,7 @@ func (s *runState) mergeStopNote(merged []string, failed, why string) string {
 }
 
 func (s *runState) commitBump(ctx context.Context) (string, error) {
-	v, err := s.r.currentVersion()
+	v, err := s.releaseVersionOf()
 	if err != nil {
 		return "", err
 	}
@@ -712,18 +704,19 @@ func (s *runState) ship(ctx context.Context, action string) (string, error) {
 	if s.r.Ship == nil {
 		return "", errors.New("no ship runner is wired, so the step was not run")
 	}
-	v, err := s.r.currentVersion()
-	if err != nil && action != ActionDeployLatest {
+	if action == ActionDeployLatest {
+		return doneOr("deployed the new build", s.r.Ship.Deploy(ctx, s.r.Dir))
+	}
+	v, err := s.releaseVersionOf()
+	if err != nil {
 		return "", err
 	}
 	tag := "v" + v
 	switch action {
 	case ActionTagRelease:
 		return doneOr("tagged "+tag, s.r.Ship.Tag(ctx, s.r.Dir, tag, "Release "+tag))
-	case ActionPushRelease:
-		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
 	default:
-		return doneOr("deployed the new build", s.r.Ship.Deploy(ctx, s.r.Dir))
+		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
 	}
 }
 
@@ -765,14 +758,37 @@ func (r *Runner) currentVersion() (string, error) {
 	return string(m[1]), nil
 }
 
-func nextPatch(v string) (string, error) {
-	m := semver3.FindStringSubmatch(v)
-	if m == nil {
-		return "", fmt.Errorf("%q is not an X.Y.Z version", v)
+// setReleaseVersion computes the run's release version from main's version
+// as it stands now, after the rebase and merge steps, and writes it to every
+// version file. It runs once per run; the result is stored on the run record
+// and the later steps read it from there.
+func (s *runState) setReleaseVersion() (string, error) {
+	if s.run.ReleaseVersion != "" {
+		return "", fmt.Errorf("the release version was already set to %s for this run", s.run.ReleaseVersion)
 	}
-	var patch int
-	_, _ = fmt.Sscanf(m[3], "%d", &patch)
-	return fmt.Sprintf("%s.%s.%d", m[1], m[2], patch+1), nil
+	cur, err := s.r.currentVersion()
+	if err != nil {
+		return "", err
+	}
+	next, err := NextVersion(cur, s.r.ReleaseSize)
+	if err != nil {
+		return "", err
+	}
+	if err := s.r.writeVersion(next); err != nil {
+		return "", err
+	}
+	s.run.ReleaseVersion = next
+	return fmt.Sprintf("version %s -> %s", cur, next), nil
+}
+
+// releaseVersionOf returns the version this run releases: the one the
+// set-release-version step computed for the run. A pipeline with no such step
+// has no run version, so it reads main's version as it stands, as before.
+func (s *runState) releaseVersionOf() (string, error) {
+	if s.run.ReleaseVersion != "" {
+		return s.run.ReleaseVersion, nil
+	}
+	return s.r.currentVersion()
 }
 
 // writeVersion sets the version line in every version file, writing none of
