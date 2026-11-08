@@ -21,7 +21,15 @@ docs/howto/autonomous-planning.md, docs/operations.md,
 docs/datawatch-definitions.md, docs/config-reference.yaml, docs/api/openapi.yaml),
 and the tests that pin the behavior (internal/autonomous/task_templates_test.go,
 internal/autonomous/task_templates_script_command_test.go,
-internal/autonomous/readonly_unverifiable_test.go). On the mobile side this lands
+internal/autonomous/readonly_unverifiable_test.go). On the plan-coverage
+side this sits next to the verifiability rule in
+internal/autonomous/plan_coverage_findings.go (rule 4, B124: a task must
+declare a verification script or an explicit exemption reason, and a
+read-only task needs either a script or a report path under
+.datawatch/reports/): the reshaped final gate satisfies it through its
+report and the note-only version task through its exemption, so the pack
+holds its two hard properties through both the decompose-lint and the plan
+checks. On the mobile side this lands
 on the already-planned decompose-lint Settings card tracked in the adjacent draft
 2026-11-03-decompose-lint-and-templates.md; the app inherits the daemon's
 accept/reject behavior through the config contract rather than through any
@@ -144,6 +152,8 @@ app-side draft 2026-11-03-decompose-lint-and-templates.md for the Settings card;
 record the URL and date here when filed. Drafted 2026-11-08, with the code-level
 claims — the report-only `final_gate` and note-only version template in
 task_templates_defaults.go, the write-time and apply-time guards in api.go and
-task_templates.go, the config package carrying no command-string check, and the
-matching howto, operations, definitions, config-reference and openapi wording —
-checked against the current tree on the same day.
+task_templates.go, the config package carrying no command-string check, the
+plan-coverage verifiability rule in plan_coverage_findings.go, and the matching
+howto, operations, definitions, config-reference and openapi wording —
+checked against the current tree on the same day; re-verified against the tree
+on the 2026-11-08 re-run of this task.
