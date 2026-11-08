@@ -207,12 +207,64 @@ the run ends, whatever the result.
   a backup in the daemon store directory, then start the run again. Deleting the
   file clears all locks, so only do that when you are sure no merge is running.
 
+## The built-in pipeline
+
+When the file and the record are both empty for a project (or
+`fallback_on_bad_file` is `default`), the built-in pipeline is in effect.
+In order:
+
+1. `rebase-onto-main` (`rebase_onto_main`) — bring each branch onto main, fetching main from the remote (if any) first. A branch already on main is left alone; the rebase of a conflicting branch stops the run with that branch untouched.
+2. `check-branch-versions` (`check_branch_versions`) — run the project's merge-version check on every branch, nothing merged until each one passes.
+3. `check-internal-refs` (`check_internal_refs`) — present only if the project's Makefile defines that target.
+4. `merge-branches` (`merge_branches`) — merge each branch in order.
+5. `set-release-version` (`set_release_version`) — set the release version in every version file, after the merge.
+6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version.
+7. `commit-release-bump` (`commit_release_bump`) — one commit of the version files and the changelog.
+8. `tag-release` (`tag_release`) — tag that commit with the new version.
+9. `push-release` (`push_release`) — push main and the tag; fast-forward only.
+10. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
+
+## How the release version is chosen
+
+A branch ships into main: the release version is not a number the branch
+carries, it is resolved at merge time.
+
+- **Before anything merges**, the `check-branch-versions` step runs the
+  project's merge-version check (`scripts/check-merge-version.sh`) for each
+  branch, against the version on main (M). A branch passes if it left the
+  version as it was at the merge base, or if it already carries M with one
+  more patch. One that sets some other version of its own is refused and
+  nothing merges, and the two version files must agree on main and on the
+  branch wherever they are read.
+- **After the branches have merged**, the `set-release-version` step computes
+  the release version from main as it stands at that point — the next patch
+  release above M — and writes it into every `version_files` entry. It runs
+  exactly once per run, so a run that redoes from the rebase step sets the
+  version from the moved main.
+- The version is then fixed for the run: the `add-changelog-heading` step
+  adds a changelog heading for it, the `tag-release` step names it in the tag,
+  and the run record keeps it as `release_version`.
+
+**The release size is patch today, and there is no setting for it.** The
+daemon merges the next patch release above main; there is no setting for
+another size, and no approval mode for a size yet. The phase-4 design
+records both as decided — sizes patch/minor/major, an approval mode for
+each with defaults patch `auto`, minor `auto`, major `ask`, overridable per
+project, and the release size resolving in layers
+([plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md),
+"Phase 4 design as decided (2026-11-07)") — but none of it is a key you can
+set yet. Until it lands, deciding what ships as minor or major stays a
+manual operator call.
+
 ## When main moves before the push
 
 Another machine can land commits on the remote's main while a run is working.
-The push step checks for this first and refuses to push when the remote's main
-has commits the local main does not contain. The run does not fail for that
-alone. It undoes its own work and starts again:
+The push step is fast-forward-only: it lists and fetches the remote's branch
+first, and refuses to push unless that head is an ancestor of the local head,
+so a push can only move the remote forward. The refusal says why — it names
+the head of the branch on the remote and the local head, and says that
+nothing was pushed. The run does not fail for that alone. It undoes its own
+work and starts again:
 
 - The run's local merge commits and release bump are undone: local main is
   reset to the head it had when the lock was taken (or, after an earlier redo,
