@@ -47,9 +47,12 @@ func (l *holdVerifyLog) verify(failTitle string) VerifyFn {
 		l.titles = append(l.titles, task.Title)
 		l.mu.Unlock()
 		if task.Title == failTitle {
+			// A distinct summary per attempt keeps these tests on the
+			// retry-limit (max_failures) path; a fixed summary would trip the
+			// no-retry "three identical failures" hold on the third attempt.
 			return VerificationResult{
 				OK:      false,
-				Summary: "tests still fail",
+				Summary: fmt.Sprintf("tests still fail (attempt %d)", len(task.Attempts)+1),
 				Issues:  []string{"TestParse: expected 3 tokens, got 2"},
 			}, nil
 		}
