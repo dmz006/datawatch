@@ -180,7 +180,7 @@ func TestLaunchTags_ZeroPostsNothing(t *testing.T) {
 		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 	}
 
-	if got, _ := startBody["task"]; got == nil {
+	if got := startBody["task"]; got == nil {
 		t.Fatalf("start request has no task field at all — capture is broken: %v", startBody)
 	}
 	for _, key := range []string{"launch_role", "launch_kind", "launch_automaton", "launch_stage"} {
