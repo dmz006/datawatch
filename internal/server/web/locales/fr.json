@@ -4337,5 +4337,9 @@
   "automaton_release_source_explicit": "défini sur cet automate",
   "automaton_release_source_project": "table des tailles du projet",
   "automaton_release_source_default": "valeur par défaut intégrée",
-  "automation_release_source_milestone": "jalon de l’automatisation"
+  "automation_release_source_milestone": "jalon de l’automatisation",
+  "automation_milestone_badge": "Jalon",
+  "automation_milestone_hint": "Cette automatisation est un jalon : à son achèvement, elle élève l’étape de version majeure.",
+  "automation_milestone_mark": "Marquer comme jalon",
+  "automation_milestone_unmark": "Retirer le jalon"
 }

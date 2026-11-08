@@ -4337,5 +4337,9 @@
   "automaton_release_source_explicit": "このオートマトンで設定",
   "automaton_release_source_project": "プロジェクトのサイズ対応表",
   "automaton_release_source_default": "組み込みの既定値",
-  "automation_release_source_milestone": "オートメーションのマイルストーン"
+  "automation_release_source_milestone": "オートメーションのマイルストーン",
+  "automation_milestone_badge": "マイルストーン",
+  "automation_milestone_hint": "このオートメーションはマイルストーンです。完了するとメジャーリリースの段階を引き上げます。",
+  "automation_milestone_mark": "マイルストーンに設定",
+  "automation_milestone_unmark": "マイルストーンを解除"
 }
