@@ -2,14 +2,18 @@ package claudecode
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/testhome"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 func TestDeriveSessionUUID_Deterministic(t *testing.T) {
@@ -294,4 +298,287 @@ func cmdPath(t *testing.T, cmd string) string {
 		t.Fatalf("recorded command missing the cat-file expression: %q", cmd)
 	}
 	return m[1]
+}
+
+// ---- Worker session profile launch ----
+
+// backendWithProfile builds a claude-code backend with the named builtin
+// worker profile applied. The datawatch MCP server is offered so profiles
+// that select it (MCPDatawatch) can name it in their per-session config.
+func backendWithProfile(t *testing.T, name string, starting autonomous.StartingContextInput) *Backend {
+	t.Helper()
+	p, ok := workerprofile.Builtin(name)
+	if !ok {
+		t.Fatalf("builtin worker profile %q not available", name)
+	}
+	b := backendOf()
+	b.SetWorkerProfile(WorkerProfileLaunch{
+		Profile: p,
+		MCPServers: map[string]channel.MCPServerSpec{
+			channel.ProjectMCPEntryName: {Command: "datawatch", Args: []string{"mcp"}},
+		},
+		Starting: starting,
+	})
+	return b
+}
+
+// TestLaunch_WorkerProfileMinimal: the minimal profile (no MCP servers,
+// tools allow-list, skills off, minimal context) must map onto the launch
+// command line as:
+//   - the strict per-session MCP config (pinning, no servers at all);
+//   - the allow-list as --allowedTools — never any disallowed-tools flag;
+//   - "skills": false inside the --settings JSON;
+//   - the starting context written to the working directory and passed via
+//     --append-system-prompt.
+func TestLaunch_WorkerProfileMinimal(t *testing.T) {
+	d := t.TempDir()
+	argvFile := startFakeTmux(t, false)
+
+	starting := autonomous.StartingContextInput{
+		Role:        "worker",
+		TaskSpec:    "implement the task",
+		Constraints: []string{"work within the task scope"},
+	}
+	if err := backendWithProfile(t, "minimal", starting).Launch(context.Background(), "", "cs-minprofile", d, "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch with minimal worker profile: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+
+	// MCP: strict per-session config with zero servers.
+	mcpPath := filepath.Join(d, channel.WorkerMCPConfigFileName)
+	if want := "--strict-mcp-config --mcp-config '" + mcpPath + "'"; !strings.Contains(cmd, want) {
+		t.Errorf("command must pin the session MCP config strictly (want %q), got:\n%s", want, cmd)
+	}
+	mcpRaw, err := os.ReadFile(mcpPath)
+	if err != nil {
+		t.Fatalf("per-session MCP config missing in %s: %v", d, err)
+	}
+	var mcpCfg struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(mcpRaw, &mcpCfg); err != nil {
+		t.Fatalf("per-session MCP config is not valid JSON: %v\n%s", err, mcpRaw)
+	}
+	if len(mcpCfg.MCPServers) != 0 {
+		t.Errorf("minimal profile keeps no MCP servers, config has %d entries: %s", len(mcpCfg.MCPServers), mcpRaw)
+	}
+
+	// Tools: the allow-list maps to --allowedTools; no deny-list anywhere.
+	if want := "--allowedTools 'Read,Edit,Write,Bash,Glob,Grep'"; !strings.Contains(cmd, want) {
+		t.Errorf("command must carry the allow-list (want %q), got:\n%s", want, cmd)
+	}
+	if strings.Contains(cmd, "disallowedTools") || strings.Contains(cmd, "--disallowed") {
+		t.Errorf("a worker profile must never pass a disallowed-tools list, got:\n%s", cmd)
+	}
+
+	// Skills: off in the profile → "skills": false in the --settings JSON.
+	if want := `--settings '{"skills":false}'`; !strings.Contains(cmd, want) {
+		t.Errorf("command must turn skills off (want %s), got:\n%s", want, cmd)
+	}
+
+	// Starting context: file in the working directory, appended to the
+	// system prompt by reading the file at launch time.
+	ctxPath := filepath.Join(d, WorkerStartingContextFileName)
+	if want := `--append-system-prompt "$(cat '` + ctxPath + `')"`; !strings.Contains(cmd, want) {
+		t.Errorf("command must append the starting context file (want %s), got:\n%s", want, cmd)
+	}
+	ctxRaw, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatalf("starting context file missing in %s: %v", d, err)
+	}
+	for _, want := range []string{
+		"Role\nworker\n",
+		`profile="minimal" context=minimal`,
+		`skills=false`,
+		"Constraints\n- work within the task scope\n",
+		"Task\nimplement the task\n",
+	} {
+		if !strings.Contains(string(ctxRaw), want) {
+			t.Errorf("starting context missing %q, got:\n%s", want, ctxRaw)
+		}
+	}
+	if strings.Contains(string(ctxRaw), "Rules digest\n") || strings.Contains(string(ctxRaw), "Rules\n") {
+		t.Errorf("minimal context level must not carry rules sections, got:\n%s", ctxRaw)
+	}
+
+	// The typed line stays short (context delivered via cat-file), and the
+	// completion marker is untouched.
+	if len(cmd) >= llm.MaxSendKeysCommand {
+		t.Errorf("profile launch command is %d bytes, must stay under the %d-byte send limit", len(cmd), llm.MaxSendKeysCommand)
+	}
+	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: claude done'") {
+		t.Errorf("completion marker echo missing at the tail, got: %s", cmd)
+	}
+}
+
+// TestLaunch_WorkerProfileFull: the full profile (the datawatch MCP server,
+// all tools, skills on, full context with rules digest + full rules text)
+// must pin the session MCP config to exactly the datawatch server, add no
+// allowed/disallowed tools flags, leave skills enabled, and carry the full
+// starting context — digest and rules included.
+func TestLaunch_WorkerProfileFull(t *testing.T) {
+	d := t.TempDir()
+	argvFile := startFakeTmux(t, false)
+
+	starting := autonomous.StartingContextInput{
+		Role:        "worker",
+		TaskSpec:    "land the PRD change",
+		Constraints: []string{"stay in scope", "run the verification"},
+		RulesDigest: "only touch this task",
+		RulesFull:   "full rules text from the rules file",
+	}
+	if err := backendWithProfile(t, "full", starting).Launch(context.Background(), "", "cs-fullprofile", d, "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch with full worker profile: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+
+	// MCP: the single allowed server, pinned strictly.
+	mcpPath := filepath.Join(d, channel.WorkerMCPConfigFileName)
+	if want := "--strict-mcp-config --mcp-config '" + mcpPath + "'"; !strings.Contains(cmd, want) {
+		t.Errorf("command must pin the session MCP config strictly (want %q), got:\n%s", want, cmd)
+	}
+	mcpRaw, err := os.ReadFile(mcpPath)
+	if err != nil {
+		t.Fatalf("per-session MCP config missing in %s: %v", d, err)
+	}
+	var mcpCfg struct {
+		MCPServers map[string]channel.MCPServerSpec `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(mcpRaw, &mcpCfg); err != nil {
+		t.Fatalf("per-session MCP config is not valid JSON: %v\n%s", err, mcpRaw)
+	}
+	if len(mcpCfg.MCPServers) != 1 {
+		t.Fatalf("full profile names exactly 1 server, config has %d entries: %s", len(mcpCfg.MCPServers), mcpRaw)
+	}
+	spec, ok := mcpCfg.MCPServers[channel.ProjectMCPEntryName]
+	if !ok {
+		t.Errorf("per-session MCP config must name the %q server: %s", channel.ProjectMCPEntryName, mcpRaw)
+	}
+	if spec.Command != "datawatch" {
+		t.Errorf("datawatch server command = %q, want %q", spec.Command, "datawatch")
+	}
+
+	// Tools: the full profile allows everything, so no allowed/disallowed
+	// tools flags at all.
+	if strings.Contains(cmd, "--allowedTools") || strings.Contains(cmd, "--disallowedTools") || strings.Contains(cmd, "--disallowed") {
+		t.Errorf("full profile allows all tools: no tools flags expected, got:\n%s", cmd)
+	}
+
+	// Skills: on in the profile → no --settings at all (nothing to hide and
+	// skills untouched).
+	if strings.Contains(cmd, "--settings") {
+		t.Errorf("skills stay on with the full profile: --settings not expected, got:\n%s", cmd)
+	}
+
+	// Starting context: full level carries the rules digest and the full
+	// rules text, with the profile line reflecting the profile itself.
+	ctxPath := filepath.Join(d, WorkerStartingContextFileName)
+	if !strings.Contains(cmd, `--append-system-prompt "$(cat '`+ctxPath+`')"`) {
+		t.Fatalf("command must append the starting context file, got:\n%s", cmd)
+	}
+	ctxRaw, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatalf("starting context file missing in %s: %v", d, err)
+	}
+	for _, want := range []string{
+		`profile="full" context=full`,
+		`mcp=datawatch servers="" tools=all`,
+		"skills=true",
+		"Rules digest\nonly touch this task\n",
+		"Rules\nfull rules text from the rules file\n",
+		"Task\nland the PRD change\n",
+	} {
+		if !strings.Contains(string(ctxRaw), want) {
+			t.Errorf("starting context missing %q, got:\n%s", want, ctxRaw)
+		}
+	}
+	if len(cmd) >= llm.MaxSendKeysCommand {
+		t.Errorf("profile launch command is %d bytes, must stay under the %d-byte send limit", len(cmd), llm.MaxSendKeysCommand)
+	}
+}
+
+// TestLaunch_NoProfileUnchanged: with no worker profile applied the launch
+// command line and the working directory must show no trace of the profile
+// machinery — the command is the non-profile command, byte for byte.
+func TestLaunch_NoProfileUnchanged(t *testing.T) {
+	d := t.TempDir()
+	argvFile := startFakeTmux(t, false)
+
+	b := backendOf()
+	if err := b.Launch(context.Background(), "", "cs-noprofile", d, "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch without a worker profile: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+
+	for _, marker := range []string{
+		"--strict-mcp-config",
+		"--mcp-config",
+		channel.WorkerMCPConfigFileName,
+		"--allowedTools",
+		"disallowedTools",
+		"--disallowed",
+		"--settings",
+		"--append-system-prompt",
+		WorkerStartingContextFileName,
+	} {
+		if strings.Contains(cmd, marker) {
+			t.Errorf("no-profile launch must not carry %q, got:\n%s", marker, cmd)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(d, channel.WorkerMCPConfigFileName)); !os.IsNotExist(err) {
+		t.Errorf("no per-session MCP config expected in %s", d)
+	}
+	if _, err := os.Stat(filepath.Join(d, WorkerStartingContextFileName)); !os.IsNotExist(err) {
+		t.Errorf("no starting context file expected in %s", d)
+	}
+	// The base launch shape is intact.
+	if !strings.Contains(cmd, "--add-dir '"+d+"'") || !strings.Contains(cmd, "--session-id ") {
+		t.Errorf("no-profile launch must keep its base shape, got:\n%s", cmd)
+	}
+	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: claude done'") {
+		t.Errorf("completion marker echo missing at the tail, got: %s", cmd)
+	}
+}
+
+// TestLaunchResume_WorkerProfileApplied: a profiled resume keeps the whole
+// non-profile resume shape (the --resume || --session-id fallback) and both
+// halves of it must apply the same profile flags against the same files.
+func TestLaunchResume_WorkerProfileApplied(t *testing.T) {
+	d := t.TempDir()
+	argvFile := startFakeTmux(t, false)
+
+	starting := autonomous.StartingContextInput{Role: "worker", TaskSpec: "carry on the task"}
+	if err := backendWithProfile(t, "minimal", starting).LaunchResume(context.Background(), "", "cs-minresume", d, "/nonexistent/log", "minsess-0001"); err != nil {
+		t.Fatalf("LaunchResume with minimal worker profile: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+
+	orIdx := strings.Index(cmd, " || ")
+	if orIdx < 0 {
+		t.Fatalf("resume/fallback halves not joined by ||, got:\n%s", cmd)
+	}
+	for name, half := range map[string]string{"resume": cmd[:orIdx], "fallback": cmd[orIdx:]} {
+		for _, want := range []string{
+			"--strict-mcp-config",
+			"--mcp-config '" + filepath.Join(d, channel.WorkerMCPConfigFileName) + "'",
+			"--allowedTools",
+			`--settings '{"skills":false}'`,
+			`--append-system-prompt "$(cat '` + filepath.Join(d, WorkerStartingContextFileName) + `')"`,
+		} {
+			if !strings.Contains(half, want) {
+				t.Errorf("%s half missing %q, got:\n%s", name, want, half)
+			}
+		}
+	}
+	if strings.Contains(cmd, "disallowedTools") || strings.Contains(cmd, "--disallowed") {
+		t.Errorf("a worker profile must never pass a disallowed-tools list, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "--resume ") || !strings.Contains(cmd, "--session-id ") {
+		t.Errorf("profiled resume must keep the --resume || --session-id shape, got:\n%s", cmd)
+	}
+	for _, p := range []string{filepath.Join(d, channel.WorkerMCPConfigFileName), filepath.Join(d, WorkerStartingContextFileName)} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("profile file %s must exist after a profiled resume: %v", p, err)
+		}
+	}
 }
