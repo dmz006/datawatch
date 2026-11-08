@@ -177,12 +177,25 @@ Behaviours worth knowing:
 - **Re-selecting the active server is a no-op.** Tapping the chip that is
   already active does not reload the view, refetch data or reset scroll
   position and filters.
-- **Back to \<hostname\>.** When a remote server cannot be reached and
-  no sessions are loaded, the error panel offers an explicit
-  **Back to \<hostname\>** button (where \<hostname\> is this daemon's own
-  name) that returns you to local data in one tap. It appears only in that
-  unreachable-server state, not on every view; otherwise use the **Local**
-  chip.
+- **A real switch clears the previous server's data first.** On any
+  genuine picker switch (not a no-op re-selection), the old server's
+  session list is dropped before the view redraws — the tab cannot keep
+  showing the previous server's sessions. Sub-pages that carry no chip
+  bar at all (session detail, the New session form) are not re-rendered
+  by a switch; they keep their contents until you leave them.
+- **Back to \<hostname\>.** Three one-tap ways to return to local data
+  (where \<hostname\> is this daemon's own name), in addition to the
+  always-present **Local** chip — they all perform the same "go back to
+  local" action:
+  - the error panel, when a remote server cannot be reached and no
+    sessions are loaded, offers an explicit **Back to \<hostname\>**
+    button;
+  - the **Sessions toolbar chip** (🌐 \<name\>) appears on the Sessions
+    view while a remote server is the active one, and clicking it returns
+    you to local data;
+  - on the **Servers card** under Settings → Comms → Remote Servers, the
+    row for the active remote server carries a **Back to \<hostname\>**
+    button next to its Select/Connected button.
 - **Showing: \<name\> header line.** Every page carries a
   **Showing: \<name\>** line above the view naming the server whose data
   is on screen: the server's hostname, or **All servers** in all-servers
