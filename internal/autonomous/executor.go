@@ -2006,6 +2006,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// status differ, which fails the task. Operators who flag a task read-only
 		// should not run writers on the same tree at the same time.
 		if readOnly && roBaselineOK {
+			// Report files a read-only task left under docs/plans/reports/ are
+			// moved (or deleted, on a name clash) into .datawatch/reports/ first,
+			// so they do not count as a change; anything else still fails below.
+			m.settleReadOnlyReportFiles(ctx, prd, t, roBaseline)
 			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
 				oldStatus := t.Status
 				m.store.WithLock(func() {

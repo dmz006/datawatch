@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -209,6 +210,30 @@ func within(root, p string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// readOnlyBaselineUntracked returns the set of paths the baseline status lists
+// as untracked ("?? <path>"). Git double-quotes (C-style escapes) a path that
+// holds unusual bytes, such as non-ASCII names, so a quoted entry is unquoted
+// before it is compared with the raw path that ls-files reports.
+func readOnlyBaselineUntracked(baseline string) map[string]bool {
+	set := map[string]bool{}
+	for _, l := range strings.Split(baseline, "\n") {
+		l = strings.TrimRight(l, " \t\r")
+		if !strings.HasPrefix(l, "?? ") {
+			continue
+		}
+		p := l[3:]
+		if strings.HasPrefix(p, `"`) {
+			u, err := strconv.Unquote(p)
+			if err != nil {
+				continue
+			}
+			p = u
+		}
+		set[p] = true
+	}
+	return set
+}
+
 // settleReadOnlyReportFiles runs after a read-only task finished and before
 // the violation check. Each new untracked file under docs/plans/reports/ (not
 // in baseline) is moved into the folder of the task's report path under
@@ -234,13 +259,10 @@ func (m *Manager) settleReadOnlyReportFiles(ctx context.Context, prd *PRD, t *Ta
 	if rp := reportPathOf(t); rp != "" && validateReportPath(rp) == nil {
 		destDir = path.Dir(rp)
 	}
-	inBaseline := map[string]bool{}
-	for _, l := range strings.Split(baseline, "\n") {
-		inBaseline[strings.TrimRight(l, " \t\r")] = true
-	}
+	inBaseline := readOnlyBaselineUntracked(baseline)
 	var moved, deleted []string
 	for _, rel := range strings.Split(string(out), "\x00") {
-		if rel == "" || !strings.HasPrefix(rel, strayReportsDir) || path.Clean(rel) != rel || inBaseline["?? "+rel] {
+		if rel == "" || !strings.HasPrefix(rel, strayReportsDir) || path.Clean(rel) != rel || inBaseline[rel] {
 			continue
 		}
 		src := filepath.Join(realRoot, filepath.FromSlash(rel))
