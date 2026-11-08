@@ -22,9 +22,13 @@ type hostLoadFixture struct {
 func startHostLoadFixture(t *testing.T) hostLoadFixture {
 	t.Helper()
 	t.Setenv("TMUX", "")
-	os.Unsetenv("TMUX")
+	if err := os.Unsetenv("TMUX"); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("TMUX_TMPDIR", "")
-	os.Unsetenv("TMUX_TMPDIR")
+	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
+		t.Fatal(err)
+	}
 	root := t.TempDir()
 	wt := filepath.Join(root, "worktree")
 	if err := os.MkdirAll(wt, 0o755); err != nil {
