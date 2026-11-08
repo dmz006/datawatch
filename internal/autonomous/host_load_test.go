@@ -45,7 +45,9 @@ func startHostLoadFixture(t *testing.T) hostLoadFixture {
 	t.Cleanup(func() {
 		_ = syscall.Kill(-pid, syscall.SIGKILL) // own session: group id equals pid
 	})
-	time.Sleep(200 * time.Millisecond)
+	for deadline := time.Now().Add(10 * time.Second); !hostLoadAlive(pid) && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	return hostLoadFixture{pid: pid, root: wt}
 }
 
@@ -162,7 +164,7 @@ func TestHostLoadAlertNamesGroupsAndOwner(t *testing.T) {
 		if running {
 			state = "running"
 		}
-		want := "worktree folder of " + state + " session sess-1234"
+		want := "worktree folder of " + state + " Automaton session sess-1234"
 		if !strings.Contains(h.alerts[0], want) {
 			t.Fatalf("alert %q lacks %q", h.alerts[0], want)
 		}

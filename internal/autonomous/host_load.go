@@ -196,7 +196,7 @@ func (h *HostLoadCheck) Check() HostLoadResult {
 	}
 	res.Groups = h.topGroups(sessions)
 	if h.Alert != nil {
-		h.Alert("Host load high", hostLoadMessage(res, cfg, h.now().Sub(h.since)))
+		h.Alert("Host load high: Automata may be slowed", hostLoadMessage(res, cfg, h.now().Sub(h.since)))
 	}
 	res.Alerted = true
 	if cfg.EffectiveMode() == HostLoadModeReap {
@@ -217,11 +217,11 @@ func hostLoadMessage(res HostLoadResult, cfg HostLoadConfig, dur time.Duration) 
 		fmt.Fprintf(&b, "\n- group %d (%d process(es), %s): ", g.PGID, g.Procs, g.Command)
 		switch {
 		case g.Owner == "":
-			b.WriteString("not in any session worktree or scratch folder")
+			b.WriteString("not in any Automaton worktree or scratch folder")
 		case g.Running:
-			fmt.Fprintf(&b, "%s folder of running session %s", g.Owner, g.Session)
+			fmt.Fprintf(&b, "%s folder of running Automaton session %s", g.Owner, g.Session)
 		default:
-			fmt.Fprintf(&b, "%s folder of ended session %s", g.Owner, g.Session)
+			fmt.Fprintf(&b, "%s folder of ended Automaton session %s", g.Owner, g.Session)
 		}
 	}
 	return b.String()
