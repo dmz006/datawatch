@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Failed attempt records say whether the attempt resumed the previous session, and why.** Each failed attempt record now carries `resumed` (true when the attempt continued the previous worker session with the failure summary, instead of starting a fresh one) and `resume_reason` (the retry-resume decision's reason, such as `resumed previous session`, `context above the limit; starting a fresh attempt`, or `session ended; starting a fresh attempt`). A first attempt, which makes no retry decision, leaves both empty. The Automaton status view's held-task rows show the same two values for the task's last attempt as `last_resumed` and `last_resume_reason`. Records stored before these fields existed load with them false and empty; nothing needs migrating.
+
 - **Retry resume decision helper.** `internal/autonomous/retry_resume_decision.go` adds `decideRetryResume`, a pure function that decides whether a retried attempt resumes the previous backend session. It resumes only when the session is alive, the backend supports resume, resume is enabled (`MaxContextTokens > 0`), and the context is at or under the limit (an unknown context of 0 resumes). Each outcome returns an operator-readable reason. Not yet wired into the retry path.
 
 - **`autonomous.first_attempt` now picks the worker for a task's first attempt.** A first attempt whose task kind (`implementation`, `docs`, `note`, `final_gate`) has a configured backend runs on that backend and model. A task or Automaton that pins its own worker, a story or PRD pin, and a burn-guard route all still win, and retries never use the first-attempt pair. Kinds with no entry keep today's choice.

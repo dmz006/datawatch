@@ -24,8 +24,14 @@ type ReviewNeededEntry struct {
 	LastModel    string `json:"last_model,omitempty"`
 	// LastBackendReason is the BackendReason of the last attempt; empty when no
 	// attempt was recorded or the attempt predates the field.
-	LastBackendReason string    `json:"last_backend_reason,omitempty"`
-	HeldAt            time.Time `json:"held_at"`
+	LastBackendReason string `json:"last_backend_reason,omitempty"`
+	// LastResumed is true when the last attempt resumed the previous session on
+	// its retry; false for a fresh attempt or an attempt stored before the field.
+	LastResumed bool `json:"last_resumed,omitempty"`
+	// LastResumeReason is the retry-resume reason of the last attempt; empty
+	// when no retry decision was recorded for it.
+	LastResumeReason string    `json:"last_resume_reason,omitempty"`
+	HeldAt           time.Time `json:"held_at"`
 	// HeldCause names the infrastructure failure when the task is held because
 	// its infrastructure retries ran out. It is empty for any other hold.
 	HeldCause string `json:"held_cause,omitempty"`
@@ -71,6 +77,7 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 	if last := lastTaskAttempt(t); last != nil {
 		e.LastBackend, e.LastModel = last.Backend, last.Model
 		e.LastBackendReason = last.BackendReason
+		e.LastResumed, e.LastResumeReason = last.Resumed, last.ResumeReason
 	}
 	if fr := t.FailureReason; fr != nil && fr.Source == infraRetryHoldSource {
 		e.HeldCause = fr.Detail

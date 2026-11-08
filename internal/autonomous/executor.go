@@ -1529,8 +1529,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// Retry after a verifier failure: resume the previous session with the
 		// failure summary when the retry decision says so. A resumed attempt
 		// spawns nothing and waits on the same session, like a live session
-		// adopted on restart.
-		if !skipSpawn && resumeCandidate && attempt > 0 && m.tryRetryResume(prd, t, hint) {
+		// adopted on restart. The decision's outcome is carried on the run so the
+		// attempt's record says whether it resumed and why.
+		if !skipSpawn && resumeCandidate && attempt > 0 {
+			run.Resumed, run.ResumeReason = m.tryRetryResume(prd, t, hint)
+		}
+		if run.Resumed {
 			skipSpawn = true
 			run.SessionID, run.Adopted = t.SessionID, false
 			m.adoptCapacity(prd, t)

@@ -5752,3 +5752,15 @@ Tests for the discussion id rule (1 to 128 characters of letters, digits, dot, u
 | Validator accepts good ids and rejects empty, `.`, `..`, slash, backslash, NUL, over 128 characters, spaces and non-ASCII | **Yes** | **Yes** | `TestValidateDiscussionID` (`internal/server/discussion_id_test.go`) | |
 | Every discussion route (recall, write, delete, wal, participants, conflicts, conflicts/resolve, receive) and the file service folder route answer 400 `invalid discussion id` for a bad id and create no file | **Yes** | **Yes** | `TestDiscussionRoutesRejectTraversalIDs` (`internal/server/discussion_route_traversal_test.go`) | Called through the handlers, state and file roots compared before and after |
 | Tag-selection match results unchanged after the lookup set stopped using a computed size hint | **Yes** | **Yes** | `TestMatchesObjectTagsResults` (`internal/autonomous/object_tag_filter_test.go`) | |
+
+## Failed attempt resume record — `resumed`, `resume_reason`, `last_resumed`, `last_resume_reason` — unreleased
+
+Tests for the resume outcome each failed attempt record carries: whether the attempt continued the previous worker session with the failure summary, and the retry-resume decision's reason. A first attempt makes no retry decision, so both stay empty. The Automaton status view's held-task rows carry the last attempt's values. Run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ -count=1 -run 'TestAttemptRecords|TestAttemptResumeRecord|TestOldAttemptRecordLoadsWithoutResumeFields|TestHeldEntryCarriesLastResume|TestRetryResume'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| A resumed retry's failed record has `resumed: true` and reason `resumed previous session`; the first attempt's record has neither | **Yes** | **No** | `TestAttemptRecordsResumeOutcome` (`internal/autonomous/attempt_resume_record_test.go`), driving `executeOne` with fake session liveness, context size and send-input hooks | Unit and executor-flow test only. No live daemon session was run. |
+| A fresh retry's failed record has `resumed: false` and the refusal reason (session ended, context above the limit, resume disabled, or send failed) | **Yes** | **No** | `TestAttemptRecordsWhyTheRetryStartedFresh` (`internal/autonomous/attempt_resume_record_test.go`) | Same fakes as above. |
+| Record JSON round trip for `resumed` and `resume_reason`; empty values are omitted | **Yes** | **No** | `TestAttemptResumeRecordJSONRoundTrip` (`internal/autonomous/attempt_resume_record_test.go`) | Unit only. |
+| A record stored before the fields existed loads with them false and empty | **Yes** | **No** | `TestOldAttemptRecordLoadsWithoutResumeFields` (`internal/autonomous/attempt_resume_record_test.go`) | Unit only. |
+| Automaton status held-task row carries `last_resumed` and `last_resume_reason` from the last attempt | **Yes** | **No** | `TestHeldEntryCarriesLastResume` (`internal/autonomous/attempt_resume_record_test.go`) | Unit only; the REST payload is the same struct as the summary view. |
