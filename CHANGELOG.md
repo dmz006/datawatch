@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.8 — Sessions tiles show every session's system tag chips on the first load
+
+### Fixed
+
+- **The Sessions page now shows every session's system tag chips on the first load — and keeps them instead of flickering them away on later updates.** The paged summary view of `GET /api/sessions` (the row shape the PWA list loads first) dropped each session's `system_tags`, so the machine-derived placement chips — `compute:<node>`, `peer:<name>`, `backend:<llm>`, `lane:<lane>`, `role:<role>`, `project:<name>` — were missing on first paint and only appeared once a full session record arrived. The summary row now carries `system_tags` (`sessionSummaryRow`, `internal/server/session_list_page.go`; pinned for every row shape the server emits by `internal/server/session_summary_row_system_tags_test.go`), and the PWA merge (`_mergeSessionFields`, `internal/server/web/app.js`) keeps a held session's chips when a later row or push omits the key, while a push that carries `system_tags` — even an empty array — still wins, so a session that genuinely loses its placement drops its chip.
+  - **How it shows up:** open the Sessions page (PWA, e.g. on the phone) and each session's ⚙️ placement chips are on its tile from the first paint, alongside the own-tag and inherited-tag chips — no waiting for session details, no flicker on list refreshes; a chip disappears only if the server explicitly reports the placement as gone.
+  - **Migration:** none. The field is additive — a session without system tags renders exactly as before — and no setting changes. Pinned by `internal/server/web/app-session-tags-first-load.test.js`.
+  - **Docs:** the [howto](docs/howto/automata-tags.md#placement-tags-the-system-tags) (chips on the session card, first-frame draw, hold rule), the *Placement axes* entry in [datawatch-definitions.md](docs/datawatch-definitions.md), the session-list section of [operations.md](docs/operations.md) (which also flags the still-unfiled parity drafts) and [api/sessions.md](docs/api/sessions.md) describe the first-load chip. Two datawatch-app parity drafts are tracked in `docs/plans/parity-issues/` (server row shape, PWA drawing discipline) and stay unfiled until the operator opens them on the app tracker.
+
 ## v9.112.7 — Update dependencies and workflow action pins to the newest majors
 
 ### Changed
