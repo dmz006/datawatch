@@ -7,7 +7,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **Processes a worker started no longer outlive a cancelled task.** Before, cancelling a worker task could leave the commands it had launched (test runs, servers, helper scripts) running after the session ended. Now every session end, including cancel and failure, finds those leftovers and ends them. A process counts as the session's only on evidence read from `/proc`: its working directory, executable or script lies in the session's worktree or scratch folder, its ancestry reaches the session, or its environment carries the session id. Nothing is matched by name, and the evidence and start time are re-checked just before each signal, so an unrelated process is never ended. No migration step; leftovers from before the upgrade are not cleaned up.
+- **Processes a worker started no longer outlive a cancelled task.** Before, ending a worker session (cancel, kill, failure) could leave the commands it had launched — test runs, servers, helper scripts — still running. Now every session end reaps what the session left behind. A process is attributed to a session only on evidence read from `/proc`: its working directory, executable or script lies in the session's worktree or scratch folder, its ancestry reaches the session, or its environment carries the session id. Nothing is ever ended by name, each process is signalled by exact pid with the evidence re-checked just before the signal, and the reap never fails or blocks the session end itself.
+
+### Added
+
+- **Host load check (`autonomous.host_load_alert`).** When the load average stays above `multiple` times the core count (default 1.5) for `minutes` (default 10), the daemon raises one warning per episode — "Host load high: Automata may be slowed" — naming the busiest process groups and whether each belongs to a worktree or scratch folder of a running or ended session. `mode` is `off`, `alert` (default; reports only) or `reap` (also ends the leftover processes of ended sessions the evidence rule proves belong to them; a running session is never touched). The check runs from the daemon once a minute and reads the live setting, so a change needs no restart; set it in YAML config, the web General settings, or via REST, the comm channel, the CLI (`datawatch autonomous config-set`) or MCP.
 
 ## v9.90.0 — Configurable splash dwell with early dismiss
 
