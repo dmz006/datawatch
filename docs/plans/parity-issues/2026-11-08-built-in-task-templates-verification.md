@@ -12,8 +12,12 @@ in internal/autonomous/task_templates.go (`EffectiveTaskTemplates`,
 and the config-write guard in internal/autonomous/api.go that runs the same check
 when a `task_templates` block is saved. It meets the executor's verification side:
 the verifier's prestart check that refuses a task whose `verification_script` is not
-a repo-relative script file, and the read-only report check that verifies a
-read-only task by the presence of its report file. The surrounding surfaces the
+a repo-relative script file, and the read-only admission path in
+internal/autonomous/read_only_parallel.go (report path handling:
+`reportPathOf`, `validateReportPath`, `taskHasUsableReportPath`, and the
+read-only tree-change check `readOnlyViolation`) plus the executor's read-only
+report check in internal/autonomous/executor.go that verifies a read-only task
+by the presence of its report file. The surrounding surfaces the
 change touches are the config surfaces for `autonomous.task_templates` (YAML, REST
 config write, and the decompose-lint Settings card and CLI/comm/MCP verbs that carry
 that block), the docs set (docs/howto/automaton-decompose-lint.md,
@@ -146,4 +150,8 @@ claims — the report-only `final_gate` and note-only version template in
 task_templates_defaults.go, the write-time and apply-time guards in api.go and
 task_templates.go, the config package carrying no command-string check, and the
 matching howto, operations, definitions, config-reference and openapi wording —
-checked against the current tree on the same day.
+checked against the current tree on the same day; re-verified for the
+template re-run of this story on 2026-11-08 (template pack text, the
+write-time and apply-time guards, and the read-only admission and report
+check in read_only_parallel.go and executor.go all match what this draft
+states) with no changes needed to the gap list.
