@@ -202,13 +202,19 @@ Each recorded attempt carries the **reason** it ran on its worker:
 "first attempt for `<kind>` tasks", "escalated after `<n>` failures",
 "escalation ladder step", "operator pinned" or "default choice". A held
 task's review entry shows the reason of its last attempt, so you can see
-which rule chose the worker before deciding on it.
+which rule chose the worker before deciding on it. The record also states
+whether the attempt **resumed the previous session** and why
+([Retry resume](#retry-resume-continuing-the-previous-session)); the first
+attempt makes no retry decision and leaves both empty.
 
 ## What the retry prompt contains
 
-When a task has failed attempts on record, the next worker receives them before
-it starts. The prompt begins with a line saying earlier attempts did not finish
-successfully, then lists each attempt, oldest first:
+When a task has failed attempts on record, the worker of a **fresh** retry
+receives them before it starts. A retry that **resumes** the previous session
+receives the failure summary alone instead — see
+[Retry resume](#retry-resume-continuing-the-previous-session). The prompt
+begins with a line saying earlier attempts did not finish successfully, then
+lists each attempt, oldest first:
 
 - the attempt number and the worker it ran on
 - how long it ran and how it ended (`failed`, `stalled` or `cancelled`)
@@ -247,13 +253,16 @@ Three daemon-wide keys keep that cost down:
   failures before the pair stops applying (default 1, range 0 to 20).
 - **`autonomous.retry_resume_max_context_tokens`** — the cap on how much
   prior context a retry may resume with (default 150,000 tokens; 0 forces
-  every retry to start a fresh session).
+  every retry to start a fresh session). It is also the switch that turns
+  retry resume on and off — see
+  [Retry resume](#retry-resume-continuing-the-previous-session).
 
-None of them changes the failure flow. The attempt order, the ladder, the
-reports the next worker receives, and the `review_needed` hold and its alert
-all behave exactly as before. A first-try success runs on the worker its
-kind's pair resolves to — unchanged, if you set no pair. Nothing migrates:
-unset keys keep today's behavior exactly.
+None of them changes the failure flow. The attempt order, the ladder, and the
+`review_needed` hold and its alert all behave exactly as before. A first-try
+success runs on the worker its kind's pair resolves to — unchanged, if you set
+no pair. Nothing migrates: unset keys keep today's behavior exactly, and with
+`retry_resume_max_context_tokens` at 0 every retry starts a fresh session
+exactly as before ([Retry resume](#retry-resume-continuing-the-previous-session)).
 
 Set the keys in the autonomous block: the config file, the REST config
 round trip, MCP, CLI and comm config forms, or the PWA settings.
@@ -264,6 +273,53 @@ attempts of one task can run on different workers, and each is charged for
 the context it carries. Read a few real failed attempts in the [cost
 report](cost-report.md) instead.
 
+## Retry resume: continuing the previous session
+
+A fresh retry pays the full starting context again. When it can, the daemon
+does something cheaper: it resumes the failed attempt's worker session and
+feeds it only what happened since — the failure summary. The session already
+carries the project, the task's spec and the attempt's own work, so the retry
+is priced on the summary line and the continuation, not on another ~85,000
+starting context.
+
+A retry resumes the previous session only when every check passes; the first
+one that fails sends the attempt to a fresh session, and the record says why:
+
+1. **The attempt failed verification** — the worker finished its work and the
+   verifier rejected it. Stalls, start failures and infra failures never set
+   up a resume.
+2. **The session is still open**, and the task still points at it.
+3. **The attempt's backend supports resume** — today that is `claude-code`
+   only; every other backend starts a fresh session.
+4. **`autonomous.retry_resume_max_context_tokens` is above 0.** `0` turns
+   resume off and forces a fresh session (the old behaviour).
+5. **The session's context is at or under that limit.** A size the daemon
+   could not measure passes when the other checks do.
+
+When it resumes, the attempt spawns nothing: it waits on the same session,
+and the worktree is whatever the failed attempt left behind — the worker fixes
+in place. The daemon types one line into the session: a marker naming this as
+an Automaton retry that was resumed with its context, followed by the same
+failure summary a fresh worker's retry prompt would carry, flattened to one
+line and cut at 4,000 characters. When the send path is missing or the send
+fails, the attempt falls back to a fresh session and the record says so.
+
+The record carries the outcome of every decision: `resumed` and
+`resume_reason` — `resumed previous session`, or one of the refusals:
+`session ended; starting a fresh attempt`, `backend cannot resume; starting a
+fresh attempt`, `resume disabled by setting; starting a fresh attempt`,
+`context above the limit; starting a fresh attempt`, or the send fallbacks
+`no send-input hook; starting a fresh attempt` and `send into session
+failed; starting a fresh attempt`. A held task's review entry shows the same
+two for its last attempt, next to the backend, model and the worker's choice
+reason.
+
+**What changes and what does not.** A resumed retry that still fails counts
+as a failed attempt exactly like any other: `max_failures`, the ladder, the
+held report and the alert are all unchanged. What changes is only the cost of
+the pass — the summary line and the continuation instead of a full cold
+start.
+
 ## When a task needs review
 
 A task reaching `max_failures` is **held**, not failed. What you see:
@@ -273,7 +329,8 @@ A task reaching `max_failures` is **held**, not failed. What you see:
   Automation strip, a count shows how many tasks are waiting.
 - **Status output.** `datawatch autonomous status` lists each held task under
   `review_needed`, with the Automaton, the task, the failed-attempt count, the
-  last worker and when it was held. The comm channel's `autonomous status`
+  last worker, when it was held, and for the last attempt whether it resumed
+  the previous session and why (`last_resumed`, `last_resume_reason`). The comm channel's `autonomous status`
   adds one line per held task and tells you the command to decide it. MCP
   `autonomous_status` and REST `GET /api/autonomous/status` carry the same
   `review_needed` array.
