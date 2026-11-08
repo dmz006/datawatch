@@ -1,4 +1,6 @@
-Issue: dmz006/datawatch-app (to be filed; search link https://github.com/dmz006/datawatch-app/issues?q=usage+calculator+auto-lanes)
+Issue: dmz006/datawatch-app#TBD (not yet filed; the filing record at the end gives the command)
+
+Issue URL: TBD, fill in after filing
 
 # [sync] usage calculator: auto-lanes settings and status
 
