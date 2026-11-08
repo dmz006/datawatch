@@ -9,6 +9,14 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 )
 
+// hostLoadCheck — the daemon's single host load check instance: assigned
+// once in the main.go stats wiring, then read by the stats snapshot, the
+// autonomous status (and the autonomous_status MCP tool) through the
+// manager provider, and run by startHostLoadCheck's tick loop.
+// Package-level because the assignment and the loop sit in different
+// blocks of main. Nil until wired.
+var hostLoadCheck *autonomouspkg.HostLoadCheck
+
 // hostLoadTickInterval is how often the host load check runs. The configured
 // minutes decide how long a breach must last; this only sets the resolution.
 const hostLoadTickInterval = time.Minute

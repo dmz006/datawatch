@@ -8613,6 +8613,25 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 		// GH#201 — HTTP access / WS lifecycle / auth-failure log stats.
 		statsCollector.SetAccessLogStatsFunc(httpServer.PopulateAccessLogStats)
+		// Host load check (autonomous.host_load_alert) — created once here,
+		// before the stats wiring below reads its snapshot. It alerts when
+		// the load average stays above a multiple of the core count for the
+		// configured minutes; in reap mode it additionally ends the leftover
+		// processes of ended sessions (same tick as the alert). Reads
+		// autonomous.host_load_alert from the live config on every tick, so a
+		// change needs no restart. Its read-only status feeds the stats
+		// snapshot, the autonomous status (and the autonomous_status MCP
+		// tool) and the datawatch_host_load_* gauges.
+		hostLoadCheck = newHostLoadCheck(
+			func() autonomouspkg.Config {
+				return effectiveAutonomousConfig(autonomousMgrRef, autonomouspkg.Config{HostLoadAlert: cfg.Autonomous.HostLoadAlert})
+			},
+			mgr.ListSessions,
+			hostLoadAlertSink(alertStore),
+		)
+		if autonomousMgrRef != nil {
+			autonomousMgrRef.SetHostLoadProvider(hostLoadCheck.Status)
+		}
 		// BL367 — autonomous quality gate stats in WS broadcast.
 		if autonomousMgrRef != nil {
 			amgrRef := autonomousMgrRef
@@ -8643,6 +8662,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SafeDeleteLastMS = sd.LastDurationMs
 				s.SafeDeleteSlowReports = sd.SlowReports
 				s.SafeDeleteRefreshFailures = sd.RefreshFailures
+				// Host load check status (off/alert/reap): mode, last load
+				// reading vs threshold, breach state, orphans reaped.
+				if hl := st.HostLoad; hl != nil {
+					s.HostLoadMode = hl.Mode
+					s.HostLoadLast = hl.LastLoad
+					s.HostLoadLimit = hl.LastLimit
+					s.HostLoadBreached = hl.Breached
+					s.HostLoadLastCheckAt = hl.LastCheckAt
+					s.HostLoadOrphansReaped = hl.OrphansReaped
+				}
 			})
 		}
 		// Burn guard stats in the WS broadcast and the Prometheus collector.
@@ -8707,6 +8736,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("would_alert").Set(float64(s.SupervisorWatchFindingsWouldAlert))
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
 			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
+			// Host load check (autonomous.host_load_alert).
+			if s.HostLoadMode != "" {
+				metricsPkg.HostLoadLastRead.Set(s.HostLoadLast)
+				metricsPkg.HostLoadLimit.Set(s.HostLoadLimit)
+				var breached float64
+				if s.HostLoadBreached {
+					breached = 1
+				}
+				metricsPkg.HostLoadBreached.Set(breached)
+				metricsPkg.HostLoadOrphansReaped.Set(float64(s.HostLoadOrphansReaped))
+			}
 			updateBurnGuardMetrics(s)
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
@@ -9015,16 +9055,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 	}()
 
-	// Host load check — alerts when the load average stays above a multiple of
-	// the core count for the configured minutes. Reads autonomous.host_load_alert
-	// from the live config on every tick, so a change needs no restart.
-	startHostLoadCheck(ctx, hostLoadTickInterval, newHostLoadCheck(
-		func() autonomouspkg.Config {
-			return effectiveAutonomousConfig(autonomousMgrRef, autonomouspkg.Config{HostLoadAlert: cfg.Autonomous.HostLoadAlert})
-		},
-		mgr.ListSessions,
-		hostLoadAlertSink(alertStore),
-	))
+	// Host load check (created above, with the stats wiring). Alert and
+	// reap state are already in the stats snapshot and autonomous status
+	// via the check's Status snapshot.
+	startHostLoadCheck(ctx, hostLoadTickInterval, hostLoadCheck)
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
