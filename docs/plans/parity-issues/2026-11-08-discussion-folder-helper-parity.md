@@ -4,6 +4,14 @@
 opened when the operator files it. Writing this draft changes nothing on any
 host, and filing it never runs a hosting CLI or creates anything on a tracker.
 
+**Record update, 2026-11-08:** the one follow-up attempt after this draft —
+"try the second barrier form once if the `go` scan still reports the old
+finding" — was run and made no change, because the scan report it required was
+absent (see `CODEQL-768-SECOND-FORM-DECISION.md`). The first form — the
+cleaned-path prefix check in `discussionFolderPath`, exactly as described
+below — is what is committed, and this draft stands unchanged apart from this
+note.
+
 **Server-side status:** the server half of this record is done — the
 discussion scope, sync and file-service handlers now build every user-id
 folder path through the shared helper (the switch-over commits for
