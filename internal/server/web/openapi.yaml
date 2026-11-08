@@ -1085,8 +1085,16 @@ paths:
         `mechanical` or `mechanical_and_model`, default `mechanical_and_model`),
         `autonomous.merge_pipeline.conflict_model` (an LLM registry entry name; an empty
         string means no model) and `autonomous.merge_pipeline.version_files` (a JSON
-        array or comma list of file names inside the project). Each of the six can be
-        set for one project as `autonomous.merge_pipeline.projects.<project>.<key>`;
+        array or comma list of file names inside the project) and the release approval
+        modes `autonomous.merge_pipeline.release_approval.patch`, `autonomous.merge_pipeline.release_approval.minor`
+        and `autonomous.merge_pipeline.release_approval.major` (each `auto`, `ask` or `manual`;
+        default `auto` for patch and minor, `ask` for major). In plain terms: `auto` ships the
+        release when the checks pass and reports afterwards; `ask` prepares everything and raises
+        one decision for the operator; `manual` prepares and reports, and a person ships. Each of
+        the six keys above and the three release approval modes can be set for one project as
+        `autonomous.merge_pipeline.projects.<project>.<key>`, where the release modes use the key
+        `release_approval.patch`, `release_approval.minor` or `release_approval.major`; a project
+        mode that is left out inherits the global mode;
         null clears a key back to its default, and null on
         `autonomous.merge_pipeline.projects.<project>` removes that project's overrides.
         The post-ship hook keys are global for every project and take no projects.<project> prefix: `autonomous.merge_pipeline.post_ship.enabled` (true|false; default false, and no hook runs while it is false), `autonomous.merge_pipeline.post_ship.registry_file` (the registry_row built-in's registry file, relative to the project) and `autonomous.merge_pipeline.post_ship.registry_row_pattern` (its row line template), `autonomous.merge_pipeline.post_ship.companion_repository` (the owner/name the parity_issue built-in files its issue in) and `autonomous.merge_pipeline.post_ship.issue_title_template` (its issue title), `autonomous.merge_pipeline.post_ship.notify_template` (the notify built-in's message body, and the parity_issue body; may name {project} and {version}) and `autonomous.merge_pipeline.post_ship.hooks` (a JSON array of objects; each has a non-empty unique name, exactly one of a built-in name — registry_row, parity_issue, tag or notify — or a command line, and an optional enabled flag that is false by default; at most 20). An enabled built-in is refused by name when its target is unset in the applied block, so one PUT may set the target and the hook together. 
@@ -2333,7 +2341,11 @@ paths:
         what is configured for merge conflicts; `conflict_policy_in_effect` and
         `conflict_model_in_effect` are what would be acted on, which fall back to
         `stop_and_ask` with no model when the policy needs a model that is not set
-        or not available (`conflict_degraded_reason` says why). `overrides` holds
+        or not available (`conflict_degraded_reason` says why). `release_approval_in_effect`
+        holds the mode acted on for each release size (`patch`, `minor` and `major`; each `auto`,
+        `ask` or `manual`): `auto` ships the release when the checks pass and reports afterwards,
+        `ask` prepares everything and raises one decision, and `manual` prepares and reports while
+        a person ships. The defaults are `auto` for patch and minor and `ask` for major. `overrides` holds
         the per-project values set for this project, or null. `record_updated_at` is
         when the daemon's record was last set, when it is the source. The project
         directory is the directory registered for the project, or the merge base
@@ -9819,6 +9831,13 @@ components:
           type: array
           items: {type: string}
           description: "The project files, relative to the project, that carry the version line the release version step sets"
+        release_approval:
+          type: object
+          description: "The release approval mode per release size for this project. A size that is left out inherits the global mode; the defaults are auto for patch and minor and ask for major."
+          properties:
+            patch: {type: string, enum: [auto, ask, manual], description: "Patch release mode: auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships"}
+            minor: {type: string, enum: [auto, ask, manual], description: "Minor release mode: auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships"}
+            major: {type: string, enum: [auto, ask, manual], description: "Major release mode: auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships"}
     MergePipelineSettings:
       type: object
       description: The pipeline resolution settings in effect for a project.
@@ -9850,6 +9869,13 @@ components:
         conflict_model: {type: string, description: "The conflict model configured"}
         conflict_model_in_effect: {type: string, description: "The conflict model that would be used; empty when none"}
         conflict_degraded_reason: {type: string, description: "Why the policy in effect differs from the one configured"}
+        release_approval_in_effect:
+          type: object
+          description: "The release approval mode acted on for each release size. auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships. Defaults: auto for patch and minor, ask for major."
+          properties:
+            patch: {type: string, enum: [auto, ask, manual], description: "The patch release mode in effect"}
+            minor: {type: string, enum: [auto, ask, manual], description: "The minor release mode in effect"}
+            major: {type: string, enum: [auto, ask, manual], description: "The major release mode in effect"}
         post_ship:
           type: object
           description: "The global post-ship hook settings: whether the block is on, how many hooks are defined, and the names of the ones that would run"
