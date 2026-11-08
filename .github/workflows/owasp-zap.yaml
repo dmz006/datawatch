@@ -116,7 +116,7 @@ jobs:
 
       # ── Pass 1: PWA baseline (passive spider + analyse) ──────────
       - name: ZAP PWA baseline scan
-        uses: zaproxy/action-baseline@41aee98ebc7cf2802c3beae4e7d4336413a21e43  # v0.9.0 (newest tag that still resolves; v0.15.0 pin was dangling)
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 5'
@@ -194,7 +194,7 @@ jobs:
       #            don't get masked by the bigger PWA surface) ─────
       - name: ZAP diagrams.html baseline scan
         continue-on-error: true  # advisory; runtime errors (daemon crash, docker) don't block CI
-        uses: zaproxy/action-baseline@41aee98ebc7cf2802c3beae4e7d4336413a21e43  # v0.9.0 (newest tag that still resolves; v0.15.0 pin was dangling)
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/diagrams.html"
           cmd_options: '-a -j -m 3'
@@ -216,7 +216,7 @@ jobs:
       # ephemeral test daemon.
       - name: ZAP PWA full active scan
         continue-on-error: true  # advisory; runtime errors don't block CI
-        uses: zaproxy/action-full-scan@bdd21ad4090d552d299261226c553efbc216f5ee  # v0.9.0 (newest tag that still resolves; v0.10.0 pin was dangling)
+        uses: zaproxy/action-full-scan@3c58388149901b9a03b7718852c5ba889646c27c  # v0.13.0
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 10'
