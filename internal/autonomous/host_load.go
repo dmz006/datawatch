@@ -99,6 +99,35 @@ type HostLoadResult struct {
 	Reaped   OrphanReapResult
 }
 
+// HostLoadStatus is the check's read-only snapshot for the monitoring
+// surfaces: the system stats host_load field (GET /api/stats and the WS
+// stats broadcast), the autonomous_status read (GET /api/autonomous/status,
+// which the autonomous_status MCP tool returns verbatim) and the
+// datawatch_host_load_* Prometheus gauges. It is the effective mode, the
+// last successful load reading against its threshold (multiple x cores),
+// whether that reading is over the threshold (a breach streak in progress)
+// and how many leftover processes the reaper has ended since the check
+// started (reap mode; the alert fires on the same tick as the reap). Field
+// values are snapshots at read time, not persisted state.
+type HostLoadStatus struct {
+	// Mode is the effective mode (off, alert or reap).
+	Mode string `json:"mode"`
+	// LastCheckAt is the instant of the last successful load reading; zero
+	// while the check has never read one (mode off, or before the first tick).
+	LastCheckAt time.Time `json:"last_check_at"`
+	// LastLoad is the 1-minute load average of the last successful reading.
+	LastLoad float64 `json:"last_load"`
+	// LastLimit is the threshold (multiple x core count) of the same reading.
+	LastLimit float64 `json:"last_limit"`
+	// Breached is true when the last successful reading is over the threshold,
+	// i.e. the breach streak the check counts minutes on is in progress right
+	// now (false when the load is back under the limit).
+	Breached bool `json:"breached"`
+	// OrphansReaped is the cumulative number of leftover processes the reaper
+	// has ended (reap mode; 0 in alert or off mode).
+	OrphansReaped int `json:"orphans_reaped"`
+}
+
 // HostLoadCheck is the check. Zero-value fields use real sources.
 type HostLoadCheck struct {
 	Config   func() HostLoadConfig
@@ -114,6 +143,16 @@ type HostLoadCheck struct {
 	mu      sync.Mutex
 	since   time.Time
 	alerted bool
+
+	// Monitoring snapshot for Status(); guarded by mu. statusMode records
+	// the effective mode seen on the last Check; the live config still wins
+	// in Status() when the check has never ticked.
+	statusMode    string
+	lastCheckAt   time.Time
+	lastLoad      float64
+	lastLimit     float64
+	lastBreached  bool
+	orphansReaped int
 }
 
 func (h *HostLoadCheck) now() time.Time {
@@ -159,10 +198,12 @@ func (h *HostLoadCheck) Check() HostLoadResult {
 	if h.Config != nil {
 		cfg = h.Config()
 	}
+	mode := cfg.EffectiveMode()
 	var res HostLoadResult
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if cfg.EffectiveMode() == HostLoadModeOff {
+	h.statusMode = string(mode)
+	if mode == HostLoadModeOff {
 		h.since, h.alerted = time.Time{}, false
 		return res
 	}
@@ -178,6 +219,7 @@ func (h *HostLoadCheck) Check() HostLoadResult {
 	res.Limit = cfg.EffectiveMultiple() * float64(cores)
 	if load <= res.Limit {
 		h.since, h.alerted = time.Time{}, false
+		h.recordReading(h.now(), load, res.Limit, false)
 		return res
 	}
 	res.Breached = true
@@ -185,6 +227,7 @@ func (h *HostLoadCheck) Check() HostLoadResult {
 	if h.since.IsZero() {
 		h.since = now
 	}
+	h.recordReading(now, load, res.Limit, true)
 	if now.Sub(h.since) < time.Duration(cfg.EffectiveMinutes())*time.Minute || h.alerted {
 		return res
 	}
@@ -199,10 +242,46 @@ func (h *HostLoadCheck) Check() HostLoadResult {
 		h.Alert("Host load high: Automata may be slowed", hostLoadMessage(res, cfg, h.now().Sub(h.since)))
 	}
 	res.Alerted = true
-	if cfg.EffectiveMode() == HostLoadModeReap {
+	if mode == HostLoadModeReap {
 		res.Reaped = h.reapEnded(sessions)
+		h.orphansReaped += res.Reaped.Count
 	}
 	return res
+}
+
+// recordReading stores the last successful reading for Status(). Call
+// h.mu held.
+func (h *HostLoadCheck) recordReading(at time.Time, load, limit float64, breached bool) {
+	h.lastCheckAt = at
+	h.lastLoad = load
+	h.lastLimit = limit
+	h.lastBreached = breached
+}
+
+// Status is the check's read-only snapshot for the monitoring surfaces (see
+// HostLoadStatus). It is safe for concurrent use and never blocks meaningfully:
+// it reads the check's own state only.
+func (h *HostLoadCheck) Status() HostLoadStatus {
+	if h == nil {
+		return HostLoadStatus{}
+	}
+	mode := ""
+	if h.Config != nil {
+		mode = string(h.Config().EffectiveMode())
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.statusMode != "" {
+		mode = h.statusMode
+	}
+	return HostLoadStatus{
+		Mode:          mode,
+		LastCheckAt:   h.lastCheckAt,
+		LastLoad:      h.lastLoad,
+		LastLimit:     h.lastLimit,
+		Breached:      h.lastBreached,
+		OrphansReaped: h.orphansReaped,
+	}
 }
 
 // hostLoadMessage renders the alert text.

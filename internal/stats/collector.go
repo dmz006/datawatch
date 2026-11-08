@@ -164,6 +164,22 @@ type SystemStats struct {
 	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
 	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
 
+	// Host load check (autonomous.host_load_alert): the effective mode,
+	// the last successful load reading against its threshold (multiple x
+	// core count), whether that reading is over the threshold (a breach
+	// streak in progress), when the last reading was, and how many
+	// leftover processes the reaper has ended for ended sessions since
+	// the check started (reap mode; the alert fires on the same tick as
+	// the reap). Populated in the autonomous stats callback from the
+	// check's Status (); zero/empty until the first successful reading
+	// after startup, and Mode stays "off" while disabled.
+	HostLoadMode          string    `json:"host_load_mode,omitempty"`
+	HostLoadLast          float64   `json:"host_load_last,omitempty"`
+	HostLoadLimit         float64   `json:"host_load_limit,omitempty"`
+	HostLoadBreached      bool      `json:"host_load_breached"`
+	HostLoadLastCheckAt   time.Time `json:"host_load_last_check_at,omitempty"`
+	HostLoadOrphansReaped int       `json:"host_load_orphans_reaped,omitempty"`
+
 	// Burn guard (usage.burn_guard): ladder state, projection and counters.
 	BurnGuardState         string  `json:"burn_guard_state,omitempty"`
 	BurnGuardLevel         int     `json:"burn_guard_level,omitempty"`
