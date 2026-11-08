@@ -157,7 +157,7 @@ By default, sub-agents run independently and survive their parent. Two modes:
 - **Channel:** `new: kill_children_recursive=true: task description`
 - **PWA:** "Kill children recursively" checkbox in the new session form.
 
-**Leftover processes (session-end reap):** when a session ends for any reason, the daemon ends processes the worker started and left running. A process is matched only by evidence read from `/proc` (cwd, executable or script inside the session worktree or scratch folder, ancestry to the session, or the session id in its environment), never by name, and is ended by exact pid after the evidence and start time are re-checked. The result is a `session_end_reap` decision on the task and a `session_end_reap` audit entry. See [operations](operations.md#processes-a-session-leaves-behind).
+**Leftover processes (session-end reap):** when a session ends for any reason, the daemon ends processes the worker started and left running. A process is matched only by evidence read from `/proc` (cwd, executable or script inside the session worktree or scratch folder, ancestry to the session, or the session id in its environment), never by name, and is ended by exact pid after the evidence and start time are re-checked. The result is a `session_end_reap` decision on the task and a `session_end_reap` audit entry (the decision only when the session is bound to a task; nothing is written when nothing was found). Processes that survive their signal are only counted as `survivors` in the audit entry; their pids and commands are not recorded, so check for them by hand. See [operations](operations.md#processes-a-session-leaves-behind).
 
 **Viewing children:**
 
