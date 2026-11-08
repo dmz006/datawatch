@@ -360,11 +360,28 @@ func TestNewestReleaseTagComparesNumerically(t *testing.T) {
 	for _, tag := range []string{"v1.9.0", "v1.10.0", "v1.9.5", "release-notes"} {
 		validatorGit(t, fx.dir, "tag", tag, "HEAD~1")
 	}
-	got, ok, err := newestReleaseTag(context.Background(), fx.dir)
+	got, ok, err := newestReleaseTag(context.Background(), fx.dir, "")
 	if err != nil || !ok {
 		t.Fatalf("newestReleaseTag = (%q, %v, %v)", got, ok, err)
 	}
 	if got != "1.10.0" {
 		t.Fatalf("newestReleaseTag = %q, want 1.10.0", got)
+	}
+}
+
+// A local tag of the version being released, made by the run itself, is not
+// the previous release: excluding it keeps the one-step check passing.
+func TestValidateReleaseBumpExcludeTagSkipsOwnLocalTag(t *testing.T) {
+	fx := newValidatorFixture(t)
+	validatorGit(t, fx.dir, "tag", "v1.2.4")
+
+	in := fx.input()
+	if res := ValidateReleaseBump(context.Background(), in); res.Pass {
+		t.Fatal("without ExcludeTag the own local tag should fail one_step_above_last_tag")
+	}
+	in.ExcludeTag = "v1.2.4"
+	res := ValidateReleaseBump(context.Background(), in)
+	if !res.Pass {
+		t.Fatalf("with ExcludeTag the validator should pass: %+v", res.Checks)
 	}
 }

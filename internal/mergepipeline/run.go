@@ -110,6 +110,7 @@ type Runner struct {
 	// the release-version step fails rather than guess at a path.
 	VersionFiles  []string
 	ChangelogFile string // default CHANGELOG.md
+	ReadmeFile    string // default README.md; read by validate-release-bump
 	ScriptDir     string // relative to Dir; default scripts
 	// ReleaseSize is how much this run's release raises the version. Empty
 	// means a patch release.
@@ -140,6 +141,13 @@ func (r *Runner) changelog() string {
 		return r.ChangelogFile
 	}
 	return DefaultChangelogFile
+}
+
+func (r *Runner) readme() string {
+	if r.ReadmeFile != "" {
+		return r.ReadmeFile
+	}
+	return defaultReadmeFile
 }
 
 func (r *Runner) scriptDir() string {
@@ -549,6 +557,8 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 		return r.insertChangelog(v, s.req.Title)
 	case ActionCommitReleaseBump:
 		return s.commitBump(ctx)
+	case ActionValidateReleaseBump:
+		return s.validateReleaseBump(ctx)
 	case ActionTagRelease, ActionPushRelease, ActionDeployLatest:
 		return s.ship(ctx, step.Action)
 	}
@@ -744,6 +754,40 @@ func (s *runState) commitBump(ctx context.Context) (string, error) {
 	return "committed " + msg, nil
 }
 
+// validateReleaseBump runs the release-bump validator over the repository as
+// the earlier steps left it: the bump is committed and the release tag is
+// made, but nothing is pushed yet. The result is stored on the run record
+// whether it passes or not. A failing check fails the step and names every
+// check that failed, so the push step never runs.
+func (s *runState) validateReleaseBump(ctx context.Context) (string, error) {
+	exclude := ""
+	if s.run.ReleaseVersion != "" {
+		exclude = "v" + s.run.ReleaseVersion
+	}
+	res := ValidateReleaseBump(ctx, ValidateInput{
+		Dir:           s.r.Dir,
+		VersionFiles:  s.r.versionFiles(),
+		ChangelogFile: s.r.changelog(),
+		ReadmeFile:    s.r.readme(),
+		ExcludeTag:    exclude,
+	})
+	s.run.Validator = &res
+	var failed []string
+	var lines []string
+	for _, c := range res.Checks {
+		if c.Pass {
+			continue
+		}
+		failed = append(failed, c.Name)
+		lines = append(lines, c.Name+": "+c.Detail)
+	}
+	if len(failed) > 0 {
+		detail := "release bump validator failed; nothing was pushed\n" + strings.Join(lines, "\n")
+		return detail, fmt.Errorf("release bump validator failed: %s", strings.Join(failed, ", "))
+	}
+	return fmt.Sprintf("release bump validated: all %d checks passed for v%s", len(res.Checks), res.Version), nil
+}
+
 func (s *runState) ship(ctx context.Context, action string) (string, error) {
 	if s.r.Ship == nil {
 		return "", errors.New("no ship runner is wired, so the step was not run")
@@ -901,6 +945,7 @@ func (s *runState) redoFromRebase(ctx context.Context) (string, error) {
 	s.ownCommits = map[string]bool{}
 	s.foreignMain = false
 	s.run.ReleaseVersion = ""
+	s.run.Validator = nil
 	s.pushReleaseOK = false
 	notes = append(notes, "brought "+main+" up to "+remote+"/"+main+" at "+shortSHA(head),
 		"the run starts again from the rebase step")

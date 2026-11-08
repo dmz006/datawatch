@@ -93,3 +93,10 @@ func TestEffectiveOnFailure(t *testing.T) {
 		t.Error("continue lost")
 	}
 }
+
+func TestValidateReleaseBumpActionIsAccepted(t *testing.T) {
+	d := Definition{Steps: []Step{{Name: "validate", Kind: KindCustom, Action: ActionValidateReleaseBump}}}
+	if err := d.Validate(); err != nil {
+		t.Fatalf("validate_release_bump rejected: %v", err)
+	}
+}

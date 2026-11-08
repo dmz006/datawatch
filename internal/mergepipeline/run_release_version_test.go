@@ -37,7 +37,7 @@ func assertBothVersions(t *testing.T, dir, want string) {
 func TestPatchRunWritesNextPatchAndRecordsIt(t *testing.T) {
 	dir := newMergeRepo(t)
 	rec := &memRecorder{}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: rec}
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: rec}
 	res, err := r.Run(context.Background(), RunRequest{Title: "patch release", Branches: []string{"feature"}})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -54,7 +54,7 @@ func TestPatchRunWritesNextPatchAndRecordsIt(t *testing.T) {
 func TestMinorRunWritesNextMinorWithPatchZero(t *testing.T) {
 	dir := newMergeRepo(t)
 	rec := &memRecorder{}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: rec,
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: rec,
 		ReleaseSize: ReleaseSizeMinor}
 	if _, err := r.Run(context.Background(), RunRequest{Title: "minor release", Branches: []string{"feature"}}); err != nil {
 		t.Fatalf("run: %v", err)
@@ -70,7 +70,7 @@ func TestMinorRunWritesNextMinorWithPatchZero(t *testing.T) {
 func TestSecondRunComputesFromRaisedMainVersion(t *testing.T) {
 	dir := newMergeRepo(t)
 	first := &memRecorder{}
-	r1 := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: first}
+	r1 := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: first}
 	if _, err := r1.Run(context.Background(), RunRequest{Title: "first", Branches: []string{"feature"}}); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestSecondRunComputesFromRaisedMainVersion(t *testing.T) {
 	runGit(t, dir, "checkout", "-q", "main")
 
 	second := &memRecorder{}
-	r2 := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: second}
+	r2 := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Recorder: second}
 	if _, err := r2.Run(context.Background(), RunRequest{Title: "second", Branches: []string{"feature2"}}); err != nil {
 		t.Fatalf("second run: %v", err)
 	}

@@ -15,7 +15,7 @@ func TestDefaultIsValid(t *testing.T) {
 func TestDefaultOrder(t *testing.T) {
 	want := []string{"rebase-onto-main", "check-branch-versions", "check-internal-refs", "merge-branches",
 		"set-release-version", "insert-changelog-heading", "commit-release-bump",
-		"tag-release", "push-release", "deploy-latest"}
+		"tag-release", "validate-release-bump", "push-release", "deploy-latest"}
 	var got []string
 	for _, s := range DefaultDefinition().Steps {
 		got = append(got, s.Name)
@@ -59,5 +59,17 @@ func TestDefaultRebaseStepIsFirstAndStopsOnFailure(t *testing.T) {
 	if first.Name != "rebase-onto-main" || first.Kind != KindCustom || first.Action != ActionRebaseOntoMain ||
 		first.EffectiveOnFailure() != OnFailureStop || first.Timeout != 5*time.Minute {
 		t.Fatalf("first step %+v", first)
+	}
+}
+
+func TestDefaultValidateStepSitsBeforePushAndStops(t *testing.T) {
+	var step Step
+	for _, s := range DefaultDefinition().Steps {
+		if s.Name == "validate-release-bump" {
+			step = s
+		}
+	}
+	if step.Action != ActionValidateReleaseBump || step.EffectiveOnFailure() != OnFailureStop {
+		t.Fatalf("validate step = %+v, want action %s with on_failure stop", step, ActionValidateReleaseBump)
 	}
 }

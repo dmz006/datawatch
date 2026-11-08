@@ -87,7 +87,7 @@ func TestMainMovedRedoComputesVersionFromMovedMain(t *testing.T) {
 	rec := &memRecorder{}
 	ship := &movingShip{moves: 1}
 	ship.onMove = func() { landOnRemoteMain(t, bare, "1.4.0") }
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
 
 	res, err := r.Run(context.Background(), RunRequest{Title: "moved", Branches: []string{"feature"}})
 	if err != nil {
@@ -140,7 +140,7 @@ func TestMainMovedRedoFailsAfterThreeRedos(t *testing.T) {
 	withOrigin(t, dir)
 	rec := &memRecorder{}
 	ship := &movingShip{moves: 100}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReleaseValidator()), VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
 
 	res, err := r.Run(context.Background(), RunRequest{Title: "never settles", Branches: []string{"feature"}})
 	if err == nil {

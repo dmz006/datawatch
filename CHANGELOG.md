@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **The merge pipeline checks the release bump before it pushes.** A new built-in step, `validate-release-bump` (action `validate_release_bump`), runs between `tag-release` and `push-release` in the default pipeline. It runs the five release-bump checks: version files agree, the changelog's first heading is the release, the release is one step above the newest local tag, its tag is free on the remote, and the README's `Current release:` line names it. A failing check fails the step and names every check that failed, so `push-release` never runs. The result is stored on the run record as `validator` (`pass`, `version`, `checked_at`, `checks`).
+  - **Migration:** a release whose README `Current release:` line does not name the new version now stops before the push. Update that line on the branch being merged, as release commits already do.
+  - **Known limit:** the pipeline does not write the README line itself; set-release-version still only writes the version files.
+
 - **Merge runs into the same repository are serialized by a merge lock.** Two merge runs can no longer ship into one base repository at the same time. A run takes a lock on its repository before it starts and releases it when it ends, and a second run is refused with a plain reason that names the run holding the lock.
   - **How it shows up:** while a merge runs, the merge status shows the held lock (`Merge lock held: run <id> for Automaton <id> (branches …) since <time>`). A refused run's reason says the lock is held by the named run. The lock is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a daemon restart, and a resumed run takes its own lock back.
   - **Migration:** none. If `merge-locks.json` is unreadable or corrupt, merge runs are refused rather than run unlocked; repair or restore that file in the daemon store directory.

@@ -51,6 +51,7 @@ const (
 	ActionInsertChangelog     = "insert_changelog_heading"
 	ActionCommitReleaseBump   = "commit_release_bump"
 	ActionTagRelease          = "tag_release"
+	ActionValidateReleaseBump = "validate_release_bump"
 	ActionPushRelease         = "push_release"
 	ActionDeployLatest        = "deploy_latest"
 )
@@ -59,7 +60,7 @@ const (
 func BuiltinActions() []string {
 	return []string{ActionRebaseOntoMain, ActionCheckBranchVersions, ActionMergeBranches, ActionSetReleaseVersion,
 		ActionInsertChangelog, ActionCommitReleaseBump, ActionTagRelease,
-		ActionPushRelease, ActionDeployLatest}
+		ActionValidateReleaseBump, ActionPushRelease, ActionDeployLatest}
 }
 
 // Step is one stage of a merge pipeline. Exactly one of Command and Action is

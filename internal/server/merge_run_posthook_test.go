@@ -73,8 +73,20 @@ func newPostShipRepo(t *testing.T) string {
 	}
 	postShipGit(t, dir, "add", "-A")
 	postShipGit(t, dir, "commit", "-q", "-m", "base")
+	// The base is a published 1.2.3 release on an origin remote, so the
+	// release-bump validator has a previous tag and a remote to check.
+	postShipGit(t, dir, "tag", "v1.2.3")
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	postShipGit(t, dir, "init", "-q", "--bare", origin)
+	postShipGit(t, dir, "remote", "add", "origin", origin)
+	postShipGit(t, dir, "push", "-q", "origin", "main", "v1.2.3")
 	postShipGit(t, dir, "checkout", "-q", "-b", "feature")
 	if err := os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The branch carries the README's Current release line for the release it
+	// ships, which the release-bump validator checks.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# App\n\nCurrent release: v1.2.4\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	postShipGit(t, dir, "add", "-A")
