@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -895,7 +897,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 	resolve := capacityResolver(httpServer.InferenceRegistry, httpServer.ComputeRegistry)
 	keys, choices := capacityManagerKeys(resolve)
-	amgr.SetCapacity(led, keys)
+	// The admission placement gate: before the load step happens, the load
+	// asks the planner where a missing model may go and applies the live
+	// missing_model policy — refuse, auto-load, or ask the operator (nil
+	// advisor = gate skipped, status quo). Wired through SetCapacity, the
+	// existing admission wiring, not a separate setter.
+	var advisor autonomous.PlacementAdvisor
+	if amgr != nil {
+		advisor = newPlacementAdvisor(cfg, httpServer)
+	}
+	amgr.SetCapacity(led, keys, advisor)
 	// An LLM entry edit (API, MCP, CLI or config reload) re-plans the waiters
 	// at once; the pool sync ticker covers compute registry changes.
 	replan := replanOnPlacementChange(led, httpServer.InferenceRegistry, httpServer.ComputeRegistry)
@@ -908,13 +919,6 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
-	// The admission placement gate: before the load step happens, the load
-	// asks the planner where a missing model may go and applies the live
-	// missing_model policy — refuse, auto-load, or ask the operator (nil
-	// advisor = gate skipped, status quo).
-	if amgr != nil {
-		amgr.SetPlacementAdvisor(newPlacementAdvisor(cfg, httpServer))
-	}
 	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
 	amgr.SetPatternsStatus(mgr.RateLimitGuardStatus)
@@ -1489,12 +1493,14 @@ func newPlacementAdvisor(cfg *config.Config, httpServer *server.HTTPServer) *pla
 	}
 }
 
-// Plan implements autonomous.PlacementAdvisor. A single-node hosting entry is
-// not relevant: placement only adjudicates between nodes, so the status-quo
-// single-node load path never asks it.
-func (a *placementAdvisor) Plan(backend, model string) autonomous.PlacementPlan {
+// Plan implements autonomous.PlacementAdvisor. It hands the live config, the
+// inference and compute registries and the observer's latest payloads to the
+// pure compute planner and returns its verdict. A single-node entry is not
+// skipped: even with one candidate the planner applies the pin and headroom
+// checks and returns a refusal when the node lacks the model or the headroom.
+func (a *placementAdvisor) Plan(backend, model, pinnedTo string) autonomous.PlacementPlan {
 	entry := a.entry(backend, model)
-	if len(entry.ComputeNodes) < 2 {
+	if len(entry.ComputeNodes) == 0 {
 		return autonomous.PlacementPlan{}
 	}
 	cands, ok := a.candidates(entry.ComputeNodes, model)
@@ -1511,13 +1517,14 @@ func (a *placementAdvisor) Plan(backend, model string) autonomous.PlacementPlan 
 		diskGB = config.ComputePlacementDefaultDiskHeadroomGB
 	}
 	plan := compute.PlaceMissingModel(compute.PlacementRequest{
-		Model:             nodeModelName(model),
-		Consumer:          placementConsumer,
-		MemHeadroomPct:    memPct,
-		DiskHeadroomGB:    diskGB,
-		ModelSizeGB:       cp.AssumeModelSizeGB,
-		Now:               a.now(),
-		Candidates:        cands,
+		Model:          nodeModelName(model),
+		Consumer:       placementConsumer,
+		PinnedTo:       pinnedTo,
+		MemHeadroomPct: memPct,
+		DiskHeadroomGB: diskGB,
+		ModelSizeGB:    cp.AssumeModelSizeGB,
+		Now:            a.now(),
+		Candidates:     cands,
 	})
 	return autonomous.PlacementPlan{
 		Relevant: true,
@@ -1560,6 +1567,11 @@ func (a *placementAdvisor) candidates(names []string, model string) ([]compute.P
 		if n.NodePinnedModel != "" && strings.EqualFold(n.NodePinnedModel, bare) {
 			c.ServesModel = true
 		}
+		// Also check the node's live model list (/api/tags): a node that has
+		// the model loaded serves it even when it is not pinned to it.
+		if !c.ServesModel && nodeServesModel(n, bare) {
+			c.ServesModel = true
+		}
 		if pr != nil {
 			peerName := n.Name
 			if n.ObserverPeer != "" {
@@ -1583,4 +1595,46 @@ func (a *placementAdvisor) candidates(names []string, model string) ([]compute.P
 		return nil, false
 	}
 	return out, true
+}
+
+// nodeServesModel reports whether the node's live model list (/api/tags)
+// includes the model. A 5s timeout bounds the probe; any error (unreachable,
+// timeout, decode) reports false: the planner treats the model as missing and
+// the load step makes it resident.
+func nodeServesModel(n *compute.Node, model string) bool {
+	if n == nil || n.Address == "" || model == "" {
+		return false
+	}
+	base := n.Address
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "http://" + base
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/api/tags", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return false
+	}
+	var tags struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return false
+	}
+	for _, m := range tags.Models {
+		if strings.EqualFold(m.Name, model) {
+			return true
+		}
+	}
+	return false
 }

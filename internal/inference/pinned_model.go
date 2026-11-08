@@ -37,6 +37,13 @@ type PinResolver struct {
 
 // NewPinResolver builds a resolver that reads node settings through
 // lookup. compute.Registry.Get matches the lookup signature directly.
+//
+// The placement gate in the autonomous package (admitPreferring) runs before
+// the lease and ensures the model is resident on the leased node. Once the
+// lease is granted, ResolveModel here is called with the lease-named node
+// and the requested model; it returns the pinned model on that node (or the
+// requested model if the node has no pin). No swap is needed because the
+// gate already placed the model where the session will run.
 func NewPinResolver(lookup func(name string) (*compute.Node, error)) *PinResolver {
 	return &PinResolver{lookup: lookup}
 }

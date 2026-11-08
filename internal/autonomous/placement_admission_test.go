@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
@@ -16,9 +17,13 @@ import (
 type fakePlacementAdvisor struct {
 	plan    PlacementPlan
 	timeout time.Duration
+	gotPin  string // records the pinnedTo argument from the last Plan call
 }
 
-func (f *fakePlacementAdvisor) Plan(backend, model string) PlacementPlan { return f.plan }
+func (f *fakePlacementAdvisor) Plan(backend, model, pinnedTo string) PlacementPlan {
+	f.gotPin = pinnedTo
+	return f.plan
+}
 
 func (f *fakePlacementAdvisor) AskTimeout() time.Duration {
 	if f.timeout <= 0 {
@@ -123,17 +128,12 @@ func TestPlacementAutoLoadReroutesToChosenNode(t *testing.T) {
 	beta := newFakeOllamaNode(t, fakeNodeOpts{Resident: true})
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "beta", Policy: config.ComputePlacementAutoLoad}, 0)
-	p.rig.admit(t)
-	if got := p.rig.led.LeaseOf(p.rig.task.ID); got == nil || got.Node != "alpha" {
-		t.Fatalf("admission should land on alpha first, got %+v", got)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := p.rig.load(ctx); err != nil {
+	err := p.rig.admitErr(t)
+	if err != nil {
 		t.Fatalf("auto_load reroute to beta must succeed, got %v", err)
 	}
 	if got := p.rig.led.LeaseOf(p.rig.task.ID); got == nil || got.Node != "beta" {
-		t.Fatalf("after the reroute the lease must be on beta, got %+v", got)
+		t.Fatalf("the lease must be on beta, got %+v", got)
 	}
 	if _, loads := alpha.counts(); loads != 0 {
 		t.Errorf("the leased-but-rejected alpha must never be asked to load, got %d loads", loads)
@@ -150,10 +150,7 @@ func TestPlacementAutoLoadRerouteWithNoNodeLeftFails(t *testing.T) {
 	beta := newFakeOllamaNode(t, fakeNodeOpts{Resident: true})
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "gamma", Policy: config.ComputePlacementAutoLoad}, 0)
-	p.rig.admit(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err := p.rig.load(ctx)
+	err := p.rig.admitErr(t)
 	if err == nil {
 		t.Fatal("with no reroute target left the load must fail")
 	}
@@ -171,10 +168,7 @@ func TestPlacementRefusePolicyStopsBeforeLoad(t *testing.T) {
 	refused := []string{"alpha: no room for the model (mem)", "beta: no room for the model (disk)"}
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "", Policy: config.ComputePlacementRefuse, Refused: refused}, 0)
-	p.rig.admit(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err := p.rig.load(ctx)
+	err := p.rig.admitErr(t)
 	if !IsPlacementRefused(err) {
 		t.Fatalf("the refuse policy must fail the start with a placement refusal, got %v", err)
 	}
@@ -207,12 +201,14 @@ func TestPlacementAskApproveLoads(t *testing.T) {
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "beta", Policy: config.ComputePlacementAsk}, 0)
 	p.withQuestionStore(t)
-	p.rig.admit(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- p.rig.load(ctx) }()
+	go func() {
+		task := p.rig.task
+		done <- p.rig.m.admit(ctx, p.rig.prd, &task, "pi", nodeLoadModel, capacity.RoleWorker)
+	}()
 
 	p.answerFirstPlacementQuestion(t, placementOptionLoad)
 	if err := <-done; err != nil {
@@ -235,12 +231,14 @@ func TestPlacementAskRefuseStops(t *testing.T) {
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "beta", Policy: config.ComputePlacementAsk}, 0)
 	p.withQuestionStore(t)
-	p.rig.admit(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- p.rig.load(ctx) }()
+	go func() {
+		task := p.rig.task
+		done <- p.rig.m.admit(ctx, p.rig.prd, &task, "pi", nodeLoadModel, capacity.RoleWorker)
+	}()
 
 	p.answerFirstPlacementQuestion(t, placementOptionRefuse)
 	err := <-done
@@ -276,12 +274,9 @@ func TestPlacementAskTimeoutWithholdsAndDeclines(t *testing.T) {
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "beta", Policy: config.ComputePlacementAsk}, 300*time.Millisecond)
 	p.withQuestionStore(t)
-	p.rig.admit(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	start := time.Now()
-	err := p.rig.load(ctx)
+	err := p.rig.admitErr(t)
 	elapsed := time.Since(start)
 	if !IsPlacementRefused(err) {
 		t.Fatalf("a timed-out ask must decline the load, got %v", err)
@@ -306,15 +301,38 @@ func TestPlacementAskWithoutStoreDeclines(t *testing.T) {
 	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
 		PlacementPlan{Relevant: true, Chosen: "beta", Policy: config.ComputePlacementAsk}, 0)
 	// No question store wired: decisionStore stays nil.
-	p.rig.admit(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	err := p.rig.load(ctx)
+	err := p.rig.admitErr(t)
 	if !IsPlacementRefused(err) {
 		t.Fatalf("an ask with no question channel must decline, got %v", err)
 	}
 	if _, loads := alpha.counts(); loads != 0 {
 		t.Errorf("no load may be attempted, got %d loads", loads)
+	}
+}
+
+// TestPlacementPinsTaskNode: the gate passes the task's leased node as the
+// pin to the planner, so the planner can honour an existing placement.
+func TestPlacementPinsTaskNode(t *testing.T) {
+	alpha := newFakeOllamaNode(t, fakeNodeOpts{Resident: true})
+	beta := newFakeOllamaNode(t, fakeNodeOpts{Resident: true})
+	p := newPlacementRig(t, []string{"alpha", "beta"}, map[string]*fakeOllamaNode{"alpha": alpha, "beta": beta},
+		PlacementPlan{Relevant: true, Chosen: "alpha", Policy: config.ComputePlacementAutoLoad}, 0)
+	// Set the task's ComputeNode to "alpha" — this is the pin.
+	p.rig.task.ComputeNode = "alpha"
+	// The fake advisor ignores the pin and returns its fixed plan (alpha).
+	p.rig.admit(t)
+	// Verify the pin was passed to the planner.
+	adv := p.rig.m.getPlacementAdvisor()
+	if adv == nil {
+		t.Fatal("no advisor wired")
+	}
+	fake := adv.(*fakePlacementAdvisor)
+	if fake.gotPin != "alpha" {
+		t.Fatalf("the gate should pass the task's leased node as the pin, got %q", fake.gotPin)
+	}
+	// The lease should land on alpha (the planner's choice, which matches the pin).
+	if got := p.rig.led.LeaseOf(p.rig.task.ID); got == nil || got.Node != "alpha" {
+		t.Fatalf("the lease should land on alpha, got %+v", got)
 	}
 }
 

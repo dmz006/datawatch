@@ -179,6 +179,14 @@ func (r *nodeLoadRig) admit(t *testing.T) {
 	}
 }
 
+// admitErr runs the admission and returns the error (nil on success).
+// With a placement advisor the gate, load and lease all happen here.
+func (r *nodeLoadRig) admitErr(t *testing.T) error {
+	t.Helper()
+	task := r.task
+	return r.m.admit(context.Background(), r.prd, &task, "pi", nodeLoadModel, capacity.RoleWorker)
+}
+
 // load runs the load step the executor runs after admit.
 func (r *nodeLoadRig) load(ctx context.Context) error {
 	task := r.task
