@@ -191,10 +191,12 @@ func taskForTemplate(story Story, def config.TaskTemplateDef, baseDepends []stri
 		Kind:               def.Kind,
 		ReadOnly:           def.ReadOnly,
 		VerificationScript: def.VerificationScript,
-		ReportPath:         reportPathForTemplate(def),
-		FilesPlanned:       splitTemplateFiles(def.Files),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		// B124 exemption: a template task with no script states why here.
+		VerificationScriptReason: def.VerificationScriptReason,
+		ReportPath:               reportPathForTemplate(def),
+		FilesPlanned:             splitTemplateFiles(def.Files),
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 }
 

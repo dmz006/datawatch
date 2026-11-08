@@ -3997,7 +3997,9 @@ autonomous:
     enabled: true
     # Operator template definitions (empty = the built-in pack,
     # unmodified). {id, title, spec, files, kind, read_only, depends_on,
-    # applies_when}. verification_script must be one repo-relative script
+    # applies_when, verification_script_reason}. verification_script_reason
+    # is the B124 exemption copied onto a template task that has no script
+    # (note templates carry one). verification_script must be one repo-relative script
     # file (for example scripts/verify.sh), never a command string such as
     # "go build ./... && go test ./...": the PUT that carries it is refused,
     # and a template that still carries one is never applied.

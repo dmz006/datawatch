@@ -531,3 +531,42 @@ func TestFinalGateTemplateReportPathBadUserTemplateRefused(t *testing.T) {
 		t.Fatal("valid user template not instantiated")
 	}
 }
+
+// TestNoteTemplateExemptionReason asserts every built-in template of Kind
+// note carries a non-empty B124 exemption reason, and that a task built
+// from each one passes the structural plan check's verification rule
+// (no missing_verification finding), since a note changes no files and
+// has no script to verify.
+func TestNoteTemplateExemptionReason(t *testing.T) {
+	slots := config.TaskTemplateSlots{
+		Feature:   "task templates",
+		Files:     "internal/autonomous/task_templates.go",
+		FilesList: "- internal/autonomous/task_templates.go",
+	}
+	story := Story{ID: "s1", PRDID: "p1", Status: StoryPending}
+	noteCount := 0
+	for _, def := range BuiltInTaskTemplates() {
+		if def.Kind != "note" {
+			continue
+		}
+		noteCount++
+		if strings.TrimSpace(def.VerificationScriptReason) == "" {
+			t.Errorf("note template %q has empty VerificationScriptReason", def.ID)
+		}
+		rendered := RenderTaskTemplateDef(def, slots)
+		task := taskForTemplate(story, rendered, nil, map[string]string{})
+		if task.VerificationScriptReason == "" {
+			t.Errorf("note template %q: task lost VerificationScriptReason", def.ID)
+		}
+		story.Tasks = append(story.Tasks, task)
+	}
+	if noteCount == 0 {
+		t.Fatal("expected at least one built-in note template")
+	}
+	report := CheckPlanStructure(&PRD{ID: "p1"}, []Story{story})
+	for _, f := range report.Findings {
+		if f.Kind == FindingMissingVerification {
+			t.Errorf("unexpected missing_verification finding on note task %s: %s", f.TaskID, f.Detail)
+		}
+	}
+}
