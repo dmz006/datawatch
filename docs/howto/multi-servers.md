@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "per-tab picker", "switching servers", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
   - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
@@ -146,7 +146,34 @@ Every main view (Sessions, Alerts, Automata, Observer, Dashboard) has a
 | **Local** | Show only this daemon's data (default) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
-The active chip persists in `state.activeServer` for the duration of the session.
+The active chip persists in `state.activeServer` for the duration of the
+session.
+
+**Selecting a chip acts on the page you are on, immediately.** Choosing a
+federated host re-renders the tab you are currently looking at — Sessions,
+Alerts, Automata, Observer or Dashboard — in place, against that server:
+the **Showing: \<name\>** line above the view updates to the host you
+picked and the list/content becomes that host's data, without you leaving
+and re-opening the view. Picking **Local** or **All** takes the same page
+back to that view the same way.
+
+> **Confirm this on your setup before relying on it.** The in-place fix is
+> recorded under **[Unreleased] → Fixed** in the
+> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry notes
+> that no live verification had been run when it was recorded; the
+> 2026-11-08 code change is also not present in this worktree's
+> `internal/server/web/app.js` (the branch carries only the changelog entry
+> and these docs). On this source tree a chip change already updates the
+> **Showing:** line and the connection, re-fetches the Sessions list and
+> re-renders the Alerts view (the reconnect resync does that
+> unconditionally — the Alerts picker behaviour fixed in v8.73.5, 2026-10-08),
+> so the entry's tab list — which includes Alerts — is best read as the
+> operator's report of which pages didn't follow the chip, not a per-tab
+> audit of this tree. Confirm the in-place switch on a two-host setup, and
+> check the **Automata** tab's **Automation** sub-tab separately: nothing in
+> the change confirms that sub-tab re-renders on a chip change yet. The full
+> checklist is in [operations.md](../operations.md), under
+> "Still to review (operator)" in the multi-server section.
 
 Behaviours worth knowing:
 

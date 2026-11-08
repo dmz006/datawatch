@@ -2874,7 +2874,7 @@ servers:
 **Monitoring:**
 - `GET /api/servers` — lists all configured remotes with health status
 - `GET /api/sessions/aggregated` — sessions from all remotes, tagged with `server` field
-- Web UI server picker (Settings → Comms → Servers) switches between instances
+- Web UI server picker (Settings → Comms → Servers) switches between instances — and with the in-place fix (recorded in [CHANGELOG.md](../CHANGELOG.md) [Unreleased] → Fixed, found 2026-11-08, live verification still pending; the code change itself is not present in this worktree's `internal/server/web/app.js`) the switch takes effect on the page you're on: selecting a federated-host chip re-renders the current tab (Sessions, Alerts, Automata, Observer, Dashboard) in place against that instance and updates its "Showing: <name>" line, with **All** and **Local** returning the page the same way. On this source tree a chip change already updates the "Showing:" line and the connection, re-fetches the Sessions list and re-renders the Alerts view (the reconnect resync — the Alerts picker behaviour fixed in v8.73.5, 2026-10-08 — does that unconditionally), so read the entry's tab list as the operator's report of which pages didn't follow the chip, not a per-tab audit
 
 **Troubleshooting:**
 - If a remote is unreachable, `list` skips it (5s timeout per server)
@@ -2882,7 +2882,14 @@ servers:
 - Check remote health: `curl http://remote:8080/healthz`
 - Verify token: proxy injects `Authorization: Bearer <token>` on all forwarded requests
 
-See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup and [architecture.md](architecture.md#proxy-mode-architecture) for flow diagrams.
+See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup and [architecture.md](architecture.md#proxy-mode-architecture) for flow diagrams. PWA picker behaviour (chips, **Showing:** line, no-op re-selection) is described in [howto/multi-servers.md](howto/multi-servers.md#switch-between-servers-per-tab-picker).
+
+**Still to review (operator).** The in-place switch is client-side PWA behaviour (`selectServer` in `internal/server/web/app.js`), not a daemon contract, and it is not safe to assume it is in the build in use: the changelog entry for this fix explicitly records that no verification had been run before it was committed, and the code change is not present in this worktree's `internal/server/web/app.js` (the branch carries only the changelog entry and these docs). On this source tree a chip change already updates the **Showing:** line, the toasts and the connection state, re-fetches the Sessions list and re-renders the Alerts view (the reconnect resync — the Alerts picker behaviour fixed in v8.73.5, 2026-10-08 — does that unconditionally), so the entry's tab list (which includes Alerts) is best read as the operator's report of which pages didn't follow the chip, not a per-tab audit of this tree. The code fix's diff also does not confirm the **Automata** tab's **Automation** sub-tab re-renders on a chip change. Confirm each point on a two-host setup before relying on the in-place switch:
+
+1. **The fix is present in the build in use.** It lives in the PWA, not the daemon. A build whose `selectServer` predates the fix can still keep the previous server's data on the tab you're on until you navigate away and back — the tabs most worth watching, given the operator's report, are **Automata**, **Observer** and **Dashboard**; on this source tree **Sessions** and **Alerts** already follow the chip.
+2. **In-place switch on all five tabs.** Standing on each of Sessions, Alerts, Automata, Observer and Dashboard, pick a federated host and confirm the tab follows the chip in place — the **Showing: <name>** line names the host you picked and the list is that host's data — then confirm **All** and **Local** return the page the same way and that re-picking the active chip changes nothing (no refetch, no scroll/filter reset).
+3. **The Automata tab's Automation sub-tab.** Check separately that a chip change re-renders it too — nothing in the change's diff confirms that sub-tab.
+4. **Unreachable remote.** If a tab shows an error or no data after a chip change, the remote itself is the first thing to suspect — the picker surfaces the selected host's connection status and a "Back to <local hostname>" button (in the unreachable state) rather than leaving the previous server's data behind.
 
 ### Configure via Chat Commands
 
