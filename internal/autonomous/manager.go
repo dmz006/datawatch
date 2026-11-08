@@ -7315,6 +7315,65 @@ func (m *Manager) SetPRDKind(prdID, kind string) error {
 	return ErrPRDStale
 }
 
+// commitPRDSetting applies one operator setting to an Automaton under the same
+// revision check SetPRDKind uses: apply runs on the stored record and returns
+// the decision to log. The commit is retried while another writer moves the
+// revision, and ErrPRDStale is returned if every attempt loses the race.
+func (m *Manager) commitPRDSetting(prdID string, apply func(p *PRD) Decision) error {
+	for attempt := 0; attempt < kindSetAttempts; attempt++ {
+		rev, found := m.store.PRDRev(prdID)
+		if !found {
+			return fmt.Errorf("prd %q not found", prdID)
+		}
+		err := m.store.CommitPRDIfRev(prdID, rev, func(p *PRD) bool {
+			p.Decisions = append(p.Decisions, apply(p))
+			return true
+		})
+		if !errors.Is(err, ErrPRDStale) {
+			return err
+		}
+	}
+	return ErrPRDStale
+}
+
+// SetPRDReleaseSize sets the explicit release size of an Automaton: patch,
+// minor, major or none. An empty size clears it, so the size is resolved again
+// from the Automation, the project and the built-in default. An unknown size is
+// refused. The change is logged on the decision timeline.
+func (m *Manager) SetPRDReleaseSize(prdID, size string) error {
+	v, ok := NormalizeReleaseSize(size)
+	if !ok {
+		return fmt.Errorf("unknown release size %q: use patch, minor, major or none (empty clears)", strings.TrimSpace(size))
+	}
+	return m.commitPRDSetting(prdID, func(p *PRD) Decision {
+		from, to := p.ReleaseSize, v
+		if from == "" {
+			from = "derived"
+		}
+		if to == "" {
+			to = "derived"
+		}
+		p.ReleaseSize = v
+		return Decision{
+			At: time.Now(), Kind: "set_release_size", Actor: "operator",
+			Note: fmt.Sprintf("release size %s -> %s", from, to),
+		}
+	})
+}
+
+// SetPRDBreakingChange sets or clears the breaking-change flag of an
+// Automaton. A breaking change raises its release to the major approval mode,
+// so the flag is always logged on the decision timeline.
+func (m *Manager) SetPRDBreakingChange(prdID string, breaking bool) error {
+	return m.commitPRDSetting(prdID, func(p *PRD) Decision {
+		p.BreakingChange = breaking
+		return Decision{
+			At: time.Now(), Kind: "set_breaking_change", Actor: "operator",
+			Note: fmt.Sprintf("breaking change %t -> %t", !breaking, breaking),
+		}
+	})
+}
+
 // SetPRDDirs sets the per-PRD read-only and writable directory scope. Nil
 // leaves a list unchanged; an empty non-nil slice clears it.
 func (m *Manager) SetPRDDirs(prdID string, readDirs, writeDirs []string) error {

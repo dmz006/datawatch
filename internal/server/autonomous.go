@@ -2642,6 +2642,74 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_kind", "automaton", id, map[string]any{"kind": req.Kind})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Per-Automaton release size: patch, minor, major or none (empty clears, so
+	// the size is resolved again from the Automation, the project and the default).
+	case "set_release_size":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			ReleaseSize string `json:"release_size"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		size, ok := autonomous.NormalizeReleaseSize(req.ReleaseSize)
+		if !ok {
+			http.Error(w, unknownReleaseSizeMsg(req.ReleaseSize), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDReleaseSize(id, size)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_release_size", "automaton", id, map[string]any{"release_size": size})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
+	// Per-Automaton breaking-change flag: a breaking change raises its release
+	// to the major approval mode. The flag is required, so an omitted value never
+	// clears it by accident.
+	case "set_breaking_change":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			BreakingChange *bool `json:"breaking_change"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.BreakingChange == nil {
+			http.Error(w, "breaking_change is required (true or false)", http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDBreakingChange(id, *req.BreakingChange)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_breaking_change", "automaton", id, map[string]any{"breaking_change": *req.BreakingChange})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
 	// Record the Automaton's shipped state: release, merged time, merge commit
 	// and source. Status is never touched; the record is idempotent per commit.
 	case "shipped":
@@ -3944,6 +4012,9 @@ type automationReq struct {
 	// autonomous.auto_tags block; omitted (or null) on an update keeps the
 	// stored setting.
 	AutoTags *autonomous.AutoTagsOverride `json:"auto_tags,omitempty"`
+	// Milestone marks the Automation as a milestone arc; omitted on an update
+	// keeps the stored value.
+	Milestone *bool `json:"milestone,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -3963,6 +4034,7 @@ func automationInput(req automationReq) autonomous.AutomationInput {
 		VerificationModel:   req.VerificationModel,
 		VerificationEffort:  req.VerificationEffort,
 		AutoTags:            req.AutoTags,
+		Milestone:           req.Milestone,
 	}
 }
 
@@ -4953,6 +5025,11 @@ func derefString(p *string) string {
 // unknownKindMsg is the 400 text for a kind that is not feature, bug, other or maintenance.
 func unknownKindMsg(kind string) string {
 	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug, other or maintenance"
+}
+
+// unknownReleaseSizeMsg names the valid release sizes for a refused value.
+func unknownReleaseSizeMsg(size string) string {
+	return "unknown release size " + strconv.Quote(strings.TrimSpace(size)) + ": use patch, minor, major or none (empty clears)"
 }
 
 // ---- planning routing --------------------------------------------------
