@@ -51,3 +51,20 @@ file by this record.
 - Parity-issue draft: `docs/plans/parity-issues/2026-11-08-built-in-task-templates-verification.md`
   (which describes this version note as "a plain note-kind, no-files record ... the
   verifier has nothing to run against it and nothing to hold for it").
+
+## Re-recorded — 2026-11-08 14:07
+
+Recorded again for the operator's records, unchanged in substance: the release
+version of "Fix the built-in task templates so a decomposed Automaton's final gate
+and version note tasks pass the verifier instead" is **the next patch above main,
+resolved at merge time** by `scripts/merge-branches-bump-version.sh` (via
+`scripts/set-release-version.sh`, guarded by `scripts/check-merge-version.sh`).
+It is never a fixed number written into the tree.
+
+Still a note, not an edit: this re-recording adds no version number anywhere and
+leaves the version fields exactly as they are — `cmd/datawatch/main.go` and
+`internal/server/api.go` are untouched, and no `## vX.Y.Z` heading is added to
+`CHANGELOG.md`.
+
+(The original note from this story is already in this branch's history; this entry
+re-records it so the requirement is present in the working tree again.)
