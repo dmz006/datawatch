@@ -2874,7 +2874,7 @@ servers:
 **Monitoring:**
 - `GET /api/servers` — lists all configured remotes with health status
 - `GET /api/sessions/aggregated` — sessions from all remotes, tagged with `server` field
-- Web UI server picker (Settings → Comms → Servers) switches between instances
+- Web UI server picker (Settings → Comms → Servers) switches between instances — and the switch takes effect on the page you're on: selecting a federated-host chip re-renders the current tab (Sessions, Alerts, Automata, Observer, Dashboard) in place against that instance and updates its "Showing: <name>" line, with **All** and **Local** returning it the same way — no need to leave the view and re-open it (fixed 2026-11-08; before that the tab kept the previous server's data on Alerts, Automata, Observer and Dashboard until you navigated away and back)
 
 **Troubleshooting:**
 - If a remote is unreachable, `list` skips it (5s timeout per server)
@@ -2882,7 +2882,9 @@ servers:
 - Check remote health: `curl http://remote:8080/healthz`
 - Verify token: proxy injects `Authorization: Bearer <token>` on all forwarded requests
 
-See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup and [architecture.md](architecture.md#proxy-mode-architecture) for flow diagrams.
+See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup and [architecture.md](architecture.md#proxy-mode-architecture) for flow diagrams. PWA picker behaviour (chips, **Showing:** line, no-op re-selection) is described in [howto/multi-servers.md](howto/multi-servers.md#switch-between-servers-per-tab-picker).
+
+**Still to review (operator).** The picker-switch behaviour is deliberate client-side PWA behaviour (`internal/server/web/app.js` renders the current view on every server switch), not a daemon contract — confirm it on a two-host setup before relying on it: standing on each of the five picker tabs (Sessions, Alerts, Automata, Observer, Dashboard), pick a federated host and confirm the tab follows the chip in place — the **Showing: <name>** line names the host you picked and the list is that host's data — then confirm **All** and **Local** return the page the same way and that re-picking the active chip changes nothing. If a tab shows an error or no data after a chip change, the remote itself is the first thing to suspect — the picker surfaces the selected host's connection status and a “Back to <this server>” button rather than leaving the previous server's data behind.
 
 ### Configure via Chat Commands
 

@@ -911,6 +911,7 @@ Individual caps follow `surface:action` — e.g. `sessions:list`, `sessions:writ
 - **All** — aggregated fetch from every server; returns items tagged with their `server` origin.
 - **Local** — only this daemon's data (default).
 - **\<name\>** — proxy mode; REST and WebSocket calls route through `/api/proxy/{name}/...` on the local daemon.
+- **Selecting a chip switches the page you're on, in place** — picking a federated host (or Local or All) re-renders the tab you're currently looking at against that server: the **Showing: \<name\>** line above the view updates to the active host and the list becomes that host's data, with no need to leave the view and re-open it. Re-selecting the already-active chip is a no-op (fixed 2026-11-08 — previously the tab kept showing the previous server's data on Alerts, Automata, Observer and Dashboard until you navigated away and back).
 
 **Aggregated endpoints** used by the All chip:
 - `GET /api/sessions/aggregated` — sessions from all servers
@@ -2336,7 +2337,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
 | Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
-| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints |
+| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints; picking a server chip re-renders the current view in place |
 | MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | v7.1.0 | MCP protocol spec |
 | MCP Resources | [`howto/mcp-resources.md`](howto/mcp-resources.md) | v7.1.0 | MCP protocol spec |
 | MCP Sampling | [`howto/mcp-sampling.md`](howto/mcp-sampling.md) | v7.1.0 | MCP protocol spec |
@@ -2429,7 +2430,7 @@ Infrastructure:
 - [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
 - [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password + Vault backends
 - [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
-- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker, all-servers aggregation
+- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker (selecting a host re-renders the current view in place), all-servers aggregation
 - [`howto/compute-nodes.md`](howto/compute-nodes.md) — GPU/CPU node registry, kind taxonomy, observer peer binding
 - [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) — migrate deprecated compute node kinds to ollama/openai-compat
 - [`howto/llm-registry.md`](howto/llm-registry.md) — named LLM registry, per-node model lists, failover routing

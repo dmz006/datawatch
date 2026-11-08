@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "per-tab picker", "switching servers", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
   - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
@@ -146,7 +146,20 @@ Every main view (Sessions, Alerts, Automata, Observer, Dashboard) has a
 | **Local** | Show only this daemon's data (default) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
-The active chip persists in `state.activeServer` for the duration of the session.
+The active chip persists in `state.activeServer` for the duration of the
+session.
+
+**Selecting a chip acts on the page you are on, immediately.** Choosing a
+federated host re-renders the tab you are currently looking at — Sessions,
+Alerts, Automata (including its Automation sub-tab), Observer or Dashboard —
+in place, against that server: the **Showing: \<name\>** line above the view
+updates to the host you picked and the list/content becomes that host's
+data, without you leaving and re-opening the view. Picking **Local** or
+**All** takes the same page back to that view the same way. (Before the
+fix recorded on 2026-11-08, a chip selection on Alerts, Automata, Observer
+and Dashboard only set the active server and reconnected — the tab kept
+showing the previous server's data until you navigated away and back; the
+current view now follows the chip on all five tabs.)
 
 Behaviours worth knowing:
 
