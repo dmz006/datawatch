@@ -406,6 +406,10 @@ Unclaimed items whose lease expires are automatically returned to `pending` stat
 
 ---
 
+### Discussion id
+
+The name of a discussion scope or file folder: 1 to 128 characters from letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Any other id gets HTTP 400 `invalid discussion id`. Older ids with other characters stay on disk but are unreachable through the API; operators should rename them. See [discussion-scopes](howto/discussion-scopes.md) and [file-service](howto/file-service.md).
+
 ### Discussion push / subscribe
 
 Subscribe an agent session to a discussion so new entries are delivered as live input.
@@ -617,6 +621,8 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 ### Automata list
 
 Every PRD / autonomous workflow your daemon has spawned. Filtered by state pill (Running / Stopped / Failed / All).
+
+The **Tags** filter selects Automata by tag with match ANY (default) or match ALL; an empty selection lists everything. See [howto/automata-tags.md](howto/automata-tags.md) and the *Tag selection* glossary entry.
 
 ### Launch Automaton form
 
@@ -1311,7 +1317,7 @@ See [`howto/file-service.md`](howto/file-service.md).
 
 #### Discussion Scopes (v8.4.0)
 
-Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
+Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID (1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected); anything else gets HTTP 400 `invalid discussion id` on the scope, sync and file-service routes) and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
 
 **Scope name:** `ScopeDiscussion`
 
@@ -1319,7 +1325,7 @@ Per-discussion memory namespaces that are durable, federated, and conflict-aware
 
 **Card:** Settings → General → Discussion Scopes. Lists all known discussion IDs; provides a New Discussion form and per-discussion Recall + Participants controls.
 
-**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `/api/push/<discussion-id>`. Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention).
+**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `POST /api/memory/discussion/{id}/receive` (not `/api/push`, which is the ntfy topic route and does not apply the discussion ID rules). Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention).
 
 **Throttle:** 60 write operations per minute per peer, enforced via a per-peer token bucket. Exceeding the limit returns HTTP 429. Local daemon writes are not throttled.
 
@@ -1527,6 +1533,8 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 ## Concepts & Glossary
 
 Key terms used across the docs, API, and hook payloads.
+
+**Tag selection** — the tags chosen in an Automata list filter, and how they are checked. An object's derived system tags (for example `project:datawatch`) and its assigned tag IDs are pooled; match ANY needs at least one selected tag in the pool, match ALL needs every one, and a selection with no tags matches every object. The check is unchanged by the code-scanning fix, which only removed a computed size hint on the internal lookup set. See [howto/automata-tags.md](howto/automata-tags.md).
 
 **Merge pending** — the state of a finished Automaton whose work branch (`automaton/<id>`) still has commits that are not on `main`, where the check is sure of it: both tests agree that the commits are missing. A branch where the two tests disagree is not merge pending; it is *needs a look*, a separate state. The work is done but has not been merged, so it can look complete while it exists only on its own branch. The merge-pending check works this out with read-only git queries and never merges, deletes or pushes. It is controlled by `autonomous.automation.merge_pending_mode` (`off` by default, `shadow` to record only, `on` to record and alert) and `autonomous.automation.merge_pending_alert_minutes` (30 by default; `0` turns the alert off). With the check `on`, one alert is raised per episode after the branch has waited that long, and merging the branch clears it. The other states are merged, empty (nothing ahead of `main`), needs a look and unknown. The PWA shows a badge on a finished Automaton and on its Automation card; the same state is on REST, MCP, the CLI and the chat verbs as `autonomous merge`. See [operations.md](operations.md) (*Merge-pending check*) and [flow/automation-merge-pending-flow.md](flow/automation-merge-pending-flow.md).
 

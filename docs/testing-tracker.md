@@ -5712,3 +5712,13 @@ Tests for the auto-lanes feature, one line per interface. Run each package with 
 - comm: `TestUsageCalcConfigureAutoLanesThroughRouter`, `TestUsageCalcConfigureHelpListsAutoLanesKeys` (`internal/router/usage_calculator_test.go`)
 - YAML: `TestUsageCalcConfigAutoLanes` (`internal/server/usage_calculator_config_test.go`)
 - PWA: no auto-lanes-specific test exists yet. The repository still needs `internal/server/web/app-usage-auto-lanes.test.js` with a test such as `the auto-lanes toggle, maximum and status line render and save through PUT /api/config`; the neighbouring calculator settings test is `the section renders its fields: policy labels, saved value selected, hints, dotted-key save handlers` in `internal/server/web/app-usage-calculator-settings.test.js`
+
+## Discussion id validation and tag filter lookup set — unreleased
+
+Tests for the discussion id rule (1 to 128 characters of letters, digits, dot, underscore and hyphen; `.` and `..` never valid) and for the tag-selection match. Run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/server ./internal/autonomous -count=1 -run 'ValidateDiscussionID|DiscussionRoutesRejectTraversalIDs|MatchesObjectTags'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Validator accepts good ids and rejects empty, `.`, `..`, slash, backslash, NUL, over 128 characters, spaces and non-ASCII | **Yes** | **Yes** | `TestValidateDiscussionID` (`internal/server/discussion_id_test.go`) | |
+| Every discussion route (recall, write, delete, wal, participants, conflicts, conflicts/resolve, receive) and the file service folder route answer 400 `invalid discussion id` for a bad id and create no file | **Yes** | **Yes** | `TestDiscussionRoutesRejectTraversalIDs` (`internal/server/discussion_route_traversal_test.go`) | Called through the handlers, state and file roots compared before and after |
+| Tag-selection match results unchanged after the lookup set stopped using a computed size hint | **Yes** | **Yes** | `TestMatchesObjectTagsResults` (`internal/autonomous/object_tag_filter_test.go`) | |

@@ -10,7 +10,7 @@ write-ahead log.
 ## What discussion scopes are and when to use them
 
 A discussion scope is a named memory partition keyed by a discussion ID (a short string
-you choose). Each scope stores an ordered list of entries, a WAL at
+you choose: 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected)). Each scope stores an ordered list of entries, a WAL at
 `~/.datawatch/discussions/<id>/wal.jsonl`, and an optional set of participant peers that
 automatically receive a copy of every new write.
 
@@ -51,6 +51,8 @@ addressable only by their discussion ID.
 
 Every write to a new discussion ID automatically creates the scope and the WAL file. There
 is no explicit create step.
+
+**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID, including an empty one or one holding `/`, `\` or spaces, is rejected with HTTP 400 and the text `invalid discussion id` on every scope, sync and file-service route. IDs that were created earlier with other characters are no longer reachable through the API.
 
 ### REST
 
@@ -266,6 +268,42 @@ curl -sk -H "Authorization: Bearer $DW_TOKEN" \
   "$DW_HOST/api/mcp/docs" | jq '[.tools[] | select(.name | startswith("memory_discussion"))] | map(.name)'
 # ["memory_discussion_participants","memory_discussion_recall","memory_discussion_wal","memory_discussion_write"]
 ```
+
+---
+
+## Discussion id rule
+
+A discussion id is a whole name of 1 to 128 characters from
+letters, digits, dot, underscore and hyphen. The whole id must match; a name that merely
+contains valid characters plus anything else is not accepted. The names `.` and `..` are never
+accepted, even though they use only allowed characters.
+
+Any other id answers HTTP 400 with the plain text `invalid discussion id` before anything is
+written, so a rejected request never creates a scope, a WAL file or a participant list.
+
+The rule applies to every discussion route:
+
+- scope (write, recall, list and delete)
+- WAL
+- participants
+- conflicts
+- receive (entries arriving from a federation peer)
+
+```sh
+# An id with a slash is rejected.
+curl -sk -i -X POST \
+  -H "Authorization: Bearer $DW_TOKEN" \
+  -H 'Content-Type: application/json' \
+  $DW_HOST/api/memory/discussion/bad%2Fid \
+  -d '{"content":"hello"}'
+# HTTP 400
+# invalid discussion id
+```
+
+**Operator review:** discussion ids created before this rule with other characters (spaces, `/`,
+non-ASCII) stay on disk but are no longer reachable through the API. List the discussion folders
+with `ls ~/.datawatch/discussions` (memory scopes) and `ls ~/.datawatch/files/discussions` (file folders; the root is shown by `GET /api/files/meta`), and rename or migrate any such folder to a valid id.
+See also [file-service.md](file-service.md) for the same rule on the file routes.
 
 ---
 

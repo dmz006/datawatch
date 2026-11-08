@@ -6810,3 +6810,11 @@ Four conditions (each one alert + one audit entry per **transition**, never per 
 All under `plugins.services` (YAML / `PUT /api/config` / PWA Settings / CLI), with defaults and floors as in [plugins.md](plugins.md#thresholds-the-settings-that-matter): probe interval (default 60 s, minimum 5 — below is refused at load), backlog streak, node-load ratio, and the small-model boundaries. Per-plugin overrides exist for the lifecycle mode only (`per_service.<name>.lifecycle_mode`) and the `plugins.managed` opt-in list; both sit beside these keys in the same config surface.
 
 **Related:** [plugins.md](plugins.md) · [howto/imap-mcp-service.md](howto/imap-mcp-service.md) · [mcp.md](mcp.md) — `plugin_service_*`, `plugin_widget_*`, `plugin_token_*` tools
+
+---
+
+## Discussion ID validation
+
+Every discussion route (`/api/memory/discussion/*`, `/api/files/discussions/<id>`) accepts only IDs of 1 to 128 characters made of ASCII letters, digits, `.`, `_` and `-`; `.` and `..` are rejected. Other IDs get HTTP 400 `invalid discussion id`. Before upgrading, list existing IDs (`GET /api/memory/discussion`) and rename any that use other characters. See [Discussion scopes](howto/discussion-scopes.md) and [File service](howto/file-service.md).
+
+Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule; it only rejects an empty topic or one containing a slash.

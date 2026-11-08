@@ -172,8 +172,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /conflicts/resolve sub-path first (most specific).
 	if idx := strings.Index(rest, "/conflicts/resolve"); idx >= 0 && rest[idx:] == "/conflicts/resolve" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommWrite) {
@@ -186,8 +186,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /conflicts sub-path.
 	if idx := strings.Index(rest, "/conflicts"); idx >= 0 && rest[idx:] == "/conflicts" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommRead) {
@@ -200,8 +200,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /receive sub-path — peer-to-peer WAL sync (fix #79).
 	if idx := strings.Index(rest, "/receive"); idx >= 0 && rest[idx:] == "/receive" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommWrite) {
@@ -214,8 +214,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /participants sub-path (T42b).
 	if idx := strings.Index(rest, "/participants"); idx >= 0 && rest[idx:] == "/participants" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if r.Method == http.MethodGet {
@@ -234,8 +234,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /wal sub-path.
 	if idx := strings.LastIndex(rest, "/wal"); idx >= 0 && rest[idx:] == "/wal" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommRead) {
@@ -251,6 +251,10 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 
 	// The rest of the path is the discussion ID.
 	id := rest
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -275,6 +279,10 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 
 // handleDiscussionRecall handles GET /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionRecall(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if s.memoryBackend == nil {
 		writeJSONOK(w, map[string]any{"results": []any{}, "count": 0, "discussion_id": id})
 		return
@@ -299,6 +307,10 @@ func (s *Server) handleDiscussionRecall(w http.ResponseWriter, r *http.Request, 
 
 // handleDiscussionWrite handles POST /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// T42b: throttle — 60 writes/minute per Bearer token.
 	if !checkDiscussionThrottle(w, r) {
 		return
@@ -363,6 +375,10 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 
 // handleDiscussionDelete handles DELETE /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	mu := discussionLock(id)
 	mu.Lock()
 	defer mu.Unlock()
@@ -399,6 +415,10 @@ func (s *Server) handleDiscussionDelete(w http.ResponseWriter, r *http.Request, 
 
 // handleDiscussionWAL handles GET /api/memory/discussion/{id}/wal.
 func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	q := r.URL.Query()
 	n := atoiDefault(q.Get("n"), 50)
 
@@ -422,6 +442,9 @@ func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id 
 // originPeer may be empty for local writes. When encKey is non-nil each
 // line is encrypted as "ENC:<base64(nonce24+ciphertext)>" (BL334 T43c).
 func (s *Server) discussionAppendWALEntry(id, content, role, originPeer string, encKey []byte) (*discussionWALEntry, error) {
+	if err := validateDiscussionID(id); err != nil {
+		return nil, err
+	}
 	dir := s.statePath("discussions", id)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("mkdir discussion dir: %w", err)
@@ -475,6 +498,9 @@ func (s *Server) discussionAppendWALEntry(id, content, role, originPeer string, 
 // When encKey is non-nil each line is decrypted before parsing (BL334 T43c).
 // Lines without the "ENC:" prefix are accepted transparently for migration compat.
 func (s *Server) discussionReadWAL(id string, n int, encKey []byte) ([]discussionWALEntry, error) {
+	if err := validateDiscussionID(id); err != nil {
+		return nil, err
+	}
 	walPath := filepath.Join(s.statePath("discussions", id), "wal.jsonl")
 
 	f, err := os.Open(walPath)

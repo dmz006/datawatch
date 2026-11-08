@@ -304,8 +304,8 @@ func (s *Server) handleFilesDiscussion(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/files/discussions/")
 	id = strings.Trim(id, "/")
-	if id == "" || strings.ContainsAny(id, "/\\") || id == "." || id == ".." {
-		http.Error(w, "invalid discussion id", http.StatusBadRequest)
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	root := s.fileServiceRoot()

@@ -112,3 +112,81 @@ func TestFilterTasksView(t *testing.T) {
 		t.Fatalf("no matching task -> %v", none.Tasks)
 	}
 }
+
+// TestMatchesObjectTagsResults is a table over MatchesObjectTags. Each
+// expectation follows the matcher: an empty selection matches everything; the
+// object's system tags and managed tag ids are merged into one set; any-match
+// is true when one requested tag is in the set; all-match is true only when
+// every requested tag is in the set. Duplicates on either side change nothing.
+func TestMatchesObjectTagsResults(t *testing.T) {
+	cases := []struct {
+		name       string
+		tags       []string
+		allMatch   bool
+		systemTags []string
+		tagIDs     []string
+		want       bool
+	}{
+		// Any-match rule.
+		{"any: one of two present", []string{"a", "b"}, false, []string{"a"}, nil, true},
+		{"any: all present", []string{"a", "b"}, false, []string{"a", "b"}, nil, true},
+		{"any: none present", []string{"a", "b"}, false, []string{"x", "y"}, []string{"z"}, false},
+
+		// All-match rule.
+		{"all: every tag present", []string{"a", "b"}, true, []string{"a", "b"}, nil, true},
+		{"all: one tag missing", []string{"a", "b"}, true, []string{"a"}, nil, false},
+		{"all: none present", []string{"a", "b"}, true, []string{"x"}, []string{"y"}, false},
+		{"all: split across both lists", []string{"a", "b"}, true, []string{"a"}, []string{"b"}, true},
+
+		// Nil sets.
+		{"any: nil systemTags, id present", []string{"a"}, false, nil, []string{"a"}, true},
+		{"any: nil tagIDs, system tag present", []string{"a"}, false, []string{"a"}, nil, true},
+		{"any: both nil", []string{"a"}, false, nil, nil, false},
+		{"all: nil systemTags, ids cover all", []string{"a", "b"}, true, nil, []string{"a", "b"}, true},
+		{"all: nil tagIDs, system tags cover all", []string{"a", "b"}, true, []string{"a", "b"}, nil, true},
+		{"all: nil systemTags, id missing", []string{"a", "b"}, true, nil, []string{"a"}, false},
+		{"all: both nil", []string{"a"}, true, nil, nil, false},
+
+		// Empty selection matches everything, rule and sets notwithstanding.
+		{"empty selection, any, nil sets", nil, false, nil, nil, true},
+		{"empty selection, all, nil sets", nil, true, nil, nil, true},
+		{"empty selection, any, tags carried", []string{}, false, []string{"a"}, []string{"b"}, true},
+		{"empty selection, all, tags carried", []string{}, true, []string{"a"}, []string{"b"}, true},
+		{"empty selection, empty non-nil sets", nil, false, []string{}, []string{}, true},
+
+		// A requested tag present in only one list.
+		{"any: only in systemTags", []string{"a"}, false, []string{"a"}, []string{"x"}, true},
+		{"any: only in tagIDs", []string{"a"}, false, []string{"x"}, []string{"a"}, true},
+		{"all: only in systemTags, other in neither", []string{"a", "b"}, true, []string{"a"}, []string{"x"}, false},
+		{"all: only in tagIDs, other in neither", []string{"a", "b"}, true, []string{"x"}, []string{"b"}, false},
+
+		// Duplicates inside the object's two lists.
+		{"any: duplicates within systemTags", []string{"a"}, false, []string{"a", "a", "a"}, nil, true},
+		{"any: duplicates within tagIDs", []string{"a"}, false, nil, []string{"a", "a"}, true},
+		{"any: same tag in both lists", []string{"a"}, false, []string{"a"}, []string{"a"}, true},
+		{"any: duplicates of a non-requested tag", []string{"a"}, false, []string{"x", "x"}, []string{"x"}, false},
+		{"all: duplicate does not stand in for a missing tag", []string{"a", "b"}, true, []string{"a", "a"}, []string{"a"}, false},
+		{"all: duplicates with every tag present", []string{"a", "b"}, true, []string{"a", "a", "b"}, []string{"b", "a"}, true},
+
+		// Duplicates inside the selection.
+		{"any: duplicate selection tag, present", []string{"a", "a"}, false, []string{"a"}, nil, true},
+		{"any: duplicate selection tag, absent", []string{"a", "a"}, false, []string{"x"}, nil, false},
+		{"all: duplicate selection tag, present", []string{"a", "a"}, true, []string{"a"}, nil, true},
+		{"all: duplicate selection tag plus a missing tag", []string{"a", "a", "b"}, true, []string{"a"}, nil, false},
+		{"all: duplicate selection tags, all present", []string{"a", "a", "b", "b"}, true, []string{"a"}, []string{"b"}, true},
+
+		// A selection with no present tag.
+		{"any: no present tag, empty non-nil sets", []string{"a", "b"}, false, []string{}, []string{}, false},
+		{"all: no present tag, empty non-nil sets", []string{"a", "b"}, true, []string{}, []string{}, false},
+		{"any: no present tag, near-miss strings", []string{"project:datawatch"}, false, []string{"project:datawatch2", "Project:datawatch"}, []string{"project"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sel := ObjectTagSelection{Tags: c.tags, AllMatch: c.allMatch}
+			if got := sel.MatchesObjectTags(c.systemTags, c.tagIDs); got != c.want {
+				t.Errorf("MatchesObjectTags(%q, %q) with selection %q (all=%v) = %v, want %v",
+					c.systemTags, c.tagIDs, c.tags, c.allMatch, got, c.want)
+			}
+		})
+	}
+}
