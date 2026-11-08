@@ -86,7 +86,7 @@ func (o onboardingState) MemoryEnabled() bool { return o.s.cfg != nil && o.s.cfg
 // PipelineSource resolves the merge pipeline source for a project the same
 // way the merge pipeline route does, without reading the definition's steps.
 func (o onboardingState) PipelineSource(project string) string {
-	records, err := mergePipelineRecords()
+	records, err := o.s.mergePipelineRecords()
 	if err != nil {
 		return string(mergepipeline.SourceDefault)
 	}

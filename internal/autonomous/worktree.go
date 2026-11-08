@@ -44,8 +44,10 @@ func slugify(s string) string {
 	return strings.Trim(slugNonAlnum.ReplaceAllString(strings.ToLower(s), "-"), "-")
 }
 
-// defaultWorktreeDir is used when Config.WorktreeDir is empty.
-func defaultWorktreeDir() string { return config.DefaultPRDWorktreeDir() }
+// defaultWorktreeDir is used when Config.WorktreeDir is empty. dataDir is
+// the configured data directory (may be empty when the caller has none);
+// the fallback then resolves under the user's home as before.
+func defaultWorktreeDir(dataDir string) string { return config.DefaultPRDWorktreeDirFor(dataDir) }
 
 // defaultBranchOf resolves repoDir's current default branch (e.g.
 // "main"). Falls back to "main" on any error — same default
@@ -74,7 +76,7 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 		return "", "", fmt.Errorf("worktree: base repo not configured")
 	}
 	if worktreeDir = strings.TrimSpace(worktreeDir); worktreeDir == "" {
-		worktreeDir = defaultWorktreeDir()
+		worktreeDir = defaultWorktreeDir("")
 	}
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("worktree: mkdir %s: %w", worktreeDir, err)
@@ -186,6 +188,9 @@ func (m *Manager) ensureWorktreeIfConfigured(prd *PRD) (created bool, err error)
 	m.mu.Unlock()
 	if baseRepo == "" {
 		return false, nil
+	}
+	if strings.TrimSpace(worktreeDir) == "" {
+		worktreeDir = defaultWorktreeDir(m.dataDir)
 	}
 	path, branch, werr := EnsureWorktree(prd, baseRepo, worktreeDir)
 	if werr != nil {

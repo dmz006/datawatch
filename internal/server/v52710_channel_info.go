@@ -77,12 +77,10 @@ func (s *Server) handleChannelInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dataDir := os.Getenv("DATAWATCH_DATA_DIR")
-	if dataDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			dataDir = filepath.Join(home, ".datawatch")
-		}
-	}
+	// The bridge state lives in this server's configured data directory
+	// (Server.statePath), never in a home directory derived from the
+	// process environment.
+	dataDir := s.statePath()
 
 	info := ChannelInfo{
 		Kind: channel.BridgeKind(),

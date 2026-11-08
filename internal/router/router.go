@@ -1826,7 +1826,7 @@ func (r *Router) handleNew(cmd Command) {
 		return
 	}
 	r.send(fmt.Sprintf("[%s][%s] Started session for: %s\nTmux: %s\nAttach: %s",
-		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, session.TmuxAttachCommand(sess.TmuxSession)))
+		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, session.TmuxAttachCommand(sess.TmuxSession, r.manager.DataDir())))
 }
 
 // handleList answers the chat `list` command. After the optional active or
@@ -2182,7 +2182,7 @@ func (r *Router) handleAttach(cmd Command) {
 	}
 
 	r.send(fmt.Sprintf("[%s][%s] Run on %s:\n  %s",
-		r.hostname, sess.ID, sess.Hostname, session.TmuxAttachCommand(sess.TmuxSession)))
+		r.hostname, sess.ID, sess.Hostname, session.TmuxAttachCommand(sess.TmuxSession, r.manager.DataDir())))
 }
 
 // handleImplicitSend routes an unrecognised message to the single waiting session, if any.

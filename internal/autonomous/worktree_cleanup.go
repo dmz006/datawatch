@@ -748,7 +748,7 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	wtDir := m.cfg.WorktreeDir
 	m.mu.Unlock()
 	if wtDir == "" {
-		wtDir = defaultWorktreeDir()
+		wtDir = defaultWorktreeDir(m.dataDir)
 	}
 	if _, err := saveVerifyScripts(filepath.Join(wtDir, prd.ID, ".datawatch", "verify"), savedVerifyScriptsDir(wtDir, prd.ID)); err != nil {
 		log.Printf("[autonomous] worktree-cleanup: saving verification scripts for %s: %v", prd.ID, err)

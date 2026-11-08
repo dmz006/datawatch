@@ -262,6 +262,10 @@ type Server struct {
 	availableBackends  []string // registered LLM backend names
 	cfg                *config.Config
 	cfgPath            string
+	// dataDir is this instance's explicit data-directory override (set by
+	// the daemon at startup; empty in bare test fixtures). statePath
+	// resolves it first, then cfg.DataDir, then the config default.
+	dataDir string
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
@@ -2390,7 +2394,7 @@ func (s *Server) executeCommand(cmd router.Command, raw, origin string) string {
 		if !ok {
 			return "Session not found."
 		}
-		return session.TmuxAttachCommand(sess.TmuxSession)
+		return session.TmuxAttachCommand(sess.TmuxSession, s.manager.DataDir())
 
 	case router.CmdHelp:
 		return router.HelpText(s.hostname)
@@ -5233,12 +5237,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Clone target: <data_dir>/workspaces/<profile>-<8char-random>/
 		// Random suffix prevents collision when the same profile is
 		// reused across simultaneous PRD spawns.
-		dataDir := os.Getenv("DATAWATCH_DATA_DIR")
-		if dataDir == "" {
-			home, _ := os.UserHomeDir()
-			dataDir = filepath.Join(home, ".datawatch")
-		}
-		cloneRoot := filepath.Join(dataDir, "workspaces")
+		cloneRoot := s.statePath("workspaces")
 		if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
 			http.Error(w, "create workspace root: "+err.Error(), http.StatusInternalServerError)
 			return

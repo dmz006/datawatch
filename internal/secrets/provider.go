@@ -66,8 +66,10 @@ type Provider interface {
 // stub provider that echoes the requested kind in errors so
 // operators see exactly which backend is missing.
 //
-// File needs a baseDir argument supplied by the operator config;
-// callers that just want EnvVar pass "" for baseDir.
+// File needs a baseDir argument supplied by the caller — pass
+// DefaultFileProviderDir(dataDir) for the configured data
+// directory's secrets folder; no home-directory default is applied
+// here. Callers that just want EnvVar pass "" for baseDir.
 func Resolve(kind, baseDir string) Provider {
 	switch kind {
 	case "", "file":

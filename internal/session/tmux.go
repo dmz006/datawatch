@@ -505,25 +505,25 @@ func (t *TmuxManager) SetEnvironment(session string, env map[string]string) erro
 }
 
 // AttachCommand returns the shell command a user should run to attach to the session.
-func (t *TmuxManager) AttachCommand(session string) string {
-	return TmuxAttachCommand(session)
+// dataDir is the daemon's configured data directory (already expanded).
+func (t *TmuxManager) AttachCommand(session, dataDir string) string {
+	return TmuxAttachCommand(session, dataDir)
 }
 
-// TmuxSocketDir returns the TMUX_TMPDIR datawatch sessions live under, or ""
-// for tmux's default socket. The daemon gets it from its environment (set by
-// the datawatch-tmux.service / datawatch.env pair so the session tmux server
-// is owned by systemd rather than whichever login happened to start it
+// TmuxSocketDirFor returns the TMUX_TMPDIR datawatch sessions live under, or
+// "" for tmux's default socket. The daemon gets it from its environment (set
+// by the datawatch-tmux.service / datawatch.env pair so the session tmux
+// server is owned by systemd rather than whichever login happened to start it
 // first). CLI processes run from an operator shell don't inherit that, so
-// fall back to the conventional ~/.datawatch/tmux when its socket exists.
-func TmuxSocketDir() string {
+// fall back to the <dataDir>/tmux socket directory when its socket exists.
+// dataDir is the daemon's configured, already-expanded data directory — the
+// fallback is deliberately anchored there rather than to $HOME, so a custom
+// data_dir config points at the socket its own tmux server actually owns.
+func TmuxSocketDirFor(dataDir string) string {
 	if d := os.Getenv("TMUX_TMPDIR"); d != "" {
 		return d
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	d := filepath.Join(home, ".datawatch", "tmux")
+	d := filepath.Join(dataDir, "tmux")
 	if _, err := os.Stat(filepath.Join(d, fmt.Sprintf("tmux-%d", os.Getuid()), "default")); err == nil {
 		return d
 	}
@@ -532,8 +532,9 @@ func TmuxSocketDir() string {
 
 // TmuxAttachCommand returns the operator-facing attach command for a tmux
 // session, including TMUX_TMPDIR when sessions run on a dedicated socket.
-func TmuxAttachCommand(session string) string {
-	if d := TmuxSocketDir(); d != "" {
+// dataDir is the daemon's configured data directory (already expanded).
+func TmuxAttachCommand(session, dataDir string) string {
+	if d := TmuxSocketDirFor(dataDir); d != "" {
 		return fmt.Sprintf("TMUX_TMPDIR=%s tmux attach -t %s", d, session)
 	}
 	return fmt.Sprintf("tmux attach -t %s", session)

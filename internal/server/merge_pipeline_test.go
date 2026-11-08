@@ -29,14 +29,15 @@ const mpValidYAML = `steps:
 const mpValidRecordJSON = `{"definition":{"steps":[{"name":"unit tests","kind":"test","command":"true"}]}}`
 
 // newMergePipelineServer returns a server with an empty config, a project
-// "demo" whose directory exists, and a private data directory.
+// "demo" whose directory exists, and a private data directory (the record
+// store lives under it).
 func newMergePipelineServer(t *testing.T) (*Server, string) {
 	t.Helper()
-	t.Setenv("DATAWATCH_DATA_DIR", t.TempDir())
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
+	cfg.DataDir = t.TempDir()
 	cfg.Projects = map[string]config.ProjectConfigEntry{"demo": {Dir: dir}}
-	return &Server{cfg: cfg, cfgPath: filepath.Join(t.TempDir(), "config.yaml")}, dir
+	return &Server{cfg: cfg, cfgPath: filepath.Join(t.TempDir(), "config.yaml"), dataDir: cfg.DataDir}, dir
 }
 
 func mpDo(h http.HandlerFunc, method, target, body string) *httptest.ResponseRecorder {
@@ -163,7 +164,7 @@ func TestMergePipelineGetErrors(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DATAWATCH_DATA_DIR", f)
+	s.dataDir = f
 	if err := os.MkdirAll(filepath.Join(f, "merge-pipeline"), 0o755); err == nil {
 		t.Skip("cannot make the data directory unusable here")
 	}
@@ -171,7 +172,7 @@ func TestMergePipelineGetErrors(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(badDir, "merge-pipeline", "records.json"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DATAWATCH_DATA_DIR", badDir)
+	s.dataDir = badDir
 	if rec := mpDo(s.handleMergePipeline, http.MethodGet, "/api/autonomous/merge-pipeline?project=demo", ""); rec.Code != http.StatusInternalServerError {
 		t.Errorf("unreadable store: want 500, got %d", rec.Code)
 	}

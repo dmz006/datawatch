@@ -49,14 +49,14 @@ func postMergeRun(s *Server, method, body string) *httptest.ResponseRecorder {
 }
 
 func TestMergeRunRoute_OnlyPost(t *testing.T) {
-	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}}
+	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}, dataDir: t.TempDir()}
 	if rec := postMergeRun(s, http.MethodGet, ""); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET = %d, want 405", rec.Code)
 	}
 }
 
 func TestMergeRunRoute_NeedsBaseRepo(t *testing.T) {
-	s := &Server{autonomousMgr: &mergeRunSpy{}}
+	s := &Server{autonomousMgr: &mergeRunSpy{}, dataDir: t.TempDir()}
 	if rec := postMergeRun(s, http.MethodPost, `{"title":"t","branches":["b"]}`); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no base repo = %d, want 503", rec.Code)
 	}
@@ -66,7 +66,7 @@ func TestMergeRunRoute_NeedsBaseRepo(t *testing.T) {
 // reported to the recorder, so it shows in pipeline_runs.
 func TestMergeRunRoute_CallsRunnerAndRecords(t *testing.T) {
 	spy := &mergeRunSpy{repo: t.TempDir()}
-	s := &Server{autonomousMgr: spy}
+	s := &Server{autonomousMgr: spy, dataDir: t.TempDir()}
 	rec := postMergeRun(s, http.MethodPost, `{"title":"","branches":["b"]}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
@@ -87,7 +87,7 @@ func TestMergeRunRoute_CallsRunnerAndRecords(t *testing.T) {
 }
 
 func TestMergeRunRoute_BadBody(t *testing.T) {
-	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}}
+	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}, dataDir: t.TempDir()}
 	if rec := postMergeRun(s, http.MethodPost, `{`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad body = %d, want 400", rec.Code)
 	}
