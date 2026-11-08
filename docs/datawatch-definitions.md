@@ -2128,7 +2128,7 @@ Every key of the block can be overridden for one project under `autonomous.merge
 
 **Milestone, Automation** — the `milestone` flag on an Automation record marks the arc as a milestone. When every member has finished and the project's `major_trigger` is `milestone`, the arc's merges step major; with any other trigger the flag changes nothing. An unset flag is an ordinary arc.
 
-**Breaking change flag, Automaton** — the `breaking_change` flag on an Automaton record marks its change as user-breaking. Regardless of the resolved release size, the merge must go through the major approval mode, so it is never merged quietly.
+**Breaking change flag, Automaton** — the `breaking_change` flag on an Automaton record marks its change as user-breaking. Regardless of the resolved release size, the resolver reports the merge as one that must go through the major approval mode, so it is never merged quietly; the approval modes themselves land in the work that follows.
 
 ### Post-ship hooks
 
