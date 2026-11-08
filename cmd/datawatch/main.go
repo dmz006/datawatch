@@ -4514,6 +4514,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PlanningRouting:                  acfgIn.PlanningRouting,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
+			FirstAttempt:                     autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
 			PlanningModel:                    acfgIn.PlanningModel,
 			VerificationModel:                acfgIn.VerificationModel,
 			GuardrailModel:                   acfgIn.GuardrailModel,
