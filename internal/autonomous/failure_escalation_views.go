@@ -16,13 +16,16 @@ import (
 // summary lists it. It carries identity, counts and the worker of the last
 // attempt, never the task spec or the attempt report.
 type ReviewNeededEntry struct {
-	TaskID       string    `json:"task_id"`
-	TaskTitle    string    `json:"task_title,omitempty"`
-	StoryID      string    `json:"story_id"`
-	FailureCount int       `json:"failure_count"`
-	LastBackend  string    `json:"last_backend,omitempty"`
-	LastModel    string    `json:"last_model,omitempty"`
-	HeldAt       time.Time `json:"held_at"`
+	TaskID       string `json:"task_id"`
+	TaskTitle    string `json:"task_title,omitempty"`
+	StoryID      string `json:"story_id"`
+	FailureCount int    `json:"failure_count"`
+	LastBackend  string `json:"last_backend,omitempty"`
+	LastModel    string `json:"last_model,omitempty"`
+	// LastBackendReason is the BackendReason of the last attempt; empty when no
+	// attempt was recorded or the attempt predates the field.
+	LastBackendReason string    `json:"last_backend_reason,omitempty"`
+	HeldAt            time.Time `json:"held_at"`
 	// HeldCause names the infrastructure failure when the task is held because
 	// its infrastructure retries ran out. It is empty for any other hold.
 	HeldCause string `json:"held_cause,omitempty"`
@@ -67,6 +70,7 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 	}
 	if last := lastTaskAttempt(t); last != nil {
 		e.LastBackend, e.LastModel = last.Backend, last.Model
+		e.LastBackendReason = last.BackendReason
 	}
 	if fr := t.FailureReason; fr != nil && fr.Source == infraRetryHoldSource {
 		e.HeldCause = fr.Detail
