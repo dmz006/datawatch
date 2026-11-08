@@ -64,6 +64,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Change record](#change-record)
   - [Generated artefacts](#generated-artefacts)
   - [Merge pipeline](#merge-pipeline)
+  - [Merge pipeline release size](#merge-pipeline-release-size)
   - [Post-ship hooks](#post-ship-hooks)
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge conflict policy](#merge-conflict-policy)
@@ -2112,6 +2113,22 @@ The merge pipeline is the ordered list of steps that takes finished branches to 
 **Merge pipeline version files** (`autonomous.merge_pipeline.version_files`, none by default) — the project files, relative to the project, that carry the `var Version = "X.Y.Z"` line the release-version step sets. With none, a pipeline that bumps the version fails that step until the files are named.
 
 Every key of the block can be overridden for one project under `autonomous.merge_pipeline.projects.<project>.<key>`; an unset key inherits the global value, then the default.
+
+### Merge pipeline release size
+
+**Release size** — the step one merge takes on the project's version: `patch`, `minor`, `major`, or `none` (no version step). The daemon resolves it per Automaton, most specific first: an explicit `release_size` on the Automaton (an explicit major applies under any major trigger); a completed Automation marked `milestone` while the project's `major_trigger` is `milestone` (steps major); the `release_size_map` entry for the Automaton's kind; the built-in (kind `feature` steps minor, kind `bug` steps patch, other kinds step no version). The resolution never reads the diff and a major is never inferred from a kind. In this release the size is stored and resolved, but the merge runner's version-bump step consuming it is wired in the following work, so nothing set here changes a ship's bump until then. See [howto/merge-pipeline.md](howto/merge-pipeline.md) for the walkthrough.
+
+**Merge pipeline release size map** (`autonomous.merge_pipeline.release_size_map`, built-in `feature: minor` and `bug: patch`) — the kind-to-size entries a merge's step is resolved from. A global or project entry adds to or overrides the built-in; a kind no layer names falls back to the built-in or to no version step. A value must be `patch`, `minor`, `major` or `none`; a `major` entry is stored but never used, because a major is only ever explicit or a completed milestone.
+
+**Major trigger** (`autonomous.merge_pipeline.major_trigger`, `manual` by default) — when a major release step is raised. `manual`: an explicit `release_size: major` is the only route besides the `breaking_change` flag; `milestone`: a completed Automation marked `milestone` also steps major; `never`: a milestone never steps a major. Any other value is refused with the key named.
+
+**Release cadence** (`autonomous.merge_pipeline.release_cadence`, `per_merge` by default) — one release step per merged Automaton. `batch` and `manual` are named values that are refused with *not available yet*, and any other value is refused as invalid.
+
+**Version scheme** (`autonomous.merge_pipeline.version_scheme`, `semver` by default) — versions are numbered as major.minor.patch. Any other name is refused with *not available yet*.
+
+**Milestone, Automation** — the `milestone` flag on an Automation record marks the arc as a milestone. When every member has finished and the project's `major_trigger` is `milestone`, the arc's merges step major; with any other trigger the flag changes nothing. An unset flag is an ordinary arc.
+
+**Breaking change flag, Automaton** — the `breaking_change` flag on an Automaton record marks its change as user-breaking. Regardless of the resolved release size, the merge must go through the major approval mode, so it is never merged quietly.
 
 ### Post-ship hooks
 
