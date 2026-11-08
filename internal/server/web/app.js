@@ -1262,7 +1262,7 @@ function apiFetch(path, opts = {}) {
 }
 
 // ── listLoader: shared load-state helper for list views ─────────────────────
-// listLoader({key, url, render, el, pollMs, timeoutMs}) owns the whole
+// listLoader({key, url, render, el, pollMs, timeoutMs, metaExtra}) owns the whole
 // loading lifecycle of one list: an immediate skeleton + localized "Loading"
 // label, the last good response for `key` from localStorage (badged "cached"
 // with its age) while the fresh request runs, a ticking "Last updated N s
@@ -1271,6 +1271,9 @@ function apiFetch(path, opts = {}) {
 // older than pollMs and no first load is in flight. A superseded request is
 // aborted (AbortController) and a sequence number guards late responses.
 // render(data) must return an HTML string; el is an element or element id.
+// Optional metaExtra(data) returns an HTML string (e.g. a link) rendered on
+// the right of the meta row; when it is absent or returns empty HTML the
+// meta row keeps exactly its default markup.
 // Each loader is independent, so listLoaderAll([a, b]) loads several in
 // parallel and one failure never blanks the others (load() never rejects).
 const LIST_CACHE_PREFIX = 'cs_list_';
@@ -1325,7 +1328,21 @@ function listLoader(opts) {
       meta += `<span class="list-state-age" data-list-age="1">${escHtml(ageText())}</span>`;
       if (st.loading) meta += ` <span class="list-state-refreshing">${escHtml(t('loading'))}</span>`;
       if (isStale()) meta += ` <span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
-      h += `<div class="list-state-meta">${meta}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+      let extra = '';
+      if (typeof opts.metaExtra === 'function') {
+        // A throwing or non-string metaExtra must never break the paint;
+        // it just falls back to the default meta row.
+        try { extra = String(opts.metaExtra(st.data) || ''); } catch (e) { extra = ''; }
+      }
+      if (extra) {
+        // metaExtra row: the meta spans wrapped in one main span (left), the
+        // loader's extra HTML after it (right). .list-state-meta-row styles
+        // the split; without metaExtra the markup stays byte-identical to
+        // the default row below.
+        h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+      } else {
+        h += `<div class="list-state-meta">${meta}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+      }
     }
     return h;
   }
