@@ -579,6 +579,13 @@ func ValidateReleaseApprovalMode(v string) error {
 	return validReleaseApprovalMode("release_approval", v)
 }
 
+// ValidateReleaseApprovalModeKey is ValidateReleaseApprovalMode with the full
+// config key named in the error, for write paths that carry the key (the MCP
+// autonomous_config_set arguments). It is the same check.
+func ValidateReleaseApprovalModeKey(key, v string) error {
+	return validReleaseApprovalMode(key, v)
+}
+
 // validReleaseApprovalMode is ValidateReleaseApprovalMode with the config key
 // named in the error, as Validate reports it.
 func validReleaseApprovalMode(key, v string) error {
