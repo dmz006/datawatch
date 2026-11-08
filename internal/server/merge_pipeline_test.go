@@ -697,3 +697,89 @@ func TestMergePipelineReleaseApprovalClearKey(t *testing.T) {
 		t.Error("an emptied project override was kept after its release_approval was cleared")
 	}
 }
+
+// mpReleaseApprovalGet reads the release_approval_in_effect of GET
+// /api/autonomous/merge-pipeline for project demo.
+func mpReleaseApprovalGet(t *testing.T, s *Server) [3]string {
+	t.Helper()
+	v := mpGet(t, s, "demo")
+	return [3]string{v.ReleaseApprovalInEffect.Patch, v.ReleaseApprovalInEffect.Minor, v.ReleaseApprovalInEffect.Major}
+}
+
+// TestMergePipelineReleaseApprovalInEffectDefault checks that with nothing set
+// the view shows the built-in mode for each size (patch auto, minor auto,
+// major ask), so the line is never empty.
+func TestMergePipelineReleaseApprovalInEffectDefault(t *testing.T) {
+	s, _ := newMergePipelineServer(t)
+	want := [3]string{"auto", "auto", "ask"}
+	if got := mpReleaseApprovalGet(t, s); got != want {
+		t.Fatalf("default release_approval_in_effect = %v, want %v", got, want)
+	}
+}
+
+// TestMergePipelineReleaseApprovalInEffectGlobal checks that a global value
+// replaces the default for each size it sets, and unset sizes keep theirs.
+func TestMergePipelineReleaseApprovalInEffectGlobal(t *testing.T) {
+	s, _ := newMergePipelineServer(t)
+	s.cfg.Autonomous.MergePipeline.ReleaseApproval = config.ReleaseApprovalModes{Patch: "manual", Major: "auto"}
+	want := [3]string{"manual", "auto", "auto"}
+	if got := mpReleaseApprovalGet(t, s); got != want {
+		t.Fatalf("global release_approval_in_effect = %v, want %v", got, want)
+	}
+}
+
+// TestMergePipelineReleaseApprovalInEffectOverride checks that the project's
+// override wins over the global value, and the global value still applies to
+// the sizes the override leaves unset.
+func TestMergePipelineReleaseApprovalInEffectOverride(t *testing.T) {
+	s, _ := newMergePipelineServer(t)
+	s.cfg.Autonomous.MergePipeline.ReleaseApproval = config.ReleaseApprovalModes{Patch: "manual", Minor: "ask", Major: "auto"}
+	s.cfg.Autonomous.MergePipeline.Projects = map[string]config.MergePipelineOverride{
+		"demo": {ReleaseApproval: config.ReleaseApprovalModes{Minor: "manual"}},
+	}
+	want := [3]string{"manual", "manual", "auto"}
+	if got := mpReleaseApprovalGet(t, s); got != want {
+		t.Fatalf("override release_approval_in_effect = %v, want %v", got, want)
+	}
+}
+
+// TestMergePipelineReleaseApprovalSurfaceDefault checks the GET /api/config
+// surface resolves an unset release_approval to its defaults.
+func TestMergePipelineReleaseApprovalSurfaceDefault(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := mergePipelineConfigSurface(cfg.Autonomous.MergePipeline)
+	got, ok := m["release_approval"].(config.ReleaseApprovalModes)
+	if !ok {
+		t.Fatalf("release_approval is %T, want config.ReleaseApprovalModes", m["release_approval"])
+	}
+	if want := (config.ReleaseApprovalModes{Patch: "auto", Minor: "auto", Major: "ask"}); got != want {
+		t.Fatalf("default surface release_approval = %+v, want %+v", got, want)
+	}
+}
+
+// TestMergePipelineReleaseApprovalSurfaceGlobalAndOverride checks the surface
+// shows the resolved global values, and keeps the project override visible
+// under projects as set.
+func TestMergePipelineReleaseApprovalSurfaceGlobalAndOverride(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Autonomous.MergePipeline.ReleaseApproval = config.ReleaseApprovalModes{Patch: "manual"}
+	cfg.Autonomous.MergePipeline.Projects = map[string]config.MergePipelineOverride{
+		"demo": {ReleaseApproval: config.ReleaseApprovalModes{Major: "manual"}},
+	}
+	m := mergePipelineConfigSurface(cfg.Autonomous.MergePipeline)
+	got := m["release_approval"].(config.ReleaseApprovalModes)
+	if want := (config.ReleaseApprovalModes{Patch: "manual", Minor: "auto", Major: "ask"}); got != want {
+		t.Fatalf("global surface release_approval = %+v, want %+v", got, want)
+	}
+	projects, ok := m["projects"].(map[string]config.MergePipelineOverride)
+	if !ok {
+		t.Fatalf("projects is %T", m["projects"])
+	}
+	if o := projects["demo"]; o.ReleaseApproval.Major != "manual" || o.ReleaseApproval.Patch != "" {
+		t.Fatalf("project override not kept as set: %+v", o.ReleaseApproval)
+	}
+	// The override's own resolution is visible through the effective function.
+	if eff := cfg.Autonomous.MergePipeline.EffectiveReleaseApprovalModes("demo"); eff != (config.ReleaseApprovalModes{Patch: "manual", Minor: "auto", Major: "manual"}) {
+		t.Fatalf("effective for demo = %+v", eff)
+	}
+}

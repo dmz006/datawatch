@@ -35,6 +35,18 @@ type View struct {
 	// defined, and the names of the ones that would run. The block is global,
 	// so it is the same for every project.
 	PostShip ViewPostShip `json:"post_ship"`
+	// ReleaseApprovalInEffect is the approval mode acted on for each release
+	// size, resolved for the project: its override, else the global value,
+	// else the built-in default. There is always a mode for each size.
+	ReleaseApprovalInEffect ReleaseApprovalInEffect `json:"release_approval_in_effect"`
+}
+
+// ReleaseApprovalInEffect is the approval mode in effect for each release
+// size. Every field is always set: an unset key resolves to its default.
+type ReleaseApprovalInEffect struct {
+	Patch string `json:"patch"`
+	Minor string `json:"minor"`
+	Major string `json:"major"`
 }
 
 // ViewSettings are the resolution settings in effect for the project.
@@ -275,6 +287,8 @@ func renderViewText(v View, postShipBlock string) string {
 		b.WriteString(")")
 	}
 	b.WriteString("\n")
+	fmt.Fprintf(&b, "Release approval: patch %s, minor %s, major %s\n",
+		dash(v.ReleaseApprovalInEffect.Patch), dash(v.ReleaseApprovalInEffect.Minor), dash(v.ReleaseApprovalInEffect.Major))
 	if v.ConflictModel != "" || v.ConflictModelInEffect != "" {
 		fmt.Fprintf(&b, "Conflict model: %s", dash(v.ConflictModel))
 		if v.ConflictModelInEffect != v.ConflictModel {

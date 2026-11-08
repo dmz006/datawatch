@@ -219,3 +219,40 @@ func TestRenderViewWithPostShipReplacesTheSummary(t *testing.T) {
 		t.Errorf("the summary line must stay when there is no detail:\n%s", text)
 	}
 }
+
+// TestRenderViewText_ReleaseApprovalLine checks the release approval line is
+// always rendered, next to the merge conflict policy line, with the mode in
+// effect for each size; an unset mode shows as (none), never a blank.
+func TestRenderViewText_ReleaseApprovalLine(t *testing.T) {
+	text := RenderViewText(View{
+		Project:                 "demo",
+		ConflictPolicy:          "mechanical_and_model",
+		ReleaseApprovalInEffect: ReleaseApprovalInEffect{Patch: "auto", Minor: "auto", Major: "ask"},
+	})
+	const want = "Release approval: patch auto, minor auto, major ask\n"
+	if !strings.Contains(text, want) {
+		t.Fatalf("lacks %q in\n%s", want, text)
+	}
+	policy := strings.Index(text, "Merge conflict policy: mechanical_and_model\n")
+	if policy < 0 || strings.Index(text, want) != policy+len("Merge conflict policy: mechanical_and_model\n") {
+		t.Errorf("release approval line must follow the merge conflict policy line:\n%s", text)
+	}
+
+	// No mode reported still renders the line, with the gap shown as (none).
+	empty := RenderViewText(View{Project: "demo"})
+	if !strings.Contains(empty, "Release approval: patch (none), minor (none), major (none)\n") {
+		t.Errorf("an empty view must still show the line:\n%s", empty)
+	}
+}
+
+// TestRenderViewText_ReleaseApprovalFromJSON checks the mode in effect is read
+// from the daemon's JSON body and rendered.
+func TestRenderViewText_ReleaseApprovalFromJSON(t *testing.T) {
+	v, err := ParseView([]byte(`{"project":"demo","release_approval_in_effect":{"patch":"manual","minor":"ask","major":"auto"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(RenderViewText(v), "Release approval: patch manual, minor ask, major auto\n") {
+		t.Errorf("JSON mode in effect not rendered:\n%s", RenderViewText(v))
+	}
+}
