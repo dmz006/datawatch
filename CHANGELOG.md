@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The three high code scanning alerts open on main are closed, so the CodeQL alert gate stops failing.** The discussion routes (scope, sync and the file service folder handler) built file paths from the discussion id in the request URL without checking it, so an id such as `..` could point outside the discussion folder. Every one of those routes now checks the id first and answers `400 invalid discussion id` for a bad one. A valid id is 1 to 128 characters of ASCII letters, digits, dot, underscore and hyphen; `.` and `..` are never valid.
+  - **How it shows up:** a request with a traversal or otherwise malformed discussion id gets `400 invalid discussion id` and touches no files; requests with ordinary ids behave as before. The "Open high/critical alerts" check goes green once the next CodeQL analysis of main completes. Route tests cover traversal ids on every affected route.
+  - **Migration:** none. A discussion whose id uses characters outside the allowed set (spaces, slashes, non-ASCII) is no longer reachable through these routes; rename it to an allowed id.
+
 ## v9.111.2 — Release lint passes again: one test lookup no longer assigns to the blank identifier
 
 ### Fixed
