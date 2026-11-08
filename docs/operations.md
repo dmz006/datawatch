@@ -854,7 +854,7 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
 
-**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`).
+**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A non-final attempt is charged on far less input than the first attempt's cold start — retries and worker hops no longer each re-pay the full starting context (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), so a failed task's worst case is a fraction of the first attempt's start rather than up to two more full starts; the attempt order, the `review_needed` hold and its report are unchanged, and there is no setting to change and nothing to migrate. The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
 
 | Method | How |
 |--------|-----|
