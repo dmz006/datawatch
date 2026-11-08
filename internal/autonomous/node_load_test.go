@@ -138,6 +138,7 @@ type nodeLoadRig struct {
 	prd  *PRD
 	task Task
 	sink *recordingNodeAlerts
+	keys CapacityKeysFn
 }
 
 // newNodeLoadRig builds the rig. order lists the nodes highest priority first.
@@ -167,7 +168,7 @@ func newNodeLoadRig(t *testing.T, order []string, nodes map[string]*fakeOllamaNo
 	if task.ID == "" {
 		t.Fatal("fixture task has no id")
 	}
-	return &nodeLoadRig{m: m, led: led, prd: prd, task: task, sink: sink}
+	return &nodeLoadRig{m: m, led: led, prd: prd, task: task, sink: sink, keys: keys}
 }
 
 // admit takes the worker lease, as the executor does before the load step.

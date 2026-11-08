@@ -29,6 +29,11 @@ type PlacementPlan struct {
 	// Relevant is false when placement has no opinion for this pairing
 	// (no compute nodes at all): the gate is skipped.
 	Relevant bool
+	// Serving is true when the node placement chose already serves the model
+	// (it is in the node's /api/tags list). Nothing is missing then, so the
+	// missing_model policy has nothing to decide and the gate is skipped:
+	// admission proceeds as it always has.
+	Serving bool
 	// Chosen is the node placement picked for the model, or "" when it
 	// refused every candidate node.
 	Chosen string
@@ -133,63 +138,77 @@ func placementAskKey(taskID, model, node string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// placementTarget is where the gate decided the model goes: the node to load
+// and lease on, and the policy that allowed it (for the audit record).
+type placementTarget struct {
+	Node   string
+	Policy string
+}
+
 // placementGate applies the live missing_model policy to the planner's
 // verdict. It is called from admitPreferring, before the lease, so the lease
-// is granted on the node placement approved. It returns the target node to
-// lease and load on, or "" when the gate has no target (admission proceeds
-// exactly as before, and the ledger still ranks the nodes). A
-// *PlacementRefused error means the policy declined the load.
+// is granted on the node placement approved. It returns the target to load
+// and lease on, or a zero target when the gate has no opinion (admission
+// proceeds exactly as before, and the ledger still ranks the nodes). The
+// policy only decides a model that is missing: when the chosen node already
+// serves the model, or no advisor is wired, or placement is not relevant, the
+// gate returns a zero target.
 //
-// The gate is nil-safe: with no advisor (tests, capacity off) it has no
-// target and no error, and it never forces a PreferNode — that would outrank
-// NodeChoice.Priority and lock a task that should move to a freer node.
-func (m *Manager) placementGate(ctx context.Context, prd *PRD, t *Task, backend, model, fallbackNode string) (string, error) {
+// A *PlacementRefused error means the policy declined the load. When the task
+// or the context ends while the ask is open, the gate returns
+// errCancelledWhileWaiting (or the context's error), never a refusal: a
+// cancelled task is not a declined load and raises no alert.
+func (m *Manager) placementGate(ctx context.Context, t *Task, backend, model, fallbackNode string) (placementTarget, error) {
 	a := m.getPlacementAdvisor()
 	if a == nil {
-		return "", nil // no advisor: gate skipped, admission as before
+		return placementTarget{}, nil // no advisor: gate skipped, admission as before
 	}
-	pinned := t.ComputeNode
-	plan := a.Plan(backend, model, pinned)
-	if !plan.Relevant {
-		return "", nil // placement has no opinion: gate skipped, admission as before
+	plan := a.Plan(backend, model, t.ComputeNode)
+	if !plan.Relevant || (plan.Serving && plan.Chosen != "") {
+		return placementTarget{}, nil // nothing missing, or no opinion: admission as before
 	}
 	chosen := plan.Chosen
+	refuse := func(policy, node, qid string) (placementTarget, error) {
+		return placementTarget{}, &PlacementRefused{Node: node, Model: model, Policy: policy, QuestionID: qid, Refused: append([]string(nil), plan.Refused...)}
+	}
 	switch plan.Policy {
 	case config.ComputePlacementRefuse:
-		m.emitPlacementAudit(audit.ActionPlacementRefused, model, fallbackNode, config.ComputePlacementRefuse, "")
-		return "", &PlacementRefused{Node: fallbackNode, Model: model, Policy: config.ComputePlacementRefuse, Refused: append([]string(nil), plan.Refused...)}
+		m.emitPlacementAudit(audit.ActionPlacementRefused, model, firstNonEmpty(chosen, fallbackNode), config.ComputePlacementRefuse, strings.Join(plan.Refused, " | "))
+		return refuse(config.ComputePlacementRefuse, firstNonEmpty(chosen, fallbackNode), "")
 	case config.ComputePlacementAsk:
-		target := chosen
-		if target == "" {
-			target = fallbackNode
-		}
+		target := firstNonEmpty(chosen, fallbackNode)
 		// An approval the operator already gave this (task, model, node)
 		// stands: no re-asking.
 		if m.placementAskApproved(t.ID, model, target) {
 			m.emitPlacementAudit(audit.ActionPlacementApproved, model, target, config.ComputePlacementAsk, "prior approval")
-			return target, nil
+			return placementTarget{Node: target, Policy: config.ComputePlacementAsk}, nil
 		}
-		approved, qid := m.placementAsk(ctx, t, model, target, plan.Refused, a.AskTimeout())
-		if !approved {
-			m.emitPlacementAudit(audit.ActionPlacementDenied, model, target, config.ComputePlacementAsk, qid)
-			return "", &PlacementRefused{Node: fallbackNode, Model: model, Policy: config.ComputePlacementAsk, QuestionID: qid, Refused: append([]string(nil), plan.Refused...)}
+		outcome, qid := m.placementAsk(ctx, t, model, target, plan.Refused, a.AskTimeout())
+		switch outcome {
+		case placementApproved:
+			m.emitPlacementAudit(audit.ActionPlacementApproved, model, target, config.ComputePlacementAsk, "operator approved (question "+qid+")")
+			return placementTarget{Node: target, Policy: config.ComputePlacementAsk}, nil
+		case placementCancelled:
+			if m.taskCancelled(t.ID) {
+				return placementTarget{}, errCancelledWhileWaiting
+			}
+			return placementTarget{}, ctx.Err()
 		}
-		// The approval's durable record is the answered question in the store;
-		// placementAskApproved reads it back on later attempts of the same
-		// (task, model, node), so no extra bookkeeping happens here.
-		return target, nil
+		m.emitPlacementAudit(audit.ActionPlacementDenied, model, target, config.ComputePlacementAsk, "operator declined or the ask timed out (question "+qid+")")
+		return refuse(config.ComputePlacementAsk, target, qid)
 	default: // auto_load
 		if chosen == "" {
-			m.emitPlacementAudit(audit.ActionPlacementRefused, model, fallbackNode, config.ComputePlacementAutoLoad, "")
-			return "", &PlacementRefused{Node: fallbackNode, Model: model, Policy: config.ComputePlacementAutoLoad, Refused: append([]string(nil), plan.Refused...)}
+			m.emitPlacementAudit(audit.ActionPlacementRefused, model, fallbackNode, config.ComputePlacementAutoLoad, strings.Join(plan.Refused, " | "))
+			return refuse(config.ComputePlacementAutoLoad, fallbackNode, "")
 		}
-		return chosen, nil
+		return placementTarget{Node: chosen, Policy: config.ComputePlacementAutoLoad}, nil
 	}
 }
 
-// emitPlacementAudit records a placement event in the audit log. A nil
-// auditFn records nothing.
-func (m *Manager) emitPlacementAudit(action, model, node, policy, detail string) {
+// emitPlacementAudit records a placement event in the audit log with the
+// four fields the audit package documents for placement events: node, model,
+// policy and reason. A nil auditFn records nothing.
+func (m *Manager) emitPlacementAudit(action, model, node, policy, reason string) {
 	m.mu.Lock()
 	fn := m.auditFn
 	m.mu.Unlock()
@@ -197,12 +216,10 @@ func (m *Manager) emitPlacementAudit(action, model, node, policy, detail string)
 		return
 	}
 	fn(action, map[string]any{
-		"node":    node,
-		"model":   model,
-		"policy":  policy,
-		"detail":  detail,
-		"actor":   "autonomous",
-		"subject": "placement",
+		"node":   node,
+		"model":  model,
+		"policy": policy,
+		"reason": reason,
 	})
 }
 
@@ -230,30 +247,30 @@ func (m *Manager) placementAskApproved(taskID, model, node string) bool {
 }
 
 // placementAsk raises the operator question and polls until it is answered,
-// withdrawn, or the ask times out. It reports whether the operator chose to
-// load, and the raised question's ID (once the raise succeeded), so a
-// declined ask can be named in the refusal. The task shows as waiting on the
+// withdrawn, or the ask times out. It reports the outcome and the raised
+// question's ID (once the raise succeeded), so a declined ask can be named in
+// the refusal. The task shows as waiting on the
 // decision the while.
 //
 // The ask is de-duped by (task, model, node): a second raise of the same
 // (task, model, node) reuses the existing open question instead of raising
 // a duplicate.
-func (m *Manager) placementAsk(ctx context.Context, t *Task, model, node string, refused []string, timeout time.Duration) (approved bool, questionID string) {
+func (m *Manager) placementAsk(ctx context.Context, t *Task, model, node string, refused []string, timeout time.Duration) (outcome placementOutcome, questionID string) {
 	store := m.placementQuestionStore()
 	if store == nil {
-		return false, "" // no channel: the load is declined and alerted
+		return placementDeclined, "" // no channel: the load is declined and alerted
 	}
 	if timeout <= 0 {
 		timeout = 30 * time.Minute
 	}
 	key := placementAskKey(t.ID, model, node)
 	q := Question{
-		PRDID:            t.PRDID,
-		TaskID:           t.ID,
-		AskedBy:          placementQuestionAsker,
-		AskerKind:        QuestionAskerSystem,
-		Context:          QuestionContextTask,
-		Text:             placementQuestionText(model, node, refused),
+		PRDID:     t.PRDID,
+		TaskID:    t.ID,
+		AskedBy:   placementQuestionAsker,
+		AskerKind: QuestionAskerSystem,
+		Context:   QuestionContextTask,
+		Text:      placementQuestionText(model, node, refused),
 		Options: []QuestionOption{
 			{ID: placementOptionLoad, Label: "load " + model + " on " + node},
 			{ID: placementOptionRefuse, Label: "refuse to load"},
@@ -262,18 +279,17 @@ func (m *Manager) placementAsk(ctx context.Context, t *Task, model, node string,
 		Default:          "hold",
 		SourceLineSHA256: key,
 	}
-	raised, dup, err := store.RaiseUnlessOpenSourceLine(q)
+	raised, fresh, err := store.RaiseUnlessOpenSourceLine(q)
 	if err != nil {
-		return false, ""
+		return placementDeclined, ""
 	}
 	questionID = raised.ID
-	if !dup {
-		m.emitPlacementAudit(audit.ActionPlacementAsked, model, node, config.ComputePlacementAsk, questionID)
+	if fresh { // false: an open ask for this (task, model, node) already exists and is reused
+		m.emitPlacementAudit(audit.ActionPlacementAsked, model, node, config.ComputePlacementAsk, "awaiting the operator (question "+questionID+")")
 	}
 	m.setWaiting(t, "model placement awaiting approval")
 	defer m.clearWaiting(t)
-	approved, _ = m.awaitPlacementDecision(ctx, t, raised.ID, timeout)
-	return approved, questionID
+	return m.awaitPlacementDecision(ctx, t, raised.ID, timeout), questionID
 }
 
 // placementQuestionText is the operator-facing body of the ask.
@@ -286,40 +302,57 @@ func placementQuestionText(model, node string, refused []string) string {
 	return b.String()
 }
 
+// placementOutcome is how an ask ended.
+type placementOutcome int
+
+const (
+	// placementDeclined: the operator answered refuse, the ask was withdrawn or
+	// expired, or it timed out (a timeout is a refusal).
+	placementDeclined placementOutcome = iota
+	// placementApproved: the operator answered load.
+	placementApproved
+	// placementCancelled: the task was cancelled or the context ended while
+	// the ask was open. Not a refusal.
+	placementCancelled
+)
+
 // awaitPlacementDecision polls the question store until the ask is answered,
 // withdrawn, expired, the task is cancelled, or the timeout lands. On a
-// timeout it withdraws the ask itself, so the operator sees a closed
-// question, not a stale one.
-func (m *Manager) awaitPlacementDecision(ctx context.Context, t *Task, questionID string, timeout time.Duration) (approved, timedOut bool) {
+// timeout or a cancel it withdraws the ask itself, so the operator sees a
+// closed question, not a stale one.
+func (m *Manager) awaitPlacementDecision(ctx context.Context, t *Task, questionID string, timeout time.Duration) placementOutcome {
 	store := m.placementQuestionStore()
 	if store == nil {
-		return false, false
+		return placementDeclined
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		if m.taskCancelled(t.ID) {
-			return false, false
-		}
-		if err := ctx.Err(); err != nil {
-			return false, false
+		if m.taskCancelled(t.ID) || ctx.Err() != nil {
+			_, _ = store.Withdraw(questionID, placementQuestionActor, "task ended while the placement ask was open")
+			return placementCancelled
 		}
 		q, ok := store.Get(questionID)
 		if !ok {
 			// Gone (withdrawn out-of-band): treat as declined.
-			return false, false
+			return placementDeclined
 		}
 		switch q.State {
 		case QuestionAnswered:
-			ans, ok := store.CurrentAnswer(questionID)
-			return ok && ans.ChosenOptionID == placementOptionLoad, false
+			if ans, ok := store.CurrentAnswer(questionID); ok && ans.ChosenOptionID == placementOptionLoad {
+				return placementApproved
+			}
+			return placementDeclined
 		case QuestionWithdrawn, QuestionExpired:
-			return false, q.State == QuestionExpired
+			return placementDeclined
 		}
 		if time.Now().After(deadline) {
 			_, _ = store.Withdraw(questionID, placementQuestionActor, "placement ask timed out")
-			return false, true
+			return placementDeclined
 		}
-		time.Sleep(placementWaitPoll)
+		select {
+		case <-ctx.Done():
+		case <-time.After(placementWaitPoll):
+		}
 	}
 }
 

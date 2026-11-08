@@ -37,13 +37,6 @@ type PinResolver struct {
 
 // NewPinResolver builds a resolver that reads node settings through
 // lookup. compute.Registry.Get matches the lookup signature directly.
-//
-// The placement gate in the autonomous package (admitPreferring) runs before
-// the lease and ensures the model is resident on the leased node. Once the
-// lease is granted, ResolveModel here is called with the lease-named node
-// and the requested model; it returns the pinned model on that node (or the
-// requested model if the node has no pin). No swap is needed because the
-// gate already placed the model where the session will run.
 func NewPinResolver(lookup func(name string) (*compute.Node, error)) *PinResolver {
 	return &PinResolver{lookup: lookup}
 }
@@ -158,6 +151,19 @@ func pinnedModel(node *compute.Node, nodeName, requestedModel, explicitOverride 
 		return target, nil
 	}
 	return "", &PinRefusedError{Node: nodeName, Pinned: pinned, Requested: target}
+}
+
+// PlacementModel is the model placement may put on node for a request of
+// model. It calls pinnedModel as an implicit request, with no explicit
+// override, so a pin is never replaced and allow_model_swap never comes into
+// it: a node pinned to another model answers with its pin, and a node with no
+// pin answers with model. Placement treats an answer that differs from model
+// as a node that cannot take it.
+func PlacementModel(node *compute.Node, model string) (string, error) {
+	if node == nil {
+		return model, nil
+	}
+	return pinnedModel(node, node.Name, model, "")
 }
 
 // PinRefusedError reports a request refused because it would replace the

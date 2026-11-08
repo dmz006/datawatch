@@ -55,14 +55,6 @@ const defaultCIWatchWait = 1500 * time.Second
 // capRetryPause is the pause between session-cap retries (var for tests).
 var capRetryPause = 15 * time.Second
 
-// SetPlacementAdvisor wires the placement advisor (planner verdict supplier)
-// directly, for tests. Production wires the advisor through SetCapacity.
-func (m *Manager) SetPlacementAdvisor(a PlacementAdvisor) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.placementAdvisor = a
-}
-
 // SetCapacity wires the admission ledger and pool resolver. The optional
 // third argument is the placement advisor (planner verdict supplier); with
 // it the admission gate applies the live missing_model policy before the
@@ -332,61 +324,72 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 // previous attempt, so placement still chooses the least loaded node and the
 // old one only wins a tie.
 //
-// For RoleWorker, the placement gate runs first: it applies the live
-// missing_model policy to the planner's verdict, decides the target node, and
-// loads the model on it (auto_load or ask-approve). The lease is then granted
-// on that node, so the worker session starts there. With no advisor wired
-// (tests, capacity off) the gate is a no-op and admission proceeds as before.
+// For RoleWorker, the placement gate runs first. When the model is missing
+// (no node serves it) the gate applies the live missing_model policy: refuse
+// fails the task with the planner's refusal text, ask parks the task as
+// waiting ("model placement awaiting approval") until the operator answers or
+// the ask times out, and auto_load goes straight to loading. Where the gate
+// approves a node, the model is loaded there first and the lease is then
+// restricted to that node, so the worker session starts on the node the model
+// is on. When a node already serves the model, or no advisor is wired (tests,
+// capacity off), the gate has no opinion and admission is unchanged: the
+// ledger picks the node and loadWorkerNode makes the model resident on it.
 func (m *Manager) admitPreferring(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, prefer string) error {
-	if role == capacity.RoleWorker {
-		if err := m.waitAutomationBudget(ctx, prd, t); err != nil {
-			return err
-		}
-		// Placement gate: decide the target node and load the model before
-		// the lease, so the loaded node is always one placement approved.
-		m.mu.Lock()
-		keysFn, loader := m.capacityKeys, m.nodeLoad
-		m.mu.Unlock()
-		fallback := ""
-		if keysFn != nil {
-			_, fallback = keysFn(backend, model)
-		}
-		target, gerr := m.placementGate(ctx, prd, t, backend, model, fallback)
-		if gerr != nil {
-			// The gate refused; the task fails.
-			if refused, ok := gerr.(*PlacementRefused); ok {
-				m.mu.Lock()
-				sink := m.nodeAlerts
-				m.mu.Unlock()
-				raisePlacementAlert(sink, refused)
-			}
-			return gerr
-		}
-		// Load the model on the target before the lease, so the worker's
-		// first request finds it resident. A single-node entry has no load
-		// step: it never asks its one node to load.
-		if loader != nil && target != "" {
-			m.mu.Lock()
-			choicesFn := m.capacityChoices
-			m.mu.Unlock()
-			singleNode := false
-			if choicesFn != nil {
-				singleNode = len(choicesFn(backend, model)) < 2
-			}
-			if !singleNode {
-				if lerr := m.loadOnNode(ctx, t, loader, target, model); lerr != nil {
-					return lerr
-				}
-				m.emitPlacementAuditLoaded(model, target)
-			}
-		}
-		// Lease on the target.
-		if target != "" {
-			prefer = target
-		}
+	if role != capacity.RoleWorker {
 		return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
 	}
-	return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
+	if err := m.waitAutomationBudget(ctx, prd, t); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	keysFn, choicesFn, loader, sink := m.capacityKeys, m.capacityChoices, m.nodeLoad, m.nodeAlerts
+	m.mu.Unlock()
+	fallback := ""
+	if keysFn != nil {
+		_, fallback = keysFn(backend, model)
+	}
+	target, gerr := m.placementGate(ctx, t, backend, model, fallback)
+	if gerr != nil {
+		var refused *PlacementRefused
+		if errors.As(gerr, &refused) {
+			raisePlacementAlert(sink, refused)
+		}
+		return gerr
+	}
+	if target.Node == "" {
+		return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
+	}
+	// Load the model on the approved node before the lease, so the worker's
+	// first request finds it resident.
+	if loader != nil {
+		if lerr := m.loadOnNode(ctx, t, loader, target.Node, model); lerr != nil {
+			if ctx.Err() != nil && m.taskCancelled(t.ID) {
+				return errCancelledWhileWaiting
+			}
+			return fmt.Errorf("placement load on node %s: %w", target.Node, lerr)
+		}
+		m.emitPlacementAudit(audit.ActionPlacementLoaded, model, target.Node, target.Policy, "model resident before the lease")
+	}
+	// Lease on the approved node only: the other candidates do not have the
+	// model, so a lease there would start the worker where it is not loaded.
+	var exclude []string
+	if choicesFn != nil {
+		choices := choicesFn(backend, model)
+		onList := false
+		for _, c := range choices {
+			if c.Name == target.Node {
+				onList = true
+			}
+		}
+		if onList {
+			for _, c := range choices {
+				if c.Name != target.Node {
+					exclude = append(exclude, c.Name)
+				}
+			}
+		}
+	}
+	return m.acquireLease(ctx, prd, t, backend, model, role, exclude, target.Node)
 }
 
 // acquireLease blocks until the task holds a capacity lease, never on a node
@@ -494,24 +497,6 @@ func (m *Manager) replaceStaleLease(ctx context.Context, prd *PRD, t *Task, back
 	}
 	m.releaseCapacity(t.ID)
 	return m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, nil, "")
-}
-
-// emitPlacementAuditLoaded records the placement_loaded audit event after a
-// successful load. A nil auditFn records nothing.
-func (m *Manager) emitPlacementAuditLoaded(model, node string) {
-	m.mu.Lock()
-	fn := m.auditFn
-	m.mu.Unlock()
-	if fn == nil {
-		return
-	}
-	fn(audit.ActionPlacementLoaded, map[string]any{
-		"node":    node,
-		"model":   model,
-		"policy":  "auto_load",
-		"actor":   "autonomous",
-		"subject": "placement",
-	})
 }
 
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity

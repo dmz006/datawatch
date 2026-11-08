@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -1495,9 +1493,12 @@ func newPlacementAdvisor(cfg *config.Config, httpServer *server.HTTPServer) *pla
 
 // Plan implements autonomous.PlacementAdvisor. It hands the live config, the
 // inference and compute registries and the observer's latest payloads to the
-// pure compute planner and returns its verdict. A single-node entry is not
+// pure compute planner and returns its verdict. pinnedTo is the task's node
+// pin; the planner restricts the candidates to it. A single-node entry is not
 // skipped: even with one candidate the planner applies the pin and headroom
 // checks and returns a refusal when the node lacks the model or the headroom.
+// Serving is set when the chosen node already serves the model, so the
+// missing_model policy leaves that case alone.
 func (a *placementAdvisor) Plan(backend, model, pinnedTo string) autonomous.PlacementPlan {
 	entry := a.entry(backend, model)
 	if len(entry.ComputeNodes) == 0 {
@@ -1526,8 +1527,15 @@ func (a *placementAdvisor) Plan(backend, model, pinnedTo string) autonomous.Plac
 		Now:            a.now(),
 		Candidates:     cands,
 	})
+	serving := false
+	for _, c := range cands {
+		if c.Node != nil && c.Node.Name == plan.Node && c.ServesModel {
+			serving = true
+		}
+	}
 	return autonomous.PlacementPlan{
 		Relevant: true,
+		Serving:  serving,
 		Chosen:   plan.Node,
 		Policy:   cp.EffectiveMissingModel(),
 		Refused:  plan.Refusal,
@@ -1564,11 +1572,21 @@ func (a *placementAdvisor) candidates(names []string, model string) ([]compute.P
 			continue
 		}
 		c := compute.PlacementCandidate{Node: n}
+		// A pin is never replaced. Asked as an implicit request (no swap),
+		// a node pinned to another model answers with its pin. Such a node
+		// reaches the planner with allow_model_swap withheld, so it is
+		// refused with the pin named, whatever the node's own setting. The
+		// registry's node is not touched: the planner gets a copy.
+		if pm, _ := inference.PlacementModel(n, bare); !strings.EqualFold(pm, bare) && n.AllowModelSwap {
+			noSwap := *n
+			noSwap.AllowModelSwap = false
+			c.Node = &noSwap
+		}
 		if n.NodePinnedModel != "" && strings.EqualFold(n.NodePinnedModel, bare) {
 			c.ServesModel = true
 		}
-		// Also check the node's live model list (/api/tags): a node that has
-		// the model loaded serves it even when it is not pinned to it.
+		// The node's served models come from the source the compute API's
+		// node-models endpoint reads (/api/tags, via server.ProbeNodeModels).
 		if !c.ServesModel && nodeServesModel(n, bare) {
 			c.ServesModel = true
 		}
@@ -1597,42 +1615,24 @@ func (a *placementAdvisor) candidates(names []string, model string) ([]compute.P
 	return out, true
 }
 
-// nodeServesModel reports whether the node's live model list (/api/tags)
-// includes the model. A 5s timeout bounds the probe; any error (unreachable,
-// timeout, decode) reports false: the planner treats the model as missing and
-// the load step makes it resident.
+// nodeServesModel reports whether the node's served-model list includes the
+// model. The list is the one the compute API's node-models endpoint returns
+// (server.ProbeNodeModels, /api/tags). The probe is bounded to 5s; any error
+// (unreachable, timeout, bad reply) reports false: the planner treats the model
+// as missing and the load step makes it resident. A bare name also matches its
+// ":latest" tag, as ollama lists it.
 func nodeServesModel(n *compute.Node, model string) bool {
-	if n == nil || n.Address == "" || model == "" {
+	if n == nil || model == "" {
 		return false
-	}
-	base := n.Address
-	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-		base = "http://" + base
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/api/tags", nil)
+	models, _, err := server.ProbeNodeModels(ctx, n, "ollama")
 	if err != nil {
 		return false
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return false
-	}
-	var tags struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		return false
-	}
-	for _, m := range tags.Models {
-		if strings.EqualFold(m.Name, model) {
+	for _, m := range models {
+		if strings.EqualFold(m, model) || strings.EqualFold(m, model+":latest") {
 			return true
 		}
 	}
