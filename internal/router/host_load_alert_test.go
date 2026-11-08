@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -63,5 +65,70 @@ func TestHostLoadAlert_ConfigureForwardsKeyAndValue(t *testing.T) {
 	}
 	if len(sent) != 1 || !strings.Contains(sent[0], "Set autonomous.host_load_alert.mode = reap") {
 		t.Fatalf("sent=%q", sent)
+	}
+}
+
+func hostLoadCommConfigBody(mode string) string {
+	return `{"autonomous":{"host_load_alert":{"mode":"` + mode + `","multiple":1.5,"minutes":10}}}`
+}
+
+func TestHostLoadComm_VerbRendersAlertMode(t *testing.T) {
+	log, port := laneFillCommDaemon(t, http.StatusOK, hostLoadCommConfigBody("alert"))
+	r := setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("autonomous host-load"), " ")
+	if log.path != "/api/config" {
+		t.Errorf("path=%s, want /api/config", log.path)
+	}
+	for _, want := range []string{"mode alert", "1.5 × the core count for 10 minutes"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("reply lacks %q: %q", want, got)
+		}
+	}
+}
+
+func TestHostLoadComm_VerbRendersReapMode(t *testing.T) {
+	log, port := laneFillCommDaemon(t, http.StatusOK, `{"autonomous":{"host_load_alert":{"mode":"reap","multiple":2,"minutes":15}}}`)
+	r := setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("autonomous host_load"), " ")
+	if log.path != "/api/config" {
+		t.Errorf("path=%s, want /api/config", log.path)
+	}
+	for _, want := range []string{"mode reap", "2 × the core count for 15 minutes", "orphan reaper"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("reply lacks %q: %q", want, got)
+		}
+	}
+}
+
+func TestHostLoadComm_VerbRendersOffMode(t *testing.T) {
+	_, port := laneFillCommDaemon(t, http.StatusOK, hostLoadCommConfigBody("off"))
+	r := setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("autonomous host-load"), " ")
+	if !strings.Contains(got, "off") {
+		t.Errorf("reply must say the check is off, got: %q", got)
+	}
+}
+
+func TestHostLoadComm_TakesNoArguments(t *testing.T) {
+	log, port := laneFillCommDaemon(t, http.StatusOK, hostLoadCommConfigBody("alert"))
+	r := setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("autonomous host-load 2"), " ")
+	if !strings.Contains(got, "usage: autonomous host-load") {
+		t.Errorf("a stray argument must show the usage, got: %q", got)
+	}
+	if log.calls != 0 {
+		t.Errorf("a stray argument must not reach the daemon, got %d calls", log.calls)
+	}
+}
+
+func TestHostLoadComm_ParityListHasVerb(t *testing.T) {
+	verbs := HostLoadCommVerbs()
+	if !slices.Contains(verbs, "host-load") {
+		t.Errorf("HostLoadCommVerbs() = %v, must contain %q", verbs, "host-load")
+	}
+	for _, verb := range verbs {
+		if c := Parse("autonomous " + verb); c.Type != CmdAutonomous {
+			t.Errorf(`Parse("autonomous %s").Type = %v, want CmdAutonomous`, verb, c.Type)
+		}
 	}
 }

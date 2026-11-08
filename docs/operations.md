@@ -4551,6 +4551,9 @@ The same settings are in `config.yaml`, `PUT /api/config`
 `host_load_alert_minutes`), the comm `configure` command
 (`configure autonomous.host_load_alert.mode=reap`) and Settings > General >
 Autonomous in the PWA. A change applies on the next minute, with no restart.
+Read the effective settings from the chat channel with `autonomous host-load`;
+it reports the mode, the limit and the duration in plain text and changes
+nothing.
 
 ---
 
