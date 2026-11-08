@@ -575,6 +575,19 @@ Defined in `internal/config/autonomous_rules_context.go`; validated by `Validate
 
 A change applies to the next Automaton that is decomposed, with no restart. Surfaces: `GET`/`PUT /api/autonomous/rules-context`, `datawatch autonomous rules-context`, the MCP tools `rules_context_status` and `rules_context_set`, the chat verbs `autonomous rules`, and Settings, General, *Rules and context*.
 
+### Worker session profile settings (`autonomous.worker_profiles`)
+
+Defined in `internal/config/config.go` (`AutonomousConfig.WorkerProfiles`, `WorkerProfileDefaults`, `WorkerProfile`); the profile type is `internal/workerprofile.WorkerProfile`, whose yaml and json keys are snake case. `ValidateWorkerProfileConfig` checks the three settings and runs from `validateLoaded`, so both `Load` and `LoadSecure` refuse a bad config. Every write surface that changes these settings must call it before it persists them. `internal/workerprofile` does not import `internal/config`.
+
+| Key | Type and default | Notes |
+|---|---|---|
+| `autonomous.worker_profiles` | map of profile name to profile, default empty | Each value uses the `WorkerProfile` fields (`name`, `mcp`, `tools`, `skills`, `context`, `model`, `effort`). A name set on the value must match its key. The name must not equal a built-in name (`minimal`, `digest`, `full`, `datawatch-tools`). Each profile must pass `workerprofile.Validate` |
+| `autonomous.worker_profile_defaults.role` | map of role to profile name, default empty | Keys: `planner`, `worker`, `verifier`, `judge`. Values name a built-in or user profile. An empty value means no default |
+| `autonomous.worker_profile_defaults.kind` | map of task kind to profile name, default empty | Keys: `implementation`, `docs`, `note`, `final_gate`. Values as for `role` |
+| `autonomous.worker_profile` | string, default empty | Global-layer profile name. Must name a built-in or user profile when set. Empty = the role default |
+
+Refused at load time: a user profile named like a built-in; a profile that fails `workerprofile.Validate`; a name on a profile that does not match its key; a defaults value or the global name that names no known profile; an unknown role or kind key.
+
 ### Pre-spawn scope lint mode (`autonomous.scope_lint`)
 
 `autonomous.scope_lint` (`config.AutonomousConfig.ScopeLint`, JSON

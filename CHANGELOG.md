@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Worker session profiles can be configured in `config.yaml`.** The new `autonomous.worker_profiles` map defines user profiles (MCP servers, tools, skills, context, model, effort). `autonomous.worker_profile_defaults` sets the profile each worker role and task kind starts with, and `autonomous.worker_profile` sets the global-layer profile. A bad setting is refused at load: a profile named like a built-in, an invalid profile, a default or global name that matches no profile, or an unknown role or kind key.
+  - **How it shows up:** nothing changes in running sessions yet. The settings are read and validated at startup; the reference is in [docs/config-reference.yaml](docs/config-reference.yaml) and [docs/implementation.md](docs/implementation.md).
+  - **Migration:** none. Unset means no user profiles and the built-in defaults, as before.
+
 - **Every worker session now starts small, with a startup context and tool set chosen for its job.** A session datawatch launches for an Automaton task or a verification job no longer begins with the full operator-session harness and generic standing material; it opens with the small context its own job needs and the tools that fit that job. The startup context and tools are configurable, so every datawatch user can shape how a worker starts from all of datawatch's configuration channels — YAML config, the web settings, REST (`PUT /api/config`), the comm channel, the CLI, and MCP.
   - **How it shows up:** worker and verifier sessions are launched the same way as before and produce the same task results, but their opening context is job-specific instead of a standing operator harness, and what a worker begins with is a setting the operator can read and change. Operator-started sessions are unchanged.
   - **Migration:** none. The smaller start applies from the next worker launch; the configuration is new, so there is nothing to migrate — unset means the default small start.
