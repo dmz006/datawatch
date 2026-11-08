@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.111.4 (2026-11-08).** Discussion routes now reject malformed discussion ids with 400 before touching any file, and the tag-selection match no longer sizes its lookup set from input lengths; the three open high code scanning alerts are fixed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.0 (2026-11-08).** Session ends now reap the processes a session left behind, attributed only by evidence read from /proc and never by name; a host load check (autonomous.host_load_alert, off, alert or reap, default alert) warns when load stays high; and load or stress steps in Automaton plans must be niced, capped, timed and self-cleaning. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
