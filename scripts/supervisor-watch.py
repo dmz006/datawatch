@@ -30,7 +30,7 @@ BASE = os.path.expanduser("~/workspace/datawatch")
 WT = os.path.expanduser("~/.datawatch/prd-worktrees")
 STATE = "/tmp/sv/watch-state.json"
 MODEL = "qwen3.8-64k"
-TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
+TMUX_RESTARTS, TMUX_SINCE = "0", "Thu 2026-11-05 23:48:15 EST"
 SILENT_MIN = 60
 
 
