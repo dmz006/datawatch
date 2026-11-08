@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.5 — Sessions tiles show every session's system tag chips on the first load
+
+### Fixed
+
+- **The Sessions page now shows every session's system tag (placement tag) chips on the first load.** The paged summary view of `GET /api/sessions` (the row shape the PWA list loads first) dropped each session's `system_tags`, so the machine-derived placement chips — `compute:<node>`, `peer:<name>`, `backend:<llm>`, `lane:<lane>`, `role:<role>`, `project:<name>` — were missing on first paint and only appeared once a full session record was received. The summary row now carries `system_tags` (`sessionSummaryRow`, `internal/server/session_list_page.go`), which also covers the windowed session frames built on the same row, and `internal/server/session_summary_row_system_tags_test.go` pins the field on every row shape the server emits so it cannot silently drop out again.
+  - **How it shows up:** opening the Sessions page (PWA, e.g. on the phone) now renders each session's placement tags as solid ⚙️ placement chips on the first load, alongside the own-tag and inherited-tag chips, with no waiting for session details to arrive. (Found 2026-11-08 on the operator's phone.)
+  - **Migration:** none. The field is additive: a session without system tags renders exactly as before, and no setting changes.
+
 ## v9.112.4 — Discussion folder paths are built through one cleaned-path helper for the last open CodeQL alert
 
 ### Fixed
