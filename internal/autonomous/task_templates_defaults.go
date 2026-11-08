@@ -98,10 +98,10 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Kind:       "final_gate",
 			ReadOnly:   true,
 			ReportPath: ".datawatch/reports/{{feature}}-final-gate.txt",
-			// Its own check, without modifying the tree: the gate verifies
-			// the build and the package tests, so it must not be an
-			// unverifiable read-only task.
-			VerificationScript: "go build ./... && go test ./...",
+			// No VerificationScript: the gate's own check is its report
+			// file. A read-only task with a usable report path is verified
+			// by the read-only report check, and the command text the gate
+			// used to carry is not a file, so the verifier prestart rejects it.
 			AppliesWhen: "Always offered as the closing task: a cheap, read-only " +
 				"verdict before the story is considered done.",
 		},

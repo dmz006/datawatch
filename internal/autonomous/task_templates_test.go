@@ -88,6 +88,7 @@ func TestTaskTemplatesBuiltInPackPassesDefaultLintPack(t *testing.T) {
 			Kind:               def.Kind,
 			ReadOnly:           def.ReadOnly,
 			VerificationScript: def.VerificationScript,
+			ReportPath:         reportPathForTemplate(rendered),
 			FilesPlanned:       splitTemplateFiles(def.Files),
 		})
 	}
@@ -458,8 +459,8 @@ func TestFinalGateTemplateReportPathOnFinalGate(t *testing.T) {
 	if want := ".datawatch/reports/final-gate-feature-x-final-gate.txt"; gate.ReportPath != want {
 		t.Fatalf("report path = %q, want %q", gate.ReportPath, want)
 	}
-	if !taskHasUsableReportPath(*gate) || strings.TrimSpace(gate.VerificationScript) == "" {
-		t.Fatal("final gate must carry a usable report path and a script")
+	if !taskHasUsableReportPath(*gate) || strings.TrimSpace(gate.VerificationScript) != "" {
+		t.Fatal("final gate must carry a usable report path and no verification script")
 	}
 	if !strings.Contains(gate.Spec, "only file") {
 		t.Fatalf("spec must state the report is the only file written: %q", gate.Spec)
@@ -468,6 +469,34 @@ func TestFinalGateTemplateReportPathOnFinalGate(t *testing.T) {
 		if f.Task == gate.ID && strings.Contains(f.RuleID, "unverifiable") {
 			t.Fatalf("final gate trips lint rule %s", f.RuleID)
 		}
+	}
+}
+
+// TestFinalGateTemplateHasReportAndNoCommandString asserts the built-in
+// final-gate task, as taskForTemplate builds it, is read-only, carries a
+// usable report path and has no VerificationScript. The gate used to carry
+// a command string there, which the verifier prestart rejects as not a file.
+func TestFinalGateTemplateHasReportAndNoCommandString(t *testing.T) {
+	var def *config.TaskTemplateDef
+	for _, d := range BuiltInTaskTemplates() {
+		if d.ID == TemplateFinalGate {
+			d := d
+			def = &d
+		}
+	}
+	if def == nil {
+		t.Fatal("built-in final gate template missing")
+	}
+	story := testTaskTemplateStory(t)
+	gate := taskForTemplate(story, *def, nil, nil)
+	if !gate.ReadOnly {
+		t.Fatal("final gate task must be read-only")
+	}
+	if !taskHasUsableReportPath(gate) {
+		t.Fatalf("final gate task report path %q is not usable", gate.ReportPath)
+	}
+	if gate.VerificationScript != "" {
+		t.Fatalf("final gate task must have no verification script, got %q", gate.VerificationScript)
 	}
 }
 
