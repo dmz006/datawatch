@@ -130,13 +130,13 @@ func (l *AutoLanesLog) writeLocked(entries []AutoLanesLogEntry) error {
 		return fmt.Errorf("usagecalc auto-lanes log: temp file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // best-effort; it is gone after a successful rename
+	defer func() { _ = os.Remove(tmpName) }() // best-effort; it is gone after a successful rename
 	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("usagecalc auto-lanes log: write temp file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("usagecalc auto-lanes log: sync temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

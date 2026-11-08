@@ -56,7 +56,7 @@ func fetchAutoLanesStatus(t *testing.T, ts *httptest.Server) autoLanesStatus {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET status = %d, want 200", resp.StatusCode)
 	}
