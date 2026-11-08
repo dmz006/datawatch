@@ -38,7 +38,7 @@ function fieldsByKey(sandbox) {
   return out;
 }
 
-test('the section has one header and exactly the ten usage.calculator fields', () => {
+test('the section has one header and exactly the thirteen usage.calculator fields', () => {
   const sandbox = loadApp();
   const sec = calculatorSection(sandbox);
   assert.equal(sec.section, 'Usage calculator');
@@ -49,6 +49,9 @@ test('the section has one header and exactly the ten usage.calculator fields', (
     'usage.calculator.cost_per_task_points',
     'usage.calculator.baseline_per_24h',
     'usage.calculator.max_lanes',
+    'usage.calculator.auto_lanes',
+    'usage.calculator.auto_lanes_max',
+    'usage.calculator.auto_lanes_special_priority',
     'usage.calculator.reset_weekday',
     'usage.calculator.reset_time',
     'usage.calculator.reset_zone',

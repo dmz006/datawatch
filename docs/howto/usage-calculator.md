@@ -447,7 +447,7 @@ same three things: on or off, the current cap, and the last change.
 - [Configuration reference](../config-reference.yaml) (`usage.calculator`, `usage.billing`)
 - [Burn guard](burn-guard.md)
 - [Parity status](../parity-status.md)
-- [Auto-lane loops design](../plans/2026-10-27-auto-lane-loops-design.md)
+- [Auto-lanes plan](../plans/2026-11-02-usage-auto-lanes.md)
 
 ## Burn guard
 
