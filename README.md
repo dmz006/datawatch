@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.109.1 (2026-11-07).** A claude-code session's platform context is now delivered through an untracked local rules file, and every tree-cleanliness check ignores the daemon's own marked sections, so a repository stays clean. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.110.0 (2026-11-07).** Every object the Automata own now carries machine-managed placement tags, every list filters by tag or axis, and a tag sweep re-derives the tags of existing work. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
