@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-const createdFilesVerifyScript = "go test ./..."
+const createdFilesVerifyScript = "scripts/verify.sh"
 
 // createdFilesTree builds a temporary project tree that already has an
 // internal/x directory and a docs directory (as the real plans' trees
@@ -29,7 +29,20 @@ func createdFilesTree(t *testing.T) *PRD {
 			t.Fatalf("mkdir %s: %v", sub, err)
 		}
 	}
+	writeFixtureVerifyScript(t, dir)
 	return &PRD{ID: "prd-1", ProjectDir: dir}
+}
+
+// writeFixtureVerifyScript drops the executable scripts/verify.sh the fixture plans name.
+func writeFixtureVerifyScript(t *testing.T, dir string) {
+	t.Helper()
+	p := filepath.Join(dir, "scripts", "verify.sh")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { // #nosec G306 -- test fixture must be executable
+		t.Fatal(err)
+	}
 }
 
 // createdFilesStory wraps tasks in one story (the decomposed-plan

@@ -142,6 +142,11 @@ const (
 	// nor a usable report path under .datawatch/reports/; with neither,
 	// its failure produces nothing to inspect. No task kind is exempt.
 	FindingReadOnlyUnverifiable = "readonly_unverifiable"
+	// FindingUnexecutableVerification — a task whose non-empty
+	// VerificationScript is not a runnable file in the project: a command
+	// string, or a path that fails CheckVerifierPrestart. A script the same
+	// task lists in FilesGenerated is accepted.
+	FindingUnexecutableVerification = "unexecutable_verification"
 )
 
 // StructuralFinding is one typed, deterministic finding in a decomposed
@@ -645,6 +650,45 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 					TaskID:  t.ID,
 					Detail: "task " + t.ID + " has neither verification_script nor " +
 						"verification_script_reason; per B124 a task without a script must state an explicit exemption reason",
+				})
+			}
+		}
+	}
+
+	// --- Rule 4b: a verification script must be an executable file. ---
+	for _, s := range stories {
+		for _, t := range s.Tasks {
+			script := strings.TrimSpace(t.VerificationScript)
+			if script == "" {
+				continue
+			}
+			reason := ""
+			if strings.ContainsAny(script, " \t\r\n") {
+				reason = "verification script " + strconv.Quote(script) + " is a command string, not a script file"
+			} else {
+				generated := false
+				for _, g := range t.FilesGenerated {
+					if filepath.Clean(strings.TrimSpace(g)) == filepath.Clean(script) {
+						generated = true
+						break
+					}
+				}
+				if generated {
+					continue
+				}
+				if prd == nil || prd.ProjectDir == "" {
+					continue // base directory unknown: a path cannot be checked
+				}
+				if res := CheckVerifierPrestart(baseDir, script); res.Outcome == PrestartProblem {
+					reason = res.Reason
+				}
+			}
+			if reason != "" {
+				add(StructuralFinding{
+					Kind:    FindingUnexecutableVerification,
+					StoryID: s.ID,
+					TaskID:  t.ID,
+					Detail:  "task " + t.ID + " has an unexecutable verification script: " + reason,
 				})
 			}
 		}

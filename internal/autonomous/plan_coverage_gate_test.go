@@ -25,29 +25,29 @@ const gateSpec = `1. implement login form
 var (
 	// gateFailingPlan covers requirements 1 and 3, silently drops 2.
 	gateFailingPlan = `{"title":"feature","stories":[
-		{"title":"login form work","tasks":[{"title":"implement login form","files":["login.go"],"spec":"build the login form","verification_script":"go test ./..."}]},
-		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"go test ./..."}]}
+		{"title":"login form work","tasks":[{"title":"implement login form","files":["login.go"],"spec":"build the login form","verification_script":"scripts/verify.sh"}]},
+		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"scripts/verify.sh"}]}
 	]}`
 	// gateFailingPlanAlt covers requirements 2 and 3, silently drops 1 —
 	// a different failing surface (different unmatched-requirement set),
 	// i.e. a different fingerprint.
 	gateFailingPlanAlt = `{"title":"feature","stories":[
-		{"title":"rate limiting work","tasks":[{"title":"enforce rate limiting","spec":"enforce rate limiting","verification_script":"go test ./..."}]},
-		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"go test ./..."}]}
+		{"title":"rate limiting work","tasks":[{"title":"enforce rate limiting","spec":"enforce rate limiting","verification_script":"scripts/verify.sh"}]},
+		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"scripts/verify.sh"}]}
 	]}`
 	// gateCleanPlan covers all three requirements.
 	gateCleanPlan = `{"title":"feature","stories":[
-		{"title":"login form work","tasks":[{"title":"implement login form","files":["login.go"],"spec":"build the login form","verification_script":"go test ./..."}]},
-		{"title":"rate limiting work","tasks":[{"title":"enforce rate limiting","spec":"enforce rate limiting","verification_script":"go test ./..."}]},
-		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"go test ./..."}]}
+		{"title":"login form work","tasks":[{"title":"implement login form","files":["login.go"],"spec":"build the login form","verification_script":"scripts/verify.sh"}]},
+		{"title":"rate limiting work","tasks":[{"title":"enforce rate limiting","spec":"enforce rate limiting","verification_script":"scripts/verify.sh"}]},
+		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"scripts/verify.sh"}]}
 	]}`
 	// gateFailingStructurePlan covers every requirement but carries one
 	// structural finding: a task with neither a verification script nor
 	// an explicit B124 exemption reason.
 	gateFailingStructurePlan = `{"title":"feature","stories":[
 		{"title":"login form work","tasks":[{"title":"implement login form","files":["login.go"],"spec":"build the login form"}]},
-		{"title":"rate limiting work","tasks":[{"title":"enforce rate limiting","spec":"enforce rate limiting","verification_script":"go test ./..."}]},
-		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"go test ./..."}]}
+		{"title":"rate limiting work","tasks":[{"title":"enforce rate limiting","spec":"enforce rate limiting","verification_script":"scripts/verify.sh"}]},
+		{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"scripts/verify.sh"}]}
 	]}`
 )
 
