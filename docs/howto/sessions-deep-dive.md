@@ -513,8 +513,8 @@ Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 
 Every session starts with a short platform context: what datawatch is, how its sessions, Automata and channels fit together, and where to look for help. It is delivered in one or both of two ways, depending on the backend:
 
-- **Rules file (claude-code only).** datawatch writes the text into the session's `CLAUDE.md`. A marked block is kept up to date, and anything you wrote outside the block is left alone.
-- **First prompt (every other backend).** The text is placed at the start of the session's first prompt.
+- **Local file (claude-code).** datawatch writes the text into an **untracked `CLAUDE.local.md`** file in the session's project directory — **not** into `CLAUDE.md` or `AGENT.md`, which it never edits for the platform context. In a git repository the filename is added to the repository's `info/exclude` list, a per-clone ignore list that is itself not tracked, so the write never dirties `git status` and the file can never reach a commit. The marked block is kept up to date, and anything you wrote outside the block is left alone. If the project already tracks its own `CLAUDE.local.md`, datawatch refuses to write into it and that session gets the text as its **first prompt** instead.
+- **First prompt (every other backend).** The text is placed at the start of the session's first prompt. This covers pi-prompt, aider, gemini, goose, goose-prompt, ollama, opencode, opencode-acp, opencode-prompt, openwebui, pi, shell and subprocess.
 
 `platform_context_status` (MCP) shows, for one session, whether it is enabled, any project override, the text version and which delivery the session's backend uses (`rules_file`, `first_prompt` or `rules_file_and_first_prompt`).
 

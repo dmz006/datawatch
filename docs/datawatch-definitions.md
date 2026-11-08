@@ -1820,7 +1820,11 @@ The rules and context policy (`autonomous.rules_context.*`) names the files that
 
 ### Platform context
 
-The platform context is a short section of text that tells every session what datawatch is and how to work with it. The setting `platform_context.enabled` (default on) turns it on or off for all sessions; `platform_context.note` adds your own text after it (up to 2000 bytes). A project can override the enabled value with its own `platform_context_enabled`. Set it on the **Platform context** card in Settings, with `configure platform_context enabled on|off` or `configure platform_context note <text>` on the comm channel, or read it with the `platform_context_status` MCP tool. See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#what-a-session-is-told-about-datawatch).
+The platform context is a short section of text that tells every session what datawatch is and how to work with it. The setting `platform_context.enabled` (default on) turns it on or off for all sessions; `platform_context.note` adds your own text after it (up to 2000 bytes). A project can override the enabled value with its own `platform_context_enabled`.
+
+**How it reaches a session.** For **claude-code** sessions the text is written to an **untracked `CLAUDE.local.md`** file next to the project's rules files. In a git repository that filename is added to the repository's `info/exclude` list — a per-clone ignore list that is itself not tracked — so the write never dirties `git status` and the file can never reach a commit. The tracked `CLAUDE.md` and `AGENT.md` files are **never edited** for the platform context. If the project already tracks its own `CLAUDE.local.md`, the local file is refused and that claude-code session gets the text as its **first prompt** instead. Every other backend family — pi-prompt, aider, gemini, goose, goose-prompt, ollama, opencode, opencode-acp, opencode-prompt, openwebui, pi, shell and subprocess — receives the text in the **first prompt** of the session.
+
+Set it on the **Platform context** card in Settings, with `configure platform_context enabled on|off` or `configure platform_context note <text>` on the comm channel, or read it with the `platform_context_status` MCP tool. See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#what-a-session-is-told-about-datawatch).
 
 
 ### Rules digest

@@ -140,14 +140,30 @@ A file that was already modified or untracked **before** the task started is
 your own earlier work and is left out, unless a commit made since the base
 touched it.
 
-The rules file has one more exception. When a session starts, the daemon
-writes its own sections into it — the session guardrails header, the memory,
-RTK, cross-session and platform context sections — and those do not count.
-The gate compares the rules file with those marked sections stripped on both
-the base side and the task side, so a protected rules file counts as changed
-only when its content changes outside them. A real edit to the rules is still
-held and asked, exactly as before, and there is no new setting behind any of
-this: the same protected list and the same action apply.
+The rules file has one more exception, and it applies everywhere the daemon
+reasons about a tree. When a session starts, the daemon writes its own marked
+sections into the rules file — the session guardrails header, the memory,
+RTK, cross-session and platform context sections. Those sections are the
+daemon's work, not the worker's, and they are not changes: the uncommitted
+work check, the read-only task check, this protected-paths gate, the merge
+preflight before a task branch is folded back, the dirty-tree start guard, the
+await probe that decides when the tree may be taken again, and the dirty check
+when a worktree is cleaned up all compare the file with those marked sections
+stripped on both sides, so a protected rules file counts as changed only when
+its content changes outside them. In the merge preflight the same rule means a
+rules-file commit that carries only daemon sections is stripped out before the
+merge, while a rules file that also carries a real edit is rewritten without
+the daemon's sections and the real edit is kept. A real edit to the rules is
+still held and asked, exactly as before, and there is no new setting behind
+any of this: the same protected list and the same action apply.
+
+One more consequence of the marked sections: platform context text that was
+ever committed inside `AGENT.md` or `CLAUDE.md` is stale by construction,
+because the daemon owns the current text and re-delivers it at every session
+start. At daemon start — and periodically afterwards — that marked platform
+context block is removed from the working copy of those files, for the
+projects of your stored Automata. The removal is never committed by the
+daemon; the block simply leaves the commit you next make for the file.
 
 The check runs in direct mode and in worktree mode. It is not skipped for an
 Automaton that works on its own branch.
@@ -340,17 +356,17 @@ directory. You want both protected, plus the code owners file.
    The rules review for that Automaton still reads `RULES.md` as it was at the
    base commit, so the rubric it is judged by cannot change under it.
 
-## The daemon's own injection into the rules file
+## The daemon's own sections in the rules file
 
-When cross-session messaging is on, the session tracker writes a rule block
-into the project rules file by itself. That edit is a change to a protected
-path like any other, and it is checked the same way: the daemon's own write is
-not exempt. If it lands in the rules file while a task is running, the gate
-counts it as a change and, under the default action, holds the task. The
-history does not say who wrote a line, so the gate cannot tell the daemon's
-write from a worker's. When you see the block among the held paths, read it
-like any other change: answer **Approve this change** if you want it, or
-authorise the rules file for the Automaton so its tasks pass.
+When a session starts, the session tracker writes its own marked sections into
+the project rules file by itself — the session guardrails header, the memory,
+RTK, cross-session and platform context sections. They are recognised
+everywhere as the daemon's work, not the worker's: they never count as a
+change in any of the checks above, and they never reach the held paths. What
+a hold names is a change outside those sections — a real edit to the rules, by
+the worker or by hand — and it is answered exactly like any other protected
+path: **Approve this change** if you want it, or authorise the rules file for
+the Automaton so its tasks pass.
 
 ## How the judge reads the rules
 
