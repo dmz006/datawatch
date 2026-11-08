@@ -113,6 +113,28 @@ another backend. If the worktree is dirty:
 - with policy `warn` the warning is recorded and the Automaton finishes;
 - with policy `off` nothing is checked.
 
+When an Automaton completes, the daemon writes its own generated documents into the
+project directory, in three fixed places, and each of them has a hash file beside
+it recording the hash the daemon took when it wrote the document — a sidecar with
+a name that has a leading dot and the suffix `.genhash`.
+
+| Generated document | Where the daemon writes it |
+|---|---|
+| The gate report | `docs/plans/reports/` |
+| The changelog draft | `docs/plans/drafts/` |
+| The testing-tracker rows | `docs/plans/drafts/` |
+| The plan registry row | `docs/plans/drafts/` |
+| The parity issue draft | `docs/plans/parity-issues/` |
+
+At this check, a document a person has not changed is not counted. It is not
+counted while its first line is the generated marker, it has no edited line, and
+its content still matches the hash in its `.genhash` file. Such a document never
+holds the Automaton and is never listed in the question or the status. A document
+a person has edited — the marker removed, an edited line added, or the content
+changed so the hash no longer matches — counts as uncommitted work like any other
+file and holds the Automaton, and the same is true of a document whose hash file
+is missing or does not match. The per-task check does not ignore these documents.
+
 The scope setting does not narrow this check: it always covers the whole
 worktree, and it never stages or commits anything. You decide what happens to
 the files.
