@@ -99,6 +99,7 @@ vision:
   endpoint: http://localhost:11434
   model: moondream:latest
   max_image_bytes: 0
+  describe_timeout_seconds: 5
 
 # Lightweight webhook backend: provides a comm responder so pipeline,
 # channel-responder tests, and routing-rules tests run without Signal/Slack.

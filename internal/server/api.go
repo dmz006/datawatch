@@ -6779,6 +6779,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"model":           s.cfg.Vision.Model,
 			"default_prompt":  s.cfg.Vision.DefaultPrompt,
 			"max_image_bytes": s.cfg.Vision.MaxImageBytes,
+			// Effective, not raw: an unset (0 or negative) stored value shows
+			// the default (5s), never 0.
+			"describe_timeout_seconds": int(s.cfg.Vision.EffectiveDescribeTimeout().Seconds()),
 		},
 		"memory": map[string]interface{}{
 			"enabled":            s.cfg.Memory.Enabled,
@@ -10314,6 +10317,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "vision.default_prompt":
 			cfg.Vision.DefaultPrompt = toString(v)
+		// Image-describe request timeout in seconds. Unset or below 1 is
+		// rejected here; the getter always reports the effective value
+		// (default 5, min 1) — same rule as results.schedule_history_limit.
+		case "vision.describe_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Vision.DescribeTimeoutSeconds = n
+			}
 		case "session.quick_commands":
 			if cmds, ok := toQuickCommands(v); ok {
 				cfg.Session.QuickCommands = cmds
