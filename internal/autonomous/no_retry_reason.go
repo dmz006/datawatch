@@ -21,6 +21,11 @@ import (
 //  2. the verification script the task names is missing from the worktree
 //     — the same missing condition the script runner reports as
 //     ErrVerificationScriptMissing, checked without executing the script.
+//     The script is looked up in the directory the task resolves to via
+//     ResolveTaskProjectDir; without a PRD in hand that is the task's own
+//     ProjectDir or WorktreePath, and a task whose directory comes only
+//     from the PRD's ProjectDir cannot be checked here — call
+//     noRetryReasonWithPRD with the PRD so the lookup can see it.
 //
 //  3. the task has already failed twice and both of those failures carried
 //     a summary identical to this one. A third identical failure means
@@ -28,12 +33,22 @@ import (
 //
 // Every other combination returns ok=false: the task should be retried.
 func noRetryReason(t *Task, v VerificationResult, previous []string) (reason string, ok bool) {
+	return noRetryReasonWithPRD(nil, t, v, previous)
+}
+
+// noRetryReasonWithPRD is noRetryReason with the task's PRD in hand, so the
+// missing-script lookup (case 2) can also see a project directory that
+// comes from the PRD's ProjectDir rather than from the task's own override:
+// the directory is resolved with ResolveTaskProjectDir(prd, t), where the
+// task's own ProjectDir/WorktreePath still wins over the PRD's. prd may be
+// nil, which degrades to exactly noRetryReason.
+func noRetryReasonWithPRD(prd *PRD, t *Task, v VerificationResult, previous []string) (reason string, ok bool) {
 	if !v.OK && verifierSaysNoFilesChanged(v) && taskWritesNothing(t) {
 		return "verifier reports no files changed and the task writes nothing, so a re-run has no new work to verify", true
 	}
 	if t != nil {
 		if script := strings.TrimSpace(t.VerificationScript); script != "" {
-			if dir := ResolveTaskProjectDir(nil, t); dir != "" && verificationScriptMissing(script, dir) {
+			if dir := ResolveTaskProjectDir(prd, t); dir != "" && verificationScriptMissing(script, dir) {
 				return fmt.Sprintf("verification script %s is missing from the worktree", script), true
 			}
 		}

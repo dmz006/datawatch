@@ -14,8 +14,9 @@ type noRetryCase struct {
 	task       *Task
 	v          VerificationResult
 	previous   []string
-	wantDir    bool // give the task a temp project dir
-	scriptFile bool // additionally create the task's verification script there
+	wantDir    bool // give the task a temp project dir of its own
+	prdDir     bool // the task's directory comes from the PRD's ProjectDir (task itself has none)
+	scriptFile bool // additionally create the task's verification script in the dir
 	wantOK     bool
 	wantReason string
 }
@@ -65,7 +66,7 @@ func TestNoRetryReason(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:       "verification script missing from the worktree",
+			name:       "verification script missing from the task's own project dir",
 			task:       &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}, VerificationScript: testVerifyScript},
 			v:          VerificationResult{OK: false, Summary: "build fails"},
 			wantDir:    true,
@@ -73,12 +74,29 @@ func TestNoRetryReason(t *testing.T) {
 			wantReason: "check.sh",
 		},
 		{
-			name:       "verification script present is not treated as missing",
+			name:       "verification script missing from the PRD's project dir",
+			task:       &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}, VerificationScript: testVerifyScript},
+			v:          VerificationResult{OK: false, Summary: "build fails"},
+			prdDir:     true,
+			wantOK:     true,
+			wantReason: "check.sh",
+		},
+		{
+			name:       "verification script present in the PRD's project dir is not treated as missing",
+			task:       &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}, VerificationScript: testVerifyScript},
+			v:          VerificationResult{OK: false, Summary: "build fails"},
+			prdDir:     true,
+			scriptFile: true,
+			wantOK:     false,
+		},
+		{
+			name:       "script missing in both the task's and the PRD's dirs is no-retry",
 			task:       &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}, VerificationScript: testVerifyScript},
 			v:          VerificationResult{OK: false, Summary: "build fails"},
 			wantDir:    true,
-			scriptFile: true,
-			wantOK:     false,
+			prdDir:     true,
+			wantOK:     true,
+			wantReason: "check.sh",
 		},
 		{
 			name:   "script naming an absolute path is a path error, not missing",
@@ -87,15 +105,9 @@ func TestNoRetryReason(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:   "script with no project dir is not checked",
-			task:   &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}, VerificationScript: testVerifyScript},
-			v:      VerificationResult{OK: false, Summary: "build fails"},
-			wantOK: false,
-		},
-		{
-			name:  "two identical earlier summaries",
-			task:  &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}},
-			v:     VerificationResult{OK: false, Summary: "build failed: link error"},
+			name: "two identical earlier summaries",
+			task: &Task{FilesPlanned: []string{"internal/autonomous/feature.go"}},
+			v:    VerificationResult{OK: false, Summary: "build failed: link error"},
 			previous: []string{
 				"  Build failed: LINK ERROR  ",
 				"build failed: link error",
@@ -141,21 +153,76 @@ func TestNoRetryReason(t *testing.T) {
 				return
 			}
 			task := *c.task // per-run copy; the case table is shared
+			prd := &PRD{}
 			if c.wantDir {
 				task.ProjectDir = t.TempDir()
 				if c.scriptFile {
-					scriptPath := filepath.Join(task.ProjectDir, task.VerificationScript)
-					if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
-						t.Fatalf("mkdir script dir: %v", err)
-					}
-					if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\nexit 0\n"), 0o755); err != nil {
-						t.Fatalf("write script: %v", err)
-					}
+					mustWriteScript(t, task.ProjectDir)
 				}
 			}
-			reason, ok := noRetryReason(&task, c.v, c.previous)
+			if c.prdDir {
+				prd.ProjectDir = t.TempDir()
+				if c.scriptFile {
+					mustWriteScript(t, prd.ProjectDir)
+				}
+			}
+			// The spec's no-context entry point is pinned for cases with no
+			// PRD; cases whose directory comes from the PRD go through
+			// noRetryReasonWithPRD, which sees the PRD's ProjectDir.
+			var (
+				reason string
+				ok     bool
+			)
+			if c.prdDir && !c.wantDir {
+				reason, ok = noRetryReasonWithPRD(prd, &task, c.v, c.previous)
+			} else {
+				reason, ok = noRetryReason(&task, c.v, c.previous)
+			}
 			assertNoRetryResult(t, reason, ok, c)
 		})
+	}
+}
+
+// TestNoRetryReasonWithPRD pins the precedence a caller with the PRD in
+// hand gets: the task's own project dir is looked up before the PRD's, and
+// when the task's dir holds the script the PRD-level absence of it does not
+// make case (b) fire.
+func TestNoRetryReasonWithPRD(t *testing.T) {
+	taskDir := t.TempDir()
+	prdDir := t.TempDir()
+	mustWriteScript(t, taskDir) // task's dir has the script
+	// prdDir deliberately lacks the script.
+	task := &Task{
+		FilesPlanned:       []string{"internal/autonomous/feature.go"},
+		VerificationScript: testVerifyScript,
+		ProjectDir:         taskDir,
+	}
+	v := VerificationResult{OK: false, Summary: "build fails"}
+	if reason, ok := noRetryReasonWithPRD(&PRD{ProjectDir: prdDir}, task, v, nil); ok {
+		t.Fatalf("ok = true (reason %q), want retry: the task's own dir holds the script", reason)
+	}
+	// Same task without its own dir: the PRD's dir is the lookup dir and
+	// the script is absent there, so case (b) fires.
+	bare := *task
+	bare.ProjectDir = ""
+	reason, ok := noRetryReasonWithPRD(&PRD{ProjectDir: prdDir}, &bare, v, nil)
+	if !ok {
+		t.Fatalf("ok = false, want true: the PRD's dir has no script")
+	}
+	if !strings.Contains(reason, testVerifyScript) {
+		t.Fatalf("reason = %q, want it to name %s", reason, testVerifyScript)
+	}
+}
+
+// mustWriteScript writes the canonical test verification script into dir.
+func mustWriteScript(t *testing.T, dir string) {
+	t.Helper()
+	scriptPath := filepath.Join(dir, testVerifyScript)
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
+		t.Fatalf("mkdir script dir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
 	}
 }
 
