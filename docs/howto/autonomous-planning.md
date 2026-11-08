@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, prd, decompose, planning]
+  topics: [autonomous, automata, decompose, planning, task templates]
 exec_params:
   - {name: spec, required: true, description: "Free-form goal specification"}
   - {name: project_dir, required: false, default: "", description: "Project directory (empty = use default)"}
@@ -310,6 +310,19 @@ These are exempt without a marker:
   title is matched, never the spec, so a doc task that mentions a test suite in
   its body is still checked.
 
+## Closing tasks from the task-template pack
+
+The task-template pack appends closing tasks to every story that the
+planner left out ([the decompose-lint and task-templates
+how-to](automaton-decompose-lint.md) covers the pack itself; this
+section covers how those closing tasks verify).
+
+- **The final gate verifies through its report file, never a command string.** The built-in final gate is read-only and carries **no** verification script at all: it checks that the build is clean, the touched packages' tests pass and the touched files hang together, and it writes its verdict and evidence to the one report its `report_path` names under `.datawatch/reports/`. That report file — not a command — is what the gate verifies through, and a command string given where a script is expected is rejected by the verifier's pre-start check, because a script must be a file.
+- **A verification script must be a script file that lives in the project.** A template's `verification_script` names one repo-relative script that already exists as an executable (for example `scripts/verify.sh`), and the verifier's pre-start check runs *that file*. A command string such as `go build ./... && go test ./...` is not a script: a value that looks like a command — whitespace, shell operators, an absolute path, a parent reference or the project root itself — is refused at config write with an error naming the template id, nothing is stored, and a template that still carries one is skipped when the templates are applied, so it never becomes a task the verifier cannot start. The same bar is enforced on the plan side: the plan-coverage gate and the decompose lint both flag a read-only task carrying neither a script file for its `verification_script` nor a `report_path`, because a failure of it would otherwise leave nothing to inspect.
+- **The note tasks pass by explicit exemption, with no changes.** The built-in note tasks — the release version note and the bounded load-step rule — are notes the verifier reads rather than scripts it runs: they write no files, and each carries an explicit verification-exemption reason stating why no verification script is attached, so the structural check that flags an unexplained absence of one passes on the note task without anything else touching it.
+- **An extra report file a read-only task leaves in `docs/plans/reports/` is moved, and the move is recorded as the decision — any other change still fails it.** If a read-only task leaves a report file in the older `docs/plans/reports/` location instead of its `report_path`, that file is moved under `.datawatch/reports/` and the move is recorded as the decision for the write, so the report file itself does not fail the task. Every *other* change the task leaves in the tree still fails it: read-only means only the one allowed write is allowed, and the relocated report counts as that write.
+- **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old template tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
+
 ## Choose the verifier per task, story or Automaton
 
 After a task runs, a verifier LLM judges the work. By default every
@@ -543,6 +556,7 @@ than reading any log that is not the session's own.
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
+- [howto/automaton-decompose-lint](automaton-decompose-lint.md) — the decompose-lint quality check and the task templates the closing tasks come from
 - [howto/automata-orchestrator](automata-orchestrator.md)
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [howto/algorithm-mode](algorithm-mode.md)
