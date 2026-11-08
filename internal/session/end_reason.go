@@ -115,6 +115,12 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 
 	m.releaseCommitGuard(fullID, m.store.Snapshot(sess).ProjectDir)
 
+	// Kill, task cancel, Automaton cancel and delete all end here: end what
+	// the pane left behind. Bounded, and never fails the end.
+	if m.onSessionReap != nil {
+		m.onSessionReap(sess)
+	}
+
 	var oldState, newState State
 	m.store.Mutate(func() {
 		oldState = sess.State

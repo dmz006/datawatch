@@ -1,6 +1,9 @@
 package main
 
 import (
+	auditpkg "github.com/dmz006/datawatch/internal/audit"
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 	"os"
 	"os/exec"
 	"strconv"
@@ -273,4 +276,65 @@ func sawSignal(calls []syscall.Signal, sig syscall.Signal) bool {
 		}
 	}
 	return false
+}
+
+// startReapFixture starts a harmless sleeping script in its own session inside
+// a fake worktree under a temp directory and returns the worktree and pid.
+func startReapFixture(t *testing.T) (string, int) {
+	t.Helper()
+	wt := t.TempDir()
+	script := wt + "/fixture-sleep.sh"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", script)
+	cmd.Dir = wt
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	go func() { _ = cmd.Wait() }()
+	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+	return wt, pid
+}
+
+func TestSessionEndReapEndsFixtureAndRecords(t *testing.T) {
+	t.Setenv("TMUX", "")
+	os.Unsetenv("TMUX")
+	wt, pid := startReapFixture(t)
+	sess := &session.Session{FullID: "host-ab12cd34", ProjectDir: wt}
+	var gotID string
+	var gotCount int
+	var gotCmds []string
+	var entries []auditpkg.Entry
+	res := reapSessionEnd(sess, &autonomouspkg.OrphanReaper{Grace: time.Second, KillSettle: time.Second},
+		func(id string, n int, cmds []string) bool { gotID, gotCount, gotCmds = id, n, cmds; return true },
+		func(e auditpkg.Entry) { entries = append(entries, e) })
+	if res.Count < 1 || !waitGone(pid, time.Now().Add(2*time.Second)) {
+		t.Fatalf("fixture not ended: %+v", res)
+	}
+	if gotID != sess.FullID || gotCount != res.Count || len(gotCmds) != res.Count {
+		t.Fatalf("decision not recorded: %q %d %v", gotID, gotCount, gotCmds)
+	}
+	if len(entries) != 1 || entries[0].Action != "session_end_reap" || entries[0].SessionID != sess.FullID {
+		t.Fatalf("audit entry wrong: %+v", entries)
+	}
+}
+
+func TestSessionEndReapNoEvidenceTouchesNothing(t *testing.T) {
+	os.Unsetenv("TMUX")
+	_, pid := startReapFixture(t)
+	other := t.TempDir()
+	called := false
+	res := reapSessionEnd(&session.Session{FullID: "host-ab12cd34", ProjectDir: other},
+		&autonomouspkg.OrphanReaper{Grace: 100 * time.Millisecond},
+		func(string, int, []string) bool { called = true; return true },
+		func(auditpkg.Entry) { called = true })
+	if res.Count != 0 || called || processGone(pid) {
+		t.Fatalf("unrelated process touched or recorded: %+v called=%v", res, called)
+	}
+	if r := reapSessionEnd(&session.Session{FullID: "x"}, &autonomouspkg.OrphanReaper{}, nil, nil); r.Count != 0 {
+		t.Fatal("empty project dir must reap nothing")
+	}
 }
