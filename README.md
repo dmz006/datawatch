@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.0 (2026-11-08).** Session ends now reap the processes a session left behind, attributed only by evidence read from /proc and never by name; a host load check (autonomous.host_load_alert, off, alert or reap, default alert) warns when load stays high; and load or stress steps in Automaton plans must be niced, capped, timed and self-cleaning. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.1 (2026-11-08).** The finish-time uncommitted-work check ignores the daemon's own unedited generated documents, so an Automaton whose only dirt is those documents completes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

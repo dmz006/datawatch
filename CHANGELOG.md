@@ -7,6 +7,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
 
+### Fixed
+
+- **The finish-time uncommitted-work check no longer holds an Automaton for documents the daemon itself generated.** Under the default policy `hold` (`autonomous.automation.uncommitted_work_policy`), an Automaton that finished with only daemon-generated documents still uncommitted (the gate report, the changelog draft, the tracker and registry rows, the parity issue draft) was held before `completed`. An unedited generated document — still carrying its generated marker, unmarked by any edited line, and matching the hash sidecar (`.genhash`) the daemon wrote beside it — no longer counts as uncommitted work, so an Automaton whose only dirt is the daemon's own documents completes and is listed as merge ready.
+  - **How it shows up:** the hold reason and the PWA's uncommitted-work listing no longer name an unedited daemon-generated document. A document a person edited (marker missing, an edited line, or a hash no longer matching or missing sidecar) still holds, under all three policies; every other uncommitted file is treated exactly as before, and the per-task check is unchanged.
+  - **Migration:** none. It applies from the next Automaton finish, with no setting to change; an Automaton already held whose hold covers only unedited daemon-generated documents passes the check again when it is re-run.
 
 ## v9.112.0 — Leftover session processes are ended by evidence, a host load alert, and bounded load steps
 

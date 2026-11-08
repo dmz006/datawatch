@@ -53,11 +53,7 @@ func TestUneditedGeneratedFilesIgnored(t *testing.T) {
 	})
 	t.Run("one body line changed, marker kept", func(t *testing.T) {
 		root, rel := freshUneditedFixture(t)
-		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		b = []byte("body line one CHANGED\nbody line two\n")
+		b := []byte("body line one CHANGED\nbody line two\n")
 		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), append([]byte(Marker+"\n"), b...), 0o644); err != nil {
 			t.Fatal(err)
 		}
