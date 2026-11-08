@@ -66,6 +66,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Merge pipeline](#merge-pipeline)
   - [Post-ship hooks](#post-ship-hooks)
   - [Merge pipeline source](#merge-pipeline-source)
+  - [Merge lock](#merge-lock)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
   - [Onboarding report](#onboarding-report)
@@ -2126,6 +2127,10 @@ The post-ship hooks are the hook steps a project runs after the ship — after t
 Where a project's pipeline comes from, and what happens when that source is bad.
 
 **Merge pipeline sources** (`autonomous.merge_pipeline.source_order`, `file` then `record` by default) — the sources tried first to last: `file` is the project's own pipeline file, `record` is the pipeline the daemon keeps for the project. The built-in pipeline always applies after them, so a project with neither still has one. The first source that yields a usable pipeline wins, and the card and `show` output name it with the reason.
+
+### Merge lock
+
+**Merge lock** — the lock a merge run holds on its base repository for as long as it runs, so that two merge runs never ship into the same repository at once. A run that finds the repository locked is refused, and its record names the run that holds the lock. The lock is released when the run ends, and it is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a restart. A resumed run takes its own lock back. The lock is shown in the merge status as `Merge lock held: …` and in the `merge_lock` field of `GET /api/autonomous/merge`. Operator guide: [howto/merge-pipeline.md](howto/merge-pipeline.md#one-merge-at-a-time-the-merge-lock).
 
 **When the project file is bad** (`autonomous.merge_pipeline.fallback_on_bad_file`, `record` by default) — what is used when the file exists but cannot be used (unreadable, too large, not valid or failing validation). `record` uses the daemon record, `default` uses the built-in pipeline, `none` uses nothing and the merge run does not start. The problem is always reported whichever you choose.
 
