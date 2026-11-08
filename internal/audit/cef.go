@@ -132,6 +132,8 @@ func cefSignature(action string) (int, string, int) {
 		return 20, "SessionStart", 3
 	case "kill":
 		return 21, "SessionKill", 4
+	case "session_end_reap":
+		return 69, "SessionEndReap", 4
 	case "send_input":
 		return 22, "SessionSendInput", 2
 	case "configure":
