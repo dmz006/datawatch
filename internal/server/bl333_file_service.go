@@ -309,7 +309,11 @@ func (s *Server) handleFilesDiscussion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	root := s.fileServiceRoot()
-	dir := filepath.Join(root, "discussions", id)
+	dir, err := discussionFolderPath(filepath.Join(root, "discussions"), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	s.listFilesDir(w, dir)
 }
 
