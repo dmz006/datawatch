@@ -108,6 +108,13 @@ setting, a new locale key, or a renamed field — the field is additive and
 already localized-agnostic — so the issue is a display pass-through, not an
 integration story.
 
+## Related draft
+
+[2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](./2026-11-08-sessions-tag-chips-drawing-discipline-parity.md)
+tracks the adjacent drawing-discipline gap found on the same find (chip
+drawing behavior on the operator's phone); this draft covers only what the
+first-load data path delivers or leaves for each surface.
+
 ## Parity surface
 
 | Surface | Decision | Why |
