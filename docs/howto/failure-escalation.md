@@ -48,14 +48,13 @@ you make it, with the evidence in front of you.
 ## Why this exists
 
 A worker that fails the same task three times usually fails the fourth time
-too, for the same reason. Retrying it unchanged costs time, and it used to
-cost a lot more than it does today: a non-final attempt is now charged on far
-less input than the first attempt's cold start (see
-[What a non-final attempt costs](#what-a-non-final-attempt-costs) below). A
-different worker, or the same worker with the earlier failures in its prompt,
-has a real chance of getting past the problem. When even that does not work,
-the honest answer is "this needs a human," and the daemon should say so once,
-clearly, rather than keep trying or silently marking the task failed.
+too, for the same reason. Retrying it unchanged costs time. A different
+worker, or the same worker with the earlier failures in its prompt, has a real
+chance of getting past the problem. When even that does not work, the honest
+answer is "this needs a human," and the daemon should say so once, clearly,
+rather than keep trying or silently marking the task failed. When a task does
+fail, [What a non-final attempt costs](#what-a-non-final-attempt-costs) below
+shows how to keep those attempts cheap.
 
 ## The policy
 
@@ -146,6 +145,65 @@ datawatch autonomous failure-escalation set <automaton-id> --max-failures 4 \
 For a single task that needs a stronger worker from the start, put the same
 steps on that task with `--task <task-id>`.
 
+## Choosing the first-attempt worker
+
+Worker choice has a cheap tier in front of it: the **first-attempt pair**.
+Every task classifies into one of four **attempt kinds** from what its
+attempt produces, in this order, first match wins:
+
+| Kind | Meaning |
+|---|---|
+| `final_gate` | The PRD's final gate task |
+| `note` | A read-only task, or a task with no listed files |
+| `docs` | A task whose every listed file is documentation (a `.md` file, or a file under a `docs` directory) |
+| `implementation` | Everything else |
+
+The daemon-wide key `autonomous.first_attempt` maps a kind to the cheaper
+backend and model that kind's first attempts run on:
+
+```yaml
+autonomous:
+  first_attempt:
+    docs:
+      backend: pi-prompt
+      model: ollama/qwen3.8:27b
+    note:
+      backend: pi-prompt
+      model: ollama/qwen3.8:27b
+```
+
+How the pair is applied:
+
+- **First attempts only.** Once the task has failed
+  `autonomous.first_attempt_escalate_after_failures` times (default 1 — the
+  first failure escalates; range 0 to 20, and 0 behaves like 1), the pair
+  stops applying and the worker resolves the normal way again, including the
+  failure-escalation ladder when one is set.
+- **No entry, or an empty entry, keeps today's choice.** A kind you did not
+  name — and every attempt after escalation — resolves exactly as before:
+  task, story, PRD, Automaton, then the daemon default.
+- **A pin beats the pair.** If the task, its story, its PRD or its Automaton
+  pinned a worker, or the burn guard routed the attempt, the pair does not
+  apply.
+- **The ladder takes over after a failure.** An escalation step replaces
+  whatever worker was resolved for that attempt.
+
+One shared validator covers every surface that accepts these keys. It
+refuses an unknown kind, a `first_attempt` entry for `pi`, `pi-prompt` or
+`ollama` without a model (those backends refuse to start without one), and a
+`first_attempt_escalate_after_failures` outside 0 to 20 — each refusal names
+the key.
+
+The pair is daemon-wide; there is no per-Automaton or per-task map. For one
+task that needs a specific worker, pin at the task, story, PRD or Automaton
+level, or put a ladder step on that task with `--task <task-id>`.
+
+Each recorded attempt carries the **reason** it ran on its worker:
+"first attempt for `<kind>` tasks", "escalated after `<n>` failures",
+"escalation ladder step", "operator pinned" or "default choice". A held
+task's review entry shows the reason of its last attempt, so you can see
+which rule chose the worker before deciding on it.
+
 ## What the retry prompt contains
 
 When a task has failed attempts on record, the next worker receives them before
@@ -172,35 +230,39 @@ worker change lets the ladder apply again.
 
 Every worker session begins with a fixed starting context. Measured on the
 sessions it runs on, a task session starts at around 85,000 input tokens of
-context, with the MCP tool definitions alone about 36,000 of that. Before
-this, every retry and every hop to the next worker on the ladder spawned a
-fresh session like that, so a task that failed up to three times paid the full
-starting context up to three times — up to about 285,000 tokens for work
-that had already shown it would not succeed.
+context, with the MCP tool definitions alone about 36,000 of that. Before the
+attempt-cost keys, every retry and every hop to the next worker on the
+ladder spawned a fresh session like that, so a task that failed up to three
+times paid the full starting context up to three times — up to about 285,000
+tokens for work that had already shown it would not succeed.
 
-Now every non-final attempt — a retry, or an escalation to the next worker on
-the ladder — works on far less input instead of re-paying the whole starting
-context:
+Three daemon-wide keys keep that cost down:
 
-- **The tokens the attempt is charged.** A failed task's retries and worker
-  hops show up as a fraction of the first attempt's start in the [cost
-  report](cost-report.md) and wherever an attempt's tokens appear — not as up
-to two more full starts.
-- **A first-try success is unchanged.** Only the extra cost of a failed
-  attempt is lower; a task that succeeds on its first attempt costs exactly
-  what it did before.
-- **The failure flow itself is exactly as before.** The attempt order, the
-  ladder, the reports the next worker receives, the `review_needed` hold and
-  its alert are all unchanged.
+- **`autonomous.first_attempt`** — routes the cheap kinds onto a cheaper
+  worker ([Choosing the first-attempt worker](#choosing-the-first-attempt-worker)).
+  With it set, a `docs` or `note` task that ends up failing has spent one
+  cheap first attempt before the escalated attempts run on the strong worker
+  — instead of three strong starts.
+- **`autonomous.first_attempt_escalate_after_failures`** — how many
+  failures before the pair stops applying (default 1, range 0 to 20).
+- **`autonomous.retry_resume_max_context_tokens`** — the cap on how much
+  prior context a retry may resume with (default 150,000 tokens; 0 forces
+  every retry to start a fresh session).
 
-There is no setting to change and nothing to migrate: it applies from the
-next retry or escalation.
+None of them changes the failure flow. The attempt order, the ladder, the
+reports the next worker receives, and the `review_needed` hold and its alert
+all behave exactly as before. A first-try success runs on the worker its
+kind's pair resolves to — unchanged, if you set no pair. Nothing migrates:
+unset keys keep today's behavior exactly.
 
-**Operator note.** If your budgeting assumed each failed attempt re-pays the
-full starting context (up to about 85,000 extra tokens per retry or worker
-hop), that assumption no longer holds. When you price a failing task's worst
-case, read a few real failed attempts in the cost report rather than
-multiplying the first attempt by the attempt count.
+Set the keys in the autonomous block: the config file, the REST config
+round trip, MCP, CLI and comm config forms, or the PWA settings.
+
+**Operator note.** When you price a failing task, do not multiply the first
+attempt by the attempt count and assume the full starting context every time:
+attempts of one task can run on different workers, and each is charged for
+the context it carries. Read a few real failed attempts in the [cost
+report](cost-report.md) instead.
 
 ## When a task needs review
 
