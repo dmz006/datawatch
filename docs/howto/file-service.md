@@ -161,6 +161,12 @@ curl -sk \
 # {"root":"/home/<user>/.datawatch/files","peer_count":2,"discussion_count":1,"disk_bytes":8192}
 ```
 
+The discussion folder route follows the discussion id rule: a discussion id is a whole name of
+1 to 128 characters from letters, digits, dot, underscore and hyphen, and the names `.` and `..`
+are never accepted. Any other id answers HTTP 400 with the plain text `invalid discussion id`
+before anything is read or written. See [discussion-scopes.md](discussion-scopes.md) for the same
+rule on the discussion memory routes.
+
 ### CLI
 
 ```sh
