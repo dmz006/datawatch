@@ -41,6 +41,25 @@ func fastReaper() *OrphanReaper {
 	return &OrphanReaper{Grace: 3 * time.Second, KillSettle: time.Second, Poll: 5 * time.Millisecond}
 }
 
+// waitStarted blocks until the fixture's /proc entry shows a command line, so
+// tests never depend on a fixed sleep.
+func waitStarted(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+	r := &OrphanReaper{}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(r.readCmdline(cmd.Process.Pid)) > 0 && r.readLink(cmd.Process.Pid, "cwd") != "" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("fixture did not start")
+}
+
+// adopted marks the test process as the adopter of the fixtures, standing in
+// for init, since fixtures are children of the test binary.
+func adopted() []int { return []int{os.Getpid()} }
+
 func pidAlive(pid int) bool {
 	r := &OrphanReaper{}
 	return !r.gone(pid)
@@ -55,8 +74,9 @@ func TestOrphanFinderMatchesByEvidenceNotName(t *testing.T) {
 	mine := startFixtureSleeper(t, wt)
 	same := startFixtureSleeper(t, other) // same name and script name, no evidence
 
-	time.Sleep(100 * time.Millisecond)
-	procs := fastReaper().Find(OrphanEvidence{Dirs: []string{wt}})
+	waitStarted(t, mine)
+	waitStarted(t, same)
+	procs := fastReaper().Find(OrphanEvidence{Dirs: []string{wt}, AdoptedBy: adopted()})
 	found := map[int]OrphanProc{}
 	for _, p := range procs {
 		found[p.PID] = p
@@ -80,10 +100,11 @@ func TestOrphanReapEndsFixtureAndLeavesBystander(t *testing.T) {
 	other := t.TempDir()
 	mine := startFixtureSleeper(t, wt, "SECRET_TOKEN=hunter2-do-not-print")
 	bystander := startFixtureSleeper(t, other)
-	time.Sleep(100 * time.Millisecond)
+	waitStarted(t, mine)
+	waitStarted(t, bystander)
 
 	r := fastReaper()
-	res := r.EndOrphans(OrphanEvidence{Dirs: []string{wt}})
+	res := r.EndOrphans(OrphanEvidence{Dirs: []string{wt}, AdoptedBy: adopted()})
 	if res.Count < 1 {
 		t.Fatalf("expected the fixture ended, got %+v", res)
 	}
@@ -114,7 +135,8 @@ func TestOrphanFinderEnvEvidence(t *testing.T) {
 	const id = "sess-evidence-abcd1234"
 	withID := startFixtureSleeper(t, other, "DATAWATCH_SESSION_ID="+id)
 	without := startFixtureSleeper(t, other)
-	time.Sleep(100 * time.Millisecond)
+	waitStarted(t, withID)
+	waitStarted(t, without)
 
 	procs := fastReaper().Find(OrphanEvidence{SessionID: id})
 	var gotWith, gotWithout bool
@@ -261,7 +283,7 @@ func TestOrphanReapEscalatesPoliteThenForced(t *testing.T) {
 	if res.Count != 1 || res.Ended[0].PID != 31 {
 		t.Fatalf("result: %+v", res)
 	}
-	if res.Ended[0].Command != "sleeper arg1 arg2" {
+	if res.Ended[0].Command != "sleeper <arg> <arg>" {
 		t.Fatalf("command: %q", res.Ended[0].Command)
 	}
 }
@@ -294,5 +316,94 @@ func TestOrphanFinderNoEvidenceNoMatch(t *testing.T) {
 	// The filesystem root must never act as a session folder.
 	if got := f.reaper(nil).Find(OrphanEvidence{Dirs: []string{"/"}}); len(got) != 0 {
 		t.Fatalf("root dir matched: %+v", got)
+	}
+}
+
+func (f *fakeProc) setCmdline(t *testing.T, pid int, argv ...string) {
+	t.Helper()
+	b := []byte(strings.Join(argv, "\x00") + "\x00")
+	if err := os.WriteFile(filepath.Join(f.root, fmt.Sprint(pid), "cmdline"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOrphanPathEvidenceNeedsOrphanedProcess(t *testing.T) {
+	wt := t.TempDir()
+	f := newFakeProc(t)
+	f.put(t, 50, 1, 1, wt)    // reparented to init: ended
+	f.put(t, 51, 4321, 2, wt) // an operator's live shell sitting in the folder
+	got := map[int]bool{}
+	for _, p := range f.reaper(nil).Find(OrphanEvidence{Dirs: []string{wt}}) {
+		got[p.PID] = true
+	}
+	if !got[50] || got[51] {
+		t.Fatalf("orphan gate wrong: %v", got)
+	}
+	// A declared adopter (user service manager) makes its children orphans.
+	got = map[int]bool{}
+	for _, p := range f.reaper(nil).Find(OrphanEvidence{Dirs: []string{wt}, AdoptedBy: []int{4321}}) {
+		got[p.PID] = true
+	}
+	if !got[51] {
+		t.Fatalf("adopter ignored: %v", got)
+	}
+}
+
+func TestOrphanOtherUsersNeverMatched(t *testing.T) {
+	wt := t.TempDir()
+	f := newFakeProc(t)
+	f.put(t, 60, 1, 1, wt)
+	r := f.reaper(nil)
+	r.UID = func() int { return os.Getuid() + 1 }
+	if got := r.Find(OrphanEvidence{Dirs: []string{wt}}); len(got) != 0 {
+		t.Fatalf("matched another user's process: %+v", got)
+	}
+}
+
+func TestOrphanScriptEvidenceNeedsExecutableScript(t *testing.T) {
+	wt := t.TempDir()
+	logf := filepath.Join(wt, "build.log")
+	script := filepath.Join(wt, "run.sh")
+	if err := os.WriteFile(logf, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f := newFakeProc(t)
+	f.put(t, 70, 1, 1, "")
+	f.setCmdline(t, 70, "tail", "-f", logf) // data file as argument
+	f.put(t, 71, 1, 2, "")
+	f.setCmdline(t, 71, "grep", logf) // data file as first argument
+	f.put(t, 72, 1, 3, "")
+	f.setCmdline(t, 72, "/bin/sh", script) // real script
+	got := map[int]string{}
+	for _, p := range f.reaper(nil).Find(OrphanEvidence{Dirs: []string{wt}}) {
+		got[p.PID] = p.Evidence
+	}
+	if len(got) != 1 || got[72] != "script" {
+		t.Fatalf("script evidence wrong: %v", got)
+	}
+}
+
+func TestOrphanCommandNeverShowsSecrets(t *testing.T) {
+	wt := t.TempDir()
+	f := newFakeProc(t)
+	f.put(t, 80, 1, 1, wt)
+	r := f.reaper(nil)
+	for _, argv := range [][]string{
+		{"/usr/bin/tool", "--token", "hunter2"},
+		{"tool", "--token=hunter2"},
+		{"tool", "login", "hunter2"},
+	} {
+		f.setCmdline(t, 80, argv...)
+		got := r.shortCommand(80, orphanDirs([]string{wt}))
+		if strings.Contains(got, "hunter2") {
+			t.Fatalf("secret leaked in %q", got)
+		}
+	}
+	f.setCmdline(t, 80, "/usr/bin/tool", "--token=hunter2")
+	if got := r.shortCommand(80, nil); got != "tool --token" {
+		t.Fatalf("command: %q", got)
 	}
 }

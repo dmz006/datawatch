@@ -29,6 +29,12 @@ type OrphanEvidence struct {
 	// RootPIDs are live pids known to belong to the session. A process
 	// whose ancestry reaches one of them is evidence.
 	RootPIDs []int
+	// AdoptedBy lists the pids that adopt orphans besides init (pid 1), such as
+	// a user-level service manager that acts as subreaper. Path evidence
+	// (cwd, exe, script) only counts for a process whose parent is init or one
+	// of these, so an operator's live shell or editor that merely sits in a
+	// session folder is never touched.
+	AdoptedBy []int
 }
 
 // OrphanProc is one process proven to belong to a session.
@@ -60,6 +66,9 @@ type OrphanReaper struct {
 	KillSettle time.Duration // wait after the forced signal
 	Poll       time.Duration
 	SelfPID    int // never matched; defaults to os.Getpid()
+	// UID is the owner a process must have to be signalled; defaults to
+	// os.Getuid(). Processes of other users are never matched.
+	UID func() int
 }
 
 const (
@@ -102,6 +111,46 @@ func (r *OrphanReaper) signal(pid int, sig syscall.Signal) error {
 	}
 	// end-reason-ok: signals one pid whose session evidence and start time were just re-verified
 	return p.Signal(sig)
+}
+
+// signalVerified signals pid only while verify holds. On Linux it first pins
+// the process with a pidfd and verifies afterwards, so the check and the signal
+// refer to the same process even if the pid is reused in between. With an
+// injected Signal, or where pidfd is unavailable, it verifies then signals by
+// pid.
+func (r *OrphanReaper) signalVerified(pid int, sig syscall.Signal, verify func() bool) bool {
+	if r.Signal == nil {
+		if fd, ok := openOrphanPidfd(pid); ok {
+			defer fd.close()
+			if !verify() {
+				return false
+			}
+			_ = fd.signal(sig)
+			return true
+		}
+	}
+	if !verify() {
+		return false
+	}
+	_ = r.signal(pid, sig)
+	return true
+}
+
+func (r *OrphanReaper) uid() int {
+	if r.UID != nil {
+		return r.UID()
+	}
+	return os.Getuid()
+}
+
+// ownedByUs reports whether the process directory is owned by the reaper's user.
+func (r *OrphanReaper) ownedByUs(pid int) bool {
+	fi, err := os.Stat(filepath.Join(r.procRoot(), strconv.Itoa(pid)))
+	if err != nil {
+		return false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == r.uid()
 }
 
 func (r *OrphanReaper) durations() (grace, settle, poll time.Duration) {
@@ -183,17 +232,28 @@ func (r *OrphanReaper) readLink(pid int, name string) string {
 	return strings.TrimSuffix(p, " (deleted)")
 }
 
-// shortCommand renders the program plus up to two arguments, truncated. It never
-// includes the environment.
-func (r *OrphanReaper) shortCommand(pid int) string {
+// shortCommand renders the program (base name) plus up to two arguments. It
+// never includes the environment, and it never shows an argument value that
+// could carry a secret: flags are shown by name only (the "=value" part is
+// dropped), and only a path argument inside the session folders is shown; every
+// other argument becomes "<arg>".
+func (r *OrphanReaper) shortCommand(pid int, dirs []string) string {
 	argv := r.readCmdline(pid)
-	if len(argv) > 3 {
-		argv = argv[:3] // program plus two arguments
+	if len(argv) == 0 {
+		return r.readComm(pid)
 	}
-	parts := argv
-	if len(parts) == 0 {
-		if c := r.readComm(pid); c != "" {
-			parts = []string{c}
+	parts := []string{filepath.Base(argv[0])}
+	for _, a := range argv[1:min(len(argv), 3)] {
+		switch {
+		case strings.HasPrefix(a, "-"):
+			if i := strings.IndexByte(a, '='); i >= 0 {
+				a = a[:i]
+			}
+			parts = append(parts, a)
+		case orphanInside(a, dirs):
+			parts = append(parts, a)
+		default:
+			parts = append(parts, "<arg>")
 		}
 	}
 	s := strings.Join(parts, " ")
@@ -242,26 +302,69 @@ func orphanInside(path string, dirs []string) bool {
 	return false
 }
 
+// orphaned reports whether the process was reparented away from its session:
+// its parent is init or one of the declared adopters.
+func (r *OrphanReaper) orphaned(pid int, ev OrphanEvidence) bool {
+	st, ok := r.readStat(pid)
+	if !ok {
+		return false
+	}
+	if st.ppid == 1 {
+		return true
+	}
+	for _, p := range ev.AdoptedBy {
+		if p > 1 && p == st.ppid {
+			return true
+		}
+	}
+	return false
+}
+
+// scriptInside reports whether the program or its first argument (the
+// interpreter-and-script position) is an executable regular file inside dirs. A
+// data file passed to some unrelated tool is not a script.
+func (r *OrphanReaper) scriptInside(pid int, dirs []string) bool {
+	argv := r.readCmdline(pid)
+	cwd := r.readLink(pid, "cwd")
+	for _, a := range argv[:min(len(argv), 2)] {
+		p := a
+		if p == "" || strings.HasPrefix(p, "-") {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			if cwd == "" {
+				continue
+			}
+			p = filepath.Join(cwd, p)
+		}
+		if !orphanInside(p, dirs) {
+			continue
+		}
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // evidenceFor returns the kind of evidence proving pid belongs to the
-// session, or "" when there is none. It reads only /proc state.
+// session, or "" when there is none. It reads only /proc state. Only processes
+// owned by the reaper's user qualify. Path evidence additionally requires the
+// process to be orphaned; ancestry and environment evidence tie the process to
+// the session directly.
 func (r *OrphanReaper) evidenceFor(pid int, ev OrphanEvidence, dirs []string) string {
-	if len(dirs) > 0 {
+	if !r.ownedByUs(pid) {
+		return ""
+	}
+	if len(dirs) > 0 && r.orphaned(pid, ev) {
 		if orphanInside(r.readLink(pid, "cwd"), dirs) {
 			return "cwd"
 		}
 		if orphanInside(r.readLink(pid, "exe"), dirs) {
 			return "exe"
 		}
-		argv := r.readCmdline(pid)
-		cwd := r.readLink(pid, "cwd")
-		for _, a := range argv {
-			p := a
-			if p != "" && !filepath.IsAbs(p) && cwd != "" && !strings.HasPrefix(p, "-") {
-				p = filepath.Join(cwd, p)
-			}
-			if orphanInside(p, dirs) {
-				return "script"
-			}
+		if r.scriptInside(pid, dirs) {
+			return "script"
 		}
 	}
 	if len(ev.RootPIDs) > 0 && r.ancestryHits(pid, ev.RootPIDs) {
@@ -336,7 +439,7 @@ func (r *OrphanReaper) Find(ev OrphanEvidence) []OrphanProc {
 		if kind == "" {
 			continue
 		}
-		out = append(out, OrphanProc{PID: pid, StartTime: st.start, Command: r.shortCommand(pid), Evidence: kind})
+		out = append(out, OrphanProc{PID: pid, StartTime: st.start, Command: r.shortCommand(pid, dirs), Evidence: kind})
 	}
 	return out
 }
@@ -379,20 +482,19 @@ func (r *OrphanReaper) Reap(ev OrphanEvidence, procs []OrphanProc) OrphanReapRes
 		if r.gone(p.PID) {
 			continue // already exited; nothing to signal
 		}
-		if !r.stillSame(p, ev, dirs) {
+		verify := func() bool { return r.stillSame(p, ev, dirs) }
+		if !r.signalVerified(p.PID, syscall.SIGTERM, verify) {
 			res.Survivors = append(res.Survivors, p)
 			continue
 		}
-		_ = r.signal(p.PID, syscall.SIGTERM)
 		if r.waitGone(p.PID, r.now().Add(grace), poll) {
 			res.Ended = append(res.Ended, p)
 			continue
 		}
-		if !r.stillSame(p, ev, dirs) {
+		if !r.signalVerified(p.PID, syscall.SIGKILL, verify) {
 			res.Survivors = append(res.Survivors, p)
 			continue
 		}
-		_ = r.signal(p.PID, syscall.SIGKILL)
 		if r.waitGone(p.PID, r.now().Add(settle), poll) {
 			res.Ended = append(res.Ended, p)
 		} else {
