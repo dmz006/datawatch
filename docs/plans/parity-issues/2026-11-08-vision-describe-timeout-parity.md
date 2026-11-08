@@ -40,4 +40,4 @@ Treat this as a low-priority follow-up in `datawatch-app`, not a blocker: the da
 
 ## Filing record
 
-Not filed yet. When the supervisor files it, record the issue number and link here in the form used by `2026-10-30-node-tls-verification-parity.md`.
+Filed 2026-11-08 as https://github.com/dmz006/datawatch-app/issues/397 with the shipped release v9.112.2.
