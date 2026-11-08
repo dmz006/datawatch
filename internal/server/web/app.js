@@ -305,6 +305,8 @@ const state = {
   activeSession: null,    // session FullID being viewed
   activeOutputTab: 'tmux', // which output tab is active: 'tmux' | 'channel'
   ws: null,
+  _imageSendPending: false,   // composer banner showing the image-send pending indicator
+  imageSendPendingTimer: null, // 15 s auto-clear cap for that indicator
   reconnectAttempt: 0,
   wsOpenedAt: 0,
   reconnectTimer: null,
@@ -1102,6 +1104,8 @@ function connect() {
     state.wsOpenedAt = 0;
     state.connected = false;
     state.ws = null;
+    // A dead socket is not a delivery — drop any stuck pending indicator.
+    _clearImageSendPending();
     updateStatusDot();
     // Update comms server status indicator if visible
     const connInd2 = document.querySelector('.connection-indicator');
@@ -1574,6 +1578,8 @@ function handleMessage(msg) {
       if (!state._sessionListWindow && state.activeView === 'sessions' && !_sl().loaded) loadSessionsList();
       break;
     case 'output':
+      // Next output update for the session: the daemon accepted the input.
+      if (state._imageSendPending) _clearImageSendPending();
       if (msg.data) {
         appendOutput(msg.data.session_id, msg.data.lines || []);
         // v6.11.16 — operator: "Channel tab still has no data".
@@ -7033,28 +7039,63 @@ function chatQuickReply(text) {
   sendSessionInput();
 }
 
+// Image-send pending indicator — while a session input carrying
+// [image:<path>] tags is waiting for the daemon to accept it, the
+// composer status banner (same surface as "Uploading image…" and
+// "Transcribing voice message…") reads the image_send_pending string
+// above the session input. Purely visual: the input box and the
+// terminal stay fully interactive (nothing is disabled or blocked).
+// It is cleared as soon as the server accepts the input (the websocket
+// send succeeds, or the next output frame arrives), again on websocket
+// close, and by a hard 15 s client cap so it can never stick.
+const IMAGE_SEND_PENDING_CAP_MS = 15000;
+
+window.imageSendShowing = function() { return !!state._imageSendPending; };
+
+function imageSendShowPending() {
+  _clearImageSendPending();
+  _composerBanner(t('image_send_pending') || 'Sending image…');
+  state._imageSendPending = true;
+  if (state.imageSendPendingTimer) clearTimeout(state.imageSendPendingTimer);
+  state.imageSendPendingTimer = setTimeout(_clearImageSendPending, IMAGE_SEND_PENDING_CAP_MS);
+}
+
+function _clearImageSendPending() {
+  if (state.imageSendPendingTimer) {
+    clearTimeout(state.imageSendPendingTimer);
+    state.imageSendPendingTimer = null;
+  }
+  if (!state._imageSendPending) return;
+  state._imageSendPending = false;
+  _composerBanner(null);
+}
+
 function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
   let text = inputEl.value; // Don't trim — empty string sends Enter
+  let sentImages = false;
   if (state._pendingAttachments.length) {
     if (state._pendingAttachments.some(a => !a.path)) {
       showToast(t('image_wait_upload') || 'Wait for image upload to finish', 'info');
       return;
     }
     const tags = state._pendingAttachments.map(a => '[image:' + a.path + ']').join('\n');
-    if (tags) text = (text ? text + '\n' : '') + tags;
+    if (tags) { text = (text ? text + '\n' : '') + tags; sentImages = true; }
     _clearAllAttachments();
   }
   const sendText = text || '\n'; // Empty input = send Enter key
   _paneJumpToLive();
 
+  if (sentImages) imageSendShowPending();
+
   if (state.activeSession) {
     const sess = state.sessions.find(s => s.full_id === state.activeSession);
     if (sess && (sess.state === 'waiting_input' || sess.state === 'running' || sess.state === 'rate_limited')) {
-      send('send_input', { session_id: state.activeSession, text: sendText });
+      // Server accepted the input (websocket send) — clear the pending indicator.
+      if (send('send_input', { session_id: state.activeSession, text: sendText })) _clearImageSendPending();
     } else {
-      send('command', { text: `send ${state.activeSession}: ${sendText}` });
+      if (send('command', { text: `send ${state.activeSession}: ${sendText}` })) _clearImageSendPending();
     }
     // v6.13.9 (BL277) — yellow popup gone, no dismiss call needed.
   }
@@ -7068,17 +7109,20 @@ function sendSessionInputDirect() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl || !state.activeSession) return;
   let text = inputEl.value.trim();
+  let sentImages = false;
   if (state._pendingAttachments && state._pendingAttachments.length) {
     if (state._pendingAttachments.some(a => !a.path)) {
       showToast(t('image_wait_upload') || 'Wait for image upload to finish', 'info');
       return;
     }
     const tags = state._pendingAttachments.map(a => '[image:' + a.path + ']').join('\n');
-    if (tags) text = (text ? text + '\n' : '') + tags;
+    if (tags) { text = (text ? text + '\n' : '') + tags; sentImages = true; }
     _clearAllAttachments();
   }
   if (!text) return;
-  send('command', { text: `send ${state.activeSession}: ${text}` });
+  if (sentImages) imageSendShowPending();
+  // Server accepted the input (websocket send) — clear the pending indicator.
+  if (send('command', { text: `send ${state.activeSession}: ${text}` })) _clearImageSendPending();
   inputEl.value = '';
 }
 
@@ -18782,6 +18826,7 @@ const LLM_CONFIG_FIELDS = [
     { key: 'vision.model', label: 'Model (must be vision-capable)', type: 'text', placeholder: 'llava' },
     { key: 'vision.default_prompt', label: 'Default prompt (overrides built-in)', type: 'text', placeholder: 'Describe this image concisely.' },
     { key: 'vision.max_image_bytes', label: 'Max image size bytes (0 = 10 MB)', type: 'number', placeholder: '0' },
+    { key: 'vision.describe_timeout_seconds', label: '', labelKey: 'settings_vision_describe_timeout', helpKey: 'settings_vision_describe_timeout_help', helpDocs: 'howto/vision-image-descriptions.md', type: 'number', placeholder: '0' },
   ]},
   { id: 'cross_session', section: 'Cross-Session Communication Rule', docs: 'howto/cross-session-policy.md', fields: [
     { key: 'cross_session.enabled', label: 'Inject policy into spawned claude-code sessions', labelKey: 'settings_cross_session_enabled', type: 'toggle' },

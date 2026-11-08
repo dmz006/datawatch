@@ -2408,6 +2408,22 @@ func (s *Server) executeCommand(cmd router.Command, raw, origin string) string {
 	}
 }
 
+// wsOffloadImageSend delivers a WebSocket send whose text references images
+// via the connection's input worker instead of blocking the read loop:
+// expandImageTags calls the vision backend (seconds per image) and returns
+// the description for SendInput. The worker sends the same response the
+// synchronous path would have sent, and the per-connection FIFO plus the
+// awaitInputForSession gate on the synchronous path keep per-session input
+// order intact (an earlier image send is never overtaken by a later plain
+// send for the same session).
+func wsOffloadImageSend(c *client, s *Server, cmd router.Command, raw, origin string) {
+	c.enqueueInput(cmd.SessionID, func() {
+		result := s.executeCommand(cmd, raw, origin)
+		respRaw, _ := json.Marshal(NotificationData{Message: result})
+		c.safeSend(mustMarshal(WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}))
+	})
+}
+
 // handleWS upgrades a connection to WebSocket and registers it with the hub
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// BL316 — capture federated peer at upgrade time for per-message cap checks.
@@ -2493,6 +2509,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocking)
 	defer func() {
+		// Deliver any accepted-but-still-expanding inputs and stop the
+		// connection's input worker before unregistering, so the worker
+		// never runs past connection teardown.
+		c.stopInputWorker()
 		// Cancel all screen captures for this client
 		c.mu.Lock()
 		for _, cancel := range c.captureCancels {
@@ -2546,6 +2566,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			var d CommandData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			cmd := router.Parse(d.Text)
+			if cmd.Type == router.CmdSend && strings.Contains(d.Text, "[image:") {
+				// Offload: expandImageTags can take seconds per image while the
+				// vision backend describes, so it runs on this connection's
+				// input worker instead of blocking the read loop
+				// (see client.enqueueInput).
+				wsOffloadImageSend(c, s, cmd, d.Text, wsOrigin)
+				continue
+			}
+			// A plain send must not overtake an earlier, still-expanding
+			// image send for the same session.
+			if cmd.Type == router.CmdSend {
+				c.awaitInputForSession(cmd.SessionID)
+			}
 			result := s.executeCommand(cmd, d.Text, wsOrigin)
 			// Send result back to this client
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
@@ -2585,6 +2618,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case MsgSendInput:
 			var d SendInputData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
+			if !d.Raw && strings.Contains(d.Text, "[image:") {
+				// Offload the image expansion to the per-connection input
+				// worker so the read loop keeps reading (see
+				// client.enqueueInput).
+				wsOffloadImageSend(c, s, router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}, "", wsOrigin)
+				continue
+			}
+			// A later plain or raw input must not overtake an earlier
+			// still-expanding image input for the same session.
+			c.awaitInputForSession(d.SessionID)
 			if d.Raw {
 				// Raw mode: send literal bytes to tmux (for interactive terminal)
 				sess, ok := s.manager.GetSession(d.SessionID)
@@ -5897,6 +5940,13 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // that Claude Code sessions can use the @ file-reference notation to read the image
 // directly via their own vision pipeline.
 // If the file cannot be read or described, the tag is left as-is.
+//
+// Each vision describe request is bounded: it runs under a context derived from
+// s.cfg.Vision.EffectiveDescribeTimeout() (5s when s.cfg is nil) and is executed in
+// a goroutine so a backend that ignores its context cannot block the caller past the
+// deadline. On timeout or error the bare '@<path>' form is returned (the same
+// conversion used when there is no vision backend) rather than leaving the [image:]
+// tag in place.
 func (s *Server) expandImageTags(text string) string {
 	if !strings.Contains(text, "[image:") {
 		return text
@@ -5923,12 +5973,39 @@ func (s *Server) expandImageTags(text string) string {
 			return match
 		}
 		ct := http.DetectContentType(data)
-		desc, err := s.visioner.Describe(context.Background(), data, ct, "")
-		if err != nil || desc == "" {
-			return match
+		timeout := s.visionDescribeTimeout()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		type describeResult struct {
+			desc string
+			err  error
 		}
-		return "[image: " + desc + " | path: " + imgPath + "]"
+		resCh := make(chan describeResult, 1)
+		go func() {
+			desc, err := s.visioner.Describe(ctx, data, ct, "")
+			resCh <- describeResult{desc: desc, err: err}
+		}()
+		var res describeResult
+		select {
+		case res = <-resCh:
+		case <-ctx.Done():
+		}
+		cancel()
+		if res.err != nil || res.desc == "" {
+			// Bounded describe failed, timed out, or produced nothing — fall back
+			// to the @ notation so the image is still available to the session.
+			return "@" + imgPath
+		}
+		return "[image: " + res.desc + " | path: " + imgPath + "]"
 	})
+}
+
+// visionDescribeTimeout returns the per-request describe deadline: the configured
+// value from s.cfg.Vision, or the 5s default when s.cfg is nil.
+func (s *Server) visionDescribeTimeout() time.Duration {
+	if s.cfg != nil {
+		return s.cfg.Vision.EffectiveDescribeTimeout()
+	}
+	return config.DefaultVisionDescribeTimeout
 }
 
 // handleGetConfig returns a sanitized view of the current config (sensitive fields masked).
@@ -6744,6 +6821,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"model":           s.cfg.Vision.Model,
 			"default_prompt":  s.cfg.Vision.DefaultPrompt,
 			"max_image_bytes": s.cfg.Vision.MaxImageBytes,
+			// Effective, not raw: an unset (0 or negative) stored value shows
+			// the default (5s), never 0.
+			"describe_timeout_seconds": int(s.cfg.Vision.EffectiveDescribeTimeout().Seconds()),
 		},
 		"memory": map[string]interface{}{
 			"enabled":            s.cfg.Memory.Enabled,
@@ -10333,6 +10413,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "vision.default_prompt":
 			cfg.Vision.DefaultPrompt = toString(v)
+		// Image-describe request timeout in seconds. Unset or below 1 is
+		// rejected here; the getter always reports the effective value
+		// (default 5, min 1) — same rule as results.schedule_history_limit.
+		case "vision.describe_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Vision.DescribeTimeoutSeconds = n
+			}
 		case "session.quick_commands":
 			if cmds, ok := toQuickCommands(v); ok {
 				cfg.Session.QuickCommands = cmds

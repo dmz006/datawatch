@@ -47,6 +47,15 @@ fields:
 
 Use the returned `path` value. Append `[image:<path>]` to the outgoing session message text — the same format the PWA uses.
 
+The daemon expands each tag through the vision service before delivery:
+`[image: <description> | path: <path>]`. Each describe call is bounded
+by `vision.describe_timeout_seconds` (0 or negative = 5 s default), so a
+slow or hung backend cannot stall the send longer than that. If the
+describe times out, fails, or vision is disabled, the tag is delivered as
+a bare `@<path>` instead — your message is never dropped. The expansion
+runs off the WebSocket read loop, so the terminal stays responsive while
+it happens.
+
 ### Delete a file
 
 ```

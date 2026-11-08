@@ -76,6 +76,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/codeql-local-scan.md](howto/codeql-local-scan.md) | CodeQL local scan: run the default suite offline for all four languages, compare with GitHub alerts and dismissals, check bundle pin drift, optional pre-push and pre-ship steps |
 | [howto/multi-servers.md](howto/multi-servers.md) | Multi-server PWA — register remote instances, per-tab picker, all-servers aggregation (v7.2.0) |
 | [howto/imap-mcp-service.md](howto/imap-mcp-service.md) | Plugin services end-to-end with imap-mcp: run standalone, attach or let the daemon manage, mint the service token, rotation, the status card, acting on each event, troubleshooting |
+| [howto/vision-image-descriptions.md](howto/vision-image-descriptions.md) | Vision image descriptions: what the vision block does on every surface, enabling it, the per-describe timeout and the @path fallback when a description times out, setting the timeout from YAML, the web app, REST, MCP, comm and CLI, and choosing a value |
 | [api/openapi.yaml](api/openapi.yaml) | OpenAPI 3.0 REST API specification |
 
 ## Memory & Intelligence

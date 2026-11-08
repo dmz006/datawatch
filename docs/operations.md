@@ -2768,6 +2768,67 @@ failed:` log line; the PWA keeps the recording with Retry and Discard. See
 See [setup.md](setup.md#optional-set-up-voice-input-whisper) for installation and
 [messaging-backends.md](messaging-backends.md#voice-input-whisper-transcription) for details.
 
+### Image attachments on session input (vision describe)
+
+When a session input (PWA image send, WebSocket `send:`, or REST
+`POST /api/sessions/send`) carries an `[image:<path>]` tag, the daemon describes the file
+with the vision backend before typing the text into the session. Two
+properties matter operationally:
+
+- **Every describe call is bounded.** Each call runs for at most
+  `vision.describe_timeout_seconds` (0 or negative = 5 s default),
+  enforced on the caller side, so a hung or slow vision backend cannot
+  stall a send longer than you allow. The value is read on every send —
+  no restart needed.
+- **The terminal cannot freeze.** Image sends over a WebSocket are
+  expanded on the connection's input worker, keeping the socket's read
+  loop (and the terminal) responsive; a later plain send to the same
+  session *over the same connection* waits for the still-expanding image
+  send instead of overtaking it (the wait is per WebSocket connection —
+  a different client socket is not part of it). If the PWA appears to
+  wait on a send, the wait is the describe
+  taking its full budget — give it more (or less) room with
+  `vision.describe_timeout_seconds` (0 or negative reverts to the 5 s
+  default).
+
+**Fallback:** if the describe times out, errors, returns empty, or
+`vision.enabled` is false, the tag is delivered as a bare `@<path>`
+instead — the message is never dropped, and a vision-capable model reads
+the file itself. An **unreadable file is not a fallback case**: a file
+that is missing, unreadable by the daemon, or outside the file-service
+root is never described, and the tag is delivered as the literal
+`[image:<path>]` — unchanged (pinned by
+`TestExpandImageTags_FileNotFound` and
+`TestExpandImageTags_PathOutsideRoot`).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `vision.describe_timeout_seconds` in `datawatch.yaml` |
+| **Web UI** | web app Settings → LLM → Vision (Image Descriptions) → Describe timeout |
+| **CLI** | `datawatch config set vision.describe_timeout_seconds 15` |
+| **REST API** | `PUT /api/config` with `{"vision.describe_timeout_seconds": 15}` |
+| **Comm channel** | `configure vision.describe_timeout_seconds=15` |
+
+**Symptom → cause:** a session received `@<path>` where you expected a
+description → the describe timed out or failed (vision disabled, backend
+down, or the 5 s default too short for your model). A session that got
+the literal `[image:<path>]` tag instead → the describe never ran
+because the file was missing, unreadable, or outside the file-service
+root. Check the backend and the path, then either raise
+`describe_timeout_seconds` or accept the `@<path>` fallback. See the
+Vision System entry in [datawatch-definitions.md](datawatch-definitions.md)
+and [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md) (section 5g).
+
+**Still to review (operator).** The two behaviors above are deliberate,
+not bugs, and neither is guarded anywhere else — confirm they fit your
+workflow before relying on them: (1) for an unreadable file the model
+receives the literal `[image:<path>]` tag; only the `@<path>` form is
+picked up by a model's own `@` file-reading, so a model without that
+capability may not act on the tag at all — verify paths the PWA uploads
+are readable by the daemon; (2) the send-ordering wait is per WebSocket
+connection, so two clients sending to the same session can interleave —
+serialise from one client if order matters.
+
 ### Browser Auto-Refresh
 
 When the daemon is updated and restarted, connected browsers automatically reload to
