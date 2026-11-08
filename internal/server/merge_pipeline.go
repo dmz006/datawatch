@@ -138,6 +138,10 @@ type mergePipelineView struct {
 	// regardless of the source: the block is global, so the same for every
 	// project: on or off, how many hooks are defined, and which would run.
 	PostShip mergePipelinePostShipView `json:"post_ship"`
+	// ReleaseApprovalInEffect is the approval mode acted on for each release
+	// size for the requested project: the project's override, else the global
+	// value, else the default.
+	ReleaseApprovalInEffect mergepipeline.ReleaseApprovalInEffect `json:"release_approval_in_effect"`
 }
 
 // mergePipelineSettingsView is the resolution and version settings in effect.
@@ -319,6 +323,10 @@ func (s *Server) handleMergePipeline(w http.ResponseWriter, r *http.Request) {
 		},
 		ConflictPolicy: cfg.EffectiveConflictPolicy(project),
 		ConflictModel:  cfg.EffectiveConflictModel(project),
+	}
+	approval := cfg.EffectiveReleaseApprovalModes(project)
+	view.ReleaseApprovalInEffect = mergepipeline.ReleaseApprovalInEffect{
+		Patch: approval.Patch, Minor: approval.Minor, Major: approval.Major,
 	}
 	if len(res.Definition.Steps) > 0 {
 		def := res.Definition
