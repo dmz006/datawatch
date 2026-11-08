@@ -14,6 +14,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/trace"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -3543,6 +3544,30 @@ type AutonomousConfig struct {
 	// (autonomous.rules_context); the empty values above keep working as
 	// the legacy fallback. See AutonomousRulesContextConfig.
 	RulesContext AutonomousRulesContextConfig `yaml:"rules_context" json:"rules_context"`
+
+	// Worker session profiles — what a worker session starts with (its MCP
+	// servers, tools, skills, project context, model and effort). Built-in
+	// profile names are minimal, digest, full and datawatch-tools; a user
+	// profile may not reuse one of them. See internal/workerprofile.
+	//
+	// worker_profiles: user-defined profiles keyed by profile name. Each
+	// value uses the workerprofile.WorkerProfile fields (name, mcp, tools,
+	// skills, context, model, effort). A value's name, when set, must match
+	// its key. Empty (default) = no user profiles; built-ins still apply.
+	//
+	// worker_profile_defaults: the profile each role and task kind starts
+	// with when no profile is named. role keys: planner, worker, verifier,
+	// judge. kind keys: implementation, docs, note, final_gate. Values are
+	// built-in or user profile names. Empty (default) = built-in defaults.
+	//
+	// worker_profile: the global-layer profile name, used when no task,
+	// automaton or project names one. Empty = the role default.
+	//
+	// Every setting is refused at load time by ValidateWorkerProfileConfig.
+	WorkerProfiles        map[string]workerprofile.WorkerProfile `yaml:"worker_profiles" json:"worker_profiles"`
+	WorkerProfileDefaults WorkerProfileDefaultsConfig            `yaml:"worker_profile_defaults" json:"worker_profile_defaults"`
+	WorkerProfile         string                                 `yaml:"worker_profile" json:"worker_profile"`
+
 	// UpstreamRepos — named targets a project-rules "file_upstream_issue"
 	// action can reference, for gaps this repo's own PRD can't close
 	// alone (e.g. a parity gap needing a companion-app issue).
@@ -7929,6 +7954,9 @@ func validateLoaded(cfg *Config) error {
 	if err := cfg.Autonomous.RequestWatch.Validate(); err != nil {
 		return err
 	}
+	if err := ValidateWorkerProfileConfig(cfg); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -7968,6 +7996,113 @@ func validateGateScope(v string) error {
 		return nil
 	}
 	return fmt.Errorf("autonomous.default_quality_gates.scope: invalid value %q (valid values: empty (inherit), \"full\", \"touched-plus-smoke\", \"touched\")", v)
+}
+
+// WorkerProfileDefaultsConfig maps a worker role or a task kind to the name of
+// the worker profile it starts with when no profile is named at a more
+// specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
+type WorkerProfileDefaultsConfig struct {
+	// Role maps planner, worker, verifier or judge to a profile name.
+	Role map[string]string `yaml:"role" json:"role"`
+	// Kind maps implementation, docs, note or final_gate to a profile name.
+	Kind map[string]string `yaml:"kind" json:"kind"`
+}
+
+// workerProfileRoleKeys lists the role keys worker_profile_defaults.role accepts.
+var workerProfileRoleKeys = []string{"planner", "worker", "verifier", "judge"}
+
+// workerProfileKindKeys lists the task-kind keys worker_profile_defaults.kind accepts.
+var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate"}
+
+// ValidateWorkerProfileConfig checks the worker session profile settings in
+// cfg.Autonomous and returns the first problem found, or nil. It refuses:
+//   - a user profile whose name equals a built-in profile name;
+//   - a user profile that workerprofile.Validate rejects;
+//   - a worker_profile_defaults value, or the worker_profile global name, that
+//     names no built-in and no user-defined profile;
+//   - an unknown role key in worker_profile_defaults.role, or an unknown task
+//     kind key in worker_profile_defaults.kind.
+//
+// The config load paths call it, and every write surface that changes these
+// settings should call it before it persists them. Keys are checked in sorted
+// order so the same bad config always reports the same error.
+func ValidateWorkerProfileConfig(cfg *Config) error {
+	if cfg == nil {
+		return nil
+	}
+	a := cfg.Autonomous
+	userNames := sortedProfileNames(a.WorkerProfiles)
+	for _, name := range userNames {
+		if _, builtin := workerprofile.Builtin(name); builtin {
+			return fmt.Errorf("autonomous.worker_profiles.%s: %q is a built-in profile name; choose another name", name, name)
+		}
+		p := a.WorkerProfiles[name]
+		if p.Name != "" && p.Name != name {
+			return fmt.Errorf("autonomous.worker_profiles.%s: name %q must match its key %q or be empty", name, p.Name, name)
+		}
+		p.Name = name
+		if err := workerprofile.Validate(p); err != nil {
+			return fmt.Errorf("autonomous.worker_profiles.%s: %w", name, err)
+		}
+	}
+
+	known := func(name string) bool {
+		if _, builtin := workerprofile.Builtin(name); builtin {
+			return true
+		}
+		_, user := a.WorkerProfiles[name]
+		return user
+	}
+	if err := validateWorkerProfileKeys("autonomous.worker_profile_defaults.role", a.WorkerProfileDefaults.Role, workerProfileRoleKeys, known); err != nil {
+		return err
+	}
+	if err := validateWorkerProfileKeys("autonomous.worker_profile_defaults.kind", a.WorkerProfileDefaults.Kind, workerProfileKindKeys, known); err != nil {
+		return err
+	}
+	if a.WorkerProfile != "" && !known(a.WorkerProfile) {
+		return fmt.Errorf("autonomous.worker_profile: %q names no built-in or user-defined profile", a.WorkerProfile)
+	}
+	return nil
+}
+
+// validateWorkerProfileKeys checks one defaults map: every key must be in
+// allowed and every non-empty value must satisfy known. An empty value
+// means no default and is accepted.
+func validateWorkerProfileKeys(field string, m map[string]string, allowed []string, known func(string) bool) error {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if !workerProfileKeyAllowed(allowed, k) {
+			return fmt.Errorf("%s: unknown key %q (valid keys: %s)", field, k, strings.Join(allowed, ", "))
+		}
+		if v := m[k]; v != "" && !known(v) {
+			return fmt.Errorf("%s.%s: %q names no built-in or user-defined profile", field, k, v)
+		}
+	}
+	return nil
+}
+
+// sortedProfileNames returns the keys of profiles in ascending order.
+func sortedProfileNames(profiles map[string]workerprofile.WorkerProfile) []string {
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// workerProfileKeyAllowed reports whether want is one of list.
+func workerProfileKeyAllowed(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeBooleanFields fixes YAML representation inconsistencies where

@@ -35,25 +35,27 @@ const (
 
 // MCPSelection says which MCP servers a worker may use.
 type MCPSelection struct {
-	Mode    string   // one of MCPNone, MCPDatawatch or MCPList
-	Servers []string // required when Mode is MCPList
+	Mode    string   `yaml:"mode,omitempty" json:"mode,omitempty"`       // one of MCPNone, MCPDatawatch or MCPList
+	Servers []string `yaml:"servers,omitempty" json:"servers,omitempty"` // required when Mode is MCPList
 }
 
 // ToolSelection says which tools a worker may call.
 type ToolSelection struct {
-	Mode  string   // one of ToolsAll or ToolsAllow
-	Allow []string // required when Mode is ToolsAllow
+	Mode  string   `yaml:"mode,omitempty" json:"mode,omitempty"`   // one of ToolsAll or ToolsAllow
+	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"` // required when Mode is ToolsAllow
 }
 
-// WorkerProfile is a named set of choices for a worker session.
+// WorkerProfile is a named set of choices for a worker session. The yaml and
+// json keys are snake case so a profile can be written in config.yaml and
+// sent over the REST API with the same field names.
 type WorkerProfile struct {
-	Name    string
-	MCP     MCPSelection
-	Tools   ToolSelection
-	Skills  bool
-	Context string // one of ContextMinimal, ContextDigest or ContextFull
-	Model   string
-	Effort  string
+	Name    string        `yaml:"name,omitempty" json:"name,omitempty"`
+	MCP     MCPSelection  `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	Tools   ToolSelection `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Skills  bool          `yaml:"skills,omitempty" json:"skills,omitempty"`
+	Context string        `yaml:"context,omitempty" json:"context,omitempty"` // one of ContextMinimal, ContextDigest or ContextFull
+	Model   string        `yaml:"model,omitempty" json:"model,omitempty"`
+	Effort  string        `yaml:"effort,omitempty" json:"effort,omitempty"`
 }
 
 // minimal starts a worker with no MCP servers and only the core file and
