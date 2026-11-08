@@ -5857,6 +5857,13 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // that Claude Code sessions can use the @ file-reference notation to read the image
 // directly via their own vision pipeline.
 // If the file cannot be read or described, the tag is left as-is.
+//
+// Each vision describe request is bounded: it runs under a context derived from
+// s.cfg.Vision.EffectiveDescribeTimeout() (5s when s.cfg is nil) and is executed in
+// a goroutine so a backend that ignores its context cannot block the caller past the
+// deadline. On timeout or error the bare '@<path>' form is returned (the same
+// conversion used when there is no vision backend) rather than leaving the [image:]
+// tag in place.
 func (s *Server) expandImageTags(text string) string {
 	if !strings.Contains(text, "[image:") {
 		return text
@@ -5883,12 +5890,39 @@ func (s *Server) expandImageTags(text string) string {
 			return match
 		}
 		ct := http.DetectContentType(data)
-		desc, err := s.visioner.Describe(context.Background(), data, ct, "")
-		if err != nil || desc == "" {
-			return match
+		timeout := s.visionDescribeTimeout()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		type describeResult struct {
+			desc string
+			err  error
 		}
-		return "[image: " + desc + " | path: " + imgPath + "]"
+		resCh := make(chan describeResult, 1)
+		go func() {
+			desc, err := s.visioner.Describe(ctx, data, ct, "")
+			resCh <- describeResult{desc: desc, err: err}
+		}()
+		var res describeResult
+		select {
+		case res = <-resCh:
+		case <-ctx.Done():
+		}
+		cancel()
+		if res.err != nil || res.desc == "" {
+			// Bounded describe failed, timed out, or produced nothing — fall back
+			// to the @ notation so the image is still available to the session.
+			return "@" + imgPath
+		}
+		return "[image: " + res.desc + " | path: " + imgPath + "]"
 	})
+}
+
+// visionDescribeTimeout returns the per-request describe deadline: the configured
+// value from s.cfg.Vision, or the 5s default when s.cfg is nil.
+func (s *Server) visionDescribeTimeout() time.Duration {
+	if s.cfg != nil {
+		return s.cfg.Vision.EffectiveDescribeTimeout()
+	}
+	return config.DefaultVisionDescribeTimeout
 }
 
 // handleGetConfig returns a sanitized view of the current config (sensitive fields masked).
