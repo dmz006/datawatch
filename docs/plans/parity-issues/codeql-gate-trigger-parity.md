@@ -1,6 +1,6 @@
 # Parity issue draft — CodeQL gate trigger narrowing, sibling security workflows left un-narrowed
 
-**Status: draft, not filed.** This file records the parity gap the trigger-narrowing work on the CodeQL alert gate (the work that added a documents-only `paths-ignore` to its `push` trigger and a code, dependency, workflow and script `paths` list to its `pull_request` trigger) deliberately leaves open. No issue has been created on any tracker and nothing below has been sent to any host.
+**Status: draft, not filed.** This file records the parity gap the trigger-narrowing work on the CodeQL alert gate (the work that added a documents-only `paths-ignore` to its `push` trigger and a code, dependency, workflow and script `paths` list to its `pull_request` trigger) deliberately leaves open. No issue has been created on any tracker and nothing below has been sent to any host. The CodeQL gate's lists are the reference for any of this and are pinned in `tests/test-codeql-trigger-listing.sh`, which `make test` runs, so an edit that re-widens that workflow's triggers or adds a permission scope fails the test.
 
 ## Affected area
 
@@ -16,7 +16,7 @@ Each security and CI workflow fires only on the paths it can actually evaluate, 
 
 ## Suggested next step
 
-File one issue (datawatch, not datawatch-app — the affected workflow files live in this repository's `.github/workflows/`) titled along the lines of "Narrow when the secret-scan, security-scan and dependency-review workflows run, same as the CodeQL gate", and decompose it into one task per workflow plus one for the `ci.yaml` `paths-ignore` widening, each task verifying its own workflow file with `actionlint` or an equivalent trigger check and confirming on a real push that a documents-only change no longer starts that workflow while a code change still does. While drafting the per-workflow path lists, keep a shared comment or a small note naming the CodeQL gate's lists as the reference set, so the four lists stop drifting apart again. This draft file can be copied verbatim into the issue body.
+File one issue (datawatch, not datawatch-app — the affected workflow files live in this repository's `.github/workflows/`) titled along the lines of "Narrow when the secret-scan, security-scan and dependency-review workflows run, same as the CodeQL gate", and decompose it into one task per workflow plus one for the `ci.yaml` `paths-ignore` widening, each task verifying its own workflow file with `actionlint` or an equivalent trigger check (the CodeQL gate does exactly this with `tests/test-codeql-trigger-listing.sh`, wired into `make test`) and confirming on a real push that a documents-only change no longer starts that workflow while a code change still does. While drafting the per-workflow path lists, keep a shared comment or a small note naming the CodeQL gate's lists as the reference set, so the four lists stop drifting apart again. This draft file can be copied verbatim into the issue body.
 
 ## Parity surface
 
