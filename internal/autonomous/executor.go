@@ -1393,6 +1393,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// session and an in-flight status was left that way by an earlier daemon
 	// run. Later passes (including re-queued ones) carry their own session.
 	inherited := true
+	// verifierRetryPending is set only when the previous attempt ended with a
+	// failed verification; it lets the next attempt consider resuming that
+	// session (see tryRetryResume). Stalls, start and infra failures never set it.
+	verifierRetryPending := false
 	for attempt := 0; attempt < budget; attempt++ {
 		// Ceiling step of the retry policy: a second ceiling failure in a row
 		// moves the task to review instead of another attempt.
@@ -1406,6 +1410,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		run = attemptRun{RefsBefore: len(t.AttemptRefs), AttemptsBefore: len(t.Attempts)}
 		inheritedSession := inherited
 		inherited = false
+		resumeCandidate := verifierRetryPending
+		verifierRetryPending = false
 		// Tree state before a read-only task starts; compared after it ends.
 		roBaseline, roBaselineOK := "", false
 
@@ -1520,6 +1526,26 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 		// prevNode is the node the previous attempt's lease named, passed to
 		// admission as the tie breaker for this attempt's placement.
+		// Retry after a verifier failure: resume the previous session with the
+		// failure summary when the retry decision says so. A resumed attempt
+		// spawns nothing and waits on the same session, like a live session
+		// adopted on restart.
+		if !skipSpawn && resumeCandidate && attempt > 0 && m.tryRetryResume(prd, t, hint) {
+			skipSpawn = true
+			run.SessionID, run.Adopted = t.SessionID, false
+			m.adoptCapacity(prd, t)
+			now := m.attemptNow()
+			oldStatus := t.Status
+			m.store.WithLock(func() {
+				t.StartedAt = &now
+				t.Status = TaskVerifying
+				t.RetryCount = attempt
+				t.PriorAttemptCount++
+			})
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			}
+		}
 		prevNode := ""
 		if !skipSpawn {
 			// Never reset or restore a worktree a live session of this task owns
@@ -1830,11 +1856,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
 				RetryHint:        retryHint,
-				ProjectProfile:   snapProjectProfile,               // v5.26.19
-				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
-				Branch:           snapGit.Branch,                   // BL407 Phase 4
-				Git:              snapAutoCommits && !readOnly,     // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,                   // BL244
+				ProjectProfile:   snapProjectProfile,           // v5.26.19
+				ClusterProfile:   prd.ClusterProfile,           // v5.26.19
+				Branch:           snapGit.Branch,               // BL407 Phase 4
+				Git:              snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:   contextPrepend,               // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
 				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
@@ -2348,6 +2374,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if !textCounted {
 			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr, EndReason: attemptEndVerifierFailed})
 		}
+		verifierRetryPending = true
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)

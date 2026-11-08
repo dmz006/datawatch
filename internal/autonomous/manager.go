@@ -159,6 +159,10 @@ type Config struct {
 	// autonomous.first_attempt_escalate_after_failures. 0 and 1 both mean
 	// the first failure escalates (see firstAttemptEscalated).
 	FirstAttemptEscalateAfterFailures int `json:"first_attempt_escalate_after_failures,omitempty"`
+	// RetryResumeMaxContextTokens mirrors autonomous.retry_resume_max_context_tokens.
+	// A retry after a verifier failure resumes the previous session only while
+	// its context is at or under this limit. 0 means every retry starts fresh.
+	RetryResumeMaxContextTokens int `json:"retry_resume_max_context_tokens"`
 	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
 	PlanningEffort     string `json:"planning_effort,omitempty"`
 	VerificationEffort string `json:"verification_effort,omitempty"`
@@ -1545,6 +1549,10 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionContextTokensFn — when set, a retry after a verifier failure reads
+	// the previous session's context size through it to decide resume (see
+	// retry_resume_flow.go). Nil = size unknown.
+	sessionContextTokensFn func(sessionID string) int
 	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
 	// belonging to a task with an empty or dead session link before resetting it.
 	sessionListerFn func() []SessionInfo

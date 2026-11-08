@@ -4566,6 +4566,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// autonomous.first_attempt_escalate_after_failures: failed attempts
 			// before a task leaves the first-attempt pair (0 reads as 1).
 			FirstAttemptEscalateAfterFailures: acfgIn.FirstAttemptEscalateAfterFailures,
+			// autonomous.retry_resume_max_context_tokens: a retry after a failed
+			// verification resumes the previous session only at or under this size.
+			// 0 is meaningful (every retry starts fresh).
+			RetryResumeMaxContextTokens: acfgIn.RetryResumeMaxContextTokens,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -7446,6 +7450,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Make the task->session link durable before the task text is delivered.
 			mgr.SetOnSessionCreated(func(s *session.Session) {
 				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
+			})
+			// Retry resume reads the previous session's context size. TokensIn is the
+			// session's running input total: it overstates the live context, so the
+			// limit errs toward a fresh session rather than an oversized resume.
+			amgr.SetSessionContextTokensFn(func(sessionID string) int {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return 0
+				}
+				return s.TokensIn
 			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
