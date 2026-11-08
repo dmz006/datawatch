@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.109.0 (2026-11-07).** datawatch now watches and controls imap-mcp, or any service-kind plugin, with a status card, alerts, audit entries and a tokens panel on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.109.1 (2026-11-07).** A claude-code session's platform context is now delivered through an untracked local rules file, and every tree-cleanliness check ignores the daemon's own marked sections, so a repository stays clean. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
