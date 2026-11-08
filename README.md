@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.1 (2026-11-08).** The finish-time uncommitted-work check ignores the daemon's own unedited generated documents, so an Automaton whose only dirt is those documents completes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.2 (2026-11-08).** Sending an image from the PWA no longer freezes the terminal: the vision describe call is bounded by the new vision.describe_timeout_seconds setting (default 5 seconds), runs off the websocket read loop and falls back to the plain @path reference on timeout. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

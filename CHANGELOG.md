@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.2 — Image sends no longer freeze the terminal
+
+### Fixed
+
+- **Sending an image no longer freezes the terminal.** The vision describe call in the websocket input path was unbounded: a slow or hung vision backend blocked the connection's read loop, so while one image send waited on the model, every other input on that terminal was stuck. Each describe request now runs under a per-request deadline — `vision.describe_timeout_seconds` (default 5 seconds; `0` or negative keeps the default) — enforced by the caller, so a backend that ignores cancellation cannot hold the wait past the deadline. On timeout or error the `[image:path]` tag degrades to the `@path` reference used when no vision backend is configured, so the session can still read the image itself. Image-bearing sends expand their tags on the connection's input worker instead of the read loop, so later messages keep being processed while an image send waits, and input order into the session is preserved.
+  - **How it shows up:** a PWA/terminal image send resolves within the describe timeout even when the vision backend hangs — a slow description becomes a `@<path>` reference instead of a frozen terminal — while the rest of the connection stays responsive.
+  - **Migration:** none. If your vision backend is routinely slower than 5 seconds, raise `vision.describe_timeout_seconds` so slow-but-valid descriptions are kept instead of falling back to `@path`.
+
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
 
 ### Fixed
