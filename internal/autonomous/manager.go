@@ -6711,6 +6711,10 @@ func (m *Manager) run(ctx context.Context) {
 	// start cannot fail because of a cleanup.
 	m.CleanupWorktreesPass()
 	m.SweepDaemonTempPass()
+	// One-shot migration re-run as an idempotent no-op thereafter: strip the
+	// platform context block (owned by the daemon, re-appended at delivery)
+	// from the rules files of the stored Automations' project directories.
+	m.sweepPlatformContextMigration()
 	// Disk check — the same rate-limited alert the poll raises, so a
 	// full disk is surfaced at start instead of on the first idle tick.
 	if due, st := m.CleanupDiskPass(); due {
@@ -6733,6 +6737,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
+			m.sweepPlatformContextMigration()
 		}
 	}
 }
