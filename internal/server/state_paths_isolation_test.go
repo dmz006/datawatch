@@ -154,7 +154,7 @@ func TestStatePathIsolationNoHomeReadsOrWrites(t *testing.T) {
 	if strings.Contains(rr.Body.String(), "decoy-card") {
 		t.Fatalf("dashboard layout GET served decoy HOME content: %s", rr.Body.String())
 	}
-	rr = call("dashboard layout PUT", s.handleDashboardLayout, http.MethodPut, "/api/dashboard/layout",
+	_ = call("dashboard layout PUT", s.handleDashboardLayout, http.MethodPut, "/api/dashboard/layout",
 		[]byte(`{"cards":[]}`))
 	layoutPath := filepath.Join(dataDir, "dashboard-layout.json")
 	layoutBytes, err := os.ReadFile(layoutPath)
