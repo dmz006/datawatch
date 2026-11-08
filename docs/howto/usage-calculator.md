@@ -261,12 +261,46 @@ Where lanes show up on each method:
   never start or stop a lane either, and the stamped lanes on a reading only
   record what was running.
 
+## Auto-lanes
+
+By default the calculator advises only — you change the lane count yourself.
+Auto-lanes is the opt-in that lets the daemon apply that advice to the Claude
+lanes it runs: when it is on and a fresh advice is servable, the daemon moves
+those lanes' maximum concurrency toward the advice's figure for that cycle,
+never above the operator maximum and never below one. Off (the default), it
+leaves the lanes exactly where the operator has them.
+
+Two settings control it:
+
+| Setting | Meaning |
+|---|---|
+| `usage.calculator.auto_lanes` | on/off (default: off) |
+| `usage.calculator.auto_lanes_max` | the operator maximum the daemon never exceeds, 1 to 8 (default: 2) |
+
+The CLI reads the state and sets the values through the same config path as
+`datawatch config set` — the daemon validates each value the way it would for
+any key, and a refused one stores nothing:
+
+```
+datawatch usage auto-lanes status
+datawatch usage auto-lanes set --on            # or --off
+datawatch usage auto-lanes set --max 3
+datawatch usage auto-lanes set --on --max 4    # both at once
+```
+
+`status` shows whether it is on, the cap the daemon applies now, what a fresh
+advice's decision would do to that cap, the settings' last change, and the
+loop's recent decisions. From the MCP server, `usage_autolanes_status`
+(read-only, `usage:read`) returns the same state; the settings are still
+changed through the config path.
+
 ## See also
 
 - [Automata capacity](automata-capacity.md)
 - [Configuration reference](../config-reference.yaml) (`usage.calculator`)
 - [Burn guard](burn-guard.md)
 - [Parity status](../parity-status.md)
+- [Auto-lane loops design](../plans/2026-10-27-auto-lane-loops-design.md)
 
 ## Burn guard
 

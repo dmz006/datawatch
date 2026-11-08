@@ -608,3 +608,127 @@ func TestUsageCalcConfigSetVariantPassthrough(t *testing.T) {
 		t.Errorf("accepted body = %q, want the value lane-planner", last.raw)
 	}
 }
+
+// ----- auto lanes -----------------------------------------------------------
+
+func TestUsageAutoLanesStatusSendsGet(t *testing.T) {
+	calls := usageDaemon(t)
+	c := newUsageCmd()
+	c.SilenceUsage, c.SilenceErrors = true, true
+	c.SetArgs([]string{"auto-lanes", "status"})
+	if err := usageRun(t, c); err != nil {
+		t.Fatalf("auto-lanes status: %v", err)
+	}
+	if len(calls()) != 1 {
+		t.Fatalf("calls = %d, want 1", len(calls()))
+	}
+	if got := calls()[0]; got.method != "GET" || got.uri != "/api/usage/autolanes" {
+		t.Errorf("proxied %s %s, want GET /api/usage/autolanes", got.method, got.uri)
+	}
+}
+
+// auto-lanes set goes through the config set path — PUT /api/config with one
+// exact key per flag, in flag order, nothing else.
+func TestUsageAutoLanesSetOnSendsConfigSet(t *testing.T) {
+	calls := usageDaemon(t)
+	// Keep the command from reading the operator's real config off disk: a
+	// path that does not exist loads the defaults.
+	prevCfg := cfgPath
+	t.Cleanup(func() { cfgPath = prevCfg })
+	cfgPath = filepath.Join(t.TempDir(), "config.yaml")
+
+	c := newUsageCmd()
+	c.SilenceUsage, c.SilenceErrors = true, true
+	c.SetArgs([]string{"auto-lanes", "set", "--on"})
+	if err := usageRun(t, c); err != nil {
+		t.Fatalf("set --on: %v", err)
+	}
+	if n := len(calls()); n != 1 {
+		t.Fatalf("calls = %d, want 1", n)
+	}
+	got := calls()[0]
+	if got.method != "PUT" || got.uri != "/api/config" {
+		t.Errorf("proxied %s %s, want PUT /api/config", got.method, got.uri)
+	}
+	if got.body == nil || got.body["usage.calculator.auto_lanes"] != true {
+		t.Errorf("body = %v, want {usage.calculator.auto_lanes: true}", got.body)
+	}
+}
+
+func TestUsageAutoLanesSetOffAndMaxSendsBothKeys(t *testing.T) {
+	calls := usageDaemon(t)
+	prevCfg := cfgPath
+	t.Cleanup(func() { cfgPath = prevCfg })
+	cfgPath = filepath.Join(t.TempDir(), "config.yaml")
+
+	c := newUsageCmd()
+	c.SilenceUsage, c.SilenceErrors = true, true
+	c.SetArgs([]string{"auto-lanes", "set", "--off", "--max", "3"})
+	if err := usageRun(t, c); err != nil {
+		t.Fatalf("set --off --max 3: %v", err)
+	}
+	got := calls()
+	if len(got) != 2 {
+		t.Fatalf("calls = %d, want 2", len(got))
+	}
+	for _, call := range got {
+		if call.method != "PUT" || call.uri != "/api/config" {
+			t.Errorf("proxied %s %s, want PUT /api/config", call.method, call.uri)
+		}
+	}
+	if got[0].body == nil || got[0].body["usage.calculator.auto_lanes"] != false {
+		t.Errorf("first body = %v, want auto_lanes=false", got[0].body)
+	}
+	if got[1].body == nil || got[1].body["usage.calculator.auto_lanes_max"] != 3.0 {
+		t.Errorf("second body = %v, want auto_lanes_max=3", got[1].body)
+	}
+}
+
+// Validation happens locally, before any request leaves: bad flags refuse
+// with a clear message and the daemon sees nothing.
+func TestUsageAutoLanesSetValidationRefusesBeforeAnyRequest(t *testing.T) {
+	calls := usageDaemon(t)
+	prevCfg := cfgPath
+	t.Cleanup(func() { cfgPath = prevCfg })
+	cfgPath = filepath.Join(t.TempDir(), "config.yaml")
+
+	for _, args := range [][]string{
+		{"--on", "--off"},
+		{},
+		{"--max", "0"},
+		{"--max", "9"},
+	} {
+		fresh := newUsageCmd()
+		fresh.SilenceUsage, fresh.SilenceErrors = true, true
+		fresh.SetArgs(append([]string{"auto-lanes", "set"}, args...))
+		if err := usageRun(t, fresh); err == nil {
+			t.Errorf("args %v: accepted, want a refusal", args)
+		}
+	}
+	if n := len(calls()); n != 0 {
+		t.Errorf("daemon saw %d calls, want none", n)
+	}
+}
+
+func TestUsageAutoLanesSetMaxBoundaryAccepted(t *testing.T) {
+	calls := usageDaemon(t)
+	prevCfg := cfgPath
+	t.Cleanup(func() { cfgPath = prevCfg })
+	cfgPath = filepath.Join(t.TempDir(), "config.yaml")
+
+	for _, n := range []string{"1", "8"} {
+		fresh := newUsageCmd()
+		fresh.SilenceUsage, fresh.SilenceErrors = true, true
+		fresh.SetArgs([]string{"auto-lanes", "set", "--max", n})
+		if err := usageRun(t, fresh); err != nil {
+			t.Fatalf("--max %s: %v", n, err)
+		}
+	}
+	got := calls()
+	if len(got) != 2 {
+		t.Fatalf("calls = %d, want 2", len(got))
+	}
+	if got[0].body["usage.calculator.auto_lanes_max"] != 1.0 || got[1].body["usage.calculator.auto_lanes_max"] != 8.0 {
+		t.Errorf("bodies = %v / %v, want auto_lanes_max 1 then 8", got[0].body, got[1].body)
+	}
+}

@@ -540,3 +540,25 @@ func TestUsageCalcConfigSetVariant(t *testing.T) {
 		t.Errorf("denied config_set reached the server")
 	}
 }
+
+// ----- auto-lanes -----------------------------------------------------------
+
+// usage_autolanes_status is read-only: it proxies GET /api/usage/autolanes
+// with no body and nothing else, and hands the daemon's bytes back.
+func TestUsageCalcAutoLanesStatusProxiesGet(t *testing.T) {
+	s, rec := usageCalcServer(t, http.StatusOK,
+		`{"enabled":true,"policy":"steady","max":2,"current_max_inflight":1,"target":2,"direction":"up","recent_changes":[]}`)
+	res, err := s.handleUsageAutoLanesStatus(context.Background(), callReq(nil))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	if rec.method != http.MethodGet || rec.path != "/api/usage/autolanes" {
+		t.Errorf("proxied %s %s, want GET /api/usage/autolanes", rec.method, rec.path)
+	}
+	if len(rec.body) != 0 {
+		t.Errorf("sent body %v, want none", rec.body)
+	}
+	if text := automationText(t, res); !strings.Contains(text, `"current_max_inflight":1`) {
+		t.Errorf("result = %s, want the daemon's status bytes", text)
+	}
+}

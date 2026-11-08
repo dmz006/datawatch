@@ -168,6 +168,7 @@ Selected core tools:
 | `automation_set_effort_ceiling` / `autonomous_prd_set_task_effort_ceiling` | Cap the effort of an Automation's task kinds (`docs`, `parity`, `live_check`, `final_gate`) or of one task at `low`, `medium`, `high` or `cheaper_backend`; an empty value clears it |
 | `usage_reading_add` / `usage_reading_delete` | Record (percent or spend, when, session percent, lanes) or delete one reading of the shared series |
 | `usage_extra_credit_set` / `usage_remaining_work_set` | Set the bought extra credit (shared setting) and the typed remaining work (daemon-local, run-flat-out policy) |
+| `usage_autolanes_status` | Read-only status of the auto-lanes loop (enabled, policy, operator maximum, current cap, target and direction, recent decisions); the `usage.calculator.auto_lanes` settings are changed through the config path |
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |
 | `post_result` / `schedule_results_list` | Scheduled-job result panel — post a session's structured result (same contract as `POST /api/sessions/{id}/result`) and list per-schedule retained history (same as `GET /api/schedule-results`) |
 | `channel_info` | Channel bridge status for the current session |
