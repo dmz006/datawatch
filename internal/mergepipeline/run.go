@@ -486,6 +486,8 @@ func (s *runState) hook(ctx context.Context, step Step) (string, error) {
 func (s *runState) action(ctx context.Context, step Step) (string, error) {
 	r := s.r
 	switch step.Action {
+	case ActionRebaseOntoMain:
+		return s.rebaseOntoMain(ctx)
 	case ActionCheckBranchVersions:
 		return s.checkBranchVersions(ctx)
 	case ActionMergeBranches:
@@ -515,6 +517,122 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 		return s.ship(ctx, step.Action)
 	}
 	return "", fmt.Errorf("unknown action %q", step.Action)
+}
+
+// rebaseOntoMain brings each requested branch onto the local main. The main
+// branch is fetched first when the project has a remote; the fetch only
+// updates the remote-tracking data and never touches a local branch. Each
+// branch not already based on main is rebased in a throwaway worktree and
+// then moved to the result. A conflict aborts that rebase, leaves the branch
+// where it was and fails the step; branches rebased before it stay rebased.
+func (s *runState) rebaseOntoMain(ctx context.Context) (string, error) {
+	main := s.r.mainBranch()
+	var notes []string
+	remote, err := s.fetchMain(ctx, main)
+	if err != nil {
+		return "", err
+	}
+	if remote == "" {
+		notes = append(notes, "no remote; the main branch was not fetched")
+	} else {
+		notes = append(notes, "fetched "+main+" from "+remote)
+	}
+	// fail builds the step's failure: the failure line leads the detail, the
+	// account of the fetch and of earlier branches follows it.
+	fail := func(line string, err error) (string, error) {
+		return strings.Join(append([]string{line}, notes...), "\n"), err
+	}
+	var rebased, onMain []string
+	for _, b := range s.req.Branches {
+		if strings.HasPrefix(b, "-") {
+			return fail(fmt.Sprintf("invalid branch name %q; nothing was rebased", b), fmt.Errorf("invalid branch name %q", b))
+		}
+		ref := "refs/heads/" + b
+		old, err := s.m.revParse(ctx, s.r.Dir, ref)
+		if err != nil {
+			return fail(fmt.Sprintf("branch %q does not exist", b), fmt.Errorf("branch %q does not exist: %w", b, err))
+		}
+		anc, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", "refs/heads/"+main, ref)
+		if err != nil {
+			return fail(fmt.Sprintf("checking whether %q is on %s failed", b, main), err)
+		}
+		if anc.Code == 0 {
+			onMain = append(onMain, b)
+			continue
+		}
+		if err := s.rebaseBranch(ctx, b, old, main); err != nil {
+			line := fmt.Sprintf("rebase of %q onto %s stopped; that branch was left untouched: %s", b, main, firstLine(err.Error()))
+			if len(rebased) > 0 {
+				notes = append(notes, "already rebased and left in place: "+strings.Join(rebased, ", "))
+			}
+			return fail(line, fmt.Errorf("rebase of %q onto %s failed: %w", b, main, err))
+		}
+		rebased = append(rebased, b)
+	}
+	if len(rebased) > 0 {
+		notes = append(notes, "rebased onto "+main+": "+strings.Join(rebased, ", "))
+	}
+	if len(onMain) > 0 {
+		notes = append(notes, "already on "+main+": "+strings.Join(onMain, ", "))
+	}
+	return strings.Join(notes, "\n"), nil
+}
+
+// fetchMain fetches the main branch from the project's remote and returns the
+// remote's name. It returns an empty name, and fetches nothing, when the
+// project has no remote.
+func (s *runState) fetchMain(ctx context.Context, main string) (string, error) {
+	out, err := s.m.gitOK(ctx, s.r.Dir, "remote")
+	if err != nil {
+		return "", err
+	}
+	names := strings.Fields(out)
+	if len(names) == 0 {
+		return "", nil
+	}
+	remote := names[0]
+	for _, n := range names {
+		if n == "origin" {
+			remote = n
+		}
+	}
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "fetch", "--quiet", remote, main); err != nil {
+		return "", fmt.Errorf("fetch %s from %s: %w", main, remote, err)
+	}
+	return remote, nil
+}
+
+// rebaseBranch rebases branch onto the local main inside a throwaway
+// worktree, then points the branch at the result, but only while it still
+// names old. On any failure the rebase is aborted, nothing moves, and the
+// worktree is removed.
+func (s *runState) rebaseBranch(ctx context.Context, branch, old, main string) error {
+	tmp, err := os.MkdirTemp(s.r.Dir, ".datawatch-rebase-")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "remove", "--force", tmp)
+		_ = os.RemoveAll(tmp)
+		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "prune")
+	}()
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "worktree", "add", "--quiet", "--detach", tmp, old); err != nil {
+		return err
+	}
+	res, err := s.m.git(ctx, tmp, "rebase", "refs/heads/"+main)
+	if err != nil || res.Code != 0 {
+		_, _ = s.m.git(context.Background(), tmp, "rebase", "--abort")
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("the rebase hit a conflict or failed (exit %d)", res.Code)
+	}
+	head, err := s.m.gitOK(ctx, tmp, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	_, err = s.m.gitOK(ctx, s.r.Dir, "update-ref", "refs/heads/"+branch, strings.TrimSpace(head), old)
+	return err
 }
 
 func (s *runState) checkBranchVersions(ctx context.Context) (string, error) {

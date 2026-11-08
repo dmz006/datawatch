@@ -3,6 +3,7 @@ package mergepipeline
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestDefaultIsValid(t *testing.T) {
@@ -12,7 +13,7 @@ func TestDefaultIsValid(t *testing.T) {
 }
 
 func TestDefaultOrder(t *testing.T) {
-	want := []string{"check-branch-versions", "check-internal-refs", "merge-branches",
+	want := []string{"rebase-onto-main", "check-branch-versions", "check-internal-refs", "merge-branches",
 		"set-release-version", "insert-changelog-heading", "commit-release-bump",
 		"tag-release", "push-release", "deploy-latest"}
 	var got []string
@@ -50,5 +51,13 @@ func TestDefaultsAreIndependentCopies(t *testing.T) {
 func TestDefaultFileName(t *testing.T) {
 	if DefaultFileName != ".datawatch/merge-pipeline.yaml" {
 		t.Fatalf("DefaultFileName = %q", DefaultFileName)
+	}
+}
+
+func TestDefaultRebaseStepIsFirstAndStopsOnFailure(t *testing.T) {
+	first := DefaultDefinition().Steps[0]
+	if first.Name != "rebase-onto-main" || first.Kind != KindCustom || first.Action != ActionRebaseOntoMain ||
+		first.EffectiveOnFailure() != OnFailureStop || first.Timeout != 5*time.Minute {
+		t.Fatalf("first step %+v", first)
 	}
 }

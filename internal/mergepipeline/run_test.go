@@ -252,7 +252,10 @@ func TestConflictStopsTheRunAndIsRecorded(t *testing.T) {
 	addConflictingBranch(t, dir)
 	ship := &fakeShip{}
 	rec := &memRecorder{}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
+	// The rebase step runs first in the default pipeline and would settle this
+	// branch before the merge saw it, so this test drops it to reach the merge.
+	def := Definition{Steps: DefaultDefinition().Steps[1:]}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec, Resolver: resolverWithRecord(t, def)}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"clash"}})
 	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
 		t.Fatalf("want a failed run, got %q err %v", res.Run.Result, err)
@@ -852,4 +855,128 @@ func TestMergeLockAfterRestart(t *testing.T) {
 			t.Error("the resumed run must release the lock when it ends")
 		}
 	})
+}
+
+// ---- rebase onto the main branch ----
+
+// rebaseOnlyRunner runs a pipeline whose only step is rebase-onto-main.
+func rebaseOnlyRunner(t *testing.T, dir string) *Runner {
+	t.Helper()
+	def := Definition{Steps: []Step{{Name: "rebase-onto-main", Kind: KindCustom, Action: ActionRebaseOntoMain, OnFailure: OnFailureStop}}}
+	return &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}, Resolver: resolverWithRecord(t, def)}
+}
+
+func stepDetail(r autonomous.MergePipelineRun, name string) string {
+	for _, s := range r.Steps {
+		if s.Step == name {
+			return s.Detail
+		}
+	}
+	return ""
+}
+
+func TestRebaseOntoMainRebasesABehindBranchAndKeepsItsCommits(t *testing.T) {
+	dir := newMergeRepo(t)
+	putFile(t, dir, "main-only.txt", "main moved\n")
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "main moves ahead")
+	mainBefore := runGit(t, dir, "rev-parse", "main")
+
+	res, err := rebaseOnlyRunner(t, dir).Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run: %v %q", err, res.Run.Result)
+	}
+	if runGit(t, dir, "rev-parse", "main") != mainBefore {
+		t.Error("the main branch must not move")
+	}
+	if runGit(t, dir, "merge-base", "main", "feature") != mainBefore {
+		t.Error("feature must now sit on top of main")
+	}
+	if subj := runGit(t, dir, "log", "--format=%s", "main..feature"); subj != "feature work" {
+		t.Errorf("feature commits not kept: %q", subj)
+	}
+	if got := runGit(t, dir, "show", "feature:feature.txt"); got != "new" {
+		t.Errorf("branch content lost: %q", got)
+	}
+	if d := stepDetail(res.Run, "rebase-onto-main"); !strings.Contains(d, "rebased onto main: feature") {
+		t.Errorf("detail %q", d)
+	}
+	if st := runGit(t, dir, "status", "--porcelain"); st != "" {
+		t.Errorf("tree dirty: %q", st)
+	}
+	if wt := runGit(t, dir, "worktree", "list", "--porcelain"); strings.Count(wt, "worktree ") != 1 {
+		t.Errorf("throwaway worktree left behind:\n%s", wt)
+	}
+}
+
+func TestRebaseOntoMainLeavesBranchAlreadyOnMainAlone(t *testing.T) {
+	dir := newMergeRepo(t)
+	before := runGit(t, dir, "rev-parse", "feature")
+
+	res, err := rebaseOnlyRunner(t, dir).Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run: %v %q", err, res.Run.Result)
+	}
+	if after := runGit(t, dir, "rev-parse", "feature"); after != before {
+		t.Errorf("branch moved from %s to %s", before, after)
+	}
+	if d := stepDetail(res.Run, "rebase-onto-main"); !strings.Contains(d, "already on main: feature") {
+		t.Errorf("detail %q", d)
+	}
+}
+
+func TestRebaseOntoMainConflictFailsAndLeavesBranchUntouched(t *testing.T) {
+	dir := newMergeRepo(t)
+	addConflictingBranch(t, dir)
+	before := runGit(t, dir, "rev-parse", "clash")
+
+	res, err := rebaseOnlyRunner(t, dir).Run(context.Background(), RunRequest{Title: "t", Branches: []string{"clash"}})
+	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
+		t.Fatalf("want a failed run, got %q err %v", res.Run.Result, err)
+	}
+	if !strings.Contains(err.Error(), `"clash"`) {
+		t.Errorf("error does not name the branch: %v", err)
+	}
+	if d := stepDetail(res.Run, "rebase-onto-main"); !strings.HasPrefix(d, `rebase of "clash"`) {
+		t.Errorf("detail should lead with the failed branch: %q", d)
+	}
+	if after := runGit(t, dir, "rev-parse", "clash"); after != before {
+		t.Errorf("conflicting branch moved from %s to %s", before, after)
+	}
+	if st := runGit(t, dir, "status", "--porcelain"); st != "" {
+		t.Errorf("rebase must be aborted, tree has %q", st)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "rebase-merge")); err == nil {
+		t.Error("a rebase is still in progress")
+	}
+	if wt := runGit(t, dir, "worktree", "list", "--porcelain"); strings.Count(wt, "worktree ") != 1 {
+		t.Errorf("throwaway worktree left behind:\n%s", wt)
+	}
+}
+
+func TestRebaseOntoMainFetchesMainFromTheRemote(t *testing.T) {
+	dir := newMergeRepo(t)
+	bare := t.TempDir()
+	runGit(t, bare, "init", "-q", "--bare", "-b", "main")
+	runGit(t, dir, "remote", "add", "origin", bare)
+	runGit(t, dir, "push", "-q", "origin", "main")
+
+	res, err := rebaseOnlyRunner(t, dir).Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run: %v %q", err, res.Run.Result)
+	}
+	if d := stepDetail(res.Run, "rebase-onto-main"); !strings.HasPrefix(d, "fetched main from origin") {
+		t.Errorf("detail %q", d)
+	}
+}
+
+func TestRebaseOntoMainSkipsFetchWithoutRemote(t *testing.T) {
+	dir := newMergeRepo(t)
+	res, err := rebaseOnlyRunner(t, dir).Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run: %v %q", err, res.Run.Result)
+	}
+	if d := stepDetail(res.Run, "rebase-onto-main"); !strings.HasPrefix(d, "no remote; the main branch was not fetched") {
+		t.Errorf("detail %q", d)
+	}
 }

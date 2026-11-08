@@ -44,6 +44,7 @@ const (
 
 // Built-in actions a step may name instead of a shell command.
 const (
+	ActionRebaseOntoMain      = "rebase_onto_main"
 	ActionCheckBranchVersions = "check_branch_versions"
 	ActionMergeBranches       = "merge_branches"
 	ActionSetReleaseVersion   = "set_release_version"
@@ -56,7 +57,7 @@ const (
 
 // BuiltinActions lists every valid built-in action name.
 func BuiltinActions() []string {
-	return []string{ActionCheckBranchVersions, ActionMergeBranches, ActionSetReleaseVersion,
+	return []string{ActionRebaseOntoMain, ActionCheckBranchVersions, ActionMergeBranches, ActionSetReleaseVersion,
 		ActionInsertChangelog, ActionCommitReleaseBump, ActionTagRelease,
 		ActionPushRelease, ActionDeployLatest}
 }
