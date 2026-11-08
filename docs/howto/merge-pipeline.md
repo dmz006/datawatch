@@ -56,7 +56,7 @@ steps:
 | `name` | A label for the step, shown in the run record. |
 | `kind` | `test`, `lint`, `version_bump`, `changelog`, `ship`, `tag`, `deploy`, `post_ship_hook` or `custom`. |
 | `command` | A shell command line. Give this or `action`, never both. |
-| `action` | A built-in: `check_branch_versions`, `merge_branches`, `set_release_version`, `insert_changelog_heading`, `commit_release_bump`, `tag_release`, `push_release` or `deploy_latest`. |
+| `action` | A built-in: `rebase_onto_main`, `check_branch_versions`, `merge_branches`, `set_release_version`, `insert_changelog_heading`, `commit_release_bump`, `tag_release`, `push_release` or `deploy_latest`. |
 | `dir` | A folder inside the project to run in. Empty means the project root. |
 | `on_failure` | `stop` (the default) ends the run at this step; `continue` records the failure and runs the next step. |
 | `requires_make_target` | Run the step only if the project's Makefile defines that target. |
