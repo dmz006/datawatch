@@ -1,3 +1,5 @@
+//go:build linux
+
 package autonomous
 
 import (
@@ -405,5 +407,61 @@ func TestOrphanCommandNeverShowsSecrets(t *testing.T) {
 	f.setCmdline(t, 80, "/usr/bin/tool", "--token=hunter2")
 	if got := r.shortCommand(80, nil); got != "tool --token" {
 		t.Fatalf("command: %q", got)
+	}
+}
+
+func TestOrphanScriptEvidenceUnderLiveParentAndWithoutExecBit(t *testing.T) {
+	wt := t.TempDir()
+	plain := filepath.Join(wt, "plain.py")
+	exe := filepath.Join(wt, "tool")
+	if err := os.WriteFile(plain, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f := newFakeProc(t)
+	f.put(t, 90, 4321, 1, "") // live parent, interpreter + non-exec script
+	f.setCmdline(t, 90, "/usr/bin/python3", plain)
+	f.put(t, 91, 4321, 2, "") // live parent, unrelated tool reading the same file
+	f.setCmdline(t, 91, "cat", plain)
+	f.put(t, 92, 4321, 3, "") // live parent, program inside the worktree
+	f.setCmdline(t, 92, exe)
+	got := map[int]string{}
+	for _, p := range f.reaper(nil).Find(OrphanEvidence{Dirs: []string{wt}}) {
+		got[p.PID] = p.Evidence
+	}
+	if len(got) != 2 || got[90] != "script" || got[92] != "script" {
+		t.Fatalf("live-parent script evidence wrong: %v", got)
+	}
+}
+
+func TestOrphanRealPidfdSignalPathHonoursVerify(t *testing.T) {
+	os.Unsetenv("TMUX")
+	os.Unsetenv("TMUX_TMPDIR")
+	wt := t.TempDir()
+	cmd := startFixtureSleeper(t, wt)
+	waitStarted(t, cmd)
+	r := fastReaper() // no injected Signal: exercises openOrphanPidfd
+	if fd, ok := openOrphanPidfd(cmd.Process.Pid); ok {
+		fd.close()
+	} else {
+		t.Skip("pidfd unsupported on this kernel")
+	}
+	if r.signalVerified(cmd.Process.Pid, syscall.SIGKILL, func() bool { return false }) {
+		t.Fatal("signalled although verification failed")
+	}
+	if !pidAlive(cmd.Process.Pid) {
+		t.Fatal("process ended despite failed verification")
+	}
+	if !r.signalVerified(cmd.Process.Pid, syscall.SIGKILL, func() bool { return true }) {
+		t.Fatal("verified signal not sent")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for pidAlive(cmd.Process.Pid) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if pidAlive(cmd.Process.Pid) {
+		t.Fatal("pidfd signal did not end the fixture")
 	}
 }

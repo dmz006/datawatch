@@ -149,8 +149,7 @@ func (r *OrphanReaper) ownedByUs(pid int) bool {
 	if err != nil {
 		return false
 	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && int(st.Uid) == r.uid()
+	return fileOwnedBy(fi, r.uid())
 }
 
 func (r *OrphanReaper) durations() (grace, settle, poll time.Duration) {
@@ -320,13 +319,29 @@ func (r *OrphanReaper) orphaned(pid int, ev OrphanEvidence) bool {
 	return false
 }
 
-// scriptInside reports whether the program or its first argument (the
-// interpreter-and-script position) is an executable regular file inside dirs. A
-// data file passed to some unrelated tool is not a script.
+// orphanInterpreters are programs whose first argument is a script to run, so a
+// script without the exec bit still counts when run through one of them.
+var orphanInterpreters = map[string]bool{
+	"sh": true, "bash": true, "dash": true, "zsh": true, "ash": true, "ksh": true,
+	"python": true, "python3": true, "perl": true, "ruby": true, "node": true,
+}
+
+func orphanIsInterpreter(prog string) bool {
+	b := filepath.Base(prog)
+	if orphanInterpreters[b] {
+		return true
+	}
+	return strings.HasPrefix(b, "python3.") || strings.HasPrefix(b, "python2")
+}
+
+// scriptInside reports whether the program (argv[0]) or the script run by an
+// interpreter (argv[1]) is a regular file inside dirs. Argv[1] counts when argv[0]
+// is a known interpreter or the file is executable; a data file passed to an
+// unrelated tool such as grep or tail is not a script.
 func (r *OrphanReaper) scriptInside(pid int, dirs []string) bool {
 	argv := r.readCmdline(pid)
 	cwd := r.readLink(pid, "cwd")
-	for _, a := range argv[:min(len(argv), 2)] {
+	for i, a := range argv[:min(len(argv), 2)] {
 		p := a
 		if p == "" || strings.HasPrefix(p, "-") {
 			continue
@@ -340,7 +355,11 @@ func (r *OrphanReaper) scriptInside(pid int, dirs []string) bool {
 		if !orphanInside(p, dirs) {
 			continue
 		}
-		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
+		fi, err := os.Stat(p)
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if i == 0 || fi.Mode()&0o111 != 0 || orphanIsInterpreter(argv[0]) {
 			return true
 		}
 	}
@@ -356,15 +375,18 @@ func (r *OrphanReaper) evidenceFor(pid int, ev OrphanEvidence, dirs []string) st
 	if !r.ownedByUs(pid) {
 		return ""
 	}
-	if len(dirs) > 0 && r.orphaned(pid, ev) {
-		if orphanInside(r.readLink(pid, "cwd"), dirs) {
-			return "cwd"
-		}
+	if len(dirs) > 0 {
+		// A program or script that lives inside the session folders is proof
+		// whatever its parent is. A bare cwd is weaker (an operator's shell or
+		// editor can sit there), so it counts only once the process was orphaned.
 		if orphanInside(r.readLink(pid, "exe"), dirs) {
 			return "exe"
 		}
 		if r.scriptInside(pid, dirs) {
 			return "script"
+		}
+		if r.orphaned(pid, ev) && orphanInside(r.readLink(pid, "cwd"), dirs) {
+			return "cwd"
 		}
 	}
 	if len(ev.RootPIDs) > 0 && r.ancestryHits(pid, ev.RootPIDs) {
