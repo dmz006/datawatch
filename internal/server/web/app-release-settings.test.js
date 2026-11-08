@@ -87,36 +87,36 @@ test('the four release fields render on the autonomous card with their help link
   const size = field(sandbox, PREFIX + 'release_size_map');
   assert.ok(size, 'release_size_map missing');
   assert.equal(size.type, 'release_size_map');
-  assert.equal(size.helpDocs, 'howto/release-size-and-milestones.md');
+  assert.equal(size.helpDocs, 'datawatch-definitions.md#release-size');
 
   const trigger = field(sandbox, PREFIX + 'major_trigger');
   assert.equal(trigger.type, 'select');
   assert.deepEqual(trigger.options, ['manual', 'milestone', 'never']);
   assert.equal(trigger.default, 'manual');
-  assert.equal(trigger.helpDocs, 'howto/release-size-and-milestones.md');
+  assert.equal(trigger.helpDocs, 'datawatch-definitions.md#release-size');
 
   const cadence = field(sandbox, PREFIX + 'release_cadence');
   assert.equal(cadence.type, 'select');
   assert.deepEqual(cadence.options, ['per_merge', 'batch', 'manual']);
   assert.equal(cadence.default, 'per_merge');
-  assert.equal(cadence.helpDocs, 'howto/release-size-and-milestones.md');
+  assert.equal(cadence.helpDocs, 'datawatch-definitions.md#release-size');
 
   const scheme = field(sandbox, PREFIX + 'version_scheme');
   assert.equal(scheme.type, 'select');
   assert.deepEqual(scheme.options, ['semver']);
   assert.equal(scheme.default, 'semver');
-  assert.equal(scheme.helpDocs, 'howto/release-size-and-milestones.md');
+  assert.equal(scheme.helpDocs, 'datawatch-definitions.md#release-size');
 });
 
-test('the help link maps to the release size howto through the merge pipeline table', () => {
+test('the help link maps to the Release size entry of the definitions through the merge pipeline table', () => {
   const sandbox = loadApp();
   for (const key of [PREFIX + 'release_size_map', PREFIX + 'major_trigger', PREFIX + 'release_cadence', PREFIX + 'version_scheme']) {
     const link = vm.runInContext("docsLinkForKey(" + JSON.stringify(key) + ")", sandbox);
-    assert.equal(link, 'howto/release-size-and-milestones.md', key);
+    assert.equal(link, 'datawatch-definitions.md#release-size', key);
   }
   // The existing merge pipeline keys keep their own glossary anchors.
   const other = vm.runInContext("docsLinkForKey('" + PREFIX + "conflict_policy')", sandbox);
-  assert.notEqual(other, 'howto/release-size-and-milestones.md');
+  assert.notEqual(other, 'datawatch-definitions.md#release-size');
 });
 
 test('a select save PUTs the value to /api/config under its key', async () => {

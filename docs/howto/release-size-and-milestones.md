@@ -197,7 +197,7 @@ unset key inherits the daemon-wide value, then the built-in default.
 
 | Surface | How |
 |---|---|
-| Web UI | Settings > Automation > Merge pipeline: **Release size by kind** (a row per kind with its size, then **Save release sizes**), **Major release trigger**, **Release cadence** and **Version scheme**. Cadence `batch` and `manual`, and a scheme other than `semver`, are listed but the save is refused with the daemon's reason. Each control has a `?` link that opens this guide. |
+| Web UI | Settings > Automation > Merge pipeline: **Release size by kind** (a row per kind with its size, then **Save release sizes**), **Major release trigger**, **Release cadence** and **Version scheme**. Cadence `batch` and `manual`, and a scheme other than `semver`, are listed but the save is refused with the daemon's reason. Each of the four controls has a `?` link that opens the [Release size](../datawatch-definitions.md#release-size) entry in the definitions. |
 | YAML | The block above in `~/.datawatch/config.yaml` |
 | CLI | `datawatch config set autonomous.merge_pipeline.major_trigger milestone` and `datawatch config set autonomous.merge_pipeline.release_size_map docs=none,chore=patch`; per project: `datawatch config set autonomous.merge_pipeline.projects.my-service.major_trigger never` |
 | REST | `PUT /api/config` with `{"autonomous.merge_pipeline.major_trigger": "milestone"}`; a bad value rejects the whole request with 400 and writes nothing |

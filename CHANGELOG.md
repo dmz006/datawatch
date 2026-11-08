@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Settings > Automation > Merge pipeline shows the release settings
 
-- **Four release settings are now editable in the web UI** on the Merge pipeline card: release size by kind (a row per Automaton kind with its size), major release trigger, release cadence and version scheme. Each has a `?` link to the new [release size and milestones](docs/howto/release-size-and-milestones.md) how-to. Cadence `batch` and `manual`, and any version scheme other than `semver`, are shown but the save is refused with the daemon's reason.
+- **Four release settings are now editable in the web UI** on the Merge pipeline card: release size by kind (a row per Automaton kind with its size), major release trigger, release cadence and version scheme. Each has a `?` link to the Release size entry of the [definitions](docs/datawatch-definitions.md#release-size), and the new [release size and milestones](docs/howto/release-size-and-milestones.md) how-to explains them. Cadence `batch` and `manual`, and any version scheme other than `semver`, are shown but the save is refused with the daemon's reason.
 - Labels and help text are in all five locale bundles (en, de, es, fr, ja).
 
 ### The release size a merge adds is now decided by rules, not by convention (part of finishing review and merge by the daemon, Phase 4)

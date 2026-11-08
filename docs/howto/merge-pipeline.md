@@ -252,5 +252,7 @@ with the key named, and nothing is written.
 
 Set them with `datawatch config set`, the `autonomous_config_set` MCP tool (its
 `merge_pipeline_*` arguments), the `configure` chat verb, or Settings >
-Automation > Merge pipeline in the PWA. Each help link there opens the matching
-entry in [the definitions](../datawatch-definitions.md#merge-pipeline).
+Automation > Merge pipeline in the PWA. The four release keys each have a `?`
+link there that opens the [Release size](../datawatch-definitions.md#release-size)
+entry in the definitions. The other keys open their own entries for the pipeline
+in the same file.
