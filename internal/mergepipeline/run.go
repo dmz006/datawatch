@@ -26,6 +26,9 @@ const (
 	DefaultStepTimeout = 10 * time.Minute
 	unreleasedHeading  = "## [Unreleased]"
 	checkVersionScript = "check-merge-version.sh"
+	// maxMainMovedRedos bounds how many times a run starts over from the
+	// rebase step after the push finds the remote's main moved.
+	maxMainMovedRedos = 3
 )
 
 // ShipRunner does the steps that leave the machine or change what runs on it:
@@ -157,6 +160,20 @@ type runState struct {
 	// pushReleaseOK is set when a step with Action ActionPushRelease
 	// reported ok; the post-ship hooks run only when it is set.
 	pushReleaseOK bool
+	// baseHead is the local main head the current attempt starts from: the
+	// head recorded when the lock was acquired, then the head each redo
+	// brings local main up to.
+	baseHead string
+	// observedMain is main's head as the run last saw it. ownCommits holds
+	// every commit this run added to main; foreignMain is set when main moved
+	// in a way the run did not make (not a fast-forward of what it saw).
+	observedMain string
+	ownCommits   map[string]bool
+	foreignMain  bool
+	// tagMade is the local tag this run created, empty when it made none.
+	tagMade string
+	// redos counts the redos this run has made.
+	redos int
 }
 
 func newRunID() string {
@@ -222,25 +239,52 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}()
 	}
 	st.m = &Merger{Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions}
+	if err := st.startTracking(ctx); err != nil {
+		st.run.Reason = redact(err.Error())
+		return finish(autonomous.MergeRunFailed, err)
+	}
 	st.record()
 	if err := st.preflight(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
 		return finish(autonomous.MergeRunFailed, err)
 	}
 
+	steps := res.Definition.Steps
+	restart := rebaseStepIndex(steps)
 	failures := 0
-	for _, step := range res.Definition.Steps {
+	for i := 0; i < len(steps); {
+		step := steps[i]
 		ok, err := st.runStep(ctx, step)
+		if oerr := st.observeMain(ctx); oerr != nil {
+			st.run.Reason = redact(oerr.Error())
+			return finish(autonomous.MergeRunFailed, oerr)
+		}
 		if ok {
 			if step.Action == ActionPushRelease {
 				st.pushReleaseOK = true
 			}
+			i++
+			continue
+		}
+		if step.Action == ActionPushRelease && errors.Is(err, ErrMainMoved) {
+			if st.redos >= maxMainMovedRedos {
+				reason := fmt.Sprintf("main kept moving: the remote's main moved again after %d redos, so the run stopped", st.redos)
+				st.run.Reason = redact(reason)
+				return finish(autonomous.MergeRunFailed, fmt.Errorf("%s: %w", reason, err))
+			}
+			st.redos++
+			if rerr := st.recordRedo(ctx, st.redos); rerr != nil {
+				st.run.Reason = redact(rerr.Error())
+				return finish(autonomous.MergeRunFailed, fmt.Errorf("redo %d of %d: %w", st.redos, maxMainMovedRedos, rerr))
+			}
+			i = restart
 			continue
 		}
 		failures++
 		if step.EffectiveOnFailure() != OnFailureContinue {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
+		i++
 	}
 	// The run reached here, so it is ok or completed_with_failures: that is
 	// when the configured post-ship hooks run. They record themselves as
@@ -714,7 +758,11 @@ func (s *runState) ship(ctx context.Context, action string) (string, error) {
 	tag := "v" + v
 	switch action {
 	case ActionTagRelease:
-		return doneOr("tagged "+tag, s.r.Ship.Tag(ctx, s.r.Dir, tag, "Release "+tag))
+		note, err := doneOr("tagged "+tag, s.r.Ship.Tag(ctx, s.r.Dir, tag, "Release "+tag))
+		if err == nil {
+			s.tagMade = tag
+		}
+		return note, err
 	default:
 		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
 	}
@@ -726,6 +774,165 @@ func doneOr(note string, err error) (string, error) {
 		return "", err
 	}
 	return note, nil
+}
+
+// ---- main moved under the run ----
+
+// rebaseStepIndex returns the index of the first rebase-onto-main step, the
+// point a redo starts again from. A pipeline with no such step starts over
+// from its first step.
+func rebaseStepIndex(steps []Step) int {
+	for i, s := range steps {
+		if s.Action == ActionRebaseOntoMain {
+			return i
+		}
+	}
+	return 0
+}
+
+// mainHead returns the commit the local main branch points at.
+func (s *runState) mainHead(ctx context.Context) (string, error) {
+	return s.m.revParse(ctx, s.r.Dir, "refs/heads/"+s.r.mainBranch())
+}
+
+// startTracking records local main's head when the run takes the repository
+// lock. That head is the base every attempt of the run is measured from.
+func (s *runState) startTracking(ctx context.Context) error {
+	head, err := s.mainHead(ctx)
+	if err != nil {
+		return fmt.Errorf("read %s before the run: %w", s.r.mainBranch(), err)
+	}
+	s.baseHead, s.observedMain = head, head
+	s.ownCommits = map[string]bool{}
+	return nil
+}
+
+// observeMain takes each commit main gained since the run last looked at it
+// as this run's own. A move that does not extend the last head it saw marks
+// main as moved outside the run, which a redo will not undo.
+func (s *runState) observeMain(ctx context.Context) error {
+	cur, err := s.mainHead(ctx)
+	if err != nil {
+		return err
+	}
+	if cur == s.observedMain {
+		return nil
+	}
+	anc, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", s.observedMain, cur)
+	if err != nil {
+		return err
+	}
+	if anc.Code != 0 {
+		s.foreignMain = true
+		s.observedMain = cur
+		return nil
+	}
+	out, err := s.m.gitOK(ctx, s.r.Dir, "rev-list", s.observedMain+".."+cur)
+	if err != nil {
+		return err
+	}
+	for _, c := range strings.Fields(out) {
+		s.ownCommits[c] = true
+	}
+	s.observedMain = cur
+	return nil
+}
+
+// undoable reports whether local main can be reset to the base: every
+// commit above the base must be one this run made.
+func (s *runState) undoable(ctx context.Context) error {
+	if s.foreignMain {
+		return errors.New("main was moved by something other than this run")
+	}
+	out, err := s.m.gitOK(ctx, s.r.Dir, "rev-list", s.baseHead+"..refs/heads/"+s.r.mainBranch())
+	if err != nil {
+		return err
+	}
+	for _, c := range strings.Fields(out) {
+		if !s.ownCommits[c] {
+			return fmt.Errorf("commit %s on %s was not made by this run", c, s.r.mainBranch())
+		}
+	}
+	return nil
+}
+
+// redoFromRebase undoes this run's local merge, bump and tag, brings local
+// main up to the remote's main, and clears what the run computed from the old
+// main, so the next attempt computes its version from the new one. It leaves
+// the run with the synced head as its base.
+func (s *runState) redoFromRebase(ctx context.Context) (string, error) {
+	main := s.r.mainBranch()
+	if err := s.observeMain(ctx); err != nil {
+		return "", err
+	}
+	if err := s.undoable(ctx); err != nil {
+		return "", fmt.Errorf("local %s cannot be reset to %s: %w", main, shortSHA(s.baseHead), err)
+	}
+	var notes []string
+	if s.tagMade != "" {
+		tag := s.tagMade
+		if _, err := s.m.gitOK(ctx, s.r.Dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag); err == nil {
+			if _, err := s.m.gitOK(ctx, s.r.Dir, "tag", "-d", tag); err != nil {
+				return "", fmt.Errorf("delete the local tag %s: %w", tag, err)
+			}
+		}
+		notes = append(notes, "deleted the local tag "+tag)
+		s.tagMade = ""
+	}
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "reset", "--hard", "--quiet", s.baseHead); err != nil {
+		return "", fmt.Errorf("reset %s to %s: %w", main, shortSHA(s.baseHead), err)
+	}
+	notes = append(notes, "reset "+main+" to "+shortSHA(s.baseHead))
+	remote, err := s.fetchMain(ctx, main)
+	if err != nil {
+		return "", err
+	}
+	if remote == "" {
+		return "", errors.New("the project has no remote to bring " + main + " up to")
+	}
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "merge", "--ff-only", "--quiet", "refs/remotes/"+remote+"/"+main); err != nil {
+		return "", fmt.Errorf("local %s cannot fast-forward to %s/%s: %w", main, remote, main, err)
+	}
+	head, err := s.mainHead(ctx)
+	if err != nil {
+		return "", err
+	}
+	s.baseHead, s.observedMain = head, head
+	s.ownCommits = map[string]bool{}
+	s.foreignMain = false
+	s.run.ReleaseVersion = ""
+	s.pushReleaseOK = false
+	notes = append(notes, "brought "+main+" up to "+remote+"/"+main+" at "+shortSHA(head),
+		"the run starts again from the rebase step")
+	return strings.Join(notes, "; "), nil
+}
+
+// recordRedo runs one redo as a recorded step, so the run record names every
+// redo and what it did. A redo that cannot finish fails the run.
+func (s *runState) recordRedo(ctx context.Context, n int) error {
+	step := Step{Name: fmt.Sprintf("main-moved-redo-%d", n), Kind: KindCustom, OnFailure: OnFailureStop}
+	result, _, err := s.recordStep(ctx, "redo", step, DefaultStepTimeout, func(c context.Context) (string, string, error) {
+		note, err := s.redoFromRebase(c)
+		if err != nil {
+			return autonomous.MergeStepFailed, err.Error(), err
+		}
+		return autonomous.MergeStepOK, fmt.Sprintf("redo %d of %d: %s", n, maxMainMovedRedos, note), nil
+	})
+	if result == autonomous.MergeStepFailed {
+		if err == nil {
+			err = errors.New("the redo failed")
+		}
+		return err
+	}
+	return nil
+}
+
+// shortSHA shortens a commit id for a note.
+func shortSHA(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 // ---- version and changelog files ----

@@ -207,6 +207,28 @@ the run ends, whatever the result.
   a backup in the daemon store directory, then start the run again. Deleting the
   file clears all locks, so only do that when you are sure no merge is running.
 
+## When main moves before the push
+
+Another machine can land commits on the remote's main while a run is working.
+The push step checks for this first and refuses to push when the remote's main
+has commits the local main does not contain. The run does not fail for that
+alone. It undoes its own work and starts again:
+
+- The run's local merge commits and release bump are undone: local main is
+  reset to the head it had when the lock was taken (or, after an earlier redo,
+  the head that redo synced to). The run's local release tag is deleted.
+- Local main is fast-forwarded to the remote's main. A local main that cannot
+  fast-forward (the histories have diverged) stops the redo and fails the run.
+- The steps run again from the rebase step, so the release version is computed
+  from the moved main, and the changelog heading and bump commit are made once.
+- Each redo is a run step named `main-moved-redo-<n>`, with what it reset and
+  synced to. A run allows three redos. A fourth refusal fails the run with the
+  reason `main kept moving`.
+
+A redo refuses to reset local main when any commit above the base is not one
+the run made, for example a commit someone made on local main during the run.
+The run then fails and nothing is reset.
+
 ## After the ship: post-ship hooks
 
 Once the pipeline's push step succeeds, the daemon can run the post-ship
