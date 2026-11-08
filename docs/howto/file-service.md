@@ -167,7 +167,9 @@ are never accepted. Any other id answers HTTP 400 with the plain text `invalid d
 before anything is read or written. Because an accepted id can never carry a path separator,
 the folder path built from it always resolves as a direct child of the base directory
 (`<file_service_root>/discussions`), so the listing can never resolve outside the discussion
-folder.
+folder. The check and the containment verification run in the shared `discussionFolderPath`
+helper (`internal/server/discussion_folder.go`) at the point where the folder path is built —
+the same helper the discussion memory routes use — so the guard is visible right at the join.
 See [discussion-scopes.md](discussion-scopes.md) for the same
 rule on the discussion memory routes.
 
