@@ -4324,5 +4324,18 @@
   "automation.review.judgeOutcome.foundProblem": "Judge found a problem",
   "automation.review.judgeOutcome.next.couldNotStart": "Nothing to do — it is retried.",
   "automation.review.judgeOutcome.next.timedOut": "Nothing to do — it is retried, or see Events.",
-  "automation.review.judgeOutcome.next.foundProblem": "Open the finding."
+  "automation.review.judgeOutcome.next.foundProblem": "Open the finding.",
+  "automaton_release_size_label": "Release size",
+  "automaton_release_size_patch": "patch",
+  "automaton_release_size_minor": "minor",
+  "automaton_release_size_major": "major",
+  "automaton_release_size_none": "none",
+  "automaton_release_size_resolve": "Resolve again",
+  "automaton_release_size_hint": "Patch, minor or major adds that step to the version; none adds nothing. Resolve again clears the set size so the layers below decide.",
+  "automaton_release_breaking_label": "Breaking change",
+  "automaton_release_breaking_hint": "A breaking change raises its release to the major approval mode, so it is never merged quietly.",
+  "automaton_release_source_explicit": "set on this Automaton",
+  "automaton_release_source_project": "project size map",
+  "automaton_release_source_default": "built-in default",
+  "automation_release_source_milestone": "Automation milestone"
 }
