@@ -43,6 +43,11 @@ type ViewSettings struct {
 	SourceOrder       []string `json:"source_order"`
 	FallbackOnBadFile string   `json:"fallback_on_bad_file"`
 	VersionFiles      []string `json:"version_files"`
+	// The release settings in effect for the project.
+	ReleaseSizeMap map[string]string `json:"release_size_map"`
+	MajorTrigger   string            `json:"major_trigger"`
+	ReleaseCadence string            `json:"release_cadence"`
+	VersionScheme  string            `json:"version_scheme"`
 }
 
 // ViewPostShip is the post-ship hook state as the text shows it.
@@ -265,6 +270,10 @@ func renderViewText(v View, postShipBlock string) string {
 	fmt.Fprintf(&b, "Order sources are tried in: %s\n", listOrNone(v.Settings.SourceOrder))
 	fmt.Fprintf(&b, "When the repository file is unusable: %s\n", dash(v.Settings.FallbackOnBadFile))
 	fmt.Fprintf(&b, "Files that hold the version: %s\n", listOrNone(v.Settings.VersionFiles))
+	fmt.Fprintf(&b, "Release size by kind: %s\n", sizeMapText(v.Settings.ReleaseSizeMap))
+	fmt.Fprintf(&b, "Major release trigger: %s\n", dash(v.Settings.MajorTrigger))
+	fmt.Fprintf(&b, "Release cadence: %s\n", dash(v.Settings.ReleaseCadence))
+	fmt.Fprintf(&b, "Version scheme: %s\n", dash(v.Settings.VersionScheme))
 	b.WriteString(postShipBlock)
 	fmt.Fprintf(&b, "Merge conflict policy: %s", dash(v.ConflictPolicy))
 	if v.ConflictPolicyInEffect != "" && v.ConflictPolicyInEffect != v.ConflictPolicy {
@@ -375,6 +384,24 @@ func dash(s string) string {
 		return "(none)"
 	}
 	return s
+}
+
+// sizeMapText writes a kind-to-size map as kind=size pairs, sorted by kind.
+// An empty map reads as (none).
+func sizeMapText(m map[string]string) string {
+	if len(m) == 0 {
+		return "(none)"
+	}
+	kinds := make([]string, 0, len(m))
+	for k := range m {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	pairs := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		pairs = append(pairs, k+"="+m[k])
+	}
+	return strings.Join(pairs, ", ")
 }
 
 func listOrNone(l []string) string {

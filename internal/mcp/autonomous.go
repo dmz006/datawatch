@@ -569,7 +569,8 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if mpErr != nil {
 		return toolError("autonomous_config_set", mpErr), nil
 	}
-	if len(mpEntries) > 0 {
+	mpSent := len(mpEntries) > 0
+	if mpSent {
 		if allocation == nil {
 			allocation = map[string]any{}
 		}
@@ -803,7 +804,7 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if allocation != nil && len(body) == 0 {
 		out, err := s.putPlanTierAllocation(allocation)
 		if err != nil {
-			return nil, err
+			return configWriteRefusal(mpSent, err)
 		}
 		return textOK(string(out)), nil
 	}
@@ -813,10 +814,21 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if allocation != nil {
 		if _, err := s.putPlanTierAllocation(allocation); err != nil {
-			return nil, err
+			return configWriteRefusal(mpSent, err)
 		}
 	}
 	return textOK(string(out)), nil
+}
+
+// configWriteRefusal answers a daemon refusal of a config write. A refusal of
+// the merge pipeline settings is a tool error carrying the daemon's message,
+// which names the value to use (for example the cadence or version scheme that
+// is not available yet); other config writes keep their existing reply.
+func configWriteRefusal(mergePipeline bool, err error) (*mcpsdk.CallToolResult, error) {
+	if mergePipeline {
+		return toolError("autonomous_config_set", err), nil
+	}
+	return nil, err
 }
 
 // qualityGatesSmokePackages normalises the quality_gates_smoke_packages / smoke_packages
