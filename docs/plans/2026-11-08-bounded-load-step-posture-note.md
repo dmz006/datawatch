@@ -28,8 +28,8 @@ The quoted text is the shipped rule, verbatim:
   requests a CPU-load or stress step without the bounding requirements (nice, quarter of
   the cores, hard timeout, trap cleanup, cannot outlive the owning task).
 
-Any task in this PRD that needs a load or stress step is therefore already held to the
-posture above; this note records that posture for the Phase 4 scope.
+Any task in this Automaton that needs a load or stress step is therefore already held to
+the posture above; this note records that posture for the Phase 4 scope.
 
 ## Verification of "note, not edit"
 
@@ -37,3 +37,22 @@ posture above; this note records that posture for the Phase 4 scope.
   no code, config, version field, CHANGELOG heading, or other file was modified.
 - The quoted text above matches `boundedLoadStepRule` in
   `internal/autonomous/load_step_rules.go` word for word.
+
+## Attempt 2 re-verification (2026-11-08)
+
+A retry of this task recorded the posture in project memory only and was rejected by
+the change-detection gate ("no changes detected, task produced no output"). The
+durable record is therefore this in-tree note plus the committed rule, and this pass
+re-verified the chain and closed one wording defect:
+
+- `boundedLoadStepRule` in `internal/autonomous/load_step_rules.go` is the single
+  source of the quoted posture; the injected prompt context, the decompose lint
+  message in `internal/autonomous/decompose_lint_rules.go`, and the session-prompt
+discipline in `internal/session/tracker.go` all carry the same bounds
+  (nice -n 19; at most nproc/4 cores, minimum one; hard `timeout` wrapper; trap on
+  EXIT INT TERM; never outlives the owning task).
+- `go test ./internal/autonomous/ ./internal/session/` → green
+  (8132 tests passed in 2 packages, 2026-11-08).
+- Terminology fix in this file: "This PRD" → "This Automaton" (AGENT.md Terminology
+  Rule — user-facing wording must say Automaton, never PRD).
+- No code, config, or other doc file was modified by this task.
