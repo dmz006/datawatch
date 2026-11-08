@@ -6,7 +6,7 @@ before the push instead of as a failed check afterwards. Nothing is uploaded:
 the scan reads the working tree and prints a report.
 
 The gate only runs when a change can add a finding. A push to `main` that
-touches only documents (`docs/**`, `CHANGELOG.md` and any `*.md`) starts no
+touches only documents (`docs/**`, `CHANGELOG.md` and `**/*.md`) starts no
 run. A pull request starts a run only if it changes Go or web-app code, a
 dependency, a workflow or a script (`.go`, `go.mod`, `go.sum`, `channel/**`,
 `internal/server/web/**`, `*.js`, `*.ts`, `*.mjs`, `*.py`,
@@ -40,6 +40,14 @@ changes none of the code, dependency, workflow or script files starts none
 either, because a documents-only change cannot add a code-scanning alert.
 Nothing is silently skipped beyond that: a pull request that touches `go.mod`
 or `go.sum`, such as a dependabot dependency bump, still starts a run.
+
+Two things the operator still reviews before this change merges, recorded in
+[the trigger-narrowing plan](../plans/2026-11-07-codeql-gate-trigger-narrowing.md):
+whether a dependabot dependency bump should keep starting a gate run — the
+remark that dependabot changes are covered by dependency review is true of the
+review, not of this gate — and whether the job named "Open high/critical
+alerts" is a required check; if it is, a documents-only pull request that now
+starts no run would wait for a check that never appears.
 
 A finding that appears locally is the finding the gate would count, once the
 alerts already dismissed on GitHub are subtracted (see the `--compare` step).
