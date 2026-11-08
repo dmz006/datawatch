@@ -153,6 +153,19 @@ func pinnedModel(node *compute.Node, nodeName, requestedModel, explicitOverride 
 	return "", &PinRefusedError{Node: nodeName, Pinned: pinned, Requested: target}
 }
 
+// PlacementModel is the model placement may put on node for a request of
+// model. It calls pinnedModel as an implicit request, with no explicit
+// override, so a pin is never replaced and allow_model_swap never comes into
+// it: a node pinned to another model answers with its pin, and a node with no
+// pin answers with model. Placement treats an answer that differs from model
+// as a node that cannot take it.
+func PlacementModel(node *compute.Node, model string) (string, error) {
+	if node == nil {
+		return model, nil
+	}
+	return pinnedModel(node, node.Name, model, "")
+}
+
 // PinRefusedError reports a request refused because it would replace the
 // pinned model of a node that does not allow swapping.
 type PinRefusedError struct {

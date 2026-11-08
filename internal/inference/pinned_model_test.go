@@ -356,3 +356,25 @@ func TestPinResolver_GenerateUndecodableBody(t *testing.T) {
 		t.Fatalf("Generate err = %v, want decode error", err)
 	}
 }
+
+// PlacementModel asks pinnedModel for an implicit request: a pin is answered
+// with the pin whatever allow_model_swap says, an unpinned node with the model.
+func TestPlacementModelNeverReplacesAPin(t *testing.T) {
+	cases := []struct {
+		name string
+		node *compute.Node
+		want string
+	}{
+		{"nil node", nil, "qwen3:8b"},
+		{"no pin", &compute.Node{Name: "a"}, "qwen3:8b"},
+		{"pinned to another model", &compute.Node{Name: "a", NodePinnedModel: "other:1b"}, "other:1b"},
+		{"pinned to another model with swap allowed", &compute.Node{Name: "a", NodePinnedModel: "other:1b", AllowModelSwap: true}, "other:1b"},
+		{"pinned to this model", &compute.Node{Name: "a", NodePinnedModel: "qwen3:8b"}, "qwen3:8b"},
+	}
+	for _, c := range cases {
+		got, err := PlacementModel(c.node, "qwen3:8b")
+		if err != nil || got != c.want {
+			t.Errorf("%s: PlacementModel = %q, %v; want %q", c.name, got, err, c.want)
+		}
+	}
+}

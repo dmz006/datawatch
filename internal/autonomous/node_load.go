@@ -23,10 +23,12 @@ type NodeLoadAlerts interface {
 
 // loadWorkerNode runs right after a worker lease is granted. For an LLM entry
 // that pools two or more nodes, it makes the model resident on the node the
-// lease landed on. A node that fails is alerted, the lease is released, and
-// the lease is acquired again with that node excluded. The exclusion lasts
-// only for this attempt. When no other node is left, the load error is
-// returned, as a failed start is.
+// lease landed on. Where the placement gate already loaded the model on the
+// approved node (and the lease was restricted to it) the node reports the
+// model resident and this returns at once. A node that fails is alerted, the
+// lease is released, and the lease is acquired again with that node excluded.
+// The exclusion lasts only for this attempt. When no other node is left, the
+// load error is returned, as a failed start is.
 //
 // A single-node entry has no load step: it returns nil without touching the
 // loader.
