@@ -2876,6 +2876,8 @@ servers:
 - `GET /api/sessions/aggregated` — sessions from all remotes, tagged with `server` field
 - Web UI server picker (Settings → Comms → Servers) switches between instances — and with the in-place fix (recorded in [CHANGELOG.md](../CHANGELOG.md) [Unreleased] → Fixed, found 2026-11-08; implemented in this tree's `internal/server/web/app.js`, `selectServer`, with PWA tests; live verification still pending) the switch takes effect on the page you're on: selecting a federated-host chip re-renders the current tab (Sessions, Alerts, Automata, Observer, Settings, Dashboard) in place against that instance and updates its "Showing: <name>" line, with the local chip and **All** returning the page the same way — Observer and Settings offer no **All** chip at all
 
+Choosing a federated host in the server picker on the **About** tab, or on the other Settings tabs, switches the page to that host: **About** then shows that host's version, build and status, and the other Settings tabs show that host's data. Choosing local returns the page to this server.
+
 **Troubleshooting:**
 - If a remote is unreachable, `list` skips it (5s timeout per server)
 - Session discovery cache refreshes every 30 seconds
