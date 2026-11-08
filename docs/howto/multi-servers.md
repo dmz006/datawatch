@@ -183,16 +183,19 @@ Behaviours worth knowing:
   showing the previous server's sessions. Sub-pages that carry no chip
   bar at all (session detail, the New session form) are not re-rendered
   by a switch; they keep their contents until you leave them.
-- **Back to \<hostname\>.** Three one-tap ways to return to local data
+- **Back to \<hostname\>.** Extra one-tap ways to return to local data
   (where \<hostname\> is this daemon's own name), in addition to the
   always-present **Local** chip — they all perform the same "go back to
   local" action:
   - the error panel, when a remote server cannot be reached and no
     sessions are loaded, offers an explicit **Back to \<hostname\>**
     button;
-  - the **Sessions toolbar chip** (🌐 \<name\>) appears on the Sessions
-    view while a remote server is the active one, and clicking it returns
-    you to local data;
+  - a clickable **🌐 \<name\>** indicator on the **Sessions toolbar** —
+    it appears while a remote server is the active one and clicking it
+    returns you to local data; it is the `.server-indicator` chip in
+    `renderSessionsView` in `internal/server/web/app.js`
+    (`onclick="selectServer(null)"`), covered by the PWA test
+    `internal/server/web/app-select-server-controls.test.js`;
   - on the **Servers card** under Settings → Comms → Remote Servers, the
     row for the active remote server carries a **Back to \<hostname\>**
     button next to its Select/Connected button.
