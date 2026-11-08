@@ -5,17 +5,37 @@ docs:
 ---
 # How-to: worker session profiles
 
-## What changed
+## Where this stands
 
-**Worker and verifier sessions now start small.** Instead of every task session beginning with the operator's full harness — the complete rules and context files, the platform context, and the full MCP tool definitions — a worker (or verifier or judge) session now starts with a starting context and a tool set **chosen for the job it is about to do**, from a **worker session profile**.
+Worker and verifier sessions will **start small**. Instead of every task session beginning with the operator's full harness — the complete rules and context files, the platform context, and the full MCP tool definitions — a worker (or verifier or judge) session starts with a starting context and a tool set **chosen for the job it is about to do**, from a **worker session profile**.
 
-What a worker session still gets, unchanged:
+As the code stands today:
+
+**Landed, and tested:**
+
+- the four built-in profiles (`minimal`, `digest`, `datawatch-tools`, `full`) and their field values;
+- the per-role and per-kind default table (the planner on `full`, the worker and the verifier plus implementation, docs and final-gate tasks on `digest`, the judge and note-task on `minimal`);
+- the settings, with their refusals on set — `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` (`role` and `kind`) and the daemon-wide `autonomous.worker_profile` name;
+- the `worker_profile` field on a task and on an Automaton, and the planner's one-line spec marker that puts a name on a task;
+- the resolution rule itself — by name, task → Automaton → project → daemon → kind → role, including the unknown-name fallback and its recorded decision — implemented and tested in code (`internal/workerprofile/resolve.go`).
+
+**Landing with the sessions' own start work:**
+
+- applying the resolved profile when the session launches — **worker, verifier and judge sessions still start with the full harness today**;
+- the role and kind defaults you configure — `autonomous.worker_profile_defaults` is validated on set, but the resolution resolves against the built-in table until the start wiring is in;
+- the daemon-wide `autonomous.worker_profile` name taking effect at launch;
+- the unknown-name fallback's recorded decision showing on the task's record;
+- the "not applied" record for a profile field a backend cannot honour;
+- the profile name on the attempt record, and the measured starting context, in the cost report, the stats and the usage advice line;
+- the per-surface read-back of the profile in force, and the per-surface tool names for each of the settings above.
+
+What a worker session still gets, once the start work is in:
 
 - everything the task needs to be judged — its spec, its constraints, its verification script path, its changed-file scope;
 - the project's rules, in the level its profile calls for (full file pointer, rules digest, or neither);
 - the tools its profile allows.
 
-What did not change:
+What did not change, and stays that way:
 
 - **Sessions you start yourself are exactly as before.** A session you begin from the PWA, the CLI, a comm channel or a chat client starts with the full harness, as it always has. Profiles describe worker, verifier and judge sessions only.
 - **What a task finishes is unchanged.** A task still ends with the same result, the same verification, the same reports. Only what the session starts with is smaller.
@@ -44,54 +64,64 @@ A profile with `mcp: none` and a small context level starts a session with none 
 
 Four built-in profiles ship, **named after what they do**:
 
-- **minimal** — the smallest that works: the task's spec and constraints, the tools the task needs, no MCP servers unless the task asks for them. The context level is `minimal`.
-- **digest** — `minimal` plus the project's rules as a [rules digest](automata-rules-and-context.md#the-rules-digest) (every heading plus the mandatory lines, cached by content hash) instead of the full rules files. The context level is `digest`.
-- **datawatch-tools** — the task's context as above, plus the datawatch MCP server (the session keeps the ability to read its own session, the PRD state and its own records) but nothing else. The context level is `digest`.
-- **full** — what every session starts with today: the full rules and context, the full MCP surface, skills on. This is "the old way", and it is **one setting away** from any task or role.
+- **minimal** — the smallest that works: the task's spec and constraints, a fixed tool set for coding work (the file and shell tools: read, edit, write, bash, glob, grep), no MCP servers, no skills. The context level is `minimal`.
+- **digest** — `minimal` with the datawatch MCP server (the session keeps the ability to read its own session, the PRD state and its own records) and the full tool set, and the project's rules as a [rules digest](automata-rules-and-context.md#the-rules-digest) (every heading plus the mandatory lines, cached by content hash) instead of the full rules files. No skills. The context level is `digest`.
+- **datawatch-tools** — the task's context as above, plus the datawatch MCP server but no other MCP servers and no skills. The context level is `digest`. This is the profile the planner names on a task's spec when that task needs a tool or an MCP server.
+- **full** — what every session starts with: the full rules and context, the datawatch MCP server, the full tool set, skills on. This is "the old way", and it is **one setting away** from any task or role.
 
-**Operator to review.** The exact field values of the four built-in profiles, and which profile each role and task kind defaults to, are a supervisor judgment call made to be "the smallest that works" — check them on first sight and correct them (see the review list at the bottom of this howto).
+**Operator to review.** The field values of the four built-in profiles, and the per-role and per-task-kind defaults in the table below, are a supervisor judgment call made to be "the smallest that works" — check them on first sight and correct them (see the review list at the bottom of this howto).
 
 ## The defaults: the smallest that works, with full one setting away
 
-Every **role** — planner, worker, verifier, judge — and every **task kind** — implementation, docs, note, final gate — gets a default profile. The defaults are set to the smallest profile that can do the job correctly:
+Every **role** — planner, worker, verifier, judge — and every **task kind** — implementation, docs, note, final gate — has a default profile; this is the built-in table the resolution rule references, and it is what a launch will get once the start work lands:
 
-- a **planner** reads the plan and the rules; it does not need a working tool set, so it runs on a small context level and a narrow tool set;
-- a **worker** implementing a task gets the digest level by default and the tools the task needs — and more, one setting away, when the task needs them;
-- a **verifier** and a **judge** each get a profile matched to reading a diff against the rules, not to doing the work;
-- **task kinds** default around the same line: a docs or a note task does not need what an implementation task needs, and a final gate keeps whatever the gate needs.
+| Default profile | Who has it |
+|-----------------|--------------------|
+| `full` | the **planner** — its own start is the unchanged one, and it is the one that names the profile on a task |
+| `digest` | the **worker** and the **verifier**, each matched to doing or checking a coding job; and **implementation**, **docs** and **final-gate** tasks |
+| `minimal` | the **judge**, reading a verdict, and **note**-kind tasks |
 
-`full` is reachable from every default by one setting — on the task, on the Automaton, on the project or daemon-wide — so a job that needs the old, heavy start has it, and nothing else pays for it.
+That is the "smallest that works" line in the code, and it is the table the resolution resolves against today. `full` is reachable from every other default by one setting — on the task, on the Automaton, on the project or daemon-wide — so a job that needs the old, heavy start has it, and nothing else pays for it.
+
+You can move the defaults to other profiles with `autonomous.worker_profile_defaults` (the `role` and `kind` keys; see [Setting and reading it](#setting-and-reading-it)). Those values are validated on set today; the resolution starts using them where you have set them when the sessions' start work lands — until then it resolves against the built-in table above.
 
 ## Giving one task the tools it needs
 
-You do not need to change a role default for one job. The planner, when it writes a task, can attach a **profile marker to the task spec** — one line — naming the profile (or the fields) that task needs. That task then starts with that profile and the rest of the Automaton keeps its defaults. This is the same override a planner already makes when it attaches an existing verification script to a task: the marker is part of the spec, not a daemon change.
+You do not need to change a role default for one job. The planner, when it writes a task, can attach a **profile marker to the task spec** — one line — naming the profile that task needs: the name lands on the task's `worker_profile` field, the task runs under it at launch, and the rest of the Automaton keeps its defaults (the marker works today; the launch that runs under it is the part still landing). This is the same override a planner already makes when it attaches an existing verification script to a task: the marker is part of the spec, not a daemon change.
+
+Reading it back: the marker is the exact line `worker_profile: <name>` in the task's spec. The first such line is the one that counts, and it sets the task's own `worker_profile` field — a value you set on the task's field directly is never overridden by a spec line. Because the task layer outranks every layer below it, the line **does** override a profile the Automaton, the project or the daemon-wide setting carries, for that one task only; the Automaton and its other tasks keep theirs.
 
 ## How a profile is resolved
 
-Each setting resolves on its own, the same three-tier way the daemon already resolves autonomous settings:
+The resolution rule, implemented and tested in code, resolves **by name, in this order** — the first name that is set wins:
 
-**task → Automaton → project → daemon default.**
+1. the **task** — its own `worker_profile`, set as a field or by the planner's `worker_profile: <name>` spec line;
+2. the **Automaton** — its `worker_profile`;
+3. the **project** — the profile your project names;
+4. the **daemon** — the `autonomous.worker_profile` setting, if you set one;
+5. the **task-kind default** — the `kind` key of `autonomous.worker_profile_defaults` for that kind, or the built-in kind default when you have not set one;
+6. the **role default** — the `role` key of `autonomous.worker_profile_defaults` for that role, or the built-in role default when you have not set one.
 
-An unset value reads the tier below it; a tier you never set reads the daemon default. That is also how a profile you define for yourself is used: define it once (per project or daemon-wide), and every role or task kind that names it gets it.
+A tier that is set but empty is just unset, so resolution continues to the next tier. That is also how a profile you define for yourself is used: define it once (per project or daemon-wide), and every role, task kind or task that names it gets it.
 
-**A profile name the daemon does not know is refused** at the surface you set it — the refusal names the valid names — so a typo can never silently widen or narrow a session. The one place a name is not refused is at session start: if a profile named on a task or an Automaton is not present when the session launches (for example, removed after being named), the session starts on its role's default profile instead, the daemon **records that decision** on the task's record, and the task goes on.
+**A profile name the daemon does not know is refused** at the surface you set it — the refusal names the valid names — so a typo can never silently widen or narrow a session. The one place the rule handles an unknown name instead of refusing it: if a name is set on a task or an Automaton and is not present when the rule runs (for example, removed after being named), the rule stops the search at that tier, applies the role's default, and records the decision — the requested name, the tier it came from, the profile applied and the reason.
 
-## Backends that cannot honour a field
+**What the rule does not do yet: anything at session start.** Launching a session does not call the rule — worker, verifier and judge sessions start with the full harness today, and neither the daemon-wide name, the configured defaults, nor a decision record has a consumer at launch. When the sessions' start work lands, a launch resolves this way, starts with the resolved profile, and the fallback decision shows on the task's record.
 
-Not every backend can honour every field. A backend that **cannot honour a field of the resolved profile — a skills switch, a tool allow-list, an MCP restriction it does not implement — is recorded as not applied** for that session: the decision record names the field and the reason, and the session still gets everything it needs to complete the work. What a worker gets is never smaller than the task's spec and its verification requirement; what it starts with is only ever larger than the profile when a backend cannot prove it is not.
+## The shape of the start (landing with the sessions' start work)
 
-## Deterministic starting context
+These are the properties of a profile-applied launch the start work delivers, not behaviour in a code path yet:
 
-For a given role and profile, a session's starting context is **deterministic**: the same bytes, every time, in the same order — the task's spec and constraints, the rules at the profile's level, and nothing else that changes from start to start. The task-specific section sits at the end of the context. Two effects that follow:
+**Backends that cannot honour a field.** Not every backend can honour every field. A backend that **cannot honour a field of the resolved profile — a skills switch, a tool allow-list, an MCP restriction it does not implement — is recorded as not applied** for that session: the record names the field and the reason, and the session still gets everything it needs to complete the work. What a worker gets is never smaller than the task's spec and its verification requirement; what it starts with is only ever larger than the profile when a backend cannot prove it is not.
+
+**Deterministic starting context.** For a given role and profile, a session's starting context is **deterministic**: the same bytes, every time, in the same order — the task's spec and constraints, the rules at the profile's level, and nothing else that changes from start to start. The task-specific section sits at the end of the context. Two effects that follow:
 
 - **Prompt-cache reuse.** A retry, a ladder hop to the next worker, a verifier and a judge on the same role-profile start share the context prefix byte-for-byte, so the model provider's prompt cache applies across them where the profile is the same. A session that reuses the role and profile does not re-send the same 85,000 tokens it re-sent before; it re-sends the delta its profile actually adds.
 - **The cost report can compare profiles.** Because the start is deterministic per role and profile, the tokens a profile costs are a stable figure, not a per-session accident.
 
-## The measured starting context, where you will see it
+**The measured starting context, where you will see it.** Once the start work is in, every attempt's record carries its **starting context size** (the measured input tokens the session began with) **and the name of the profile** that produced it. Read them where you already read cost:
 
-Every attempt's record carries its **starting context size** (the measured input tokens the session began with) **and the name of the profile** that produced it. Read them where you already read cost:
-
-- **The cost report.** A group's start — a worker, a verifier, the whole Automaton — now shows the starting context with the profile it ran under, so you can read "worker on `digest` started at ~X tokens; verifier on `minimal` at ~Y" instead of one flat 85,000 you had to know was mostly MCP definitions. The profile name is on the attempt record, so any grouping (Automaton, Automation, backend, week) can carry it.
+- **The cost report.** A group's start — a worker, a verifier, the whole Automaton — shows the starting context with the profile it ran under, so you can read "worker on `digest` started at ~X tokens; judge on `minimal` at ~Y" instead of one flat 85,000 you had to know was mostly MCP definitions. The profile name is on the attempt record, so any grouping (Automaton, Automation, backend, week) can carry it.
 - **The stats and the usage advice line.** A session's stats and the usage advice line that reads your spend against the week carry the starting context and profile the same way, so the advice you get says which profile is costing what.
 - **The attempt record.** A task's record (the Automaton detail, the REST read, the MCP read) names the profile it ran and the tokens it started with, so a task that ran on `full` is marked as such, not hidden in the average.
 
@@ -99,20 +129,30 @@ Compared against the 85,000-token median baseline from 2026-11-08, a session on 
 
 ## Setting and reading it
 
-Profiles are set the same way every other setting you set for your daemon: the **settings file, the web settings, REST, the MCP tools, the CLI, and the comm channel** — the six surfaces you already use for the daemon's autonomous settings. A read-back on any surface names the profile in force per role and per task kind, the profile's fields, and the tier (task / Automaton / project / daemon) that set each. The exact key names and tool names arrive with the settings work for this change; until then, the surfaces are the ones above and the valid profile names are the four built-ins above or a profile you have defined.
+The profiles sit in the daemon's autonomous config, right beside every other autonomous setting — the same config a datawatch user already sets, on the settings file or through the web, REST, the MCP tools, the CLI or the comm channel:
+
+- `autonomous.worker_profiles` — the profiles you define, keyed by name; each value is a profile's fields (`mcp`, `tools`, `skills`, `context`, `model`, `effort`). A user profile may not reuse a built-in name.
+- `autonomous.worker_profile_defaults` — the `role` and `kind` defaults, when you want to move them from the built-in table above; the valid role keys are `planner`, `worker`, `verifier`, `judge`, the valid kind keys are `implementation`, `docs`, `note`, `final_gate`, and every value must name a built-in or one of your profiles.
+- `autonomous.worker_profile` — the daemon-wide (global-layer) profile name, if you want one for everything that names none.
+- on a **task** or an **Automaton** — the `worker_profile` field, the per-task and per-Automaton names that beat the daemon-wide name for the task in question.
+
+Any value in these settings that does not name a valid profile is refused where you set it, and the refusal names the valid ones — a built-in name a user profile reuses, a profile that fails its own checks, a defaults or global name that matches nothing, an unknown role or kind key.
+
+Set the settings now if you want them in place for when the start work lands. What still lands with the sessions' own start work: **applying the profile at all when the session launches**; the configured role and kind defaults taking the place of the built-ins in the resolution; the daemon-wide name in force at launch; the unknown-name fallback's recorded decision on the task's record; the not-applied records for fields a backend cannot honour; the profile name and the measured starting context on the attempt record, the cost report, the stats and the usage advice line; and the per-surface read-back that names the profile in force per role and per task kind with the tier (task / Automaton / project / daemon) that set it, including the exact tool names that set and read each of these on the surfaces above. Until then, the settings file is the surface to use, and the valid profile names are the four built-ins or a profile you have defined there. The reference is in [config-reference.yaml](../config-reference.yaml) (the `autonomous.` block) and [implementation.md](../implementation.md) (the profile-settings section).
 
 ## What to review when you first see it
 
 The operator direction allows corrections, and these are the places the correction is due:
 
-- **The per-role and per-task-kind default table.** Which of planner / worker / verifier / judge and implementation / docs / note / final gate default to `minimal`, `digest`, `datawatch-tools` or `full`. Set to the smallest that works by default; if a role is under-equipped on your fleet (a worker that needs a tool the `digest` default does not give it), the marker on one task fixes that one task, and a default change fixes the rest.
-- **The field values of the four built-in profiles.** The allow-lists in `tools`, the server named list in `mcp`, and the context level of each.
-- **The key and tool names on your six surfaces.** Once the settings work lands, check each surface reads back a profile in force with its tier, and that a refused name names the valid ones.
+- **The defaults table against your fleet.** The built-in table above — the planner on `full`, the worker, the verifier and implementation, docs and final-gate tasks on `digest`, the judge and note-kind tasks on `minimal` — is what the resolution resolves against today, set to the smallest that works. If a role is under-equipped on your fleet (a worker that needs a tool the `digest` default does not give it), the spec-line marker on one task fixes that one task, and `autonomous.worker_profile_defaults` fixes the rest once the start work is in.
+- **The field values of the four built-ins and your own profiles** as they apply on your backends: the allow-lists in `tools`, the named server list in `mcp`, and the context level of each.
+- **The per-surface read-back on your six surfaces.** When each surface carries the profile read-back, check it names the profile in force per role and per task kind with the tier that set it, and that a refused name names the valid ones.
 - **The measured starting context in your own cost report.** The 85,000-token baseline and the 36,000 MCP block are one machine's 2026-11-08 figures. When you see the profile name and the measured start against them across a representative window, you can price the difference and, where a profile costs more than its job needs, move it down one level.
+- **The CHANGELOG entry for this change** describes the small start as already in force; the start wiring is the part still landing, so confirm the wording matches the release.
 
 ## Related
 
 - [Rules and context](automata-rules-and-context.md) — the levels a profile's context field names: the rules file, the context files, the digest, the planning record.
 - [Platform context](sessions-deep-dive.md#what-a-session-is-told-about-datawatch) — the daemon's own "what is datawatch" block that every session, including workers, still receives.
-- [Cost report](cost-report.md) — where the measured starting context and profile show up, and where you read the difference.
-- [Failure escalation](failure-escalation.md) — the ladder and the retries this change makes cheaper: each hop to the next worker now re-sends only the delta its profile adds, over a shared, cache-friendly prefix.
+- [Cost report](cost-report.md) — where the measured starting context and profile will show up once the start work lands, and where you read the difference.
+- [Failure escalation](failure-escalation.md) — the ladder and the retries this change makes cheaper: each hop to the next worker will re-send only the delta its profile adds, over a shared, cache-friendly prefix.
