@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.3 — CodeQL gate runs only when code could change
+
+### Changed
+
+- **The CodeQL alert-gate workflow now runs only when a change could affect the code it checks, so it stops spending runs where it cannot find anything.** A push to `main` that changes only documents — `docs/**`, `CHANGELOG.md` and other `**/*.md` files — starts no run (`.github/workflows/codeql.yaml` push `paths-ignore`). A pull request starts a run only if it touches code: Go sources, `go.mod`/`go.sum`, `channel/**`, `internal/server/web/**`, `**/*.js`/`**/*.ts`/`**/*.mjs`/`**/*.py`, `.github/workflows/**` or `scripts/**` (pull_request `paths` list). The Monday schedule and manual dispatch are unchanged, so code that lands is still checked by the schedule.
+  - **How it shows up:** fewer CodeQL entries in the actions list — doc-only pushes to `main` and pull requests that don't touch the paths above no longer appear. Runs that do start behave exactly as before: the "Open high/critical alerts" gate fails with the open high/critical counts, the wait-for-analyses step and concurrency are unchanged.
+  - **Migration:** none; the triggers live in the workflow file and apply to the next run. One caveat the plan records — if you have made the "Open high or critical alerts" check a *required* check for pull requests on GitHub, drop that requirement: a documents-only pull request now starts no CodeQL run, and a required check that never appears waits for the merge forever (pushes are not gated by merge requirements). `make test` now includes `tests/test-codeql-trigger-listing.sh`, which asserts this trigger listing and the least-privilege permissions, so an edit that drops the narrowing fails the test suite rather than silently re-widening the runs.
+
 ## v9.112.2 — Image sends no longer freeze the terminal
 
 ### Fixed

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.2 (2026-11-08).** Sending an image from the PWA no longer freezes the terminal: the vision describe call is bounded by the new vision.describe_timeout_seconds setting (default 5 seconds), runs off the websocket read loop and falls back to the plain @path reference on timeout. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.3 (2026-11-08).** The CodeQL alert-gate workflow no longer starts on documents-only pushes or pull requests that touch no code. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
