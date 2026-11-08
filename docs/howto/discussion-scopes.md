@@ -52,7 +52,7 @@ addressable only by their discussion ID.
 Every write to a new discussion ID automatically creates the scope and the WAL file. There
 is no explicit create step.
 
-**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID, including an empty one or one holding `/`, `\` or spaces, is rejected with HTTP 400 and the text `invalid discussion id` on every scope, sync and file-service route. IDs that were created earlier with other characters are no longer reachable through the API. Because a valid ID can never carry a path separator, every path into the discussion folder — the WAL at `~/.datawatch/discussions/<id>/` and any file-service folder under the same root — always resolves as a direct child of its base folder, so a stored discussion can never be addressed outside its base directory. Every route runs this check in one shared helper (`discussionFolderPath`, `internal/server/discussion_folder.go`) at the point where the folder path is built, so the containment check sits visibly at the join in the code you can read — behavior is exactly as before, and a refused id never touches a file. The folder for a valid id is also checked after cleaning, at the point the path is built, so a path that would leave the discussions folder is refused.
+**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID — an empty one, or one containing `/`, `\`, a space, or any other character — is refused with HTTP 400 and the body `invalid discussion id`, before any file is opened or created. The full rule, the list of routes it applies to (and the one route it does not), and how the check is enforced in the code are all in the [Discussion id rule](#discussion-id-rule) section below.
 
 ### REST
 
@@ -281,13 +281,31 @@ accepted, even though they use only allowed characters.
 Any other id answers HTTP 400 with the plain text `invalid discussion id` before anything is
 written, so a rejected request never creates a scope, a WAL file or a participant list.
 
-The rule applies to every discussion route:
+The rule applies to every discussion route that carries an id in the path:
 
-- scope (write, recall, list and delete)
+- scope (write, recall, delete)
 - WAL
 - participants
-- conflicts
+- conflicts (list and resolve)
 - receive (entries arriving from a federation peer)
+- file service, `GET /api/files/discussions/{id}` (see [file-service.md](file-service.md))
+
+The list-all route, `GET /api/memory/discussion`, has no id in its path: it simply reports
+the names of the discussion folders it finds under the base directory, so it is not itself
+subject to this rule. That is why a legacy, invalid folder name can still show up in a
+list-all response even though every id-bearing route above refuses it — see the operator
+review note below.
+
+**How the check is enforced:** every id-bearing route builds its folder path through the same
+helper, `discussionFolderPath` (`internal/server/discussion_folder.go`). The helper validates
+the id, refuses an id that carries `/`, `\`, or exactly `.`/`..`, and — only after joining the
+id into the base folder and cleaning the result — refuses the path unless it is still a direct
+child of that base folder. Because a valid id can never carry a path separator, an id can never
+be used to name a file outside its own discussion folder (the WAL under
+`<data dir>/discussions/<id>/`, or the matching file-service folder under
+`<file_service_root>/discussions/<id>/`), and a refused id never opens or creates a file.
+Behavior for valid ids is unchanged; centralizing the validation and the containment check in
+one helper is what makes the guard visible on the data flow in the code.
 
 ```sh
 # An id with a slash is rejected.
@@ -301,8 +319,14 @@ curl -sk -i -X POST \
 ```
 
 **Operator review:** discussion ids created before this rule with other characters (spaces, `/`,
-non-ASCII) stay on disk but are no longer reachable through the API. List the discussion folders
-with `ls ~/.datawatch/discussions` (memory scopes) and `ls ~/.datawatch/files/discussions` (file folders; the root is shown by `GET /api/files/meta`), and rename or migrate any such folder to a valid id.
+non-ASCII) stay on disk. They are refused with HTTP 400 by every id-bearing route (write, recall,
+delete, WAL, participants, conflicts, receive, and the file-service discussion route), but they
+can still appear in a list-all response, because that route reports the folder names it finds on
+disk rather than opening them. List the folders with `ls ~/.datawatch/discussions` (memory scopes)
+and `ls <file_service_root>/discussions` (file folders — by default
+`~/.datawatch/files/discussions`; the effective root is shown by `GET /api/files/meta`), and
+rename or migrate any such folder to a valid id (or delete it) so it stops showing up in
+listings.
 See also [file-service.md](file-service.md) for the same rule on the file routes.
 
 ---
