@@ -35,6 +35,11 @@ type ReviewNeededEntry struct {
 	// HeldCause names the infrastructure failure when the task is held because
 	// its infrastructure retries ran out. It is empty for any other hold.
 	HeldCause string `json:"held_cause,omitempty"`
+	// NoRetryReason is the operator-readable reason the task was sent to
+	// review WITHOUT another attempt (a no-retry failure), e.g. "the task
+	// writes nothing; give it files or a verification script". It is empty for
+	// a hold reached by other means.
+	NoRetryReason string `json:"no_retry_reason,omitempty"`
 }
 
 // reviewNeededEntries lists the tasks of prd held in TaskReviewNeeded, in story
@@ -78,9 +83,17 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 		e.LastBackend, e.LastModel = last.Backend, last.Model
 		e.LastBackendReason = last.BackendReason
 		e.LastResumed, e.LastResumeReason = last.Resumed, last.ResumeReason
+		if last.NoRetryReason != "" {
+			e.NoRetryReason = last.NoRetryReason
+		}
 	}
 	if fr := t.FailureReason; fr != nil && fr.Source == infraRetryHoldSource {
 		e.HeldCause = fr.Detail
+	}
+	if e.NoRetryReason == "" {
+		if fr := t.FailureReason; fr != nil && fr.Source == noRetryHoldSource {
+			e.NoRetryReason = fr.Detail
+		}
 	}
 	return e
 }

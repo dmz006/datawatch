@@ -2375,6 +2375,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if tb, note := m.scopeBreadthFor(ctx, prd, t, vr); tb || note != "" {
 			scopeTooBroad, scopeNote = tb, note
 		}
+		// No-retry: if this failure has no route to a fix through another
+		// attempt, record the attempt carrying the reason and hold the task for
+		// operator review without starting another attempt. This runs before the
+		// attempt is recorded below, so the recorded failures it sees are exactly
+		// the ones before this one. Only with the escalation (review-hold) policy
+		// on; otherwise the task takes the ordinary retry/failed path.
+		if esc.Enabled {
+			if reason, noRetry := m.noRetryFailHold(prd, t, vr); noRetry {
+				return m.holdForNoRetry(ctx, prd, t, run, lastFailureCategory, vr.Summary, reason)
+			}
+		}
 		if !textCounted {
 			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr, EndReason: attemptEndVerifierFailed})
 		}

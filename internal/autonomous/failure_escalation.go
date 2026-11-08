@@ -84,9 +84,15 @@ type TaskAttempt struct {
 	// DurationSeconds is the wall-clock length of the attempt.
 	DurationSeconds int `json:"duration_seconds,omitempty"`
 	// Outcome is "failed", "stalled" or "cancelled".
-	Outcome         string   `json:"outcome,omitempty"`
-	FailureCategory string   `json:"failure_category,omitempty"`
-	FailureSummary  string   `json:"failure_summary,omitempty"`
+	Outcome         string `json:"outcome,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
+	FailureSummary  string `json:"failure_summary,omitempty"`
+	// NoRetryReason is set on a failed attempt that ends the task in
+	// operator review WITHOUT another attempt being started (a no-retry
+	// failure). It carries the operator-readable reason the retry was
+	// skipped, shown in the Automaton status view, the review question and
+	// the alert. Empty for an ordinary failed attempt that is retried.
+	NoRetryReason   string   `json:"no_retry_reason,omitempty"`
 	VerifierSummary string   `json:"verifier_summary,omitempty"`
 	VerifierIssues  []string `json:"verifier_issues,omitempty"`
 	ChangedFiles    []string `json:"changed_files,omitempty"`

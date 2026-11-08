@@ -101,6 +101,10 @@ type attemptFailure struct {
 	// means "derive it from Outcome and Category".
 	EndReason string
 	EndDetail string
+	// NoRetryReason is set on the failed attempt recorded for a no-retry
+	// hold: the operator-readable reason the task is sent to review without
+	// another attempt. Empty for an ordinary failed attempt.
+	NoRetryReason string
 }
 
 // deriveAttemptEndReason picks an end reason for a failure whose caller did
@@ -185,6 +189,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		Outcome:         f.Outcome,
 		FailureCategory: f.Category,
 		FailureSummary:  f.Summary,
+		NoRetryReason:   f.NoRetryReason,
 		VerifierSummary: f.Verification.Summary,
 		VerifierIssues:  append([]string(nil), f.Verification.Issues...),
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
