@@ -2751,16 +2751,23 @@ properties matter operationally:
 - **The terminal cannot freeze.** Image sends over a WebSocket are
   expanded on the connection's input worker, keeping the socket's read
   loop (and the terminal) responsive; a later plain send to the same
-  session waits for the still-expanding image send instead of overtaking
-  it. If the PWA appears to wait on a send, the wait is the describe
+  session *over the same connection* waits for the still-expanding image
+  send instead of overtaking it (the wait is per WebSocket connection —
+  a different client socket is not part of it). If the PWA appears to
+  wait on a send, the wait is the describe
   taking its full budget — give it more (or less) room with
   `vision.describe_timeout_seconds` (0 or negative reverts to the 5 s
   default).
 
-**Fallback:** if the describe times out, errors, returns empty, the file
-is unreadable, or `vision.enabled` is false, the tag is delivered as a
-bare `@<path>` instead — the message is never dropped, and a
-vision-capable model reads the file itself.
+**Fallback:** if the describe times out, errors, returns empty, or
+`vision.enabled` is false, the tag is delivered as a bare `@<path>`
+instead — the message is never dropped, and a vision-capable model reads
+the file itself. An **unreadable file is not a fallback case**: a file
+that is missing, unreadable by the daemon, or outside the file-service
+root is never described, and the tag is delivered as the literal
+`[image:<path>]` — unchanged (pinned by
+`TestExpandImageTags_FileNotFound` and
+`TestExpandImageTags_PathOutsideRoot`).
 
 | Method | How |
 |--------|-----|
@@ -2771,11 +2778,23 @@ vision-capable model reads the file itself.
 
 **Symptom → cause:** a session received `@<path>` where you expected a
 description → the describe timed out or failed (vision disabled, backend
-down, file unreadable, or the 5 s default too short for your model). Check
-that the backend serves the description within budget, then either raise
+down, or the 5 s default too short for your model). A session that got
+the literal `[image:<path>]` tag instead → the describe never ran
+because the file was missing, unreadable, or outside the file-service
+root. Check the backend and the path, then either raise
 `describe_timeout_seconds` or accept the `@<path>` fallback. See the
 Vision System entry in [datawatch-definitions.md](datawatch-definitions.md)
 and [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md) (section 5g).
+
+**Still to review (operator).** The two behaviors above are deliberate,
+not bugs, and neither is guarded anywhere else — confirm they fit your
+workflow before relying on them: (1) for an unreadable file the model
+receives the literal `[image:<path>]` tag; only the `@<path>` form is
+picked up by a model's own `@` file-reading, so a model without that
+capability may not act on the tag at all — verify paths the PWA uploads
+are readable by the daemon; (2) the send-ordering wait is per WebSocket
+connection, so two clients sending to the same session can interleave —
+serialise from one client if order matters.
 
 ### Browser Auto-Refresh
 

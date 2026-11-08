@@ -454,22 +454,42 @@ datawatch config set vision.describe_timeout_seconds 15
 ```
 
 **What the message looks like when the describe fails.** If a call
-times out, the backend errors, the description comes back empty, the file
-cannot be read, or there is no vision service at all, the tag degrades to
-a bare `@<path>` in the delivered text. The message is still delivered —
-nothing is dropped — and a vision-capable model (for example Claude Code)
-can then read the file at that path with its own image pipeline.
+times out, the backend errors, the description comes back empty, or there
+is no vision service at all, the tag degrades to a bare `@<path>` in the
+delivered text. The message is still delivered — nothing is dropped — and
+a vision-capable model (for example Claude Code) can then read the file at
+that path with its own image pipeline. An **unreadable file is a different
+case**: a file that is missing, unreadable by the daemon, or outside the
+file-service root is never described, and the original `[image:<path>]`
+tag passes through **unchanged** — the delivered text carries the literal
+tag, not `@<path>` (`TestExpandImageTags_FileNotFound` and
+`TestExpandImageTags_PathOutsideRoot` in `internal/server/vision_test.go`
+assert exactly this).
 
 **The terminal cannot freeze.** Over a WebSocket, a send that carries an
 image tag is expanded on the connection's input worker instead of in the
 socket's read loop, so the terminal keeps rendering, scrolling and
-typing while the describe runs. Order is preserved per session: a later
-plain send to the *same* session waits for the still-expanding image send
-to finish rather than overtaking it; sends to other sessions are never
-blocked. The REST `POST /api/sessions/send` endpoint runs inline, within the same bounded
+typing while the describe runs. Order is preserved **per connection, per
+session**: the worker and the wait both live on the WebSocket connection
+(`client.inputQueue` + per-connection `inputPending` in
+`internal/server/ws.go`), so a later plain send from the *same*
+connection to the *same* session waits for the still-expanding image send
+to finish rather than overtaking it, and sends to other sessions on that
+connection are never blocked. A plain send from a **different** WebSocket
+client to the same session is *not* awaited — the ordering guarantee does
+not cross sockets. The REST `POST /api/sessions/send` endpoint runs inline, within the same bounded
 timeout. If the PWA or terminal appears to wait on an image send, the
 wait is the describe itself taking its full budget — cap it with
 `vision.describe_timeout_seconds` if your backend is slow.
+
+**Review before relying on it.** Two of the behaviors above are
+deliberate, not bugs — check them against your workflow: (1) an unreadable
+file arrives as the literal `[image:<path>]` tag, and only the `@<path>`
+form is picked up by a model's own `@` file-reading — a model without that
+capability sees a tag it may not understand (verify the file exists and is
+readable by the daemon); (2) send order only ever waits *within one
+WebSocket connection*, so multiple clients sending to the same session can
+interleave.
 
 ## Diagram
 
