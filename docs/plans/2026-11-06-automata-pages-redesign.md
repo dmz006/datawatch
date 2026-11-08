@@ -333,6 +333,10 @@ Automations, arcs, plans and projects fit together.
 - Proposed for the redesign: one Automation "Automata pages redesign" with the six Automata chained by edges in the
   decided order, and one Automation "Defect fixes (2026-11-06)" with the five fixes as parallel members.
 
+### The arc as the major feature being grown (operator, 2026-11-07)
+
+Operator, quoted: "projects tend to start with a root idea that turns into the major feature that is developed over time as features are rolled into it and it's expaned and rounded out as it's tested and used untl the full major is ready for release as a working featureset." An arc (Automation) can therefore be marked a milestone: its member Automata release as minors and patches while the feature is tested, used and rounded out, and the arc's completion raises the major release step (approval mode `ask` by default). The project decides what triggers a major (`manual`, `milestone` or `never`). The release size rules and the approval modes are in [the autonomy handover plan](2026-11-03-autonomy-handover-plan.md), Phase 4. The Projects tab and the arc view show the milestone, the minors shipped under it and what is left.
+
 ## Project details that need iteration (not covered before)
 
 1. The project record today: alias, directory, per-project policy (`projects.<alias>.policy`), merge pipeline.

@@ -57,3 +57,7 @@ Not yet tested: whether the small local model meets the bar on spec drafting and
 2. Who runs the supervisor loop: plain code with narrow validated model calls and escalation, or a continuous Claude session as today.
 3. How far the daemon may go on its own at a merge conflict.
 4. The CodeQL setup conflict: answered 2026-10-30, quoted: "Keep gh, remove the local,  unless we can align them and test locally and find issues before ci failure". Default setup stays; the PRD `36db0001` removes the analyze jobs, keeps the alert gate and investigates a local run.
+
+## Update 2026-11-07: merging is being finished in the daemon
+
+Operator, quoted: "b finsih now we need to be using it to debug it and monitor its right." The merge pipeline described here gains per-project release approval modes (patch, minor, major: automatic, ask or manual), release size rules (explicit size, the arc as milestone, the project's kind map) and a shadow comparison against the supervisor's manual merge. The design and the decisions are in [the autonomy handover plan](2026-11-03-autonomy-handover-plan.md), Phase 4. Every setting here stays per-project and overridable.
