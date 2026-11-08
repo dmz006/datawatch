@@ -158,7 +158,7 @@ func TestMergePipelineComm_VerbAndConfigureKeysListed(t *testing.T) {
 		t.Errorf("verbs: %v", v)
 	}
 	keys := MergePipelineConfigureKeys()
-	if len(keys) != 13 {
+	if len(keys) != 17 {
 		t.Errorf("keys: %v", keys)
 	}
 	for _, want := range []string{"autonomous.merge_pipeline.post_ship.enabled", "autonomous.merge_pipeline.post_ship.hooks"} {
