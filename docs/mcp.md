@@ -1271,6 +1271,8 @@ audit_access_query(action="auth_failure", since="2026-10-08T00:00:00Z")
 
 Describe an image file using the configured vision model. Returns a natural-language description. Requires `vision.enabled: true` in config.
 
+The vision block — including `vision.describe_timeout_seconds`, the per-describe deadline in seconds (whole number >= 1 through the write path; unset reads the built-in 5-second default) — is set with `config_set` (for example `config_set(key="vision.describe_timeout_seconds", value="15")`) and read with `get_config`, under `vision`; the same key is reachable over REST, the web app Settings page, the comm channel and the CLI. A description that passes its timeout, errors or comes back empty degrades the image to a bare `@<path>` file reference at the call site, so the message is never lost. See the [vision image descriptions howto](howto/vision-image-descriptions.md).
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
