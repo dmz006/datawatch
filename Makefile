@@ -313,6 +313,7 @@ test:
 	bash tests/test-seed-leak-patterns.sh
 	bash tests/test-scrub-peer-names.sh
 	bash tests/test-ci-package-listing.sh
+	bash tests/test-codeql-trigger-listing.sh
 	bash tests/test-tidy-plans.sh
 	python3 scripts/tests/test_dismissed_alerts_watch.py
 	python3 scripts/tests/test_codeql_alert_gate.py

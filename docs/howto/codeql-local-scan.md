@@ -1,20 +1,53 @@
 # CodeQL local scan (find alerts before CI does)
 
-GitHub runs CodeQL on every push through default setup and a CodeQL workflow
-gates on the result. The same analysis can run on a developer machine, so a
-finding shows up before the push instead of as a failed check afterwards.
-Nothing is uploaded: the scan reads the working tree and prints a report.
+GitHub's default setup analyzes every push, and a CodeQL workflow gates on the
+result. The same analysis can run on a developer machine, so a finding shows up
+before the push instead of as a failed check afterwards. Nothing is uploaded:
+the scan reads the working tree and prints a report.
+
+The gate only runs when a change can add a finding. A push to `main` that
+touches only documents (`docs/**`, `CHANGELOG.md` and `**/*.md`) starts no
+run. A pull request starts a run only if it changes Go or web-app code, a
+dependency, a workflow or a script (`.go`, `go.mod`, `go.sum`, `channel/**`,
+`internal/server/web/**`, `*.js`, `*.ts`, `*.mjs`, `*.py`,
+`.github/workflows/**` and `scripts/**`). Scheduled (Monday) and manual runs
+have no path filter and always run the gate.
+
+The list is not a convention: `tests/test-codeql-trigger-listing.sh` (run by
+`make test`) checks the workflow's triggers, schedule and permissions against
+exactly this shape, so an edit that re-widens the gate or adds a permission
+scope fails the test. The script needs `python3` with PyYAML on the machine.
 
 ## What it is and why
 
 - **CI side.** GitHub default setup analyzes every push in four languages:
   `go`, `javascript-typescript`, `python` and `actions`, using the default
   code-scanning suite. The CodeQL workflow's alert gate then fails when the
-  repository has open alerts of level high or critical.
+  repository has open alerts of level high or critical — but it only runs when
+  a push or pull request touches a tracked code, dependency, workflow or script
+  path, so a document-only change spends no run on it.
 - **Local side.** `scripts/codeql-local.sh` runs the same four languages with the
   same suite and the same CodeQL bundle version, writes SARIF files under
   `.datawatch/codeql/out/` (gitignored) and prints a summary. It never uploads
   results or posts to the code-scanning API.
+
+The alert gate runs on a push to `main` that changes a code, dependency, workflow
+or script file, on a pull request to `main` that changes one of those files, every
+Monday at 04:17 UTC (the scheduled run is weekly), and when it is started by
+hand; it needs no setting. A documents-only push — the docs folder, markdown
+files, the changelog or the plans — starts no run, and a pull request that
+changes none of the code, dependency, workflow or script files starts none
+either, because a documents-only change cannot add a code-scanning alert.
+Nothing is silently skipped beyond that: a pull request that touches `go.mod`
+or `go.sum`, such as a dependabot dependency bump, still starts a run.
+
+Two things the operator still reviews before this change merges, recorded in
+[the trigger-narrowing plan](../plans/2026-11-07-codeql-gate-trigger-narrowing.md):
+whether a dependabot dependency bump should keep starting a gate run — the
+remark that dependabot changes are covered by dependency review is true of the
+review, not of this gate — and whether the job named "Open high/critical
+alerts" is a required check; if it is, a documents-only pull request that now
+starts no run would wait for a check that never appears.
 
 A finding that appears locally is the finding the gate would count, once the
 alerts already dismissed on GitHub are subtracted (see the `--compare` step).

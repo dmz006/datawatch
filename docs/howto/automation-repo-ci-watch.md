@@ -52,6 +52,20 @@ agree over several episodes.
 
 For each repository in `repos`, one poll reads:
 
+The alert gate runs on a push to `main` that changes a code, dependency, workflow
+or script file, on a pull request to `main` that changes one of those files, every
+Monday at 04:17 UTC (the scheduled run is weekly), and when it is started by
+hand; it needs no setting. A documents-only push — the docs folder, markdown
+files, the changelog or the plans — starts no run, and a pull request that
+changes none of the code, dependency, workflow or script files starts none
+either, because a documents-only change cannot add a code-scanning alert.
+Nothing is silently skipped beyond that: a pull request that touches `go.mod`
+or `go.sum`, such as a dependabot dependency bump, still starts a run.
+
+The gate's own open review items — whether dependabot bumps keep starting a
+run, and whether the "Open high/critical alerts" job is a required check —
+are recorded in [the trigger-narrowing plan](../plans/2026-11-07-codeql-gate-trigger-narrowing.md).
+
 | What | How | Default |
 |---|---|---|
 | The head of `main` | `git rev-parse origin/main` (or the default branch) and then the CI runs on that SHA | always, for listed repos |
