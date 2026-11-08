@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.111.3 — Alerts header: the help link sits on the Last updated row
+
+- **PWA Alerts header layout fixed.** The round "?" help link on the Alerts tab no longer takes a separate top-right row above the list, which mis-rendered on narrow touch viewports (reported with a screenshot from Chrome on Android). It now sits at the right edge of the loader's meta row, beside the list's status text, and keeps its existing destination (the Alerts howto), tooltip and accessible name. On touch devices the link gets a 40px minimum tap target. No migration step: refresh the PWA and the new layout is in effect.
+
 ## v9.111.2 — Release lint passes again: one test lookup no longer assigns to the blank identifier
 
 ### Fixed
