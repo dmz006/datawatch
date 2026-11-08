@@ -16,23 +16,17 @@ package server
 // failure, so the list cannot outlive its reason.
 //
 // A flagged call on NO allow-list line is a blocker and FAILS the test.
-// Known blocker as of this commit (the test is deliberately red on it):
 //
-//	state_paths.go dataDirPath — dataDirPath is the single-source builder
-//	for datawatch-owned state paths, and with an empty dataDir it resolves
-//	to config.DefaultConfig().DataDir, which internal/config builds as
-//	$HOME/.datawatch (internal/config/config.go, DefaultConfig:
-//	`DataDir: filepath.Join(home, ".datawatch")` with home from
-//	os.UserHomeDir()). To be precise: the flagged call itself
-//	(state_paths.go:51) only fires when the operator wrote a `~`/`~/`
-//	prefix (tilde expansion); the home read that makes the default data
-//	directory home-derived happens in internal/config, which this scan does
-//	not cover — the guard cannot see it directly, which is exactly why the
-//	home-derived default that flows through dataDirPath stays a blocker
-//	rather than a permitted read. Until the default data directory is derived without
-//	$HOME (or the default is operator-declared), this remains open work
-//	and this test fails. Do not "fix" it by adding state_paths.go
-//	dataDirPath to the allow list.
+// Operator decision 2026-11-07, quoted: "a - allow" — in response to the
+// question of whether to allow-list the single dataDirPath builder in the
+// state path guard, keeping the default data directory home-derived, or
+// make the default home-free. dataDirPath is the one sanctioned place that
+// reads the home directory: only to expand an operator-written ~/ or ~
+// tilde data directory prefix, or the home-derived default data directory
+// (config.DefaultConfig().DataDir, $HOME/.datawatch). It is therefore on
+// the allow list below; the home read that builds the default itself lives
+// in internal/config (config.go, DefaultConfig), which this scan does not
+// cover.
 //
 // Allow-list classification of every other current hit (verified against
 // current code — all operator-owned reads, never datawatch state):
@@ -77,15 +71,16 @@ const statePathAllowList = `
 	bl333_file_service.go	handleFilesJSONUpload	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
 	bl333_file_service.go	handleFilesUpload	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
 	bl333_file_service.go	handleFilesDelete	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
+	state_paths.go	dataDirPath	single-source builder for datawatch-owned state paths; reads the home directory only to expand an operator-written tilde data directory or the default data directory
 	session_progress.go	piSessionsRootServer	pi tool session JSONL logs, read-only; PI_CODING_AGENT_DIR environment override is checked first
 	v52710_channel_info.go	scanStaleMCPJSON	read-only staleness check of the operator's own project MCP file ($HOME/.mcp.json)
 `
 
-// blockerRationale explains the currently known non-allowed hit(s) in the
+// blockerRationale explains any currently known non-allowed hit(s) in the
 // failure message so the report is accurate. Keys are "file\x00function".
-var blockerRationale = map[string]string{
-	"state_paths.go\x00dataDirPath": "state_paths.go dataDirPath is the single-source builder for datawatch-owned state paths: with an empty dataDir it resolves to config.DefaultConfig().DataDir, which internal/config builds as $HOME/.datawatch (internal/config/config.go, DefaultConfig: DataDir = filepath.Join(home, \".datawatch\"), home from os.UserHomeDir()). The flagged call itself (state_paths.go:51) only fires for an operator-written ~/ or ~ tilde prefix; the home read that makes the default data directory home-derived is in internal/config, outside this scan. This is a reported blocker — open work until the default data directory is home-free — not a permitted read",
-}
+// Empty as of the 2026-11-07 operator decision ("a - allow"): state_paths.go
+// dataDirPath is on the allow list, so there is no known deliberate blocker.
+var blockerRationale = map[string]string{}
 
 func TestStatePathGuardNoHomeStateOutsideAllowList(t *testing.T) {
 	type hit struct {
