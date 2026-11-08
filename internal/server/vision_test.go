@@ -229,7 +229,8 @@ func TestExpandImageTags_DescribeTimeout(t *testing.T) {
 	// 1s deadline: the fake Describe blocks until its context is cancelled.
 	s.cfg.Vision.DescribeTimeoutSeconds = 1
 	in := "[image:" + p + "]"
-	want := "@" + p
+	// The lone tag ends at the end of the input, so the bare @-ref gets a trailing space.
+	want := "@" + p + " "
 	if got := s.expandImageTags(in); got != want {
 		t.Errorf("timeout: got %q want %q", got, want)
 	}
@@ -254,7 +255,8 @@ func TestExpandImageTags_EmptyDescription(t *testing.T) {
 	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{result: ""})
 	in := "[image:" + p + "]"
-	want := "@" + p
+	// The lone tag ends at the end of the input, so the bare @-ref gets a trailing space.
+	want := "@" + p + " "
 	if got := s.expandImageTags(in); got != want {
 		t.Errorf("empty-desc: got %q want %q", got, want)
 	}
