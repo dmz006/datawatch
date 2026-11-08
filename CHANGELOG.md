@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.6 — Show each system tag once in the Sessions tag menu
+
+### Fixed
+
+- **Each system tag is listed once in the Sessions Tags menu.** The header Tags menu in the Sessions tab listed every placement system tag (the `axis:value` kind, such as an `automation:` or `kind:` value) twice: once under its axis heading in the “Placement tags (system)” section and once more in the general Tags section below it. The Tags section now skips the placement-drawn system tags, so each placement tag appears only in the “Placement tags (system)” section under its own axis heading, and the Tags section carries the axis-less system tags (with their padlock mark) plus all operator tags, exactly as before.
+  - **How it shows up:** open the Sessions Tags menu — every tag name now appears in exactly one place: placement tags under their axis headings in “Placement tags (system)”, the remaining system and operator tags in the Tags section beneath it. Selecting a placement tag still ticks its single row, and the match-mode (any/all) toggle and Clear act as before even with a placement tag selected; the tag filter rows elsewhere (Automata, tasks, facets) are unchanged and still show system tags with the padlock.
+  - **Migration:** none. It is a display-only change to how the menu is drawn; tags, stored selections and the results of an active tag filter are untouched. Refresh the PWA and the menu is correct.
+
 ## v9.112.5 — Stop a slow image description from costing the operator an extra Enter
 
 ### Fixed
