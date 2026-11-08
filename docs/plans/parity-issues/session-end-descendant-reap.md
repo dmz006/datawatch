@@ -1,6 +1,6 @@
 # fix(sessions): processes a worker started outlive a cancelled task, parity note
 
-Parent release: datawatch 9.90.x (the next patch above main at the time of writing).
+Parent release: the next patch above main at merge time.
 
 ## Affected area
 
@@ -29,3 +29,16 @@ Have the mobile app owner confirm that an unknown audit action renders with its 
 ## Filing record
 
 Not filed. This is a draft only; no issue was created on any tracker.
+
+## Parity surface
+
+| Surface | Decision | Why |
+|---------|----------|-----|
+| REST | excluded | The reaper is internal and always on by design: no new endpoint, no new config key. Its outcomes are observable on the existing audit-log and task-decision endpoints, whose contracts are unchanged. |
+| MCP | excluded | Same as REST — no MCP tool is added; the reaper adds no setting or endpoint for a tool to wrap. |
+| CLI | excluded | No CLI command and no `configure` target: there is nothing configurable to set or read. |
+| comm channel | excluded | No setting to configure and no readable knob to report — the reap's evidence is in the audit entry, not a comm-channel value. |
+| YAML/config | excluded | Deliberately not configurable — the failure it prevents is a host you own, so the reap is always on by design. |
+| PWA | excluded | No PWA screen, setting, REST field or locale key was added; the `session_end_reap` audit entry and task decision must simply render via the existing audit and decision views as ordinary entries. |
+| Android | excluded | No new control is needed; the one open point tracked in this draft is that an unknown audit action (`session_end_reap`) falls through to a generic label rather than being dropped. |
+| iPhone/iOS | excluded | Same as Android — pass-through rendering of the existing audit and decision payloads, tracked by this draft. |
