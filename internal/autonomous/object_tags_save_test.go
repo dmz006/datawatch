@@ -24,7 +24,7 @@ func TestSaveWritesDerivedObjectTags(t *testing.T) {
 
 	// An Automaton in a project directory, alone: its own fact is the
 	// project axis plus itself — no automation yet.
-	prd, err := m.CreatePRD("save tags", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("save tags", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestSaveWritesDerivedObjectTags(t *testing.T) {
 		}
 	}
 	mustTags("standalone Automaton", saved.SystemTags,
-		want("automaton:"+prd.ID, "project:datawatch"))
+		want("automaton:"+prd.ID, "project:example"))
 
 	// Into an Automation: the save that records membership re-derives the
 	// whole list and picks up the automation axis.
@@ -59,7 +59,7 @@ func TestSaveWritesDerivedObjectTags(t *testing.T) {
 		t.Fatalf("AutomationID = %q, want %q", saved.AutomationID, auto.ID)
 	}
 	mustTags("Automaton in an Automation", saved.SystemTags,
-		want("automation:"+auto.ID, "automaton:"+prd.ID, "project:datawatch"))
+		want("automation:"+auto.ID, "automaton:"+prd.ID, "project:example"))
 
 	// Moved to another Automation: the first is deleted (its sync releases
 	// the PRD), then the second picks the PRD up as its member — whose
@@ -84,7 +84,7 @@ func TestSaveWritesDerivedObjectTags(t *testing.T) {
 		t.Fatalf("AutomationID = %q, want %q", saved.AutomationID, auto2.ID)
 	}
 	mustTags("Automaton moved to another Automation", saved.SystemTags,
-		want("automation:"+auto2.ID, "automaton:"+prd.ID, "project:datawatch"))
+		want("automation:"+auto2.ID, "automaton:"+prd.ID, "project:example"))
 	for _, tag := range saved.SystemTags {
 		if tag == "automation:"+auto.ID {
 			t.Fatalf("old automation tag %q survived the move: %v", tag, saved.SystemTags)

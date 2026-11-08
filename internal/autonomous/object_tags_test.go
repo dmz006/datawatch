@@ -135,7 +135,7 @@ func TestObjectTagsPerObject(t *testing.T) {
 
 	// An Automaton inside an Automation whose slot carries a stage label,
 	// in a project directory.
-	prd, err := m.CreatePRD("tag the objects", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("tag the objects", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -163,19 +163,19 @@ func TestObjectTagsPerObject(t *testing.T) {
 
 	// Automaton: project + Automation + itself, no stage and no kind.
 	check("Automaton", m.ObjectTagsForPRD(fresh), []string{
-		"automation:" + auto.ID, "automaton:" + fresh.ID, "project:datawatch",
+		"automation:" + auto.ID, "automaton:" + fresh.ID, "project:example",
 	})
 
 	// Task: the same fact plus the stage.
 	task := &Task{ID: "t1", PRDID: fresh.ID}
 	check("task", m.ObjectTagsForTask(task), []string{
-		"automation:" + auto.ID, "automaton:" + fresh.ID, "project:datawatch", "stage:build",
+		"automation:" + auto.ID, "automaton:" + fresh.ID, "project:example", "stage:build",
 	})
 
 	// Automation: itself + the project of its first member, no Automaton
 	// and no stage of its own.
 	check("Automation", m.ObjectTagsForAutomation(auto), []string{
-		"automation:" + auto.ID, "project:datawatch",
+		"automation:" + auto.ID, "project:example",
 	})
 }
 
@@ -238,12 +238,12 @@ func TestObjectTagsPerObject_OperatorConfig(t *testing.T) {
 	pc.Role.Enabled = true
 	m.SetPlacementTagSettings(func() config.PlacementConfig { return pc })
 
-	prd, err := m.CreatePRD("tag under the operator block", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("tag under the operator block", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 	got := m.ObjectTagsForPRD(prd)
-	if !reflect.DeepEqual(got, []string{"automaton:" + prd.ID, "proj-datawatch"}) {
+	if !reflect.DeepEqual(got, []string{"automaton:" + prd.ID, "proj-example"}) {
 		t.Fatalf("tags under the operator block = %v", got)
 	}
 }
