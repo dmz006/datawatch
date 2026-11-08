@@ -1,7 +1,6 @@
 # [sync] PWA Alerts header: the round "?" help link moves onto the list status row (datawatch next patch release)
 
-**Not filed yet.** — this is the tracked draft; the GitHub issue is opened when
-the operator files it. Filing the issue does not change a line of this repo.
+Filed 2026-11-08 as [datawatch-app#395](https://github.com/dmz006/datawatch-app/issues/395).
 
 Parent release: the datawatch next patch release that fixed the PWA Alerts
 header layout. The operator report (with a screenshot from Chrome on
