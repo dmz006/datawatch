@@ -151,6 +151,14 @@ visits. The match mode is a browser setting, and its starting value comes from
 `autonomous.tags.default_match_mode`. REST, MCP, the CLI and the comm channel
 do not take a match mode.
 
+How a selection is checked: an object's derived system tags (such as
+`project:datawatch`) and its operator-assigned tags are pooled, then compared
+with the selected tags. Match ANY needs one selected tag in the pool; match ALL
+needs every selected tag in the pool. A selection with no tags matches every
+object. The check itself did not change in the code-scanning fix (it only
+dropped a computed size hint on the internal lookup set), so results are the
+same as before.
+
 On a phone the tree drills down one level at a time with a breadcrumb trail and
 a **Back** row; the URL hash follows the drill-down.
 
