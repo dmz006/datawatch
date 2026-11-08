@@ -145,8 +145,18 @@ To see the result:
 
 The answer names the source in effect (project file, daemon record or built-in
 default), the reason in plain language, any problem found with the file even if
-another source was used, the steps in order, the conflict policy and model, and
-the release approval modes in effect for the project.
+another source was used, the steps in order, the conflict policy and model. The
+text answers (CLI, chat, MCP) also name the release approval modes in effect for
+the project as a `Release approval: patch …, minor …, major …` line, and the
+JSON body of `GET /api/autonomous/merge-pipeline` carries them as
+`release_approval_in_effect`.
+
+One gap to know, flagged for operator review: the PWA card does not show those
+modes today — it names the source, reason, steps, conflict policy and model, but
+not the release approval. Until the card catches up, read the in-effect modes
+through the CLI, chat or MCP text answer, or through the JSON body. The
+card-side fix is tracked as a follow-up (roadmap, row 435 of
+docs/plans/README.md).
 
 ## Choose the conflict policy
 
@@ -181,7 +191,7 @@ sure the name you give exists. If you run a model of your own, name that one.
 
 The defaults are patch `auto`, minor `auto`, major `ask`: a major release is never shipped quietly, and a release whose size cannot be read resolves to `ask` rather than being shipped. Until the daemon's own review-and-merge step lands, a release is made exactly as before (the supervisor reviews and the operator approves a major); this setting is the first piece of that step, and it is the value the daemon's merge path will honour. A mode is only `auto`, `ask` or `manual` — anything else is refused with the key named rather than stored, wherever it is set.
 
-You can see where the inheritance lands for a project: the read answer carries `release_approval_in_effect` with the resolved mode per size (the project's value, else the global one, else the default above), its text answers (`show` on the command line, the chat verb and the MCP tool's text) add a `Release approval: patch …, minor …, major …` line, and `GET /api/config` reads the block's effective `release_approval` back with the same per-size resolution.
+You can see where the inheritance lands for a project: the read answer carries `release_approval_in_effect` with the resolved mode per size (the project's value, else the global one, else the default above), its text answers (`show` on the command line, the chat verb and the MCP tool's text) add a `Release approval: patch …, minor …, major …` line, and `GET /api/config` reads the block's effective `release_approval` back with the same per-size resolution. The PWA card does not show these modes yet; the note in [Which one wins, and how to see it](#which-one-wins-and-how-to-see-it) says where to read them and tracks the follow-up.
 
 Each size inherits when unset, in this order — a project's value in `autonomous.merge_pipeline.projects.<project>.release_approval`, then the global `release_approval`, then the defaults above. For example, to leave the defaults in place and make one project ship minor releases manually:
 
