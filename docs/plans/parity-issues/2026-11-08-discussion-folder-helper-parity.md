@@ -1,6 +1,14 @@
 **Not filed yet.** — this is the tracked draft; the issue on the app tracker is
 opened when the operator files it. Writing this draft changes nothing on any host.
 
+**Server-side status (updated after the switch-over commits):** the server half
+of this record is done — the discussion scope, sync and file-service handlers
+now build every folder path through `discussionFolderPath` (switch-over tasks
+11450005–11450007), and `docs/operations.md` records the remaining operator
+items: confirming the CodeQL alert gate on main no longer reports alert #768
+open, and the client parity below this not yet filed. This draft stands as the
+record for the client-side gap.
+
 Parent work: "Close the last open high code scanning alert, number 768
 (go/path-injection), by making the discussion id check visible" — the change that
 added the shared, unit-tested path helper `discussionFolderPath` in
@@ -16,8 +24,9 @@ discussion memory routes in `internal/server/bl332_discussion_scope.go` and
 `internal/server/bl332_discussion_sync.go` (scope write, recall, list, delete,
 WAL, participants, conflicts and resolve, receive, delete) and the file service
 discussion folder route in `internal/server/bl333_file_service.go`
-(`GET /api/files/discussions/<id>`). The new helper is only reachable in tests
-today; no handler calls it.
+(`GET /api/files/discussions/<id>`). At the time this draft was written the
+new helper was only reachable in tests; the switch-over has since landed and
+every one of these route path builds goes through it.
 
 Client side: any Android or iOS screen that names, types or pastes a
 discussion id, or that lists discussion scopes and discussion file folders —
@@ -26,6 +35,10 @@ unpaired. The REST contract the apps parse (HTTP 400 `invalid discussion id`)
 is unchanged by this work.
 
 ## Current behavior
+
+*Server paragraphs below are the pre-switch-over record; the switch-over since
+landed (see the status note above), so the "no production route calls it yet"
+situation no longer holds. The client paragraphs remain exactly as they are.*
 
 The helper validates the id, refuses anything carrying `/`, `\` or exactly
 `.`/`..`, and verifies the cleaned join is a direct child of the cleaned base
@@ -73,12 +86,10 @@ non-2xx answer as a server fault can show a generic failure or retry it.
 
 ## Suggested next step
 
-Server: one small change set that points every discussion folder path build at
-`discussionFolderPath`, deletes the now-duplicated inline checks, re-runs the
-server test suite, and — the load-bearing part — runs the next CodeQL alert
-gate on main and records whether alert 768 clears. If it clears, note the
-version it closed in; if it does not, say so in the same record and keep the
-operator-review note in `docs/operations.md` open.
+Server: *(done — the switch-over is committed; what remains is the load-bearing
+part below)* run the next CodeQL alert gate on main and record whether alert
+768 clears. If it does not, say so in the same record and keep the
+operator-review items in `docs/operations.md` open.
 
 Client: file one parity issue on the app tracker covering the input check, the
 plain-text 400 handling and the stale-id display described above, for both
