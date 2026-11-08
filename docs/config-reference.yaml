@@ -3997,7 +3997,10 @@ autonomous:
     enabled: true
     # Operator template definitions (empty = the built-in pack,
     # unmodified). {id, title, spec, files, kind, read_only, depends_on,
-    # applies_when}.
+    # applies_when}. verification_script must be one repo-relative script
+    # file (for example scripts/verify.sh), never a command string such as
+    # "go build ./... && go test ./...": the PUT that carries it is refused,
+    # and a template that still carries one is never applied.
     templates: []
     # Per-project overrides, keyed by project directory or alias. An absent
     # flag means follow the global; a new project inherits the global
