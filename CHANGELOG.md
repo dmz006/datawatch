@@ -7,10 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **The last open high code scanning alert (alert #768, go/path-injection) is closed, by making the discussion id check visible where the path is built.** Building a path into the discussion folder now goes through one helper (`discussionFolderPath`, `internal/server/discussion_folder.go`) that shows its guard plainly where the scanner reads it: validate the discussion id, refuse anything carrying a `/`, a `\`, or exactly `.`/`..`, then verify the cleaned result is a direct child of the cleaned base folder — the containment check sits explicitly at the join, so the scanner no longer treats it as a possible path injection.
-  - **How it shows up:** the alert drops out of the open findings on the next code-scanning run and the "Open high/critical alerts" gate passes for it. Day-to-day nothing changes for the operator — a valid discussion id behaves exactly as before, and a traversal or malformed id is still refused before any file is touched.
+- **The last open high code scanning alert (alert #768, go/path-injection) is closed, by making the discussion id check visible where the folder path is built.** Building a path into the discussion folder now goes through one helper (`discussionFolderPath`, `internal/server/discussion_folder.go`): it validates the discussion id, refuses anything carrying a `/`, a `\`, or exactly `.`/`..`, and refuses the cleaned join unless it is still a direct child of the cleaned base folder — the containment check sits explicitly at the join, which is the guard the scanner reads on the data flow.
+  - **How it shows up:** the alert drops out of the open findings on the next code-scanning run and the "Open high/critical alerts" gate passes for it. Day-to-day nothing changes — a valid discussion id behaves exactly as before, and a traversal or malformed id is still refused before any file is touched.
   - **Migration:** none.
-  - **Docs:** the [discussion scopes](docs/howto/discussion-scopes.md) how-to names the shared helper and the cleaned-path containment check as read at the point the folder path is built.
+  - **Docs:** the [discussion scopes](docs/howto/discussion-scopes.md) how-to names the shared helper and the cleaned-path containment check.
 
 ## v9.111.4 — Discussion ids are validated and the tag filter lookup set is unsized, closing three high code scanning alerts
 
