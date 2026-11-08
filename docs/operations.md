@@ -3973,6 +3973,16 @@ the follower stale. See [howto/automata-tag-registry.md](howto/automata-tag-regi
 for the operator steps and [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md)
 for the sync paths.
 
+**Sessions header Tags menu (display-only).** The PWA's Sessions header Tags
+menu lists every tag exactly once: the placement (system) tags appear only in
+the **Placement tags (system)** section, under their own axis heading, and the
+Tags section beneath it carries the remaining system tags (padlock-marked) and
+the operator tags, exactly as before. This is a display-only change: it reads
+no `autonomous.tags` key, changes no tag, stored selection or filter result, and
+needs no migration or restart — a refreshed PWA shows the corrected menu. The
+tag filter rows elsewhere are unchanged. See
+[howto/automata-tags.md](howto/automata-tags.md) for the operator view.
+
 ---
 
 ## Quality gate (test baseline + regression check)
