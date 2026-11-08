@@ -199,6 +199,8 @@ var MCPToolCap = map[string]string{
 	"compute_node_remove_model":            CapComputeWrite,
 	"compute_node_update":                  CapComputeWrite,
 	"compute_pin_settings":                 CapConfigWrite,
+	"compute_placement_answer":             CapComputeWrite,
+	"compute_placement_list":               CapComputeList,
 	"config_set":                           CapConfigWrite,
 	"configure_identity":                   CapConfigWrite,
 	"cooldown_clear":                       CapConfigWrite,

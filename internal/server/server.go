@@ -391,6 +391,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/council/config", api.handleCouncilConfig)                          // BL297 v6.22.4 — runtime config knob
 	apiMux.HandleFunc("/api/compute/nodes", api.handleComputeNodes)                            // v7.0.0 S1 — ComputeNode registry CRUD
 	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)                           // v7.0.0 S1 — /name + /name/health + /name/detail
+	apiMux.HandleFunc("/api/compute/placements", api.handleComputePlacements)                  // missing-model placement asks — pending list
+	apiMux.HandleFunc("/api/compute/placements/", api.handleComputePlacementAskDecision)       // missing-model placement asks — /<id>/approve|deny
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                                             // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                                            // v7.0.0 S2 — /name + /name/test
 	apiMux.HandleFunc("/api/llm-roles", api.handleLLMRoles)                                    // workload role table + contention warnings
