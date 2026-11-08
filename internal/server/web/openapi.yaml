@@ -1084,8 +1084,8 @@ paths:
         default `record`), `autonomous.merge_pipeline.conflict_policy` (`stop_and_ask`,
         `mechanical` or `mechanical_and_model`, default `mechanical_and_model`),
         `autonomous.merge_pipeline.conflict_model` (an LLM registry entry name; an empty
-        string means no model) and `autonomous.merge_pipeline.version_files` (a JSON
-        array or comma list of file names inside the project). Each of the six can be
+        string means no model), `autonomous.merge_pipeline.release_size_map` (a JSON object or kind=size pairs such as `feature=minor,bug=patch`; each size is `patch`, `minor`, `major` or `none`; kinds named here override the built-in map of feature = minor and bug = patch, and a major is never a default), `autonomous.merge_pipeline.major_trigger` (`manual`, `milestone` or `never`, default `manual`: when an Automation raises a major release step), `autonomous.merge_pipeline.release_cadence` (`per_merge`, the default and the only cadence available; `batch` and `manual` are refused with a 400 saying the cadence is not available yet) and `autonomous.merge_pipeline.version_scheme` (`semver`, the default and the only scheme available; any other name is refused with a 400 saying the scheme is not available yet), `autonomous.merge_pipeline.version_files` (a JSON
+        array or comma list of file names inside the project). Each of the ten can be
         set for one project as `autonomous.merge_pipeline.projects.<project>.<key>`;
         null clears a key back to its default, and null on
         `autonomous.merge_pipeline.projects.<project>` removes that project's overrides.
