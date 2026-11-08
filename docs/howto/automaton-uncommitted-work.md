@@ -94,9 +94,9 @@ to it), the lines the daemon itself adds to an ignore file (a change to
 other change to the file is counted), and anything the daemon's staging guard
 refuses to commit. Files git ignores never show up in `git status`, so they are
 not counted either. Do not confuse this list with the generated artefacts —
-the small documents the daemon renders for your work, which the per-task check
-commits by name as part of the task: at the finished check they count unless
-the daemon is the only one who wrote them (below).
+the small documents the daemon renders for your work when the Automaton
+finishes: at the finished check they count unless the daemon is the only one
+who wrote them (below).
 
 ### The check before an Automaton is reported finished
 
@@ -117,10 +117,11 @@ The scope setting does not narrow this check: it always covers the whole
 worktree, and it never stages or commits anything. You decide what happens to
 the files.
 
-**The documents the daemon itself generated.** The generated artefacts an
-Automaton writes to their tracked paths as each task ends — the gate report,
-the changelog draft, the parity draft, the tracker rows and the registry row
-(see [the generated-artefacts guide](generated-artefacts.md)) — no longer stop
+**The documents the daemon itself generated.** The generated artefacts the
+daemon writes to their tracked paths when the Automaton finishes — the gate
+report, the changelog draft, the parity draft, the tracker rows and the
+registry row (see [the generated-artefacts guide](generated-artefacts.md)) —
+no longer stop
 this check when the daemon is the only one who wrote them. An artefact counts
 as unedited while it still carries its
 `<!-- generated: datawatch change record; edit freely, a person edit is kept -->`
