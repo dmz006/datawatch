@@ -1618,7 +1618,11 @@ Each summary row also carries the session's chips — its own `tags`, the
 inherited `inherited_tags` and the placement `system_tags` (see
 [howto/automata-tags.md](howto/automata-tags.md#placement-tags-the-system-tags))
 — which is what lets the PWA draw the placement chips on the session cards
-at first load of the Sessions page, without a fetch of each full record:
+at first load of the Sessions page, without a fetch of each full record.
+The placement chip paints from the tag name, so it shows even before the
+tag registry has loaded; a later row or `session_state` push that omits
+`system_tags` keeps the chip, and only an explicit empty `system_tags`
+removes it:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
