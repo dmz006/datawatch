@@ -4518,6 +4518,42 @@ sessions run.
 
 ---
 
+## Host load alert (autonomous.host_load_alert)
+
+When the host is overloaded, running Automata slow down and can time out. The
+daemon watches the load average once a minute. When it stays above `multiple`
+times the core count for `minutes` minutes, it raises one warning alert for that
+episode, titled "Host load high: Automata may be slowed". The alert names the
+busiest process groups and says whether each belongs to a worktree or scratch
+folder of a running or an ended session. The episode ends when the load drops
+back under the limit; the next breach alerts again.
+
+| Setting | Values | Default |
+|---|---|---|
+| `autonomous.host_load_alert.mode` | `off`, `alert`, `reap` | `alert` |
+| `autonomous.host_load_alert.multiple` | number >= 0 | `1.5` |
+| `autonomous.host_load_alert.minutes` | whole number >= 0 | `10` |
+
+`off` turns the check off. `alert` only reports. `reap` also ends processes of
+ended sessions that the orphan reaper's evidence rule proves belong to the
+session; it works by exact process id, never by name, and never touches a running
+session. A `0` multiple or minutes reads as the default; negative values and an
+unknown mode are refused everywhere.
+
+```bash
+datawatch autonomous config-set --host-load-alert-mode reap --host-load-alert-multiple 2 --host-load-alert-minutes 15
+datawatch autonomous config-set '{"host_load_alert":{"mode":"off"}}'
+```
+
+The same settings are in `config.yaml`, `PUT /api/config`
+(`autonomous.host_load_alert.mode` and the two others), the MCP
+`autonomous_config_set` tool (`host_load_alert_mode`, `host_load_alert_multiple`,
+`host_load_alert_minutes`), the comm `configure` command
+(`configure autonomous.host_load_alert.mode=reap`) and Settings > General >
+Autonomous in the PWA. A change applies on the next minute, with no restart.
+
+---
+
 ## Pinning a model on a GPU node
 
 Ollama keeps a limited set of models loaded on each node. A request for a

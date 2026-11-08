@@ -351,6 +351,11 @@ type Config struct {
 	// verifier selection reads it from the Config() snapshot. No omitempty,
 	// same round-trip reason as VerificationBackends.
 	VerifierPolicy config.VerifierPolicyConfig `json:"verifier_policy"`
+	// HostLoadAlert mirrors autonomous.host_load_alert in config: the host
+	// load check's mode, multiple and minutes. The check reads it from the
+	// Config() snapshot on every tick. No omitempty, same round-trip reason as
+	// VerifierPolicy.
+	HostLoadAlert config.HostLoadAlertConfig `json:"host_load_alert"`
 	// TaskOverrideStatuses (v9.5.5) — PRD statuses that accept task-level and
 	// story-level LLM overrides. Empty = default; see config.AutonomousConfig's doc comment.
 	// No omitempty, same round-trip reason as VerificationBackends.

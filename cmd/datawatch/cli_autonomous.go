@@ -707,6 +707,18 @@ unchanged; the change takes effect on the next verification:
   verifier_policy.stronger_backend           stronger verifier backend (empty = claude-code)
   verifier_policy.stronger_model             stronger verifier model (empty = the default Sonnet model)
 
+Host load check (autonomous.host_load_alert): when the load average stays above
+a multiple of the core count for some minutes, one alert names the busiest
+process groups. By flag or by the host_load_alert JSON object; fields you do not
+give are left unchanged:
+
+  datawatch autonomous config-set --host-load-alert-mode reap --host-load-alert-multiple 2 --host-load-alert-minutes 15
+  datawatch autonomous config-set '{"host_load_alert":{"mode":"off"}}'
+
+  host_load_alert.mode      off, alert (default) or reap (also ends proven-orphan processes of ended sessions)
+  host_load_alert.multiple  load-to-cores multiple that counts as a breach (default 1.5)
+  host_load_alert.minutes   minutes a breach must last before it alerts (default 10)
+
 Example — set the pre-spawn scope lint to warn (spawn the task and record a
 scope_lint_warn decision) instead of blocking it:
 
@@ -742,6 +754,9 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			if err := applyVerifierPolicyFlags(cmd, body); err != nil {
 				return err
 			}
+			if err := applyHostLoadAlertFlags(cmd, body); err != nil {
+				return err
+			}
 			if len(body) == 0 {
 				return fmt.Errorf("give a JSON body or at least one flag")
 			}
@@ -763,6 +778,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().String("judge-strong-backend", "", "Strong judge backend a large diff routes to first when the size rule fires (empty = the last entry of the judge policy)")
 	cmd.Flags().Bool("judge-verdict-cache", true, "Per-commit judge verdict cache, on by default (false re-judges every verified commit fresh)")
 	addVerifierPolicyFlags(cmd)
+	addHostLoadAlertFlags(cmd)
 	return cmd
 }
 

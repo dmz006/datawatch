@@ -669,6 +669,11 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_config_set(automation_merge_pending_mode="shadow")
   autonomous_config_set(automation_merge_pending_alert_minutes=0)
   ```
+- **`autonomous_config_set`** host load check arguments — `host_load_alert_mode` (`off`, `alert` or `reap`; default `alert`), `host_load_alert_multiple` (load-to-cores multiple that counts as a breach; default `1.5`) and `host_load_alert_minutes` (minutes a breach must last before one alert; default `10`). Only the arguments you give are sent; the daemon refuses an unknown mode and negative numbers. `autonomous_config_get` returns the `host_load_alert` block. Applies within a minute, with no restart:
+
+  ```
+  autonomous_config_set(host_load_alert_mode="reap", host_load_alert_multiple=2, host_load_alert_minutes=15)
+  ```
 - **`autonomous_safe_to_delete`** — read the safe-to-delete report for Automaton work branches and worktrees: `safe` lists the `automaton/*` branches that can be cleaned up (state `merged` or `empty`, no uncommitted changes in the worktree; each with `branch`, `worktree`, `reason`, `commits`), `held` lists the ones that must stay (`pending`, `needs_look` or `unknown`, or a worktree with uncommitted changes; each with `branch`, `worktree`, `state` and, when set, `dirty` and `note`) and `held_dirty` counts the branches held only for uncommitted changes. Unlike `autonomous_merge`, the daemon runs git when this is read (bounded at 60 seconds), and it works in every mode including `off`. Read-only: it never deletes a branch, removes a worktree, merges or pushes — cleaning up stays a separate step the operator approves. Returns the same object as `GET /api/autonomous/safe-to-delete`.
 
   | Parameter | Required | Description |
