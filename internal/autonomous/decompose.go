@@ -68,6 +68,15 @@ const planRulesAppliedRuleBullet = `- "rules_applied": for every task list the s
   a read-only task.
 `
 
+// planWorkerProfileRuleBullet is the Rules bullet, shared by both planning
+// prompts, that tells the planner how a task names the worker profile it
+// needs (a tool or an MCP server). It names the profile line that
+// applyWorkerProfileLines reads back out of the spec. No percent sign:
+// PlanningPrompt goes through fmt.Sprintf.
+const planWorkerProfileRuleBullet = `- A task that needs a tool or an MCP server names its profile with the line
+  'worker_profile: datawatch-tools' in its spec, and no other profile line is needed.
+`
+
 // PlanningPrompt is the system+user prompt prefix the LLM sees.
 // Operators can override via autonomous.planning_prompt config.
 const PlanningPrompt = `You are planning a feature request into a structured Product Requirements Document with stories and tasks.
@@ -108,7 +117,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -201,7 +210,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -372,7 +381,51 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 			t.RulesApplied = normalizeRulesApplied(t.RulesApplied)
 		}
 	}
+	applyWorkerProfileLines(doc.Stories)
 	return doc.Title, doc.Stories, nil
+}
+
+// workerProfileLinePrefix is the key a task spec uses to name its worker
+// profile. The key is case-sensitive.
+const workerProfileLinePrefix = "worker_profile:"
+
+// ParseWorkerProfileLine returns the profile name from the first line of spec
+// that is exactly 'worker_profile: <name>' once surrounding whitespace is
+// trimmed. It reports false when no such line exists, or when the name is
+// empty or holds internal whitespace.
+func ParseWorkerProfileLine(spec string) (string, bool) {
+	for _, line := range strings.Split(spec, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, workerProfileLinePrefix) {
+			continue
+		}
+		rest := line[len(workerProfileLinePrefix):]
+		if !strings.HasPrefix(rest, " ") {
+			continue
+		}
+		name := strings.TrimSpace(rest)
+		if name == "" || strings.ContainsAny(name, " \t") {
+			continue
+		}
+		return name, true
+	}
+	return "", false
+}
+
+// applyWorkerProfileLines copies each task's worker_profile line into its
+// WorkerProfile field. A field that is already set keeps its value.
+func applyWorkerProfileLines(stories []Story) {
+	for si := range stories {
+		for ti := range stories[si].Tasks {
+			t := &stories[si].Tasks[ti]
+			if t.WorkerProfile != "" {
+				continue
+			}
+			if name, ok := ParseWorkerProfileLine(t.Spec); ok {
+				t.WorkerProfile = name
+			}
+		}
+	}
 }
 
 // cleanLLMJSON strips fences, replaces smart quotes, removes // comments.
