@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Merge runs into the same repository are serialized by a merge lock.** Two merge runs can no longer ship into one base repository at the same time. A run takes a lock on its repository before it starts and releases it when it ends, and a second run is refused with a plain reason that names the run holding the lock.
+  - **How it shows up:** while a merge runs, the merge status shows the held lock (`Merge lock held: run <id> for Automaton <id> (branches …) since <time>`). A refused run's reason says the lock is held by the named run. The lock is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a daemon restart, and a resumed run takes its own lock back.
+  - **Migration:** none. If `merge-locks.json` is unreadable or corrupt, merge runs are refused rather than run unlocked; repair or restore that file in the daemon store directory.
+- **Bounded load-step rule.** A task that asks for a CPU-load or stress step must bound it before it runs: niced (`nice -n 19`), workers capped at a quarter of the cores (minimum one), a hard timeout, and cleanup of its children on exit. The rule is applied in three places: the built-in `bounded_load_step` task template, the rules block the decompose planner reads, and a warn-severity `unbounded_load_step` finding in decompose lint for a spec that asks for an unbounded load step.
+  - **How it shows up:** a spec that asks for an unbounded load step shows the `unbounded_load_step` warning in decompose lint.
+  - **Migration:** none.
+
 ## v9.112.3 — CodeQL gate runs only when code could change
 
 ### Changed
