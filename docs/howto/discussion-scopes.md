@@ -10,7 +10,7 @@ write-ahead log.
 ## What discussion scopes are and when to use them
 
 A discussion scope is a named memory partition keyed by a discussion ID (a short string
-you choose). Each scope stores an ordered list of entries, a WAL at
+you choose: 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected)). Each scope stores an ordered list of entries, a WAL at
 `~/.datawatch/discussions/<id>/wal.jsonl`, and an optional set of participant peers that
 automatically receive a copy of every new write.
 
@@ -51,6 +51,8 @@ addressable only by their discussion ID.
 
 Every write to a new discussion ID automatically creates the scope and the WAL file. There
 is no explicit create step.
+
+**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID, including an empty one or one holding `/`, `\` or spaces, is rejected with HTTP 400 and the text `invalid discussion id` on every scope, sync and file-service route. IDs that were created earlier with other characters are no longer reachable through the API.
 
 ### REST
 

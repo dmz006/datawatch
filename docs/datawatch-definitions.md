@@ -1311,7 +1311,7 @@ See [`howto/file-service.md`](howto/file-service.md).
 
 #### Discussion Scopes (v8.4.0)
 
-Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
+Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID (1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected); anything else gets HTTP 400 `invalid discussion id` on the scope, sync and file-service routes) and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
 
 **Scope name:** `ScopeDiscussion`
 
