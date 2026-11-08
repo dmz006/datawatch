@@ -20,7 +20,7 @@ Out of scope: any change to the advice maths, and the mobile apps (tracked in th
 | 5 | PWA controls and status line, five locale bundles | Done |
 | 6 | Howto, operations guide and README | Done |
 | 7 | Plan, parity status, parity issue, changelog, testing tracker | Done |
-| 8 | Android and iPhone/iOS parity (datawatch-app issue #393 filed; app work pending) | Planned |
+| 8 | Android and iPhone/iOS parity (issue text drafted in the parity issue file, not yet filed; the supervisor files it at merge; app work pending) | Planned |
 
 ## Parity surface
 
@@ -32,5 +32,5 @@ Out of scope: any change to the advice maths, and the mobile apps (tracked in th
 | comm channel | Touched | The settings are reachable through the existing config verbs; no new verb |
 | YAML/config | Touched | `usage.calculator.auto_lanes`, `auto_lanes_max`, `auto_lanes_special_priority` |
 | PWA | Touched | Settings toggle and maximum, and the auto-lanes status line; locale keys in de, en, es, fr, ja |
-| Android | Excluded from this change | Companion app work is tracked separately in [dmz006/datawatch-app#393](https://github.com/dmz006/datawatch-app/issues/393), text in [parity-issues/2026-11-02-usage-auto-lanes.md](parity-issues/2026-11-02-usage-auto-lanes.md) |
-| iPhone/iOS | Excluded from this change | Same reason and the same issue, [#393](https://github.com/dmz006/datawatch-app/issues/393); the iPhone app has no calculator screen yet, so it also relates to the calculator issue [#286](https://github.com/dmz006/datawatch-app/issues/286) |
+| Android | Excluded from this change | The companion app is a separate repository; its work is drafted in [parity-issues/2026-11-02-usage-auto-lanes.md](parity-issues/2026-11-02-usage-auto-lanes.md), not yet filed |
+| iPhone/iOS | Excluded from this change | Same reason; the iPhone app has no calculator screen yet, so the drafted text in [parity-issues/2026-11-02-usage-auto-lanes.md](parity-issues/2026-11-02-usage-auto-lanes.md) is not yet filed |
