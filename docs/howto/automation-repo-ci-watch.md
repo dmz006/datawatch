@@ -59,6 +59,16 @@ For each repository in `repos`, one poll reads:
 
 For every one of those refs the pass lists the runs on that ref's head commit — every workflow that ran on that SHA — not a fixed workflow name. So a poll covers the head of `main` plus the newest `tag_count` release tags, each across every workflow that ran there. A run belongs to the (repository, ref, workflow) triple it ran on, and each one gets at most one watch record.
 
+The alert gate runs on a push to `main` that changes a code, dependency, workflow
+or script file, on a pull request to `main` that changes one of those files, every
+Monday at 04:17 UTC (the scheduled run is weekly), and when it is started by
+hand; it needs no setting. A documents-only push — the docs folder, markdown
+files, the changelog or the plans — starts no run, and a pull request that
+changes none of the code, dependency, workflow or script files starts none
+either, because a documents-only change cannot add a code-scanning alert.
+Nothing is silently skipped beyond that: a pull request that touches `go.mod`
+or `go.sum`, such as a dependabot dependency bump, still starts a run.
+
 ## The record states
 
 Each record keeps one watch state. The pass records four of them — `green`, `failing`, `pending` and `hung` — and the read view's status filter accepts all six vocabulary values, so it can also filter on the two records the pass marks — `rerunning` (its own rerun is recorded on the record's rerun log) and `superseded` (a later green run names it in its `superseded_run_ids`); any other value is a 400 that names the allowed values.

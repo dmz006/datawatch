@@ -31,6 +31,16 @@ scope fails the test. The script needs `python3` with PyYAML on the machine.
   `.datawatch/codeql/out/` (gitignored) and prints a summary. It never uploads
   results or posts to the code-scanning API.
 
+The alert gate runs on a push to `main` that changes a code, dependency, workflow
+or script file, on a pull request to `main` that changes one of those files, every
+Monday at 04:17 UTC (the scheduled run is weekly), and when it is started by
+hand; it needs no setting. A documents-only push — the docs folder, markdown
+files, the changelog or the plans — starts no run, and a pull request that
+changes none of the code, dependency, workflow or script files starts none
+either, because a documents-only change cannot add a code-scanning alert.
+Nothing is silently skipped beyond that: a pull request that touches `go.mod`
+or `go.sum`, such as a dependabot dependency bump, still starts a run.
+
 A finding that appears locally is the finding the gate would count, once the
 alerts already dismissed on GitHub are subtracted (see the `--compare` step).
 
