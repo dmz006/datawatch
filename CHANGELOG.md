@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Every worker session now starts small, with a startup context and tool set chosen for its job.** A session datawatch launches for an Automaton task or a verification job no longer begins with the full operator-session harness and generic standing material; it opens with the small context its own job needs and the tools that fit that job. The startup context and tools are configurable, so every datawatch user can shape how a worker starts from all of datawatch's configuration channels — YAML config, the web settings, REST (`PUT /api/config`), the comm channel, the CLI, and MCP.
+  - **How it shows up:** worker and verifier sessions are launched the same way as before and produce the same task results, but their opening context is job-specific instead of a standing operator harness, and what a worker begins with is a setting the operator can read and change. Operator-started sessions are unchanged.
+  - **Migration:** none. The smaller start applies from the next worker launch; the configuration is new, so there is nothing to migrate — unset means the default small start.
+
 ## v9.112.6 — Show each system tag once in the Sessions tag menu
 
 ### Fixed
