@@ -9878,7 +9878,7 @@ components:
         describe the shape of a dangerous task spec.
       required: [id, severity, message]
       properties:
-        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files, read_only_unverifiable (block) and no_verification_script, names_tracker_id (warn)"}
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files, read_only_unverifiable (block) and no_verification_script, names_tracker_id, unbounded_load_step (warn)"}
         severity: {type: string, enum: [block, warn], description: "`block` stops decomposition in enforce mode and is fed back to the decomposer; `warn` is reported only"}
         message: {type: string, description: "Finding text shown when the rule fires (non-empty)"}
         match:
@@ -9898,7 +9898,7 @@ components:
       type: object
       description: |
         `autonomous.decompose_lint`. Defaults when unset: `mode: shadow`,
-        `max_retries: 2`, the seven-rule built-in pack, and an empty
+        `max_retries: 2`, the nine-rule built-in pack, and an empty
         `disabled_rules`. `mode` empty normalizes to `shadow`; a typo is a
         validation error. `max_retries` clamps negatives to 0 (0 = valid,
         lint-and-record without retrying) and above the cap (5) to the cap.
@@ -9912,7 +9912,7 @@ components:
       description: One task template. A same-`id` operator template replaces the built-in template at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
       required: [id]
       properties:
-        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, final_gate, version_bump_left_to_merge"}
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, final_gate, version_bump_left_to_merge, bounded_load_step"}
         title: {type: string}
         spec: {type: string, description: "Task body; supports the slots {{feature}}, {{files}} and {{files_list}}"}
         files: {type: string, description: "Files the generated task declares"}

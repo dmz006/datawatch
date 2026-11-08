@@ -3955,7 +3955,7 @@ autonomous:
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # eight rules: six block, two warn; the pack is the floor, your rules
+    # nine rules: six block, three warn; the pack is the floor, your rules
     # the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
@@ -3985,7 +3985,8 @@ autonomous:
   # The built-in pack is the floor (internal/autonomous/
   # task_templates_defaults.go): changelog_entry, parity_issue_draft,
   # docs_set, final_gate (read-only) and version_bump_left_to_merge (a note,
-  # never an edit) — written to hold two hard properties for every feature
+  # never an edit) and bounded_load_step (a bounded load-step posture note,
+  # no files) — written to hold two hard properties for every feature
   # name: no blocking decompose-lint finding, and no hosting-CLI side
   # effects. Your templates are the ceiling over it: same id replaces the
   # built-in at its position, new id appends. Template ids must be

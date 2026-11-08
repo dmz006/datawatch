@@ -55,7 +55,10 @@ operator, not to a task:
 - a **read-only task that still lists files** it would change;
 - a task with **no verification script** — its result cannot be checked;
 - a task whose text **names a tracker id** (`BL-0001`, `#1234`) instead of
-  describing the work.
+  describing the work;
+- a task that runs an **unbounded CPU-load or stress step** (no `-n`
+  budget, no core cap, no hard timeout, no trap cleanup) — load belongs to
+  the host, a task's step must be bounded.
 
 The check has hard guarantees, whichever mode you run it in:
 
@@ -117,8 +120,8 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: eight rules —
-the six `block` rules first, then the two `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: nine rules —
+the six `block` rules first, then the three `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -133,6 +136,7 @@ and never name a particular project, repository or home directory.
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
 | `no_verification_script` | warn | a task with no verification script |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
+| `unbounded_load_step` | warn | a CPU-load or stress step whose bounds are not limited (no `-n` budget or similar, no core cap, no hard timeout, no trap cleanup) — the host owns load; the step must be limited to a handful of cores for a bounded time |
 
 ## 4. Writing your own rules — a worked example
 
@@ -233,7 +237,7 @@ detected, and nothing is added twice. Slots `{{feature}}`, `{{files}}` and
 story's task files; a template's `depends_on` lists *template* ids it must
 run after, and the resulting task also depends on the story's other tasks.
 
-The **built-in pack** is the floor — five templates, written to hold three
+The **built-in pack** is the floor — six templates, written to hold three
 hard properties for every feature name a story can carry: no blocking
 decompose-lint finding, no hosting-CLI side effects, and no verification
 script that is not genuinely a script file (the read-only ones verify
@@ -247,6 +251,7 @@ reach the verifier and pass it, instead of being rejected at pre-start.
 | `docs_set` | the feature's docs into shape, over the story's own files |
 | `final_gate` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
 | `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit, and no verification script: the verifier reads it rather than runs it |
+| `bounded_load_step` | the bounded load-step posture note for the feature (`nice -n 19`, no more than a quarter of the cores, a hard timeout, trap cleanup) — a note: it writes no files and carries no verification script, the verifier reads it |
 
 Templates are applied in **shadow and enforce** (off applies nothing), and
 `autonomous.task_templates.enabled` (default **true**) gates them globally.
