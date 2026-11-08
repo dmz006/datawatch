@@ -339,7 +339,7 @@ two are decoupled by design, and that is the cheaper order.
 
 ## 12. The deferred REST route, defined enough to build it later
 
-Done (task 606c0018, 2026-11-06, REST + MCP surfaces). `GET /api/sessions/tags` ships as `{"tags":[{"tag","axis","value","count"}]}` — one entry per tag in use across live and archived sessions (own, system and inherited sets; a session counted once per tag), untagged tags sorted last, then by count. The `GET /api/sessions` filter gained the placement axis shortcuts (`project`/`automaton`/`automation`/`stage`/`kind`/`role`/`lane`/`compute`, each an `axis:<value>` tag combined with `tag` under `tag_match`) and system tags now count for `?tag=` matching as the plan's §4.2 union requires. MCP: `list_sessions` gained the eight axis params and the new `session_tag_list` tool (cap `sessions:list`). **The `backend` axis shortcut:** `backend` is both the existing BL361 session-backend filter (family names: claudecode, opencode) and the placement axis (claude, pi, ollama, vllm), so it is implemented as an OR: a session matches when its backend family equals the value or it carries the `backend:<value>` tag. Every result the old filter returned is still returned, and `backend=<axis value>` now works. Tests: `internal/server/session_tag_filter_test.go`, `internal/session/tag_inventory.go` (layer), `internal/mcp/session_tag_list_test.go`; docs: `docs/api-mcp-mapping.md`, both OpenAPI specs, `docs/testing-tracker.md`. Remaining for this plan: the CLI column/filter and the PWA count column (both consume the same inventory read).
+Done (task 606c0018, 2026-11-06, REST + MCP surfaces). `GET /api/sessions/tags` ships as `{"tags":[{"tag","axis","value","count"}]}` — one entry per tag in use across live and archived sessions (own, system and inherited sets; a session counted once per tag), untagged tags sorted last, then by count. The `GET /api/sessions` filter gained the placement axis shortcuts (`project`/`automaton`/`automation`/`stage`/`kind`/`role`/`lane`/`compute`, each an `axis:<value>` tag combined with `tag` under `tag_match`) and system tags now count for `?tag=` matching as the plan's §4.2 union requires. MCP: `list_sessions` gained the eight axis params and the new `session_tag_list` tool (cap `sessions:list`). **The `backend` axis shortcut:** `backend` is both the existing BL361 session-backend filter (family names: claudecode, opencode) and the placement axis (claude, pi, ollama, vllm), so it is implemented as an OR: a session matches when its backend family equals the value or it carries the `backend:<value>` tag. Every result the old filter returned is still returned, and `backend=<axis value>` now works. Tests: `internal/server/session_tag_filter_test.go`, `internal/session/tag_inventory.go` (layer), `internal/mcp/session_tag_list_test.go`; docs: `docs/api-mcp-mapping.md`, both OpenAPI specs, `docs/testing-tracker.md`. The CLI column/filter and the comm-channel listing landed on the same inventory read (task f06c5a3bb), and the PWA session-list tag filter with per-tag counts landed on top (tasks 202f9f994, 3671eb1e0); current per-surface state is recorded in the Parity surface section below.
 
 `GET /api/sessions/tags` (new route; the existing `POST /api/sessions/tags`
 keeps its set-a-session's-tags job). Sketch:
@@ -359,3 +359,20 @@ keeps its set-a-session's-tags job). Sketch:
 It is deferred because the CLI is the increment and no client consumes the
 route yet; it is defined here so the follow-up is wiring, not design, and so
 this increment does not build a REST shim the CLI does not go through.
+
+## Parity surface
+
+Current state of the tag inventory read and the session tag filter across the
+full parity set (as updated 2026-11-06/07, after the REST + MCP, then CLI +
+comm, then PWA tasks):
+
+| Surface | State |
+|---|---|
+| REST | In — `GET /api/sessions/tags` returns the inventory (`tag`, `axis`, `value`, `count`); `GET /api/sessions` accepts `tag` (repeatable, `tag_match` `any`/`all`) plus the eight placement axis shortcuts (`project`/`automaton`/`automation`/`stage`/`kind`/`role`/`lane`/`compute`), with `backend` matching family-or-tag as an OR so no earlier result is lost (§4.5, §12) |
+| MCP | In — `list_sessions` gained the same axis params (including `tag`/`tag_match` semantics), and `session_tag_list` (cap `sessions:list`) returns the same inventory |
+| CLI | In — `datawatch sessions` carries the `tags` column and the repeatable OR `--tag` flag (empty value is a usage error, §4.4), and `datawatch tags list` carries the `sessions` count column from the same inventory call (§3.3, §4.6) |
+| comm channel | In — the session-listing verbs accept the tag condition and print the in-use listing, consuming the same read as the CLI |
+| YAML/config | Excluded — this feature is a read view over session state that already exists; it introduces no setting, so there is no configuration surface to keep in sync (tag assignment itself remains governed by the existing `autonomous.*` config from phase 3) |
+| PWA | In — the session list filters by tags and the tag chips show the per-tag counts from the same inventory read (tasks 202f9f994, 3671eb1e0); the tags panel keeps its `tag_update` re-render path, so no new event is required for it (§11) |
+| Android | Excluded here, tracked separately — capability parity (list tags with counts, filter sessions by tag) is the standard for the native clients; implementation idioms are the mobile team's, and the app-side notes for this work sit in `docs/plans/2026-10-23-datawatch-app-tags-note.md` and `docs/plans/2026-11-03-placement-auto-tags-parity.md` |
+| iPhone/iOS | Excluded here, tracked separately — same standard and same app-side notes as the Android row; all REST and WebSocket contracts it would consume are platform-neutral (Mobile-Parity Rule) |
