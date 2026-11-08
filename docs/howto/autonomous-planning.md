@@ -290,8 +290,10 @@ READ-ONLY: audits the retry paths and reports what it finds; no file is edited.
 List every call site of the retry helper and note which ones skip the backoff.
 ```
 
-A read-only task must also be verifiable: give it a `verification_script`, or
-a `report_path` under `.datawatch/reports/` where it writes its verdict. The
+A read-only task must also be verifiable: give it a `verification_script`
+(one repo-relative script file that already exists in the project — a
+command like `go build ./... && go test ./...` is not a script), or a
+`report_path` under `.datawatch/reports/` where it writes its verdict. The
 plan-coverage gate and the decompose lint both refuse a read-only task with
 neither, whether it is read-only by the marker or by the `read_only` flag,
 because a failure of it would otherwise leave nothing to inspect.

@@ -9918,6 +9918,8 @@ components:
         files: {type: string, description: "Files the generated task declares"}
         kind: {type: string, description: "Task kind the generated task carries"}
         read_only: {type: boolean, description: "Flag the generated task read-only"}
+        verification_script: {type: string, description: "Copied verbatim onto the generated task, once. It must name one repo-relative script file that already exists in the project as an executable (for example scripts/verify.sh) — a command string such as 'go build ./... && go test ./...' is refused at config write with a 400 naming the template id, and a template that still carries one is skipped when the templates are applied so it never becomes a task the pre-start verifier cannot start. The built-in final_gate ships without one: it is read-only and verified through its report_path instead"}
+        report_path: {type: string, description: "For a read-only template, the one repo-relative file under .datawatch/reports/ the generated task may write its verdict to (slots supported; {{feature}} is slugged into a file-name-safe form). Absent = the task writes nothing. Only honored on a read-only template. Required for the final-gate pack member, whose built-in template ships with it pointing at .datawatch/reports/<feature>-final-gate.txt"}
         depends_on: {type: array, items: {type: string}, description: "Other template ids (or task ids) this one depends on; wired into a real depends_on edge at apply time"}
         applies_when: {type: string, description: "Scope guard; the built-in pack applies to every feature"}
     TaskTemplatesConfig:
