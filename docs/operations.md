@@ -201,6 +201,15 @@ The systemctl restart path is not changed; the policy only decides whether and w
 
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
 
+#### Processes a session leaves behind
+
+When any worker session ends (finished, cancelled, failed or killed), the daemon looks for processes the worker started and left running (test runs, servers, helper scripts) and ends them. This is automatic; there is no setting to turn it on.
+
+- **Evidence, never names.** A process is the session's only if `/proc` shows proof: its working directory, executable or script lies in the session's worktree or scratch folder, its ancestry reaches the session, or its environment carries the session id. Path proof counts only for a process whose parent is init or the daemon's own parent (a user service manager), so a shell or editor of yours that merely sits in the folder is never touched.
+- **Exact pid, re-checked.** Each match is ended by pid. The evidence and the process start time are re-read just before every signal, so a reused pid cannot hit an unrelated process.
+- **What you see.** One decision `session_end_reap` on the task (count and short commands, never the environment) and one audit entry `session_end_reap` (`N ended, M survived`). Nothing is written when nothing was found. A session with no project folder is skipped.
+- **Review.** Leftovers from before this change are not cleaned up; end them by hand after checking their pids. A process that survives its signal is listed under `survivors` in the audit entry; check those by hand.
+
 #### What a restart does to running work
 
 This section is for the operator: what happens to an Automaton's running tasks when the daemon restarts.
