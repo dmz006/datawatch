@@ -7,7 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
 
 const APP_JS = path.join(__dirname, 'app.js');
 const PEER = 'pi-node';
@@ -106,4 +106,52 @@ test('the re-render uses the state.activeView set by navigate()', () => {
   vm.runInContext(`state.activeView = 'alerts';`, s);
   s.selectServer(PEER);
   assert.deepEqual(s.__renders, ['renderAlertsView']);
+});
+
+// Records every fetch() URL so a test can assert which path a request took.
+function recordFetches(s) {
+  const urls = [];
+  s.fetch = (url) => {
+    urls.push(String(url));
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ version: '1.0.0' }) });
+  };
+  return urls;
+}
+
+test('About showing a peer: selecting local re-renders About with the local chip active and reads the version locally', async () => {
+  const s = load('settings', PEER);
+  vm.runInContext(`_settingsTab = 'about';`, s);
+  const urls = recordFetches(s);
+
+  s.selectServer(null);
+  assert.deepEqual(s.__renders, ['renderSettingsView'], 'About (the Settings render) must re-render');
+
+  // The local chip (data-server-name="") is the active one; the peer chip is not.
+  const bar = s._serverPickerBar({});
+  const chipFor = (name) => {
+    const start = bar.indexOf(`data-server-name="${name}"`);
+    assert.ok(start >= 0, `chip for "${name}" must be rendered`);
+    return bar.slice(start, bar.indexOf('</button>', start));
+  };
+  const localChip = chipFor('');
+  assert.ok(localChip.includes('background:var(--accent2,#4f8)'), `local chip must be highlighted: ${localChip}`);
+  assert.ok(localChip.includes('font-weight:600'), 'active local chip must be bold');
+  assert.ok(!chipFor(PEER).includes('background:var(--accent2,#4f8)'), 'peer chip must not be highlighted');
+
+  // About's version read goes to the local path, not /api/proxy/<peer>/.
+  s.loadVersionInfo();
+  await flushAsync(30);
+  assert.ok(urls.includes('/api/health'), `version read must hit /api/health: ${JSON.stringify(urls)}`);
+  assert.ok(urls.every(u => !u.startsWith('/api/proxy/')), `no request may use the proxy prefix: ${JSON.stringify(urls)}`);
+});
+
+test('re-selecting the peer that is already active makes no re-render and no request', async () => {
+  const s = load('settings', PEER);
+  vm.runInContext(`_settingsTab = 'about';`, s);
+  const urls = recordFetches(s);
+
+  s.selectServer(PEER);
+  await flushAsync(30);
+  assert.deepEqual(s.__renders, [], 'no view may re-render');
+  assert.deepEqual(urls, [], `no request may be made: ${JSON.stringify(urls)}`);
 });
