@@ -7,6 +7,11 @@
 // model is absent, asks ollama to load it and waits until the listing shows it
 // or a bounded wait ends.
 //
+// When the model is not on the node at all (not in the node's model list, let
+// alone resident), a plain load ends in a not-found error; ModelLoader pulls
+// the model onto the node first — bounded by the same wait and reporting
+// progress through the same wait callback — and then loads it.
+//
 // Pins come first. A node with node_pinned_model always loads its pin for an
 // implicit request (see pinnedModel), so a load never swaps a pinned model out.
 
@@ -73,11 +78,14 @@ func (e *NodeLoadError) Error() string {
 func (e *NodeLoadError) Unwrap() error { return e.Cause }
 
 // Ensure makes model resident on node before a worker spawns there. The
-// model that loads is the node's pin when it has one, otherwise model.
+// model that loads is the node's pin when it has one, otherwise model. When
+// the node does not have the model downloaded yet, Ensure pulls it first,
+// then loads it, bounded by the wait and reporting the pull through the
+// wait callback.
 //
-// wait is called with a reason text when the node has to load the model. It
-// is not called when the model is already resident. Ensure returns a
-// *NodeLoadError when the node cannot make the model resident, and the
+// wait is called with a reason text while the node pulls and/or loads the
+// model. It is not called when the model is already resident. Ensure returns
+// a *NodeLoadError when the node cannot make the model resident, and the
 // context's error when ctx ends first.
 func (l *ModelLoader) Ensure(ctx context.Context, node *compute.Node, model string, wait func(reason string)) error {
 	if node == nil {
@@ -101,15 +109,39 @@ func (l *ModelLoader) Ensure(ctx context.Context, node *compute.Node, model stri
 	if resident {
 		return nil
 	}
+	bound := l.Wait
+	if bound <= 0 {
+		bound = DefaultLoadWait
+	}
+	present, err := nodeHasModel(ctx, client, node.Address, target)
+	if err == nil && !present {
+		if wait != nil {
+			wait(fmt.Sprintf("pulling %s onto node %s", target, node.Name))
+		}
+		pullCtx, cancel := context.WithTimeout(ctx, bound)
+		pullErr := PullModel(pullCtx, client, node.Address, target, func(p PullProgress) {
+			if wait == nil {
+				return
+			}
+			switch {
+			case p.Success:
+				wait(fmt.Sprintf("pull of %s on node %s finished", target, node.Name))
+			case p.BytesTotal > 0:
+				wait(fmt.Sprintf("pulling %s onto node %s: %d%%", target, node.Name, int(p.Percent*100)))
+			default:
+				wait(fmt.Sprintf("pulling %s onto node %s", target, node.Name))
+			}
+		})
+		cancel()
+		if pullErr != nil {
+			return loadFailure(node, target, fmt.Errorf("pull: %w", pullErr))
+		}
+	}
 	if wait != nil {
 		wait(fmt.Sprintf("loading %s on node %s", target, node.Name))
 	}
 	if err := requestLoad(ctx, client, node.Address, target); err != nil {
 		return loadFailure(node, target, err)
-	}
-	bound := l.Wait
-	if bound <= 0 {
-		bound = DefaultLoadWait
 	}
 	poll := l.Poll
 	if poll <= 0 {

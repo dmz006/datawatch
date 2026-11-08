@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **The model loader pulls a model a node does not have, then loads it.** When admission picks a node and the worker's model is not downloaded on that node, `ModelLoader.Ensure` now pulls it first — bounded by the loader's wait, with progress reported through the wait callback — and only then loads it, so the worker never pays a not-found load after an implicit pick. Nodes that already have the model load it as before, and a pinned node still pulls and loads its pin first. The Ollama `/api/pull` streaming loop has one implementation in the inference package (`PullModel`) shared by the model loader and the marketplace pull task; the marketplace task keeps the same status values (`pending | in_progress | done | failed`), the same progress reports, and the same terminal error texts for a failed pull.
+
 ## v9.67.0 — Cost report
 
 ### Added
