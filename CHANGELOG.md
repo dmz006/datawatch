@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
+
+
 ## v9.112.0 — Leftover session processes are ended by evidence, a host load alert, and bounded load steps
 
 ### Fixed
