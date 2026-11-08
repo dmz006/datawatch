@@ -197,6 +197,11 @@ type TaskTemplateDef struct {
 	// (the build and test commands its spec asserts) so it is not an
 	// unverifiable read-only task while it changes nothing.
 	VerificationScript string `yaml:"verification_script,omitempty" json:"verification_script,omitempty"`
+	// VerificationScriptReason, when set, is copied verbatim onto the
+	// task the template produces. A note-kind task that changes nothing
+	// carries its B124 exemption here: without a script AND without a
+	// reason, the plan-structure check flags it missing_verification.
+	VerificationScriptReason string `yaml:"verification_script_reason,omitempty" json:"verification_script_reason,omitempty"`
 	// ReportPath, for a read-only template, is the one repo-relative
 	// file under .datawatch/reports/ the task may write its verdict
 	// and evidence to. It takes the same slots as the other string
