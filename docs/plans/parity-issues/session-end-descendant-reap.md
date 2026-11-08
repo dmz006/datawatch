@@ -1,6 +1,6 @@
 # fix(sessions): processes a worker started outlive a cancelled task, parity note
 
-Parent release: datawatch 9.90.x (the next patch above main at the time of writing).
+Parent release: the next patch above main at merge time.
 
 ## Affected area
 

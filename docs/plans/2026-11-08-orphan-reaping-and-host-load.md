@@ -1,6 +1,9 @@
 # Orphan reaping and host load — plan
 
 - **Date:** 2026-11-08
+- **Status:** Done — all eight phases complete on this branch; the release version is
+taken at merge time (see Version), and `CHANGELOG.md` [Unreleased] is the record
+until then.
 - **Version:** Taken at merge time. This feature branch deliberately does not change the
   version in `cmd/datawatch/main.go` or `internal/server/api.go`; the merge helper names
   the release version when the branch reaches main, and `CHANGELOG.md` [Unreleased] is

@@ -1,6 +1,6 @@
 # Parity issue — host load check (`autonomous.host_load_alert`, datawatch-app)
 
-**Parent release:** datawatch 9.90.x, the unreleased section on top of v9.90.0 (session-end reap of a worker's leftover processes plus the host load check that backstops it)
+**Parent release:** the next patch above main at merge time (session-end reap of a worker's leftover processes plus the host load check that backstops it)
 
 ## Affected area
 
