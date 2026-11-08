@@ -38,6 +38,9 @@ import (
 // discussionParticipantsPath returns the participants.json path for a discussion
 // under the server's data directory. Creates the discussion directory on demand.
 func (s *Server) discussionParticipantsPath(id string) (string, error) {
+	if err := validateDiscussionID(id); err != nil {
+		return "", err
+	}
 	dir := s.statePath("discussions", id)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir discussion dir: %w", err)
@@ -89,6 +92,10 @@ func (s *Server) discussionWriteParticipants(id string, peers []string, encKey [
 // handleDiscussionParticipants handles GET and PUT for
 // /api/memory/discussion/{id}/participants.
 func (s *Server) handleDiscussionParticipants(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		peers, err := s.discussionReadParticipants(id, s.encKey)
@@ -405,6 +412,10 @@ func (s *Server) discussionDetectConflicts(id string, encKey []byte) ([]conflict
 
 // handleDiscussionConflicts handles GET /api/memory/discussion/{id}/conflicts.
 func (s *Server) handleDiscussionConflicts(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -422,6 +433,10 @@ func (s *Server) handleDiscussionConflicts(w http.ResponseWriter, r *http.Reques
 
 // handleDiscussionConflictResolve handles POST /api/memory/discussion/{id}/conflicts/resolve.
 func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -498,6 +513,10 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 // This handler appends the entry to the local WAL and does NOT fan-out further
 // (loop prevention: the original sender already broadcast to all participants).
 func (s *Server) handleDiscussionReceive(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
