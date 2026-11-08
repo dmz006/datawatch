@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.111.4 — Discussion ids are validated and the tag filter lookup set is unsized, closing three high code scanning alerts
+
+### Fixed
+
+- **The three high code scanning alerts open on main are closed, so the CodeQL alert gate stops failing.** The discussion routes (scope, sync and the file service folder handler) built file paths from the discussion id in the request URL without checking it, so an id such as `..` could point outside the discussion folder. Every one of those routes now checks the id first and answers `400 invalid discussion id` for a bad one. A valid id is 1 to 128 characters of ASCII letters, digits, dot, underscore and hyphen; `.` and `..` are never valid.
+  - **How it shows up:** a request with a traversal or otherwise malformed discussion id gets `400 invalid discussion id` and touches no files; requests with ordinary ids behave as before. The "Open high/critical alerts" check goes green once the next CodeQL analysis of main completes. Route tests cover traversal ids on every affected route.
+  - **Migration:** none. A discussion whose id uses characters outside the allowed set (spaces, slashes, non-ASCII) is no longer reachable through these routes; rename it to an allowed id.
+  - **Docs:** the [discussion scopes](docs/howto/discussion-scopes.md) and [file service](docs/howto/file-service.md) how-tos now state the discussion id rule, the `400 invalid discussion id` answer, and how to check an id before calling.
+  - **Tag filter:** the tag-selection match used by the Automaton, task and Automation list filters no longer sizes its lookup set from the input lengths, which clears the allocation-size alert on `internal/autonomous/object_tag_filter.go`. Filter results do not change; a 37-case table test (`TestMatchesObjectTagsResults`) now pins them.
+
 ## v9.111.3 — Alerts header: the help link sits on the Last updated row
 
 - **PWA Alerts header layout fixed.** The round "?" help link on the Alerts tab no longer takes a separate top-right row above the list, which mis-rendered on narrow touch viewports (reported with a screenshot from Chrome on Android). It now sits at the right edge of the loader's meta row, beside the list's status text, and keeps its existing destination (the Alerts howto), tooltip and accessible name. On touch devices the link gets a 40px minimum tap target. No migration step: refresh the PWA and the new layout is in effect.

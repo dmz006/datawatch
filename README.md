@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.111.3 (2026-11-08).** The PWA Alerts help link moved onto the list's Last updated row, so it no longer takes a separate top-right row on narrow touch screens. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.111.4 (2026-11-08).** Discussion routes now reject malformed discussion ids with 400 before touching any file, and the tag-selection match no longer sizes its lookup set from input lengths; the three open high code scanning alerts are fixed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
