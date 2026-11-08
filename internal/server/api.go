@@ -5801,6 +5801,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// Pin keeper interval (seconds); 0 = keeper off. Per-node pin fields
 		// (node_pinned_model, allow_model_swap) live on /api/compute/nodes.
 		"pin_check_seconds": s.cfg.PinCheckSeconds,
+		// Effective, not raw: an unset compute_placement key reads its
+		// default (missing_model via EffectiveMissingModel; assume_model_size_gb
+		// reads 0 = size unknown when unset).
+		"compute_placement": computePlacementConfigSurface(s.cfg.ComputePlacement),
 		// cost_report — the cost report engine knobs (internal/costreport);
 		// each key reads its default while absent.
 		"cost_report": map[string]interface{}{
@@ -6984,6 +6988,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// known remediation option ids and real booleans. One bad value among its
 	// eleven keys refuses the whole PUT with a message naming the key.
 	if err := validateRequestWatchPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The compute placement block is checked before any key is applied:
+	// a known missing_model, a memory headroom in 0-100 and the
+	// rest non-negative whole numbers. One bad key rejects the
+	// whole PUT; the error names the key.
+	if err := validateComputePlacementPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9358,6 +9370,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// validateRequestWatchPatch. The watcher reads the live block on
 			// every tick, so the change applies with no restart.
 			if applyRequestWatchPatch(cfg, k, v) {
+				continue
+			}
+
+			// compute_placement.* — already validated in
+			// validateComputePlacementPatch. Placement reads the live
+			// block on every decision, so the new value applies with
+			// no restart.
+			if applyComputePlacementPatch(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
