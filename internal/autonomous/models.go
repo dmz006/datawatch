@@ -7,11 +7,30 @@
 package autonomous
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
+
+// ValidateWorkerProfileName reports whether name is an acceptable worker
+// profile reference. An empty name is accepted and means no override at this
+// layer. A built-in profile name or a key in user (the operator's configured
+// worker_profiles) is accepted. Any other name is refused.
+func ValidateWorkerProfileName(name string, user map[string]workerprofile.WorkerProfile) error {
+	if name == "" {
+		return nil
+	}
+	if _, ok := workerprofile.Builtin(name); ok {
+		return nil
+	}
+	if _, ok := user[name]; ok {
+		return nil
+	}
+	return fmt.Errorf("unknown worker profile %q: not a built-in or user-defined profile", name)
+}
 
 // Status enums — kept in sync with nightwire for cross-tool compat.
 
@@ -272,6 +291,10 @@ type PRD struct {
 	Backend              string `json:"backend,omitempty"`             // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort               Effort `json:"effort,omitempty"`
 	Model                string `json:"model,omitempty"` // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
+	// WorkerProfile names the worker profile this automaton's sessions start
+	// with. It overrides the global layer (config worker_profiles and the role
+	// and task-kind defaults). Empty means no automaton-level override.
+	WorkerProfile string `json:"worker_profile,omitempty"`
 	// BL416 Phase 1 — PRD-level guardrail LLM override. Empty = inherit
 	// the global autonomous verification_backend/verification_model
 	// (existing config; no new global key). Tasks may override via
@@ -1102,6 +1125,10 @@ type Task struct {
 	DependsOn  []string   `json:"depends_on,omitempty"`  // other Task IDs
 	SessionID  string     `json:"session_id,omitempty"`  // datawatch session ID once running
 	WaitReason string     `json:"wait_reason,omitempty"` // why the task is waiting_capacity or waiting_decision
+	// WorkerProfile names the worker profile this task's session starts with.
+	// It overrides the global layer (config worker_profiles and the role and
+	// task-kind defaults). Empty means no task-level override.
+	WorkerProfile string `json:"worker_profile,omitempty"`
 	// ComputeNode is the compute node the task's worker was started on, as the
 	// start handler reports it. A daemon restart adopts the surviving worker
 	// onto this node before it looks at anything else.
