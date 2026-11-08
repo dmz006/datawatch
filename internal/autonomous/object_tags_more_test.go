@@ -21,7 +21,7 @@ func TestObjectTagsForDerivedRecordKinds(t *testing.T) {
 	}
 	// An Automaton inside an Automation, in a project directory: the
 	// named Automaton's fact is project + Automation + itself.
-	prd, err := m.CreatePRD("tag the records", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("tag the records", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestObjectTagsForDerivedRecordKinds(t *testing.T) {
 	if !ok {
 		t.Fatal("re-read PRD not found")
 	}
-	wanted := []string{"automation:" + auto.ID, "automaton:" + fresh.ID, "project:datawatch"}
+	wanted := []string{"automation:" + auto.ID, "automaton:" + fresh.ID, "project:example"}
 	gone := "pr-does-not-exist" // a record can outlive its Automaton
 
 	cases := []struct {
@@ -87,7 +87,7 @@ func TestObjectTagsForDerivedRecordKinds_Facts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	prd, err := m.CreatePRD("facts fixture", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("facts fixture", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestObjectTagsForDerivedRecordKinds_Facts(t *testing.T) {
 		t.Fatal("re-read PRD not found")
 	}
 	autoFacts := ObjectTagFacts{
-		Project:    "datawatch",
+		Project:    "example",
 		Automation: auto.ID,
 		Automaton:  fresh.ID,
 	}

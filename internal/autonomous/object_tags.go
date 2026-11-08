@@ -64,7 +64,7 @@ func DeriveObjectTags(f ObjectTagFacts, pc config.PlacementConfig) []string {
 
 // objectProjectName is the display name of a project a record carries: the
 // base name of its project directory, or "" when it carries no directory.
-// An Automaton's /home/x/datawatch dir is the project "datawatch"; an
+// An Automaton's project/example dir is the project "example"; an
 // object with no project directory names no project and takes no project
 // tag (shown as "(none)" in the counts, per the tags-and-counts decision).
 func objectProjectName(dir string) string {

@@ -23,7 +23,7 @@ func TestSweepTagsOnce_MarkerGuard(t *testing.T) {
 	// Seed one Automaton tagged under the default block, then switch the
 	// settings: with the Automaton axis off the stored automaton tag is
 	// stale, so the first sweep has something to change.
-	prd, err := m.CreatePRD("marker guard", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("marker guard", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestSweepTagsOnce_MarkerWriteFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	if _, err := m.CreatePRD("marker failure", "/home/x/datawatch", "pi", "", ""); err != nil {
+	if _, err := m.CreatePRD("marker failure", "project/example", "pi", "", ""); err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 	// A directory at the marker path makes the atomic rename fail.

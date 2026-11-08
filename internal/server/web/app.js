@@ -3212,7 +3212,26 @@ function loadSessionsList() {
     if (l.error || !state.connected) l.timer = setTimeout(() => { if (state.activeView === 'sessions') loadSessionsList(); }, SESSIONS_POLL_MS);
     if (rows.length) onSessionsUpdated();
     if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
-    if (state.activeView === 'sessions') renderSessionsView();
+    if (state.activeView === 'sessions') {
+      renderSessionsView();
+      // Rows just changed, so the counts in the toolbar tag filter may have:
+      // load (or reload) the inventory and paint the chips once it arrives —
+      // but only when the tag filter button is or can be visible (some
+      // session tagged, or the inventory already carries tags), so an empty
+      // resync costs no extra request. On a failed load this repaint is
+      // skipped (the failure is latched in state), so a bad endpoint cannot
+      // loop into itself.
+      const invNow = state._sessionTagInventory;
+      const tagBtn = (invNow && invNow.loaded)
+        ? (invNow.entries || []).length > 0
+        : state.sessions.some(_sessionHasTags);
+      if (tagBtn) {
+        _sessionTagInventoryRefresh().then(() => {
+          const inv2 = state._sessionTagInventory;
+          if (state.activeView === 'sessions' && inv2 && inv2.loaded && !inv2.failed) renderSessionsView();
+        });
+      }
+    }
     return rows;
   });
   return l.promise;
@@ -3280,27 +3299,44 @@ function _ensureFullSession(sessionId, sess) {
 // the Other group.
 const _SESSION_TAG_AXIS_ORDER = ['project', 'automaton', 'automation', 'stage', 'kind', 'role', 'lane', 'backend', 'compute'];
 
+// How long a failed inventory load stays latched before _sessionTagInventoryRefresh
+// may retry on its own. An explicit invalidation (stale = true, set by a
+// sessions refresh or a tag_update frame) bypasses the latch, which is what
+// lets operator-initiated reloads retry immediately.
+const _TAG_INVENTORY_RETRY_MS = 60000;
+
 // _sessionTagInventoryFetch reads the tag inventory (GET /api/sessions/tags):
 // every tag a live or archived session carries, with its axis, value and the
 // session count. Cached in state so a toolbar paint never blocks on a
-// request.
+// request. A failed load is recorded, not re-thrown: the cache ends up
+// loaded + failed, so a repaint can never re-queue the fetch, and the next
+// retry waits for _TAG_INVENTORY_RETRY_MS or an explicit stale mark.
 function _sessionTagInventoryFetch() {
   return apiFetch('/api/sessions/tags').then(d => {
-    state._sessionTagInventory = { loaded: true, stale: false, entries: (d && d.tags) || [] };
-    return state._sessionTagInventory.entries;
-  }).catch(() => (state._sessionTagInventory && state._sessionTagInventory.entries) || []);
+    state._sessionTagInventory = { loaded: true, failed: false, stale: false, at: Date.now(), entries: (d && d.tags) || [] };
+  }).catch(() => {
+    const prev = state._sessionTagInventory || { entries: [] };
+    state._sessionTagInventory = { loaded: true, failed: true, stale: false, at: Date.now(), entries: prev.entries || [] };
+  });
 }
 
 // _sessionTagInventoryRefresh loads the inventory on first use and again
-// whenever it was marked stale (tag updates, session churn). A repaint
-// follows only while the sessions view is up; a stale-but-unchanged cache
-// costs nothing (no request, no render).
+// whenever it was marked stale (tag updates, session churn). It never
+// repaints on its own — the caller paints (or the load path does so once
+// the data arrives) — so it cannot feed back into itself. Concurrent
+// callers share one in-flight request, so a render, a save and a
+// tag_update in the same tick produce one request rather than one per call
+// site.
 function _sessionTagInventoryRefresh() {
   const inv = state._sessionTagInventory;
-  if (inv && inv.loaded && !inv.stale) return;
-  _sessionTagInventoryFetch().then(() => {
-    if (state.activeView === 'sessions') renderSessionsView();
-  });
+  if (inv && inv.loaded && !inv.stale) return Promise.resolve();
+  if (inv && inv.inflight) return inv.inflight;
+  if (inv && inv.failed && !inv.stale && Date.now() - (inv.at || 0) < _TAG_INVENTORY_RETRY_MS) return Promise.resolve();
+  const p = _sessionTagInventoryFetch().then(
+    () => { const cur = state._sessionTagInventory; if (cur) delete cur.inflight; },
+    () => { const cur = state._sessionTagInventory; if (cur) delete cur.inflight; });
+  state._sessionTagInventory = Object.assign({}, inv, { inflight: p });
+  return p;
 }
 
 // _sessionTagFilterPanelHTML draws the toolbar tag filter: chips grouped by
@@ -3489,11 +3525,8 @@ function renderSessionsView() {
   const tagInv = state._sessionTagInventory;
   const tagInvLoaded = !!(tagInv && tagInv.loaded);
   const tagInvEntries = tagInvLoaded ? (tagInv.entries || []) : [];
-  const tagSomeTagged = state.sessions.some(_sessionHasTags);
-  const tagBtnVisible = tagInvLoaded ? tagInvEntries.length > 0 : tagSomeTagged;
   let tagFilterBtn = '', tagFilterPanel = '';
-  if (tagBtnVisible) {
-    _sessionTagInventoryRefresh();
+  if (tagInvLoaded && tagInvEntries.length > 0) {
     const tagSel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
     const tagBtnCount = tagSel.length || (tagInvLoaded ? tagInvEntries.length : state.sessions.length);
     tagFilterBtn = `<button class="backend-filter-badge ${state._tagFilterOpen ? 'active' : ''}${tagSel.length ? ' active' : ''}" onclick="state._tagFilterOpen=!state._tagFilterOpen;renderSessionsView()" title="${escHtml(t('session_tag_filter_tip'))}">${escHtml(t('session_tag_filter_btn', [tagBtnCount]))} ${state._tagFilterOpen ? '▾' : '▸'}</button>
@@ -46944,17 +46977,20 @@ function _sessionTagsRefresh() {
       .then(full => { if (full && full.full_id) { delete full.truncated_fields; applySessionUpdate(full); } })
       .catch(() => {});
   }
-  return Promise.all([_tagsLoad(true), rows]).then(() => {
-    if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
-    return _sessionTagsRepaint();
-  });
+  // A tag_update frame means the counts behind the toolbar chips may have
+  // changed, so the cached inventory is invalidated (which also clears the
+  // failed latch) and reloaded in the same tick.
+  if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
+  return Promise.all([_tagsLoad(true), rows, _sessionTagInventoryRefresh()]).then(() => _sessionTagsRepaint());
 }
 
 // _sessionTagsRepaint redraws whichever session view is on screen from the
-// sessions held in state.
+// sessions held in state. It never fetches on its own: the caller (the
+// tag_update handler, the save flow) is responsible for whatever has to be
+// reloaded, so a repaint can not feed back into itself.
 function _sessionTagsRepaint() {
   _tagsMenuRefresh();
-  if (state.activeView === 'sessions') { renderSessionsView(); _sessionTagInventoryRefresh(); }
+  if (state.activeView === 'sessions') renderSessionsView();
   else if (state.activeView === 'session-detail') _renderSessionDetailTagRow(_sessionFind(state.activeSession));
 }
 

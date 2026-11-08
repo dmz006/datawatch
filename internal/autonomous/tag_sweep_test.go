@@ -221,7 +221,7 @@ func TestTagSweep_DryRunWritesNothing_ObjectPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	prd, err := m.CreatePRD("stale objects", "/home/x/datawatch", "pi", "", "")
+	prd, err := m.CreatePRD("stale objects", "project/example", "pi", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
