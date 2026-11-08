@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- The built-in final-gate task template no longer carries a command string as its verification script. That string is not a file, so the verifier prestart rejected the gate. The gate now verifies through its read-only report under `.datawatch/reports/`.
+
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
 
 ### Fixed
