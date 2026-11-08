@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Processes a worker started no longer outlive a cancelled task.** Before, cancelling a worker task could leave the commands it had launched (test runs, servers, helper scripts) running after the session ended. Now every session end, including cancel and failure, finds those leftovers and ends them. A process counts as the session's only on evidence read from `/proc`: its working directory, executable or script lies in the session's worktree or scratch folder, its ancestry reaches the session, or its environment carries the session id. Nothing is matched by name, and the evidence and start time are re-checked just before each signal, so an unrelated process is never ended. No migration step; leftovers from before the upgrade are not cleaned up.
+
 ## v9.90.0 — Configurable splash dwell with early dismiss
 
 The splash screen's on-screen time is now configurable, and a tap or key press dismisses it.
