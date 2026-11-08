@@ -10,7 +10,9 @@ in internal/autonomous/task_templates.go (`EffectiveTaskTemplates`,
 `ApplyTaskTemplates`, `applyTemplatesToStory`, the new
 `validateTemplateVerificationScript` / `validateTaskTemplateVerificationScripts`),
 and the config-write guard in internal/autonomous/api.go that runs the same check
-when a `task_templates` block is saved. It meets the executor's verification side:
+when a `task_templates` block is saved, and the task-template config types in
+internal/config/decompose_lint.go (`TaskTemplatesConfig`, `TaskTemplateDef`
+and the config-package `Validate` that the write path calls). It meets the executor's verification side:
 the verifier's prestart check that refuses a task whose `verification_script` is not
 a repo-relative script file, and the read-only report check that verifies a
 read-only task by the presence of its report file. The surrounding surfaces the
@@ -114,6 +116,15 @@ entry — that reports which saved templates are being skipped on a given apply,
 an operator only discovers the drop by noticing the expected task is missing from
 a story.
 
+One in-tree inconsistency this work leaves: the `VerificationScript` field
+doc comment in internal/config/decompose_lint.go still describes the pre-fix
+shape — "A read-only gate carries its own check this way (the build and test
+commands its spec asserts)" — which is exactly the command-string form the
+guard now refuses, and it does not mention the report-path verification the
+built-in `final_gate` now uses. A future reader of the config types is pointed
+at the shape the daemon rejects; the comment should be brought in line with
+the guard and the docs set when the config-load gap below is closed.
+
 ## Suggested next step
 
 File this as a datawatch (daemon) issue since the uncovered surfaces are all
@@ -124,7 +135,9 @@ command-string rule into the config package's template validation (or call the
 autonomous engine's `validateTaskTemplateVerificationScripts` from the config
 load/validate path) so a hand-edited config.yaml cannot carry a template shape the
 daemon would refuse at apply time, with a config-level test for each rejected form
-mirroring task_templates_script_command_test.go. Then make the apply-time skip
+mirroring task_templates_script_command_test.go; fixing the stale
+`VerificationScript` doc comment in internal/config/decompose_lint.go belongs in
+that same change, since it is the comment a reader of that validation meets first. Then make the apply-time skip
 say something: when `applyTemplatesToStory` refuses a template, record it where
 the operator can see it — a decompose-lint `warn` finding or an equivalent labeled
 note on the Automaton — naming the template id and the reason, so a story that
@@ -146,4 +159,9 @@ claims — the report-only `final_gate` and note-only version template in
 task_templates_defaults.go, the write-time and apply-time guards in api.go and
 task_templates.go, the config package carrying no command-string check, and the
 matching howto, operations, definitions, config-reference and openapi wording —
-checked against the current tree on the same day.
+checked against the current tree on the same day, and re-verified in full on
+2026-11-08 (the api.go write-time guard, the apply-time skip, the
+config-package `Validate` carrying no command-string check, the
+task_templates_defaults.go pack text, and the three test files; the stale
+`VerificationScript` comment in decompose_lint.go was found and recorded at
+that re-verification).
