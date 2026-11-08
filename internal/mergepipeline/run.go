@@ -899,14 +899,79 @@ func (e ExecShipRunner) Tag(ctx context.Context, dir, tag, message string) error
 	return err
 }
 
-// Push implements ShipRunner.
+// ErrMainMoved is returned by Push when the remote's branch has commits that
+// HEAD does not contain. Nothing is pushed then: the push would have to
+// rewrite the remote, and the merge run must be rebased onto the new head.
+var ErrMainMoved = errors.New("remote main moved")
+
+// Push implements ShipRunner. It fetches the remote's branch first and
+// refuses with ErrMainMoved unless that branch is an ancestor of HEAD. The
+// push itself never forces, so it can only fast-forward the remote. A project
+// with no remote skips the guard and pushes as it always has.
 func (e ExecShipRunner) Push(ctx context.Context, dir, branch, tag string) error {
+	m := &Merger{Dir: dir}
 	remote := e.Remote
 	if remote == "" {
 		remote = "origin"
 	}
-	_, err := e.run(ctx, dir, "git", "push", remote, branch, tag)
+	if hasRemote, err := e.hasRemotes(ctx, m, dir); err != nil {
+		return err
+	} else if hasRemote {
+		if err := e.checkFastForward(ctx, m, dir, remote, branch); err != nil {
+			return err
+		}
+	}
+	args := []string{"push", remote, branch}
+	if tag != "" {
+		args = append(args, tag)
+	}
+	_, err := e.run(ctx, dir, "git", args...)
 	return err
+}
+
+// hasRemotes reports whether the repository at dir has any remote.
+func (e ExecShipRunner) hasRemotes(ctx context.Context, m *Merger, dir string) (bool, error) {
+	out, err := m.gitOK(ctx, dir, "remote")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// checkFastForward fetches branch from remote and returns ErrMainMoved,
+// naming both heads, unless the fetched head is an ancestor of HEAD. A
+// remote with no such branch has nothing to overwrite, so it passes.
+func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, remote, branch string) error {
+	ls, err := m.gitOK(ctx, dir, "ls-remote", "--heads", remote, "refs/heads/"+branch)
+	if err != nil {
+		return fmt.Errorf("list %s on %s: %w", branch, remote, err)
+	}
+	fields := strings.Fields(ls)
+	if len(fields) == 0 {
+		return nil
+	}
+	remoteHead := fields[0]
+	if _, err := m.gitOK(ctx, dir, "fetch", "--quiet", remote, branch); err != nil {
+		return fmt.Errorf("fetch %s from %s: %w", branch, remote, err)
+	}
+	head, err := m.gitOK(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	head = strings.TrimSpace(head)
+	res, err := m.git(ctx, dir, "merge-base", "--is-ancestor", remoteHead, head)
+	if err != nil {
+		return err
+	}
+	switch res.Code {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("%w: %s on %s is at %s, which HEAD (%s) does not contain; nothing was pushed",
+			ErrMainMoved, branch, remote, remoteHead, head)
+	default:
+		return fmt.Errorf("check %s against HEAD: exit %d: %s", branch, res.Code, strings.TrimSpace(tail(res.Out, 500)))
+	}
 }
 
 // Deploy implements ShipRunner.
