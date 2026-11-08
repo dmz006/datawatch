@@ -11,6 +11,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **How it shows up:** open the Sessions Tags menu — every tag name now appears in exactly one place: placement tags under their axis headings in “Placement tags (system)”, the remaining system and operator tags in the Tags section beneath it. Selecting a placement tag still ticks its single row, and the match-mode (any/all) toggle and Clear act as before even with a placement tag selected; the tag filter rows elsewhere (Automata, tasks, facets) are unchanged and still show system tags with the padlock.
   - **Migration:** none. It is a display-only change to how the menu is drawn; tags, stored selections and the results of an active tag filter are untouched. Refresh the PWA and the menu is correct.
 
+### Notes
+
+- **Release version of this story (note only — no version change):** the release version of “Show each system tag once in the Sessions tag menu. Found 2026-11-08 from the operator's phone screenshot: the Tags menu” is the **next patch above main, resolved at merge time**. It is never a fixed number written into the tree, and this entry is a note, not an edit: no version field is changed (the `var Version` values in `cmd/datawatch/main.go` and `internal/server/api.go` stay exactly as they are) and no fixed number is stamped anywhere; the strictly-higher version the release-time check requires comes from the merge-time release commit. Recorded for the operator's records only (template: `version_bump_left_to_merge`).
+
 ## v9.112.3 — CodeQL gate runs only when code could change
 
 ### Changed
