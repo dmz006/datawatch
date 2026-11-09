@@ -526,6 +526,19 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json
 
 MCP: `config_set` with key `ui.splash_min_seconds`. See operations.md → “Splash dwell settings” and implementation.md → “Splash dwell settings” for the full write-up.
 
+### Git hosts via `configure`
+
+The configured git hosts are listed and edited through `configure` — the operator never sees a token, only the vault entry *name*:
+
+```
+configure git.hosts list                              — every host: name, kind, credential source, vault entry name
+configure git.hosts.<name>.<field>=<value>            — set one field of an existing host (key echoed back, value never)
+curl -s http://datawatch.local/api/git/hosts          — the readiness list behind `list`
+curl -s -X POST http://datawatch.local/api/git/hosts/<name>/test   — test one host's connection
+```
+
+`<field>` is one of `kind`, `base_url`, `credential_source`, `vault_secret`, `sign_tags`, `signing_key`; the host `<name>` must already be in the list (a dotted key never creates a host — that is a whole-list write in the config file or via `PUT /api/config`). Set `credential_source=vault` only in one write that also carries `vault_secret`, or set the `vault_secret` name first — a `vault` source with no secret name is invalid. The same rules and the per-host operations are documented in [howto/git-hosts.md](howto/git-hosts.md).
+
 ### `setup <service>`
 
 Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.
@@ -1235,6 +1248,24 @@ datawatch reload
 
 Posts to `/api/reload` on the running daemon. Same surface available
 via the MCP `reload` tool and the SIGHUP signal.
+
+### `datawatch git-hosts`
+
+List every configured git host with its live readiness — against the
+daemon (the applied config, defaults applied), which is the point of
+difference from `datawatch config get git`. Each line shows the host
+name, kind, base URL, credential source (a vault host shows the
+secret's **name**, never its value), the readiness fields — logged in,
+account, scopes, `sign_tags` — and, when login or scope is missing, a
+`problem` with the `fix_command` to run. The same data is behind
+`GET /api/git/hosts`, the MCP `git_hosts_status` tool and the comm
+channel's `configure git.hosts list`. To change a host, use
+`datawatch config set git.hosts.<name>.<field> <value>` (one field of
+an existing host; the daemon refuses a rejected patch wholesale and
+echoes the key back, never the stored value); to test a host's live
+connection use the MCP `git_hosts_test` tool, the comm channel's REST
+passthrough, or `POST /api/git/hosts/<name>/test`. Full walkthrough in
+[howto/git-hosts.md](howto/git-hosts.md).
 
 ### `datawatch ask <question>`
 

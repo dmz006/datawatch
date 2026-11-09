@@ -78,6 +78,30 @@ git:
 
 **Validation runs one pass and reports every problem together** — a bad slug, an unknown kind, a `vault` source with no `vault_secret`, or a self-hosted kind with no `base_url` — all in one error at config load, so you fix the whole list in one pass rather than one-by-one. A duplicate `name` is a problem of its own.
 
+### Setup: writing the fields after the host exists
+
+Once a host is in the list, its **individual fields** are writable without touching the file — the dotted key `git.hosts.<name>.<field>` (`name` must be the host's existing `name`, `field` one of the fields above) is accepted by the three write channels below, all of which route it through the daemon so the running config applies it immediately:
+
+```bash
+# REST — a single field...
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"git.hosts.work-gitea.base_url": "https://git2.example.test"}' http://datawatch.local/api/config
+# ...or two fields in one write (credential source and its secret together):
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"git.hosts.prod-github.credential_source": "vault", "git.hosts.prod-github.vault_secret": "gh-push"}' http://datawatch.local/api/config
+
+# CLI
+datawatch config set git.hosts.work-gitea.base_url https://git2.example.test
+
+# Comm channel (reply echoes the key, not the stored value)
+configure git.hosts.work-gitea.base_url=https://git2.example.test
+```
+
+The same load-time rules apply to the write: a dotted key names a host that **must already exist** (an unknown host is rejected with the name, not created), and a patch is judged atomically over the list's final state — a bad field, kind or credential source, or a non-boolean `sign_tags`, rejects the whole write and the config file is left untouched. Two practical consequences:
+
+- a single REST write can flip `credential_source` to `vault` together with the `vault_secret` it needs (one write that validates); a single-key CLI/comm write should set `vault_secret` first, then `credential_source` — a `vault` source without a `vault_secret` name is invalid at load, and that is exactly the check that rejects the out-of-order single-key write.
+- **creating, renaming and removing a host is a whole-list write** — the `hosts:` block in the config file, or the `git.hosts` key (a JSON array) on `PUT /api/config` — because a dotted key can only point at a name that already exists.
+
 ### What the `credential_source` choices mean at use time
 
 The source tells the daemon where the token comes from when a command runs against the host:
@@ -178,6 +202,14 @@ What the readiness result tells you, per `kind`:
 
 The readiness read **never returns a token**: only the account name, the scope names, a plain-language problem and a fix command. Every external command it runs is bounded by a 15 second deadline.
 
+**3b. The same two answers, from the other channels.**
+
+```bash
+$ datawatch git-hosts                 # CLI: the daemon's list with readiness (GET /api/git/hosts)
+```
+
+MCP hosts see `git_hosts_status` (no arguments — the same data as `GET /api/git/hosts`) and, in step 4's test, `git_hosts_test` with the host `name`. The comm channel lists the hosts with `configure git.hosts list` — each host's name, kind, credential source and vault entry name, never a token — and runs the connection test over its REST passthrough where it has one.
+
 **4. Run the connection test for one host — it is the readiness check plus one live probe.**
 
 ```bash
@@ -195,20 +227,22 @@ $ curl -s -X POST https://127.0.0.1:8443/api/git/hosts/no-such-host/test
 {"error":"git host not found"}   # HTTP 404
 ```
 
+The MCP tool `git_hosts_test` (argument `name`) runs the same test from an MCP host, and the comm channel's REST passthrough runs it where a channel has one; an unknown name is a 404 there too.
+
 The test first runs the readiness check; when that reports a problem it returns `ok: false` with the readiness problem and fix command and does not probe. When the host is ready it runs one read-only probe under the same 15 second deadline — `gh api user` for github, `glab api user` for gitlab, `git ls-remote` for the plain kinds — and reports the account it connected as. A 15-second timeout reads "…timed out after 15 seconds."; a missing CLI reads "…the `gh` command is not installed…"; a probe that can't read the account reads "…the login may have expired." with the `gh auth login` / `glab auth login` fix.
 
 ## All options (per channel)
 
-With this change the dedicated surfaces for git hosts are the config file (the write surface) and the two read-only REST endpoints; the generic config reads of every channel carry the block. No channel has a dedicated git-hosts verb yet — see "What is not here yet".
+With this change every channel carries the git hosts list — the config file and `PUT /api/config` are the write surfaces (whole-host creation stays a whole-list write; field edits go through the dotted key on every write channel), and readiness and the connection test read from REST, MCP, the CLI and the comm channel. The token rule holds on all of them.
 
-| Channel | Read the list | Test one host |
-| --- | --- | --- |
-| **Config file (write)** | `git:` → `hosts:` in the config file — the only write surface; the block is commented in [`config-reference.yaml`](../config-reference.yaml). A dotted key `git.hosts.<name>.<field>` (`name`, `kind`, `base_url`, `credential_source`, `vault_secret`, `sign_tags`, `signing_key`) is the addressing scheme the config model exposes for later surfaces; renaming a host is not one of them (`name` is the key). The host must exist — a host is created by writing the whole list, not by a dotted key. | — |
-| **Web / PWA** | `GET /api/config` shows the `git.hosts` block with defaults applied (`credential_source` filled to `host_login`). No dedicated card yet — the plan's "Git hosts settings card … with a readiness check … and a Test connection button" is the follow-up in [the handover plan](../plans/2026-11-03-autonomy-handover-plan.md). | `POST /api/git/hosts/<name>/test` is the endpoint a card would call. |
-| **REST API** | `GET /api/git/hosts` lists every host with its live readiness; `GET /api/config` reads the raw block. Both authenticate like the rest of the API and both require the config-read federation capability. | `POST /api/git/hosts/<name>/test` runs the connection test; any path under the prefix that is not `<name>/test` is a 404, and an unknown name is a 404. |
-| **MCP** | `get_config` with `section: git` returns the `git` block (the hosts list inside it). There is no dedicated `git_hosts_*` tool — the readiness and test answers are REST-only as of this change. | — (REST-only) |
-| **CLI** | `datawatch config get git` (or `datawatch config get git.hosts`) reads the block from the running daemon, defaults applied. Writing: `datawatch config` is the generic config interface (get/set); there is no `git hosts` subcommand in this tree — the config file is the primary write surface. | — (REST-only) |
-| **Comm channel** | The generic `config` reads carry it; a channel with the REST passthrough can run `GET /api/git/hosts`. No dedicated git-hosts verb in this tree. | `POST /api/git/hosts/<name>/test` via the REST passthrough |
+| Channel | Read the list | Test one host | Write |
+| --- | --- | --- | --- |
+| **Config file (write)** | — | — | `git:` → `hosts:` in the config file, commented in [`config-reference.yaml`](../config-reference.yaml); the **whole-list write** — the only way to create, rename or remove a host, alongside the `git.hosts` list key on `PUT /api/config` (REST row) |
+| **Web / PWA** | `GET /api/config` shows the `git.hosts` block with defaults applied (`credential_source` filled to `host_login`) | `POST /api/git/hosts/<name>/test` is the endpoint a card would call | `PUT /api/config` takes the `git.hosts` list and the dotted `git.hosts.<name>.<field>` keys; the dedicated **Git hosts settings card** (readiness + Test connection button) is still to be built — the plan's [handover plan](../plans/2026-11-03-autonomy-handover-plan.md) lists it |
+| **REST API** | `GET /api/git/hosts` lists every host with its live readiness; `GET /api/config` reads the raw block. Both authenticate like the rest of the API and both require the config-read federation capability | `POST /api/git/hosts/<name>/test` runs the connection test; any path under the prefix that is not `<name>/test` is a 404, and an unknown name is a 404 | `PUT /api/config` with `git.hosts` (a JSON array — the whole list) or one or more `git.hosts.<name>.<field>` keys (edits to existing hosts; the patch is applied atomically and validated with the load rules — a single write can set `credential_source: vault` with its `vault_secret`) |
+| **MCP** | `get_config` with `section: git` returns the `git` block; **`git_hosts_status`** (no arguments) returns every configured host with kind, credential source and readiness — the same data as `GET /api/git/hosts` | **`git_hosts_test`** with the host `name` — readiness plus one probe; an unknown name is a tool error | no git-hosts set tool — `PUT /api/config` is deliberately not exposed to MCP (config writes stay operator surfaces) |
+| **CLI** | `datawatch config get git` (or `git.hosts`) reads the block, defaults applied; **`datawatch git-hosts`** lists every configured host with its readiness, read from the running daemon (the source of truth for the applied config) | no test subcommand — **`datawatch git-hosts`** already prints each host's readiness, and `datawatch config set` of `credential_source`/`vault_secret` prints the readiness for that host after the set; the connection test runs from MCP (`git_hosts_test`), REST (`POST /api/git/hosts/<name>/test`) or the comm channel's REST passthrough | **`datawatch config set git.hosts.<name>.<field> <value>`** — the field write through the daemon (echoes the key, never the value; a rejected patch comes back whole, nothing applied) |
+| **Comm channel** | `configure git.hosts list` — every host's name, kind, credential source and vault entry name; never a token | `POST /api/git/hosts/<name>/test` via the REST passthrough | `configure git.hosts.<name>.<field>=<value>` (the reply echoes the key only) |
 
 **The token rule — every read, every channel.** No surface returns a token. The vault credential appears in every response as its secret **name** (`vault_secret`); readiness and test results carry only the account, scope names, a plain-language problem and a fix command; any token-shaped value that reaches an answer (a credential in a base URL, a `github_pat_`…/`glpat-…`/`ghp_`…-style personal access token, a `user:password@` in a URL) is replaced with `[redacted]` before the response is written. The [secrets howto](secrets-manager.md) is how the vault entry itself is created and managed.
 
@@ -219,7 +253,7 @@ These are deliberate gaps in *this* change, not bugs — they follow the plan's 
 1. **No release-and-merge loop consumes `git.hosts` yet.** The config model, readiness check, the two REST reads and the per-host providers (PR/MR open, issue and release creation, clone/push — see ["What the daemon does on each host kind"](#what-the-daemon-does-on-each-host-kind)) land in this change; the daemon's own per-project push-and-tag loop (release path, direct push vs pull-request, signed tags) is the follow-up in [plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4. Until it lands, `sign_tags`/`signing_key` are configured but nothing in a shipping path signs with them (the [host tag primitive](#what-the-daemon-does-on-each-host-kind) implements the signing, nothing calls it yet), and release creation is a capability the loop will call rather than one that runs today. What is live on the list: the PRD/project facade operations (each audit-logged as `host_git_operation`), the repo CI watch's read-only host run listing, and the post-ship `parity_issue` host routing (its issue filing also lands as a `host_git_operation` entry).
 2. **No forge API for the plain-git kinds.** For `gitea`, `bitbucket` and `git` hosts the daemon opens the change in *your* browser: pull requests, issues and releases return the explicit "no forge API integration" answer instead of being attempted. Clone and push work; everything that needs the host's web API is manual.
 3. **GitLab token minting is unimplemented.** The broker's mint flow is GitHub-only (`gh auth token`); a mint/revoker request for `gitlab` or a plain-git kind returns a not-implemented error rather than a token.
-4. **No host write surface beyond the config file.** The config model exposes `GetGitHostField` / `SetGitHostField` as the dotted-key addressing (`git.hosts.<name>.<field>`) for later surfaces — MCP `config_set`, CLI, a comm verb, or a config file edit — but none of those is wired to git hosts in this tree, and a host is created by writing the list, not by a dotted key (`name` is the key). The Git hosts **settings card** with an in-UI **Test connection** button is still to be built.
+4. **A Git hosts settings card with a Test button in the PWA.** The endpoints are live behind it; the card is not built. Host writes on the channels are the dotted-key field edits and the whole-list `git.hosts` key on `PUT /api/config`; creating or renaming a host is a whole-list write (config file or REST), and MCP has read/test tools but no dedicated set tool.
 5. **`GET /api/git/hosts` and `POST …/test` authenticate as config-read.** They require the config-read federation capability; there is no separate git-hosts capability yet. Whether an operator wants the connection test behind its own gate is a review item.
 6. **`vault` credentials and the broker are documented here by their contract**, not by a UI: the vault entry is created via the [secrets surface](secrets-manager.md), and the broker supplies tokens to worker sessions on its own. Confirm the `vault_secret` entry name matches what your vault holds before relying on `credential_source: vault`.
 
