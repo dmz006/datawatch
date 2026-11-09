@@ -115,6 +115,9 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, extra
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	cmd.WaitDelay = gateWaitDelay
+	// The gate runs in its own process group, so a timeout kills every
+	// process it started, not only make (see gate_kill.go).
+	configureGateProcessGroup(cmd)
 	if extraEnv != nil {
 		cmd.Env = append(os.Environ(), extraEnv...)
 	}
