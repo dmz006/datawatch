@@ -9,7 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Every session that carries a placement (system) tag now gets the full set of axes that apply to it.** A session started through `POST /api/sessions/start` gets its compute node (`compute:<node>`, `local` when none is stored), backend, lane and project tags. A session started with launch facts (`launch_role`, `launch_kind`, `launch_stage`, `launch_automaton`) also gets its `role:`, `kind:`, `stage:` and `automaton:` tags. An unknown role or kind is refused with 400 before the session starts.
   - **How it shows up:** the new axes appear under “Placement tags (system)” in the Sessions Tags menu and in tag filters. The operator's supervisor session is started with `launch_role=supervisor` (MCP `start_session`, the `--launch-role` flag on `datawatch session new`, or the REST field), so it carries the supervisor role tag with no automaton tag. Omitting the fields keeps a plain session as before, plus its placement tags.
-  - **Migration:** none is required to keep existing sessions as they are. To bring sessions started before this change up to the full set, run the tag sweep (`autonomous_tag_sweep`, or `datawatch autonomous tags sweep`; use `dry_run` first to preview).
+  - **Migration:** none is required to keep existing sessions as they are. To bring sessions started before this change up to the full set, run the tag sweep: `datawatch autonomous tag-sweep --dry-run` previews the tally without writing any tag, then `datawatch autonomous tag-sweep` applies it (MCP `autonomous_tag_sweep` with `dry_run=true` to preview; REST `POST /api/autonomous/tags/sweep?dry_run=true`).
 
 ## v9.112.7 — Update dependencies and workflow action pins to the newest majors
 
