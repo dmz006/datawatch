@@ -2777,11 +2777,13 @@ autonomous:
   #   docs:
   #     backend: pi-prompt
   #     model: qwen3.8:27b
+  # Default: empty (no kind is routed). Set per kind with
+  # `datawatch config set autonomous.first_attempt.<kind>.model <name>` (set the model before a pi, pi-prompt or ollama backend). How-to: docs/howto/failure-escalation.md#choosing-the-first-attempt-worker
   # Failed attempts before the next attempt moves to the stronger choice.
-  # Default 1 (the first failure escalates). Range 0-20.
+  # Default 1 (the first failure escalates). Range 0-20. How-to: docs/howto/failure-escalation.md#choosing-the-first-attempt-worker
   # first_attempt_escalate_after_failures: 1
   # Largest prior-context size, in tokens, a retry may resume with. Default
-  # 150000. 0 means every retry starts a fresh session. Range 0-2000000.
+  # 150000. 0 means every retry starts a fresh session. Range 0-2000000. How-to: docs/howto/failure-escalation.md#retry-resume-continuing-the-previous-session
   # retry_resume_max_context_tokens: 150000
   # Number of local-model sessions one compute node runs at once. Default 1;
   # values below 1 are clamped to 1. The cap applies only to sessions whose
