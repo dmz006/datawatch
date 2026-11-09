@@ -200,3 +200,5 @@ Pack question 5 (distribution of the first packs). Options: A a default registry
 
 Pack question 6 (first acceptance of the pre-seeded community registry). Options: A accept the source once when packs are turned on (recommended), B trust it automatically. Operator answered: "A". Recorded in the draft spec. All design questions for the pack Automaton are decided; decompose after the standard task rename Automaton merges.
 
+2026-11-09 protected path approval for the Trivy install Automaton. Supervisor read the diff for the task that replaces the two Install Trivy steps in the containers workflow (curl piped to a shell becomes the pinned, retrying install script) and asked whether to approve it and the matching edits in the release and image-refresh workflows, reading each diff first. Operator answered: "Approved". Answered on the held question as the operator; each later workflow diff is still read before its hold is answered.
+
