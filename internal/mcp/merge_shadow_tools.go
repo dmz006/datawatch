@@ -50,3 +50,9 @@ func (s *Server) handleAutonomousMergeShadowStatus(_ context.Context, req mcpsdk
 	b, _ := json.Marshal(map[string]any{"projects": kept})
 	return mcpsdk.NewToolResultText(string(b)), nil
 }
+
+// MergeShadowToolNames lists the merge shadow tools, for the parity test.
+// The tool is a read of the daemon's shadow plans and comparison counts.
+func MergeShadowToolNames() []string {
+	return []string{"autonomous_merge_shadow_status"}
+}
