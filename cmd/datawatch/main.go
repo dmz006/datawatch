@@ -1101,6 +1101,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Session store writes are coalesced by a background writer; flush and
 	// stop it on every exit path.
 	defer func() { _ = mgr.Close() }()
+	// Remove shell task files left behind by an earlier daemon in the project
+	// directories of the sessions known at startup. The session store is
+	// loaded by NewManager, so the list is complete here and before any shell
+	// task can launch. A sweep error is logged and never stops startup.
+	{
+		var sweepDirs []string
+		for _, s := range mgr.ListSessions() {
+			if s != nil {
+				sweepDirs = append(sweepDirs, s.ProjectDir)
+			}
+		}
+		removed, sweepErr := shell.SweepStaleTaskFiles(sweepDirs)
+		if sweepErr != nil {
+			fmt.Printf("[warn] shell task file sweep: %v\n", sweepErr)
+		}
+		if removed > 0 {
+			fmt.Printf("[shell] removed %d stale task file(s)\n", removed)
+		}
+	}
 	// Daemon-observed trace events for the ollama, openwebui and shell
 	// backends: register the recorder hooks against the trace store.
 	var traceObserver *observe.Observer
