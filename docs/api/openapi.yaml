@@ -8318,6 +8318,40 @@ paths:
           description: Method other than GET
         "503":
           description: Automations are not available
+  /api/projects/{name}/history:
+    get:
+      summary: Project history of finished and archived Automata, daily progress and Gantt rows
+      description: |
+        Lists the project's completed and archived Automata (including earlier
+        release work) merged with the project's daily progress snapshots, newest
+        first and paged. `gantt` gives one row per Automaton and one per task
+        with start, end and state from the stored timestamps. Gantt rows cover
+        every matching Automaton and are not paged.
+      operationId: projectsHistory
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}, description: "Entries per page"}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "next_cursor of the previous page"}
+      responses:
+        "200":
+          description: The project history page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  generated_at: {type: string, format: date-time}
+                  limit: {type: integer}
+                  total: {type: integer}
+                  has_more: {type: boolean}
+                  next_cursor: {type: string}
+                  items: {type: array, items: {type: object}}
+                  gantt: {type: array, items: {type: object}}
+        "400": {description: Bad limit or cursor}
+        "404": {description: Unknown project}
+        "503": {description: Automations not available}
   /api/projects/{name}/policy/effective:
     get:
       summary: Effective policy for one project
