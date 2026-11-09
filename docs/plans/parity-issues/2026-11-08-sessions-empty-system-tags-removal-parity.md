@@ -125,8 +125,10 @@ the REST/WS contracts are as shipped.
 
 Nothing on the daemon side is open: the behavior is implemented, pinned
 by the Go and PWA tests named in *Affected area*, documented in the four
-docs listed there, and recorded in `CHANGELOG.md` under v9.112.8. There
-is no setting and no migration.
+docs listed there, and recorded in `CHANGELOG.md` — the always-present
+field and chip-drop entry sits under `[Unreleased]`, and the related
+first-load chip behavior under the v9.112.8 entry. There is no setting
+and no migration.
 
 On the app side the operator files one follow-up, not a new feature:
 
