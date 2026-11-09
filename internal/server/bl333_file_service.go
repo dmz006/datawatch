@@ -309,6 +309,9 @@ func (s *Server) handleFilesDiscussion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	root := s.fileServiceRoot()
+	// Uses the shared discussionFolderPath builder rather than
+	// discussionFolderForID: that method is pinned to the state directory,
+	// but the files service intentionally lists from fileServiceRoot().
 	dir, err := discussionFolderPath(filepath.Join(root, "discussions"), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
