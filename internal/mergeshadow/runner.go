@@ -341,8 +341,12 @@ func semverAbove(a, b [3]int) bool {
 // gateDetail is the Detail recorded on the plan's Gate. A load_sensitive gate
 // also carries its finding, the first failing lines, so the plan keeps them.
 func gateDetail(r GateResult) string {
-	if r.Status != GateLoadSensitive || r.Finding == "" {
-		return r.Detail
+	detail := r.Detail
+	if r.Name == "test" && r.Status == GateFail {
+		detail = joinDetail(detail, failingTestsDetail(r.Output))
 	}
-	return joinDetail(r.Detail, "finding: "+strings.ReplaceAll(r.Finding, "\n", " | "))
+	if r.Status != GateLoadSensitive || r.Finding == "" {
+		return detail
+	}
+	return joinDetail(detail, "finding: "+strings.ReplaceAll(r.Finding, "\n", " | "))
 }
