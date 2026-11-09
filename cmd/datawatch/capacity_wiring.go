@@ -1213,6 +1213,13 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// also backs the startup guardrail-judge reconcile host.
 	if amgr != nil {
 		amgr.SetJudgeHost(&judgeReconcileHost{mgr: mgr, led: led, reg: judges})
+		// Judge resume at boot: a guardrail-judge session that is still
+		// live after a daemon restart gets a waiter attached (no second
+		// judge spawns); when it ends and writes its verdict, the daemon
+		// hands it to the manager for recording. A surviving unrecorded
+		// result file is read as the verdict instead. See
+		// judge_resume_wire.go.
+		wireJudgeResume(amgr, mgr, cfg)
 	}
 
 	verifiers := newVerifierRegistry()

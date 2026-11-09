@@ -1684,6 +1684,23 @@ type Manager struct {
 	// unit at startup, so a repeated reconcile adopts it as a no-op. Guarded
 	// by mu.
 	judgeAdopts map[string]string
+	// judgeReattachFn — the waiter attach for a guardrail-judge session
+	// that survived a daemon restart (SetJudgeReattachFn): fn(prdID, inv,
+	// sessionID) returns promptly; the daemon's background waiter hands
+	// the collected verdict back with ConsumeJudgeResult. Guarded by mu.
+	// Nil — no attach mechanism (the judge run's daemon-side session
+	// adoption handles a surviving session instead).
+	judgeReattachFn func(prdID string, inv GuardrailInvocation, sessionID string)
+	// judgeResultReader — reads a surviving, still-unrecorded
+	// guardrail-judge result file for (prdID, inv) as
+	// (*GuardrailVerdict, bool) (SetJudgeResultReader). Guarded by mu.
+	// Nil — nothing to consume.
+	judgeResultReader func(prdID string, inv GuardrailInvocation) (*GuardrailVerdict, bool)
+	// judgeWaiters — per-(PRD, unit) channels the guardrail flow selects
+	// on while a re-attached judge's verdict is pending (ConsumeJudgeResult);
+	// guarded by judgeWaitMu, not mu (it is held across waits).
+	judgeWaiters map[string]chan *GuardrailVerdict
+	judgeWaitMu  sync.Mutex
 
 	// orphanSeen records when the orphan sweep first saw each unbound worker
 	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.
