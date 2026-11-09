@@ -1122,3 +1122,37 @@ resource_limits:
 		t.Errorf("ResourceLimits = %+v, want {30 1024 8192}", rl)
 	}
 }
+
+func TestReleaseSettingsDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Autonomous.PushAndTag {
+		t.Error("PushAndTag should default to false")
+	}
+	if cfg.Autonomous.ReleasePath != "direct_push" {
+		t.Errorf("ReleasePath = %q, want direct_push", cfg.Autonomous.ReleasePath)
+	}
+	if cfg.Git.ReleaseCIWindowMinutes != 60 {
+		t.Errorf("ReleaseCIWindowMinutes = %d, want 60", cfg.Git.ReleaseCIWindowMinutes)
+	}
+}
+
+func TestReleaseSettingsLoadFromYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	doc := "autonomous:\n  push_and_tag: true\n  release_path: pull_request\ngit:\n  release_ci_window_minutes: 15\n"
+	if err := os.WriteFile(path, []byte(doc), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Autonomous.PushAndTag {
+		t.Error("PushAndTag not loaded")
+	}
+	if cfg.Autonomous.ReleasePath != "pull_request" {
+		t.Errorf("ReleasePath = %q", cfg.Autonomous.ReleasePath)
+	}
+	if cfg.Git.ReleaseCIWindowMinutes != 15 {
+		t.Errorf("ReleaseCIWindowMinutes = %d", cfg.Git.ReleaseCIWindowMinutes)
+	}
+}
