@@ -350,6 +350,8 @@ The two axes with a fixed vocabulary: `role` takes one of `worker`,
 `decompose`, `review`, `rejudge`, `auto-fix`. The rest take the name of
 whatever the engine records for them.
 
+To start the operator's supervisor session with the role, pass `launch_role: supervisor` to the session start (REST `POST /api/sessions/start`, MCP `start_session`, or `datawatch session new --launch-role supervisor`); it then carries `role:supervisor` plus the compute, backend, lane and project tags and no automaton tag.
+
 A tag is written **per enabled axis with a value**. A missing value is not an
 error and produces no tag: local work writes **no `peer:` tag at all**, and
 `peer:<name>` appears when the work ran on another daemon.
