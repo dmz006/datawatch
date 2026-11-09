@@ -193,7 +193,7 @@ The operator guide is [How-to: Post-ship hooks](post-ship-hooks.md).
 
 ## The shadow merge plan
 
-Phase 4 of the autonomy handover (review and merge by the daemon) moves the merge from "the supervisor works it out by hand" to "the daemon works it out and only then acts", using the same shadow-first rule as every other handover: the daemon plans the merge, the supervisor does the real one, and the two are compared — every difference is a defect. The plan and the shadow comparison that grades it against the merge that actually landed both exist as of this step; the rest of the phase lands separately.
+Phase 4 of the autonomy handover (review and merge by the daemon) moves the merge from "the supervisor works it out by hand" to "the daemon works it out and only then acts", using the same shadow-first rule as every other handover: the daemon plans the merge, the supervisor does the real one, and the two are compared — every difference is a defect. The plan and the shadow comparison that grades it against the merge that actually landed both exist as of this step; the rest of the phase lands separately. Three settings govern it — `autonomous.merge_shadow.enabled` (on by default), `autonomous.merge_shadow.gate_timeout` (the Go-duration budget each trial-merge gate waits, default `20m`) and `autonomous.merge_shadow.plan_keep` (how many plans are kept per project, default `200`) — documented with their validation and every way of setting them in [howto/merge-shadow.md](merge-shadow.md).
 
 ### What a plan says
 
@@ -255,3 +255,8 @@ Set them with `datawatch config set`, the `autonomous_config_set` MCP tool (its
 `merge_pipeline_*` arguments), the `configure` chat verb, or Settings >
 Automation > Merge pipeline in the PWA. Each help link there opens the matching
 entry in [the definitions](../datawatch-definitions.md#merge-pipeline).
+
+These keys are the *pipeline* settings. The shadow merge plan above has its own
+block — `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`
+and `autonomous.merge_shadow.plan_keep` — set the same ways and never overridden
+per project; its defaults and rules are in [howto/merge-shadow.md](merge-shadow.md).

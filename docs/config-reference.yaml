@@ -1220,6 +1220,8 @@ autonomous:
   # Background loop tick in seconds.
   poll_interval_seconds: 30
   # ── Shadow merge plan (autonomous.merge_shadow) ──
+  # What these keys enable, and every way they are set and read, is in
+  # docs/howto/merge-shadow.md.
   merge_shadow:
     # Master switch for the shadow merge plan: the record of what merging an
     # Automaton's branch would do, kept per project for later comparison with
