@@ -323,6 +323,22 @@ Where lanes show up on each method:
 | **CLI** | Deprecated, ignored (`--lanes` still parses) | The what-if |
 | **Comm channel** | Deprecated, ignored | The what-if |
 
+## The start-up advice line
+
+The advice carries one **start-up** line, when the daemon has start-up data. It
+names the worker profile whose attempts start with the largest average starting
+context, the average in tokens, how many attempts it is over, and the direction a
+lighter profile would take, for example:
+
+> start-up: profile full has the largest average start-up, 18000 tokens over 12 attempts; switching it to a lighter profile (for example digest instead of full for this role) would reduce that. Advice only, no setting changed.
+
+- It is **read-only advice**. It changes no profile, setting, lane or session.
+- Attempts that ran with no profile are left out, because they name no profile to
+  change. Profiles with no average, or no attempts, are skipped.
+- No line appears when there is no start-up data yet. The figures come from the
+  cost report's by-profile start-up table — see
+  [cost-report.md](cost-report.md#the-start-up-tables).
+
 ## Where to see it
 
 | Where | What you see |

@@ -776,6 +776,25 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
 
+### Worker start-up size
+
+Each worker attempt records the size of the starting context it was launched with
+(estimated at launch: one token per four bytes). Those records feed three read-only
+views: the cost report's **start-up tables** by profile and by role, the
+`worker_startup` block of the stats snapshot, and the usage calculator's
+**start-up advice line** (which names the profile with the largest average). No
+setting controls them: they only report. Attempts from before sizes were captured
+show as no data, not zero.
+
+| Method | How |
+|--------|-----|
+| **CLI** | `datawatch stats` (the worker startup section, by profile and by role); `datawatch cost report` shows the tables with `--format json` |
+| **REST API** | `GET /api/stats` (`worker_startup.average_startup_tokens_by_profile` and `..._by_role`); `GET /api/cost/report` (`startup_by_profile`, `startup_by_role`); `GET /api/usage/advice` (`startup` when data exists) |
+| **MCP** | `get_stats`, `cost_report`, `usage_advice` (read-only) |
+| **Comm channel** | `usage advice` |
+
+Reading guidance and field meanings: [howto/cost-report.md](howto/cost-report.md#the-start-up-tables), [howto/usage-calculator.md](howto/usage-calculator.md#the-start-up-advice-line).
+
 ### Project automation policy
 
 The project automation policy is the per-project tier of the three policy tiers the daemon resolves every Automaton setting through: an Automaton's own settings over **the project** over the daemon's defaults. The block lives under `projects.<alias>.policy` in `~/.datawatch/config.yaml`, and it is optional per key — an absent key inherits the daemon's own value, so a project with no policy reads exactly as before, and nothing changes until you set a key. The keys cover the plan checks (`plan_coverage_check`, `plan_coverage_min_ratio`, `plan_review_mode`, `scope_lint`), retry & escalation (`retry_policy`, `retry_ceiling_total`, `auto_fix_retries`, `infra_retry_escalate_after`, `failure_escalation`), git defaults (`default_auto_pr`, `parallel_read_only_tasks`, `parallel_worktree_per_task`), lane limits (`max_concurrent_tasks`, `plan_tier_max_inflight`, `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`), and `uncommitted_work_policy` / `uncommitted_work_scope` and `burn_guard_ask_on_change`. Timeouts, cadences, backend and model selection and the worktree base stay daemon-wide until a per-project form is asked for. A value the daemon refuses is refused with the reason and lands nowhere, and a write never touches the daemon tier. The operator guide is [howto/project-automation-policy.md](howto/project-automation-policy.md).

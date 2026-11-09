@@ -23,13 +23,14 @@ As the code stands today:
 - the **profile's application in the Claude Code launcher** — that one launch gets the pinned MCP config, the tool allow-list, the skills switch and the starting context appended to its prompt; a launch with no profile is byte-identical to the launch it replaces;
 - the **"not applied" record mechanism** — when a session starts with a profile, its start record carries one outcome per field (mcp, tools, skills, context, model, effort, in that order), each field a backend cannot honour marked not applied with reason "backend cannot honour this field" (`internal/workerprofile/applied.go`).
 
+- the **measured starting context** — every attempt record carries the profile name its worker started with and an estimate of the starting context's size (one token per four bytes, source `estimated`). The cost report's per-profile and per-role start-up tables, the `worker_startup` block of the stats snapshot, and the start-up advice line in the usage calculator all read those records. See [cost-report.md](cost-report.md#the-start-up-tables), [usage-calculator.md](usage-calculator.md#the-start-up-advice-line).
+
 **Landing with the sessions' own start work** (the wiring that makes an Automaton's launches carry a resolved profile):
 
 - the launch itself calling the rule and applying it — **worker, verifier and judge sessions still start with the full harness today**; the mechanisms above are built and tested, waiting for a launch to pass them a profile;
 - the role and kind defaults you configure — `autonomous.worker_profile_defaults` is validated on set, but the resolution resolves against the built-in table until the start wiring is in;
 - the daemon-wide `autonomous.worker_profile` name taking effect at launch;
 - the unknown-name fallback's recorded decision showing on the task's record;
-- the profile name on the attempt record, and the measured starting context, in the cost report, the stats and the usage advice line;
 - the per-surface read-back of the profile in force, and the per-surface tool names for each of the settings above.
 
 What a worker session still gets, once the start work is in:
