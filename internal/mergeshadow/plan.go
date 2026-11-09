@@ -7,6 +7,11 @@
 // MergePlan is the value type. plan_store.go persists one plan per Automaton
 // id as JSON under the daemon data directory and provides List and Prune for
 // the read surfaces.
+//
+// compare.go checks the plan's values (version, changelog heading, README
+// line, registry row, parity-issue presence and gate results) against the
+// values the landed-state task read back from the default branch, and
+// compare_store.go persists one comparison per Automaton in the same style.
 package mergeshadow
 
 import "time"

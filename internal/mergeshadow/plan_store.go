@@ -21,13 +21,7 @@ const storeDir = "merge-plans"
 var storeMu sync.Mutex
 
 func planPath(dataDir, id string) (string, error) {
-	if id == "" || id != filepath.Base(id) || id == "." || id == ".." {
-		return "", fmt.Errorf("mergeshadow: invalid automaton id %q", id)
-	}
-	if dataDir == "" {
-		return "", errors.New("mergeshadow: empty data directory")
-	}
-	return filepath.Join(dataDir, storeDir, id+".json"), nil
+	return storePath(dataDir, storeDir, id)
 }
 
 // Save writes the plan to <dataDir>/merge-plans/<id>.json. The plan's
