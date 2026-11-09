@@ -2561,3 +2561,31 @@ A **planning ladder** is the retry budget a planning route uses when a plan fail
 ### Risk class
 
 A **risk class** is a named set of tags and path globs that marks an Automaton as sensitive for planning routing. An Automaton belongs to a class when one of the class's tags is on it or a file its tasks touch matches one of the class's globs (`dir/**` matches everything under `dir`). The built-in classes are `security` (tag `security`; globs `security/**` and `internal/server/auth*`) and `design` (tags `design` and `ui`); a class defined under `autonomous.planning_routing.classes` with the same name replaces the built-in. A rule selects on classes with `match.risk_class`, and the scorecard counts decomposes per planner and risk class.
+
+## Plans folder tidy
+
+How-to: [`howto/plans-folder-tidy.md`](howto/plans-folder-tidy.md).
+
+### Daily plans tidy
+
+The **daily plans tidy** is the Automation that runs `scripts/plans-tidy-daily.sh` once a day. It simulates the tidy in a throwaway worktree, runs it for real, checks the plan links, commits only `docs/plans/` and pushes. It raises an alert on failure and always writes a run stamp and a daily report.
+
+### Plans folder archive
+
+The **plans folder archive** is where the tidy moves old files: dated plans to `historical-plans/`, old release notes to `historical-releasenotes/<minor-version>/`, and old reports and filed parity-issue drafts to `archive/YYYY-MM/` month folders. A file moves only when it is past the age cutoff and nothing references it.
+
+### Roadmap archive
+
+A **roadmap archive** is a file named `roadmap-archive-YYYY-MM.md` in `docs/plans/`. Closed registry rows of every stage except the current one move there, keeping their number and text. The tidy never moves these files.
+
+### Unclassified file
+
+An **unclassified file** is one the tidy cannot place, such as an old parity-issue draft that is not filed. It is counted, never moved, and listed by name only in the daily report. A person decides what to do with it.
+
+### Run stamp
+
+The **run stamp** is `.datawatch/reports/plans-tidy-last-run.json`, written on every daily run: `ran_at` in UTC, the `result`, the counts and the commit. The release smoke skips its tidy check when the result is `ok` and `ran_at` is under 24 hours old.
+
+### Daily report
+
+The **daily report** is `.datawatch/reports/plans-tidy-daily-report.md`, written on every daily run: the counts and the names of the unclassified files. File names appear nowhere else.
