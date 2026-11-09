@@ -155,6 +155,7 @@ autonomous_prd_set_worker_profile
 autonomous_progress
 autonomous_progress_trend
 autonomous_protected_paths
+autonomous_release_readiness
 autonomous_repo_ci_watch
 autonomous_request_watch
 autonomous_safe_to_delete
