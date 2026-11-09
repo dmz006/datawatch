@@ -534,9 +534,10 @@ func TestMergePipelineConfig_ReleaseApprovalGlobalOverridesDefault(t *testing.T)
 					continue
 				}
 				want := DefaultReleaseApprovalPatch
-				if other == ReleaseSizeMajor {
+				switch other {
+				case ReleaseSizeMajor:
 					want = DefaultReleaseApprovalMajor
-				} else if other == ReleaseSizeMinor {
+				case ReleaseSizeMinor:
 					want = DefaultReleaseApprovalMinor
 				}
 				if got := c.EffectiveReleaseApproval("p", other); got != want {

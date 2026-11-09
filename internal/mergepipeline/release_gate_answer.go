@@ -50,7 +50,7 @@ func ReleaseDecisionAnswer(reader ReleaseAnswerReader, questionID string) (yes b
 		if views[i].Superseded {
 			continue
 		}
-		return views[i].Answer.ChosenOptionID == releaseOptionShip, true
+		return views[i].ChosenOptionID == releaseOptionShip, true
 	}
 	return false, true
 }
