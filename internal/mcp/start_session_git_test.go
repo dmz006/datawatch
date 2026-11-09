@@ -97,3 +97,45 @@ func TestStartSession_Git_DefaultFalse(t *testing.T) {
 		t.Errorf("REST body: git field should be absent by default, got %v", gotBody["git"])
 	}
 }
+
+// TestStartSession_LaunchRole verifies launch_role is in the tool schema as an
+// optional string, is forwarded to the REST start body when given, and is
+// absent from the body when omitted.
+func TestStartSession_LaunchRole(t *testing.T) {
+	tool := (&Server{}).toolStartSession()
+	if _, ok := tool.InputSchema.Properties["launch_role"]; !ok {
+		t.Fatal("start_session schema: missing `launch_role` property")
+	}
+	for _, r := range tool.InputSchema.Required {
+		if r == "launch_role" {
+			t.Error("launch_role should be optional")
+		}
+	}
+
+	var gotBody map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = nil
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ef56","task":"supervise"}`))
+	})
+	if _, err := s.handleStartSession(context.Background(), callReq(map[string]any{
+		"task": "supervise", "launch_role": "supervisor",
+	})); err != nil {
+		t.Fatalf("handleStartSession: %v", err)
+	}
+	if gotBody["launch_role"] != "supervisor" {
+		t.Errorf("REST body launch_role = %v, want supervisor", gotBody["launch_role"])
+	}
+
+	// Without launch_role the forward path (forced by chrome) carries no field.
+	if _, err := s.handleStartSession(context.Background(), callReq(map[string]any{
+		"task": "plain", "chrome": true,
+	})); err != nil {
+		t.Fatalf("handleStartSession: %v", err)
+	}
+	if _, present := gotBody["launch_role"]; present {
+		t.Errorf("REST body carries launch_role %v when none was given", gotBody["launch_role"])
+	}
+}

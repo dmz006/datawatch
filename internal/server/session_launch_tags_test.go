@@ -31,6 +31,32 @@ func TestSessionLaunchTags(t *testing.T) {
 		}
 	})
 
+	t.Run("SupervisorRoleHasRoleComputeAndNoAutomaton", func(t *testing.T) {
+		s, _, _ := fedCapFixture(t)
+		dir := t.TempDir()
+		fullID := startTagsSession(t, s, `{"task":"plain","project_dir":"`+dir+`","launch_role":"supervisor"}`)
+
+		sess, ok := s.manager.GetSession(fullID)
+		if !ok {
+			t.Fatalf("session %s not found", fullID)
+		}
+		for _, want := range []string{"role:supervisor", "compute:" + launchLocalNode, "project:" + filepath.Base(dir)} {
+			if !launchTagPresent(sess.SystemTags, want) {
+				t.Errorf("system tags %v missing %q", sess.SystemTags, want)
+			}
+		}
+		for _, prefix := range []string{"backend:", "lane:"} {
+			if !launchTagHasPrefix(sess.SystemTags, prefix) {
+				t.Errorf("system tags %v missing a %s tag", sess.SystemTags, prefix)
+			}
+		}
+		for _, tag := range sess.SystemTags {
+			if strings.HasPrefix(tag, "automaton:") || strings.HasPrefix(tag, "automation:") {
+				t.Errorf("supervisor session carries %q, want no automaton tag", tag)
+			}
+		}
+	})
+
 	t.Run("UnknownRoleAndKindAreRefusedWith400", func(t *testing.T) {
 		s, _, _ := fedCapFixture(t)
 		for _, body := range []string{

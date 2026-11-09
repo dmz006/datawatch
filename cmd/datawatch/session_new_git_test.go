@@ -47,3 +47,35 @@ func TestSessionNewStartBodyGitAbsentByDefault(t *testing.T) {
 		t.Errorf("git should be omitted by default (omitempty), body: %s", body)
 	}
 }
+
+// TestSessionNewStartBodyLaunchRole verifies --launch-role lands in the start
+// body as launch_role, and is absent when the flag is empty.
+func TestSessionNewStartBodyLaunchRole(t *testing.T) {
+	body, err := sessionNewStartBodyRole("t", "/tmp/p", "", "", "", "", false, "", false, false, nil, false, nil, "supervisor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["launch_role"] != "supervisor" || got["task"] != "t" {
+		t.Errorf("body = %s, want launch_role supervisor and task t", body)
+	}
+	body, _ = sessionNewStartBodyRole("t", "/tmp/p", "", "", "", "", false, "", false, false, nil, false, nil, "")
+	got = nil
+	_ = json.Unmarshal(body, &got)
+	if _, present := got["launch_role"]; present {
+		t.Errorf("empty role still sent launch_role: %s", body)
+	}
+	cmd := newSessionCmd()
+	for _, c := range cmd.Commands() {
+		if c.Name() == "new" {
+			if c.Flags().Lookup("launch-role") == nil {
+				t.Error("session new has no --launch-role flag")
+			}
+			return
+		}
+	}
+	t.Error("session new command not found")
+}
