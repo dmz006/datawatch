@@ -639,6 +639,41 @@ A redo can also end with nothing new to release: if main moved so that the
 run's branches are already contained in it, the release steps are recorded as
 `skipped` as above and the run finishes without a push.
 
+## Move from shadow to on
+
+A release size starts in shadow: the daemon plans each merge and the plan is
+compared with the merge a person made by hand, and the comparison is recorded
+without changing what ships. Moving a size from shadow to on means the daemon
+ships that size on its own, and that is decided per size by the release
+approval mode in [Release approval modes](#release-approval-modes).
+
+The evidence bar for a size is the same for every size and is the default
+unless the bar is configured:
+
+- at least 10 comparison records where the daemon's plan is equal to or better
+  than the manual merge,
+- at least 2 of those counted comparisons with conflicts,
+- at least 2 of those counted comparisons with PWA changes,
+- no comparison with a blocking defect.
+
+The Release readiness card on the Automation Setup sub-tab reads
+`GET /api/autonomous/release-readiness?size=patch|minor|major` for each size. It
+shows a size only once that size has at least one comparison record, with the
+counts against the bar, the items still missing and a Ready or Not ready flag.
+A size that shows Ready has met the bar; that alone does not change its mode.
+
+To move a size:
+
+1. Check the card until the size shows Ready, and read any blocking defect it
+   reports before anything else.
+2. Change that size's release approval mode (`ask` or `manual` to `auto`) in the
+   merge pipeline card or the Autonomous settings. Do this one size at a time.
+3. Record the change with its evidence (the readiness counts at the time) so the
+   reason for the mode is kept with the decision.
+
+Moving a size back is the same change in the other direction. Keep the major
+size on `ask` unless a person decides otherwise.
+
 ## After the ship: post-ship hooks
 
 Once the pipeline's push step succeeds, the daemon can run the post-ship

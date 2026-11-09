@@ -399,6 +399,99 @@ test('every post-ship field has a label key, an inline description key and a doc
   }
 });
 
+// ── release readiness card ──────────────────────────────────────────────────
+
+function readinessBody(size, over) {
+  return {
+    size, records: 0, conflicts: 0, pwa_changes: 0, blocking_defects: 0,
+    required: { records: 10, conflicts: 2, pwa_changes: 2 }, missing: [], ready: false, ...over,
+  };
+}
+
+function readinessCard(results) {
+  const sandbox = loadApp();
+  sandbox._results = results;
+  return vm.runInContext('window.releaseReadinessCardHtml(_results)', sandbox);
+}
+
+test('a size with no comparison records is not rendered, and no size with records renders nothing', () => {
+  assert.equal(readinessCard([
+    { size: 'patch', readiness: readinessBody('patch') },
+    { size: 'minor', readiness: readinessBody('minor') },
+    { size: 'major', readiness: readinessBody('major') },
+  ]), '');
+  assert.equal(readinessCard([]), '');
+  assert.equal(readinessCard(undefined), '');
+  const html = readinessCard([
+    { size: 'patch', readiness: readinessBody('patch') },
+    { size: 'minor', readiness: readinessBody('minor', { records: 3, conflicts: 1, pwa_changes: 0, missing: ['short'] }) },
+    { size: 'major', readiness: readinessBody('major') },
+  ]);
+  assert.ok(html.includes('data-size="minor"'), html);
+  assert.ok(!html.includes('data-size="patch"') && !html.includes('data-size="major"'), 'an empty size was rendered: ' + html);
+});
+
+test('a size whose only record is a blocking defect is still rendered, so the defect is never hidden', () => {
+  const html = readinessCard([{ size: 'major', readiness: readinessBody('major', { blocking_defects: 1, missing: ['blocked'] }) }]);
+  assert.ok(html.includes('data-size="major"'), html);
+  assert.ok(html.includes('Comparisons with a blocking defect: 1'), html);
+});
+
+test('the card shows the counts against the bar, the missing items and the ready flag', () => {
+  const html = readinessCard([{ size: 'minor', readiness: readinessBody('minor', {
+    records: 4, conflicts: 2, pwa_changes: 1, missing: ['The minor release needs 10 records, but has 4.', 'PWA short'],
+  }) }]);
+  assert.ok(html.includes('Plans equal or better: 4 of 10'), html);
+  assert.ok(html.includes('Counted comparisons with conflicts: 2 of 2'), html);
+  assert.ok(html.includes('Counted comparisons with PWA changes: 1 of 2'), html);
+  assert.ok(html.includes('<li>The minor release needs 10 records, but has 4.</li>'), html);
+  assert.ok(html.includes('<li>PWA short</li>'), html);
+  assert.ok(html.includes('>Not ready<') && !html.includes('>Ready<'), html);
+});
+
+test('a size that meets the bar shows Ready and no missing items', () => {
+  const html = readinessCard([{ size: 'patch', readiness: readinessBody('patch', {
+    records: 10, conflicts: 2, pwa_changes: 2, ready: true,
+  }) }]);
+  assert.ok(html.includes('>Ready<') && !html.includes('>Not ready<'), html);
+  assert.ok(html.includes('Nothing is missing against the bar.'), html);
+  assert.ok(!html.includes('release-readiness-missing"'), 'a missing list was drawn for a ready size: ' + html);
+});
+
+test('the ready flag comes from the API and is not recomputed from the counts', () => {
+  const html = readinessCard([{ size: 'patch', readiness: readinessBody('patch', {
+    records: 10, conflicts: 2, pwa_changes: 2, ready: false, missing: ['held by the operator'],
+  }) }]);
+  assert.ok(html.includes('>Not ready<'), html);
+  assert.ok(html.includes('<li>held by the operator</li>'), html);
+});
+
+test('the readiness values and the missing items are escaped', () => {
+  const html = readinessCard([{ size: 'patch', readiness: readinessBody('patch', { records: 1, missing: [HOSTILE] }) }]);
+  assert.ok(!html.includes(HOSTILE), 'hostile markup rendered unescaped: ' + html);
+  assert.ok(!html.includes('<img'), 'an image element was injected');
+});
+
+test('the readiness card help control links to the Move from shadow to on section', () => {
+  const html = readinessCard([{ size: 'patch', readiness: readinessBody('patch', { records: 1 }) }]);
+  assert.ok(html.includes('class="release-readiness-help"'), html);
+  assert.ok(html.includes('/diagrams.html#docs/howto/merge-pipeline.md#move-from-shadow-to-on"'), html);
+  assert.equal(docsLink('release_readiness_card_title'), 'howto/merge-pipeline.md#move-from-shadow-to-on');
+  const md = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'docs', 'howto', 'merge-pipeline.md'), 'utf8');
+  assert.ok(/^## Move from shadow to on$/m.test(md), 'the how-to has no "Move from shadow to on" section');
+});
+
+test('every release_readiness key is present in all five bundles with identical key sets', () => {
+  const sets = LANGS.map(lang => Object.keys(bundle(lang)).sort());
+  for (let i = 1; i < LANGS.length; i++) assert.deepEqual(sets[i], sets[0], LANGS[i] + ' key set differs from en');
+  const keys = sets[0].filter(k => k.startsWith('release_readiness_'));
+  assert.equal(keys.length, 13, keys.join(','));
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of keys) assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' lacks ' + k);
+  }
+});
+
 test('docsLinkForKey maps the post-ship keys to the howto sections, before the merge pipeline map', () => {
   assert.equal(docsLink('autonomous.merge_pipeline.post_ship.enabled'), HOWTO + '#enabling');
   assert.equal(docsLink('autonomous.merge_pipeline.post_ship.hooks'), HOWTO + '#the-hook-list');
