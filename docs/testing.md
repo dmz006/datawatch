@@ -209,9 +209,9 @@ substituted by stubs (the API command and the sleep command, so there are no
 real API calls and no real sleeps), then: retry past three rate-limit
 responses and check the recorded waits; honour a reported core reset epoch;
 time out a missing analyses category under the wait budget; run a rate limit
-with no reset time out against the budget; stop at once when the reset is
-beyond the remaining budget (no sleep is recorded); wait once when the reset
-falls inside the budget; read a clean and a
+with no reset time out against the budget; on the analyses step, stop at once
+when the reset is beyond the remaining budget (no sleep is recorded) and wait
+once when the reset falls inside the budget; read a clean and a
 non-clean open-alerts set through the rate-limit retry; fail a non-rate-limit
 read so it is never reported as zero alerts; and reject an unknown
 subcommand. Run it once directly:

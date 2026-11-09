@@ -146,25 +146,31 @@ a rate limit can turn the run red even when nothing is wrong with the code.
 
 The step log is the check that tells the two red outcomes apart:
 
-- **`Rate limited`, as an error line that names a reset epoch**, means the
-  reset is later than the wait budget that was left, so the gate stopped at
-  once instead of waiting. It is not a finding and the run did not wait out
-  the budget. Wait until the reset time it names, then push a new commit or
-  start the check again yourself.
+- **`Rate limited`, as an error line that names a reset epoch, on the
+  analyses step (`wait-analyses`)**, means the reset is later than the wait
+  budget that was left, so the gate stopped at once instead of waiting. It is
+  not a finding and the run did not wait out the budget. Wait until the reset
+  time it names, then push a new commit or start the check again yourself.
 - **`Rate limited`, as a notice, with a reset time**, is a wait-and-retry that
   is still inside its budget. The gate is waiting for the reset and will retry
   on its own; nothing is needed from you unless the run then ends red.
-- **`Rate limited`, with no reset time**, is a wait-and-retry on the normal
-  interval that used up its budget. Wait, then start the check again yourself.
+- **`Rate limited`, as an error line that names a core reset epoch, on the
+  alerts step (`open-alerts`)**, means the gate waited on the alerts read until
+  the budget was spent and the API kept limiting it. The gate does not stop at
+  once on an out-of-reach reset on this step; it waits up to the remaining
+  budget first. Wait until the reset time it names, then start the check again
+  yourself.
 - **`No analysis for`** is the real missing-analysis timeout: the API answered,
   but the analyses never appeared within the budget. That one is worth
   investigating.
 
 The gate's exit codes are unchanged by the rate-limit handling: both steps
-still exit 0 when clean and 2 on a usage error. A rate limit that the gate
-cannot ride out — a reset later than the remaining budget, or a spent budget
-with no reset time — exits 1 with the `Rate limited` line, reported as a rate
-limit, never as a missing analysis or as a zero-alert read.
+still exit 0 when clean and 2 on a usage error. On `wait-analyses`, a rate
+limit that the gate cannot ride out — a reset later than the remaining budget,
+or a spent budget with no reset time — exits 1 with the `Rate limited` line. On
+`open-alerts`, a spent rate-limit budget exits 1 with the `Rate limited` line.
+Either way it is reported as a rate limit, never as a missing analysis or as a
+zero-alert read.
 
 ## Optional: run it before every push
 
