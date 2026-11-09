@@ -13,14 +13,21 @@ import (
 // hostCheckTimeout bounds every external command the readiness check runs.
 const hostCheckTimeout = 15 * time.Second
 
-// GitHostConfig is the subset of config.GitHostConfig the readiness check
-// reads. It is mirrored here because package config imports trace, which
-// imports this package, so importing config would be an import cycle.
-// Callers convert with GitHostConfig{Name: h.Name, Kind: h.Kind, BaseURL: h.BaseURL}.
+// GitHostConfig is the subset of config.GitHostConfig the readiness check and
+// the host command environment read. It is mirrored here because package config
+// imports trace, which imports this package, so importing config would be an
+// import cycle. Callers convert with
+// GitHostConfig{Name: h.Name, Kind: h.Kind, BaseURL: h.BaseURL,
+// CredentialSource: h.CredentialSource, VaultSecret: h.VaultSecret}.
 type GitHostConfig struct {
 	Name    string
 	Kind    string
 	BaseURL string
+	// CredentialSource is host_login, vault or broker (empty reads as host_login).
+	CredentialSource string
+	// VaultSecret is the secrets vault entry NAME holding the token when
+	// CredentialSource is vault. It never holds the secret value.
+	VaultSecret string
 }
 
 // HostReadiness reports whether datawatch can use one configured git host.
