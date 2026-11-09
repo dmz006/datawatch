@@ -4089,6 +4089,23 @@ autonomous:
     # Global gate. Default true. false turns template apply off everywhere
     # (per-project overrides below can still force a project on/off).
     enabled: true
+    # Setting: autonomous.task_templates.mode (one template:
+    # autonomous.task_templates.mode.<id>). Values:
+    #   llm    - a worker session runs the task as a normal task, verifier included
+    #   daemon - the daemon does the task itself, with no model session
+    #   off    - the task is not added to the story at all
+    # Default: the shipped default per template, as listed below; llm for an id
+    # outside the built-in pack. daemon is accepted only for changelog_entry,
+    # parity_issue_draft, bounded_load_step and version_bump_left_to_merge;
+    # final_gate takes llm or off only.
+    # Ways to set it: the per-template select in the Settings autonomous card,
+    # PUT /api/config with the dotted per-template key, datawatch config set,
+    # configure on the chat or comm channels, the MCP autonomous_config_set
+    # task_templates_mode argument, and this YAML block itself.
+    # The decompose-lint surfaces (REST PUT /api/autonomous/decompose-lint/config,
+    # the MCP autonomous_decompose_lint_config_set tool and the decompose-lint
+    # card) replace the whole task_templates block when they send it. The card
+    # sends back the block it loaded with only its enabled checkbox changed.
     # Who carries out each template's task. Three values:
     #   llm    — a model session does the task (the default for most templates)
     #   daemon — the daemon does the task itself with no model call; only the

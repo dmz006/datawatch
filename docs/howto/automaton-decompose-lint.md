@@ -296,15 +296,16 @@ autonomous:
 - **The decompose-lint config surface** — the MCP
   `autonomous_decompose_lint_config_set` tool, the REST
   `PUT /api/autonomous/decompose-lint/config`, and the Settings page's
-  decompose-lint panel — **replaces the `task_templates` block as a whole
+  decompose-lint card — **replaces the `task_templates` block as a whole
   when it is sent**: a block that carries only `enabled` resets `mode`,
-  `templates` and `projects`. The decompose-lint panel itself is such a
-  write — it sends only its enabled checkbox, so saving that panel resets
-  your per-template modes, custom templates and per-project overrides to
-  the shipped defaults; check your modes after you save there. If you write
-  the block yourself through that surface, read the live config first
-  (`datawatch autonomous lint config`) and write the whole block back with
-  the mode map changed.
+  `templates` and `projects`. The decompose-lint card sends back the
+  `task_templates` block it loaded when the card was opened, with only its
+  enabled checkbox changed, so `mode`, `templates` and `projects` survive a
+  save. A change another client made to that block after the card loaded is
+  overwritten by the save, so reopen the card before saving. The REST, MCP
+  and CLI surfaces still replace the whole block when they send it, so read
+  the live config first (`datawatch autonomous lint config`) and write the
+  whole block back with the mode map changed.
 
 **What a daemon-mode task does differently:**
 
