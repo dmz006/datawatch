@@ -3983,6 +3983,18 @@ needs no migration or restart — a refreshed PWA shows the corrected menu. The
 tag filter rows elsewhere are unchanged. See
 [howto/automata-tags.md](howto/automata-tags.md) for the operator view.
 
+**Placement tags on every session (operator check).** Every session that can
+carry a placement tag now carries every axis that applies to it. Planner
+(decompose) sessions gain a `compute:<node>` tag for the node they run on, next
+to their `automaton:`, `kind:`, `lane:` and `role:planner` tags, and supervisor
+sessions carry their applicable axes, including `role:supervisor` and
+`compute:<node>`. Sessions that already exist get the same tags only through
+the tag sweep: run `datawatch autonomous tags sweep --dry-run` to see which
+sessions would change, then the sweep without `--dry-run` to apply it. After the
+change, confirm on a live daemon that a new planner session and a new supervisor
+session show the axes listed in the howto. See
+[howto/automata-tags.md](howto/automata-tags.md#stamping-re-stamping-and-the-startup-backfill).
+
 ---
 
 ## Quality gate (test baseline + regression check)

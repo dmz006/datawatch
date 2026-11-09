@@ -129,3 +129,16 @@ is a docs-only change (one howto section, this parity record).
 ## 2026-11-08: which sessions carry which placement tags
 
 Question to the operator: the planner (decompose) sessions carry `automaton:`, `kind:decompose`, `lane:` and `role:planner` but no `compute:` tag, and the supervisor session carries no system tags at all; should they get the full set? The operator answered, quoted: "Yes all that we are able to add tag for should". Decision: every session that can carry a placement tag carries every axis that applies to it, including `compute:` for the node it runs on. Draft Automaton filed from the spec in the supervisor scratch folder.
+
+**Docs follow-up (2026-11-08) — operator review items.** The howto, the operations
+Tag browser section, the glossary entry and the CHANGELOG `[Unreleased]` entry now
+describe the every-applicable-axis rule. Still for the operator to review:
+
+- The supervisor session's exact axis set is written as "its applicable axes, with
+  `role:supervisor`, `compute:` and, when it runs in one, `backend:` and `lane:`".
+  Confirm that set against a live supervisor session once the change ships.
+- Existing sessions gain the new tags only through the tag sweep; the docs tell the
+  operator to run `--dry-run` first. Confirm that is the wanted rollout, not an
+  automatic re-stamp.
+- The planner row lists `compute:` as added. The docs do not claim any other new
+  axis for planner sessions.

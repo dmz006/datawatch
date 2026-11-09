@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Every session that can carry a placement tag now carries every axis that applies to it.** Planner (decompose) sessions gain the `compute:<node>` tag for the node they run on, and supervisor sessions carry their applicable axes, including `role:supervisor` and `compute:<node>`. The howto, operations guide and glossary describe the rule; existing sessions get the same tags through the tag sweep.
+
 ## v9.112.7 — Update dependencies and workflow action pins to the newest majors
 
 ### Changed
