@@ -174,7 +174,11 @@ type SpawnResult struct {
 	// which differs from SpawnRequest.ComputeNode when the handler re-placed
 	// the session. Empty when the spawn path does not report one.
 	ComputeNode string
-	Err         error
+	// ProfileFallbackReason is set when the worker profile the launch was
+	// asked to apply could not be applied and the worker started with no
+	// profile instead (see noteProfileFallback). Empty when it applied.
+	ProfileFallbackReason string
+	Err                   error
 }
 
 // SpawnFn is the indirection used by the executor to start a worker.
@@ -1920,6 +1924,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			run.SessionID = sr.SessionID
 			run.Adopted = false
+			if sr.ProfileFallbackReason != "" {
+				m.noteProfileFallback(&run, sr.ProfileFallbackReason)
+			}
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
