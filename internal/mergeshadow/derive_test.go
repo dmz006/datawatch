@@ -31,6 +31,18 @@ func TestDerivePWAChange(t *testing.T) {
 	}
 }
 
+// A locale-only change under internal/server/web/ is still a PWA change: the
+// flag follows the same surface mapping as the Web UI section of the artefacts.
+func TestDeriveLocaleOnlyPWAChange(t *testing.T) {
+	d, err := Derive(rec("internal/server/web/locales/en.json"), "v1.2.3", "2026-11-09", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.ParityIssueNeeded {
+		t.Error("a locale-only web change should set parity_issue_needed")
+	}
+}
+
 func TestDeriveNoPWA(t *testing.T) {
 	d, err := Derive(rec("internal/x/y.go", "docs/a.md"), "v1.2.3", "2026-11-09", "")
 	if err != nil {
