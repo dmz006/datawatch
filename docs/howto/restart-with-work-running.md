@@ -6,6 +6,12 @@ When the daemon restarts, two settings decide what happens to Automata:
 - `autonomous.planning_restart_policy` covers an Automaton that is still in
   planning, meaning its decompose is still running.
 
+Beyond those two, there is no setting to choose: a task that was **verifying**,
+the guardrail **judgment** on a finished Automaton, and the **verification or
+final gate script** are all picked back up by the restarted daemon instead of
+being redone. See [Verifying, judging, and verification scripts](#verifying-judging-and-verification-scripts)
+below.
+
 This page covers the planning setting. For running tasks, see
 [operations.md](../operations.md) (restart policy values).
 
@@ -32,10 +38,13 @@ as before the setting existed. Every outcome is recorded in the Automaton's
 decisions and the boot-resume report, and live planner sessions that no reader
 owns are ended.
 
-The boot path is in this tree, but the `planning` row of the restart matrix
-and its release-smoke run are still open, and no live deploy-restart has
-confirmed it: confirm on the build in use that a restarted daemon behaves as
-above before relying on `reattach` (the *Still to review (operator)* notes in
+The planning boot path, the verifier/judge re-attach and the detached
+verification-script pickup (below) are all in this tree, but the affected
+restart-matrix `planning` row and its release-smoke run are still open, and
+no live deploy-restart has confirmed any of it: confirm on the build in use
+that a restarted daemon behaves as above before relying on `reattach` or on a
+verifying task, a judgment or a script surviving a restart
+(the *Still to review (operator)* notes in
 [operations.md](../operations.md)).
 
 ## The three values
@@ -72,6 +81,58 @@ described under [Current status](#current-status).
   intent is that planning starts again once, and the Automaton's decisions show it.
 - Use `draft` when you want to review the Automaton before any planning runs again.
   The Automaton returns to draft and you request planning yourself.
+
+## Verifying, judging, and verification scripts
+
+These three cases have no setting: the restarted daemon always picks them back
+up, one step at a time.
+
+**A task still verifying on a live verifier session.** The task keeps its
+worker session and its worker result. If the verifier session itself survived
+the restart, the daemon re-attaches to it — a new waiter reads the session and
+its verdict file, and the verdict that lands completes or fails the task. The
+verifier is not started a second time, the worker is not reset, and no retry
+is counted. If the verifier session ended while the daemon was down but left
+a verdict in its verdict file, that verdict is used as the outcome: a pass
+completes the task, a fail goes through the normal retry path — again with no
+second verifier and no worker re-run.
+
+Only when nothing usable survives (no live session, no verdict on disk) does
+the daemon fall back to the old behaviour: a finished worker is re-verified
+once, and a task with no worker result is reset to `pending`.
+
+**A guardrail judgment in flight** — for example the completion guardrail
+judging a finished Automaton — resumes the same way: re-attach to the live
+judgment session, or read the verdict it left, or re-judge once. A judgment
+is never run twice for the same decision.
+
+**The verification or final gate script.** It is no longer a child of the
+daemon process: it runs detached, and its run (process, start time, output,
+exit code, whether the result was delivered) is kept in a durable run record.
+At boot the daemon does not re-run it:
+
+- the recorded process is still running → the daemon waits on it and takes
+  its result when it ends;
+- the process ended while the daemon was down and its exit code is in the
+  record, not yet delivered → the result is used once, as the script result;
+- the record is missing or stale (or an earlier attempt of the same script
+  left an undelivered run) → the script runs from the start, exactly once;
+  an undelivered, unfinished run left behind is retired first, so its
+  verdict is never consumed.
+
+The script's timeout is enforced from its recorded start time, so a script
+that outlives the daemon still ends on time even across the restart.
+
+What changed versus the recorded audit: the restart-matrix findings
+([`restart-matrix-findings.md`](../plans/restart-matrix-findings.md)) report
+verification scripts and final-gate scripts as "daemon children, rerun from
+scratch, OPERATOR PICK" and the live verifier session as "not adopted; the
+verifier runs once more". That report measures the daemon as it was at the
+time. The daemon in this tree no longer behaves that way; the matrix states
+and the release-smoke skip text still describe the old behaviour (the smoke
+list still names those five states and their old skips), so re-run the matrix
+and review before relying on them (the *Still to review (operator)* notes in
+[operations.md](../operations.md)).
 
 ## Checking the value
 
