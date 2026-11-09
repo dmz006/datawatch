@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **`restart` refuses while Automata work is running, unless forced, on every surface.** The CLI `datawatch restart` reads the restart interruption report before it stops the daemon and exits non-zero with the report; pass `--force` to restart anyway. The MCP `restart_daemon` tool takes `force` and returns the report as an error result when it refuses. A comm `restart` replies with the report; `restart force` proceeds. The REST `POST /api/restart` already refused and is unchanged. See [howto/restart-with-work-running.md](docs/howto/restart-with-work-running.md#forcing-a-restart-past-running-work).
 - **`autonomous.planning_restart_policy` is settable and validated on every operator surface.** The setting chooses what a daemon restart does to an Automaton that is still in planning: `reattach` (default), `restart` or `draft`. The MCP `autonomous_config_set` tool takes `planning_restart_policy` and the CLI `autonomous config-set` takes it in its JSON body; both refuse any other value before sending anything. The comm `configure` command refuses an invalid value and names the valid ones. The configure help lists the key. The daemon's restart path does not read the value yet, so a restart still resets a planning Automaton to draft; see [docs/howto/restart-with-work-running.md](docs/howto/restart-with-work-running.md) for the current status.
 
 ### Changed
