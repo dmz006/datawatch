@@ -2613,7 +2613,14 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				}
 				// Empty or dead session without a marker: orphaned, reset below.
 			case TaskVerifying, TaskRunningTests:
-				switch ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, func() (*VerificationResult, bool) { return m.verifierVerdict(prd.ID, t.ID) }, t) {
+				resume := ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, func() (*VerificationResult, bool) { return m.verifierVerdict(prd.ID, t.ID) }, t)
+				if resume == VerifyingResumeReset && prevStatus == TaskVerifying && m.holdVerifyingForScriptRun(prd, t) {
+					// The verification script's run is still alive: keep the task
+					// verifying. The verification path attaches a waiter to that run and
+					// takes its result, so the worker is not reset and no retry is counted.
+					continue
+				}
+				switch resume {
 				case VerifyingResumeStartFailed:
 					// Live bare shell: the worker's agent never launched, so the session is a
 					// boot-time launch failure. End it and requeue the task with the

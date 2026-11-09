@@ -6,6 +6,8 @@
 package autonomous
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -45,7 +47,9 @@ func verificationRunRoot() string {
 }
 
 // verifyRunRecord is the run.json content. ExitCode is nil until the
-// script ends.
+// script ends. Delivered is set once the run's result has reached a caller
+// (in-process, or consumed by a restarted daemon), so a finished record is
+// consumed at most once and a later attempt never picks up an old verdict.
 type verifyRunRecord struct {
 	ScriptPath string    `json:"script_path"`
 	StartedAt  time.Time `json:"started_at"`
@@ -54,7 +58,16 @@ type verifyRunRecord struct {
 	ExitFile   string    `json:"exit_file"`
 	ExitCode   *int      `json:"exit_code,omitempty"`
 	TimedOut   bool      `json:"timed_out,omitempty"`
+	Delivered  bool      `json:"delivered,omitempty"`
 	EndedAt    time.Time `json:"ended_at,omitempty"`
+}
+
+// verifyRunDirFor is the one run directory for scriptPath under root. It is
+// keyed by the script's absolute path so a restarted daemon can find the
+// record of a run it did not start, without any task field naming it.
+func verifyRunDirFor(root, scriptPath string) string {
+	sum := sha256.Sum256([]byte(scriptPath))
+	return filepath.Join(root, "run-"+hex.EncodeToString(sum[:8]))
 }
 
 func writeVerifyRecord(dir string, rec *verifyRunRecord) error {

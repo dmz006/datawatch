@@ -30,8 +30,14 @@ func runVerifyRecorded(argv []string, dir, scriptPath string, l *verifyLaunch) (
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, 0, nil, false
 	}
-	runDir, err := os.MkdirTemp(root, "run-")
-	if err != nil {
+	// One directory per script (see verifyRunDirFor). The caller has already
+	// decided that no live run owns it, so a fresh run replaces whatever a
+	// previous, delivered or stale, run left behind.
+	runDir := verifyRunDirFor(root, scriptPath)
+	if err := os.RemoveAll(runDir); err != nil {
+		return nil, 0, nil, false
+	}
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
 		return nil, 0, nil, false
 	}
 	outFile := filepath.Join(runDir, verifyOutputFile)
@@ -100,6 +106,9 @@ func runVerifyRecorded(argv []string, dir, scriptPath string, l *verifyLaunch) (
 			rec.ExitCode = &c
 		}
 	}
+	// The result is returned to this caller right below, so the record is
+	// delivered: a restarted daemon must not consume it a second time.
+	rec.Delivered = true
 	_ = writeVerifyRecord(runDir, rec)
 	if timedOut {
 		out = append(out, []byte(fmt.Sprintf("\nverification script timed out after %s and was ended\n", verificationScriptTimeout))...)
@@ -112,6 +121,14 @@ func runVerifyRecorded(argv []string, dir, scriptPath string, l *verifyLaunch) (
 		return out, -1, waitErr, true
 	}
 	return out, 0, nil, true
+}
+
+// killVerifyGroup ends the process group led by pid. It is the only way the
+// daemon ends a script run it is waiting on after a restart.
+func killVerifyGroup(pid int) {
+	if pid > 0 {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	}
 }
 
 func appendFile(path, s string) {
