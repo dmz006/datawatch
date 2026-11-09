@@ -183,6 +183,8 @@
   "automata_status_paused": "paused",
   "automata_tab_automata": "Autómatas",
   "automata_tab_templates": "Plantillas de autómata",
+  "automata_templates_subtab_automaton": "Plantillas de autómata",
+  "automata_templates_subtab_standard": "Tareas estándar",
   "automata_tmpl_btn_create": "Crear",
   "automata_tmpl_btn_launch": "Lanzar",
   "automata_tmpl_btn_save": "Guardar",

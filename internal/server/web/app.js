@@ -25608,6 +25608,110 @@ function loadAutomataTemplatesPanel() {
 }
 window.loadAutomataTemplatesPanel = loadAutomataTemplatesPanel;
 
+// ── Templates tab sub-tabs ────────────────────────────────────────────────────
+
+// _AUTOMATA_TEMPLATE_SUBTABS is the registry of the Templates tab's sub-tabs.
+// Every entry carries its key, title locale key, loader function and
+// renderer function, and the bar, switchTemplatesSubtab and the Templates
+// mount all read from this registry — so another sub-tab later is one new
+// entry and no change to the mechanism.
+const _AUTOMATA_TEMPLATE_SUBTABS = [
+  {
+    key: 'automaton',
+    titleKey: 'automata_templates_subtab_automaton',
+    // The existing Automaton templates loader/renderer wrap around this
+    // registry unchanged.
+    load: () => loadAutomataTemplatesPanel(),
+    render: () => _automataRenderTemplates(),
+  },
+  {
+    key: 'standard',
+    titleKey: 'automata_templates_subtab_standard',
+    // Standard tasks: a later task fills in the loader and the real
+    // renderer. Until then the loader does nothing and the renderer
+    // shows the loading state, so the bar and the mechanism exist before
+    // the content behind them does.
+    load() {},
+    render() {
+      const panel = document.getElementById('automataPanel');
+      if (panel) panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
+    },
+  },
+];
+
+// The selected sub-tab key, persisted under its own localStorage key and
+// read/written in try/catch so a blocked or corrupt store falls back to the
+// default without throwing.
+const _AUTOMATA_TEMPLATES_SUBTAB_STORE_KEY = 'automata_templates_subtab';
+const _AUTOMATA_TEMPLATE_DEFAULT_SUBTAB = 'automaton';
+
+function _automataTmplSubtabStored() {
+  let v = null;
+  try { v = localStorage.getItem(_AUTOMATA_TEMPLATES_SUBTAB_STORE_KEY); } catch (_) { v = null; }
+  if (typeof v !== 'string') return null;
+  return _AUTOMATA_TEMPLATE_SUBTABS.some(s => s.key === v) ? v : null;
+}
+
+let _automataTmplSubtab = _automataTmplSubtabStored() || _AUTOMATA_TEMPLATE_DEFAULT_SUBTAB;
+
+function _automataTmplSubtabEntry() {
+  return _AUTOMATA_TEMPLATE_SUBTABS.find(s => s.key === _automataTmplSubtab)
+    || _AUTOMATA_TEMPLATE_SUBTABS.find(s => s.key === _AUTOMATA_TEMPLATE_DEFAULT_SUBTAB)
+    || _AUTOMATA_TEMPLATE_SUBTABS[0];
+}
+
+// The Templates tab sub-tab bar: one button per registry entry, above the
+// panel. data-tmplsubtab is deliberately distinct from data-subtab (the
+// Automation second row) and data-tab (the top bar). The bar and the
+// switch logic read _AUTOMATA_TEMPLATE_SUBTABS, so adding an entry later is
+// one new registry object — the mechanism never changes.
+function _templatesSubtabsBarHTML() {
+  return `<div class="output-tabs automata-templates-subtabs" role="tablist">`
+    + _AUTOMATA_TEMPLATE_SUBTABS.map(s => `
+        <button class="output-tab ${_automataTmplSubtab === s.key ? 'active' : ''}" role="tab" aria-selected="${_automataTmplSubtab === s.key ? 'true' : 'false'}" data-tmplsubtab="${s.key}" onclick="switchTemplatesSubtab('${s.key}')">${escHtml(t(s.titleKey))}</button>`).join('')
+    + `
+      </div>`;
+}
+window._templatesSubtabsBarHTML = _templatesSubtabsBarHTML;
+
+// Re-syncs the bar's active state in place after a switch so a switch
+// doesn't require a full view redraw.
+function _templatesSubtabsSyncActive() {
+  document.querySelectorAll('.automata-templates-subtabs .output-tab').forEach(btn => {
+    const on = btn.dataset.tmplsubtab === _automataTmplSubtab;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+window._templatesSubtabsSyncActive = _templatesSubtabsSyncActive;
+
+// _automataMountTmplSubtab paints the selected sub-tab's renderer and then
+// runs its loader; the Automaton entry's loader ends in the same render
+// with what it fetched.
+function _automataMountTmplSubtab() {
+  const def = _automataTmplSubtabEntry();
+  def.render();
+  def.load();
+}
+window._automataMountTmplSubtab = _automataMountTmplSubtab;
+
+// switchTemplatesSubtab switches the Templates tab's sub-tab. Unknown keys
+// are ignored. The choice is persisted (try/catch) and the selected
+// entry's body is repainted.
+function switchTemplatesSubtab(key) {
+  const def = _AUTOMATA_TEMPLATE_SUBTABS.find(s => s.key === key);
+  if (!def) return;
+  if (_automataNormalizeTab() !== 'templates') return;
+  if (_automataTmplSubtab !== key) {
+    _automataTmplSubtab = key;
+    try { localStorage.setItem(_AUTOMATA_TEMPLATES_SUBTAB_STORE_KEY, key); } catch (_) { /* storage blocked */ }
+    _templatesSubtabsSyncActive();
+  }
+  def.render();
+  def.load();
+}
+window.switchTemplatesSubtab = switchTemplatesSubtab;
+
 function _automataRenderTemplates() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
@@ -25953,7 +26057,7 @@ function switchAutomataTab(tab) {
   }
   // Entering the list sub-tabs drops any Automaton detail capacity timer.
   if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
-  if (tab === 'templates') loadAutomataTemplatesPanel();
+  if (tab === 'templates') { _templatesSubtabsSyncActive(); _automataMountTmplSubtab(); }
   else _automataShowList();
 }
 window.switchAutomataTab = switchAutomataTab;
@@ -33649,7 +33753,7 @@ function renderAutonomousView() {
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;display:none;" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
         ${_automationActionButtonsHTML(isAutomation)}
       </div>
-      ${isAutomation ? _automationBodyHTML() : `<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
+      ${isAutomation ? _automationBodyHTML() : `${st.tab === 'templates' ? _templatesSubtabsBarHTML() : ''}<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
         ${_tagFilterBarHTML('automata',
           `<input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`,
           `<div class="automata-badge-group">${typeBadges}</div>`,
@@ -33668,7 +33772,7 @@ function renderAutonomousView() {
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
-    if (st.tab === 'templates') loadAutomataTemplatesPanel();
+    if (st.tab === 'templates') _automataMountTmplSubtab();
     else if (reuse) _automataShowList();
     else loadAutomataPanel();
     // The list body has no status card; drop any Automaton detail capacity

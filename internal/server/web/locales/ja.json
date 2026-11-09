@@ -183,6 +183,8 @@
   "automata_status_paused": "paused",
   "automata_tab_automata": "オートマタ",
   "automata_tab_templates": "オートマトンテンプレート",
+  "automata_templates_subtab_automaton": "オートマトンテンプレート",
+  "automata_templates_subtab_standard": "標準タスク",
   "automata_tmpl_btn_create": "作成",
   "automata_tmpl_btn_launch": "起動",
   "automata_tmpl_btn_save": "保存",
