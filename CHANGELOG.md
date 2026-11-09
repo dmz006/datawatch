@@ -7,7 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- **Every session that can carry a placement tag now carries every axis that applies to it.** Planner (decompose) sessions gain the `compute:<node>` tag for the node they run on, and supervisor sessions carry their applicable axes, including `role:supervisor` and `compute:<node>`. The howto, operations guide and glossary describe the rule; existing sessions get the same tags through the tag sweep.
+- **A session that records its launch facts now carries every placement axis that applies to it.** The launch role, kind and stage are stored on the session record, and the session's placement is built from them: the node it ran on (`compute:<node>`, falling back to the local node when none was stored), its role and kind (such as `role:planner` or `role:supervisor`) and its stage, alongside the backend, lane, project and Automaton and Automation tags it already had.
+  - **How it shows up:** a session with recorded launch facts shows the extra axes under “Placement tags (system)” in the Sessions Tags menu and in tag filters. Sessions with no recorded launch facts keep exactly the tags they had before; the tag sweep leaves them unchanged.
+  - **Migration:** none needed to keep existing sessions as they are. Only sessions that have launch facts gain the new axes. No production code path records those facts yet, so new sessions gain them only once that call is wired in. For sessions that already have facts, run the tag sweep (`autonomous_tag_sweep`) to rebuild their tags.
 
 ## v9.112.7 — Update dependencies and workflow action pins to the newest majors
 
