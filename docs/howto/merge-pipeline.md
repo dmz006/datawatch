@@ -234,7 +234,7 @@ check that failed. The five checks, in the order they run:
 
 | Check name | What it requires |
 |---|---|
-| `version_variables_equal` | Every file in `version_files` (by default `cmd/datawatch/main.go` and `internal/server/api.go`) carries the same `X.Y.Z` in its `var Version = "..."` line. A file with no such line fails the check. |
+| `version_variables_equal` | Every file in `version_files` carries the same `X.Y.Z` in its `var Version = "..."` line. A file with no such line fails the check. `version_files` has no default: with an empty list this check fails rather than guessing (see [Settings](#settings)). |
 | `changelog_heading_matches` | The first `## vX.Y.Z` heading in `CHANGELOG.md` is that version. |
 | `one_step_above_last_tag` | The version is exactly one patch, minor or major step above the newest local `vX.Y.Z` tag. The run's own release tag is not counted as the previous release. |
 | `tag_not_taken` | The tag `vX.Y.Z` is not on `origin`, and any local tag of that name points at HEAD. If `origin` cannot be queried, the check fails. |
@@ -249,6 +249,17 @@ The same checks can be run by hand, read-only, from a repository checkout with
 check, in the order above, and exits 0 only when all five pass. Set
 `VERIFY_RELEASE_REMOTE` to query a remote other than `origin`; if that remote is
 not configured, only local tags are checked and the tag line says so.
+
+The script does not read `version_files`. It always checks `cmd/datawatch/main.go`
+and `internal/server/api.go`, so on a project whose version lives elsewhere it
+can disagree with the validator step. Use it as a check on this repository, not
+as a substitute for the pipeline step.
+
+**For operator review:** the built-in pipeline's `version_files` default is
+empty, so a fresh project that runs the built-in pipeline fails at
+`set-release-version` until its version files are named. Whether the built-in
+default should name files, and whether the script should read the setting, are
+open decisions.
 
 ## How the release version is chosen
 
