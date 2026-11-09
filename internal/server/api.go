@@ -256,16 +256,16 @@ type Server struct {
 	// valid until oldTokenExpiry (a 60s grace window from rotation) so a
 	// client that already has the previous token isn't cut off mid-flight;
 	// after that it's hard-revoked, same as if it had never existed.
-	tokenMu            sync.RWMutex
-	oldToken           string
-	oldTokenExpiry     time.Time
-	availableBackends  []string // registered LLM backend names
-	cfg                *config.Config
-	cfgPath            string
+	tokenMu           sync.RWMutex
+	oldToken          string
+	oldTokenExpiry    time.Time
+	availableBackends []string // registered LLM backend names
+	cfg               *config.Config
+	cfgPath           string
 	// dataDir is this instance's explicit data-directory override (set by
 	// the daemon at startup; empty in bare test fixtures). statePath
 	// resolves it first, then cfg.DataDir, then the config default.
-	dataDir string
+	dataDir            string
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
@@ -6493,6 +6493,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// never resume, -1 = no age limit: both survive, so no
 			// omitempty on the struct tag.
 			"resume_max_age_seconds": s.cfg.Autonomous.ResumeMaxAgeSeconds,
+			// Attempt-cost settings — the cheaper worker a task kind's first
+			// attempt runs on (per-kind backend+model), how many failures move a
+			// task off the pair, and the prior-context cap a retry may resume from.
+			"first_attempt":                         firstAttemptForDisplay(s.cfg.Autonomous.FirstAttempt),
+			"first_attempt_escalate_after_failures": s.cfg.Autonomous.FirstAttemptEscalateAfterFailures,
+			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
 			// Snapshot-never-stage list (path patterns the autonomous
 			// snapshot must never `git add`): nil (unset) reads the built-in
 			// defaults (config.DefaultSnapshotNeverStage), so render the
@@ -7790,6 +7796,49 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(k, "autonomous.tags.placement") {
 			placementChanged = true
 			break
+		}
+	}
+	// Attempt-cost settings: validate against the shared
+	// config.ValidateAttemptCostSettings before anything is applied, so a bad
+	// first_attempt kind or a number out of the 0..max range refuses the whole
+	// PUT (400, the validator's message) and writes nothing. The candidate
+	// merges the patch's three keys onto the current values — so the whole
+	// first_attempt table (not just the touched key) is checked, matching the
+	// config-load and comm/CLI rules, while a patch that touches none of the
+	// three keys never runs the check.
+	if touchesAttemptCostKeys(patch) {
+		cand := s.cfg.Autonomous
+		cand.FirstAttempt = make(map[string]config.FirstAttemptChoice, len(cand.FirstAttempt))
+		for kind, choice := range cand.FirstAttempt {
+			cand.FirstAttempt[kind] = choice
+		}
+		if v, ok := patch["autonomous.first_attempt"]; ok {
+			fa, ok := decodeFirstAttempt(v)
+			if !ok {
+				http.Error(w, "autonomous.first_attempt: must be an object of task kind to {backend, model}", http.StatusBadRequest)
+				return
+			}
+			cand.FirstAttempt = fa
+		}
+		if v, ok := patch["autonomous.first_attempt_escalate_after_failures"]; ok {
+			n, ok := toInt(v)
+			if !ok {
+				http.Error(w, "autonomous.first_attempt_escalate_after_failures: must be a whole number", http.StatusBadRequest)
+				return
+			}
+			cand.FirstAttemptEscalateAfterFailures = n
+		}
+		if v, ok := patch["autonomous.retry_resume_max_context_tokens"]; ok {
+			n, ok := toInt(v)
+			if !ok {
+				http.Error(w, "autonomous.retry_resume_max_context_tokens: must be a whole number", http.StatusBadRequest)
+				return
+			}
+			cand.RetryResumeMaxContextTokens = n
+		}
+		if verr := config.ValidateAttemptCostSettings(cand); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
 		}
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
@@ -9250,6 +9299,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.resume_max_age_seconds":
 			if n, ok := toInt(v); ok && n >= -1 {
 				cfg.Autonomous.ResumeMaxAgeSeconds = n
+			}
+		// Attempt-cost settings — the value was already vetted in
+		// handlePutConfig by the shared config.ValidateAttemptCostSettings,
+		// so the switch only applies what passed; a value it cannot read is
+		// left unchanged (the whole PUT would have been refused anyway).
+		case "autonomous.first_attempt":
+			if fa, ok := decodeFirstAttempt(v); ok {
+				cfg.Autonomous.FirstAttempt = fa
+			}
+		case "autonomous.first_attempt_escalate_after_failures":
+			// 0 is a meaningful sentinel (escalate on the first failure); the
+			// whole 0..20 range is bounds-checked by the shared validator.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.FirstAttemptEscalateAfterFailures = n
+			}
+		case "autonomous.retry_resume_max_context_tokens":
+			// 0 is a meaningful sentinel (always start a fresh session); the
+			// whole 0..2000000 range is bounds-checked by the shared validator.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.RetryResumeMaxContextTokens = n
 			}
 		case "autonomous.max_engines_per_node":
 			// Clamped to 1 like config load does: values below 1 become 1
@@ -10753,7 +10822,7 @@ func validatePluginServicesPatch(current config.PluginServicesConfig, patch map[
 					next.PerService[name] = ov
 				}
 			}
-		case strings.HasPrefix(k, "plugins.services.per_service."): 
+		case strings.HasPrefix(k, "plugins.services.per_service."):
 			name, _ := strings.CutPrefix(k, "plugins.services.per_service.")
 			if name == "" {
 				continue
@@ -11501,6 +11570,56 @@ func planTierTableForDisplay(table map[string]int) map[string]int {
 		return map[string]int{}
 	}
 	return table
+}
+
+// touchesAttemptCostKeys reports whether patch carries any of the three
+// autonomous attempt-cost keys. Only then should handlePutConfig run the
+// shared config.ValidateAttemptCostSettings check (and only then, so a patch
+// that clears other keys never rejects on pre-existing config it did not
+// change).
+func touchesAttemptCostKeys(patch map[string]interface{}) bool {
+	for _, k := range []string{
+		"autonomous.first_attempt",
+		"autonomous.first_attempt_escalate_after_failures",
+		"autonomous.retry_resume_max_context_tokens",
+	} {
+		if _, ok := patch[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// decodeFirstAttempt renders a JSON first_attempt object into the config map
+// it is applied as. ok is false when the value is not an object of task kind
+// to {backend, model}; the shared config.ValidateAttemptCostSettings then
+// vets kinds and backends, so decode only handles shape here.
+func decodeFirstAttempt(v interface{}) (map[string]config.FirstAttemptChoice, bool) {
+	obj, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]config.FirstAttemptChoice, len(obj))
+	for kind, entry := range obj {
+		choice := config.FirstAttemptChoice{}
+		if e, ok := entry.(map[string]interface{}); ok {
+			choice.Backend, _ = e["backend"].(string)
+			choice.Model, _ = e["model"].(string)
+		}
+		out[kind] = choice
+	}
+	return out, true
+}
+
+// firstAttemptForDisplay renders the autonomous.first_attempt table for
+// GET /api/config. nil (unset / today's choice for every kind) becomes an
+// empty object rather than null, so clients treat "nothing configured" and
+// "empty table" the same way.
+func firstAttemptForDisplay(m map[string]config.FirstAttemptChoice) map[string]config.FirstAttemptChoice {
+	if m == nil {
+		return map[string]config.FirstAttemptChoice{}
+	}
+	return m
 }
 
 // priorityByKindForDisplay renders the kind → capacity-priority table in

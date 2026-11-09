@@ -1063,6 +1063,21 @@ paths:
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
         `backend:model[@attempts],...`; empty clears the ladder),
+        `autonomous.first_attempt` (a JSON object mapping a task kind — implementation,
+        docs, note or final_gate — to its first-attempt choice, each an object with an
+        optional `backend` and an optional `model` string; an empty object or an empty
+        string reads as "use the default" for that field),
+        `autonomous.first_attempt_escalate_after_failures` (whole number of 0 to 20, unset
+        reads as 1; the attempt count after which a task stops taking first-attempt
+        backends and uses its assigned backend and model) and
+        `autonomous.retry_resume_max_context_tokens` (whole number of 0 to 2000000, unset
+        reads as 150000; the context-token budget a resumed retry may reach before it is
+        refused, 0 = unlimited). An out-of-range number, a task kind outside
+        implementation/docs/note/final_gate, or a backend that needs a model (pi,
+        pi-prompt or ollama) whose choice names no model rejects the whole PUT with 400
+        and a message that names the key and the allowed values, and nothing is written.
+        GET returns the three under `autonomous` and the next scheduled run picks them up
+        without a restart.
         `autonomous.merge_pipeline.file_name` (a file name inside the project, default
         `.datawatch/merge-pipeline.yaml`), `autonomous.merge_pipeline.source_order` (a JSON
         array or comma list of `file` and `record`, default `file,record`),
