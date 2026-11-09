@@ -116,22 +116,131 @@ function renderHostRow(host, readiness) {
   return {
     name,
     kind,
-    kindLabel: tr('git_hosts.kind.' + (kind || 'unknown')),
+    kindLabel: tr('git_hosts_kind_' + (kind || 'unknown')),
     state,
-    stateLabel: tr('git_hosts.state.' + state),
+    stateLabel: tr('git_hosts_state_' + state),
     account,
-    accountLabel: account ? tr('git_hosts.account', { account }) : tr('git_hosts.account_none'),
+    accountLabel: account ? tr('git_hosts_account', { account }) : tr('git_hosts_account_none'),
     scopes,
-    scopesLabel: tr('git_hosts.scopes.' + scopes),
+    scopesLabel: tr('git_hosts_scopes_' + scopes),
     scopeList,
     problem,
     fixCommand,
-    fixLabel: fixCommand ? tr('git_hosts.fix_label') : '',
-    titleLabel: tr('git_hosts.row_title', { name }),
+    fixLabel: fixCommand ? tr('git_hosts_fix_label') : '',
+    titleLabel: tr('git_hosts_row_title', { name }),
   };
 }
 
-const api = { shouldShowGitHostsCard, renderHostRow };
+// ---- Settings editor helpers (git.hosts editing card) --------------------
+
+const GIT_HOST_KINDS = ['github', 'gitlab', 'gitea', 'bitbucket', 'git'];
+const GIT_CREDENTIAL_SOURCES = ['host_login', 'vault', 'broker'];
+const GIT_HOST_HELP_URL = '/diagrams.html#docs/howto/connect-git-host.md';
+
+// baseUrlVisible: the base URL field is shown for every kind except github,
+// whose base URL is always github.com.
+function baseUrlVisible(kind) {
+  return String(kind || '') !== 'github';
+}
+
+// baseUrlRequired: gitea, bitbucket and git have no public default, so the
+// base URL must be set. gitlab only needs one when self-hosted.
+function baseUrlRequired(kind) {
+  return ['gitea', 'bitbucket', 'git'].includes(String(kind || ''));
+}
+
+// vaultSecretVisible: the vault secret name is shown only for the vault source.
+function vaultSecretVisible(source) {
+  return String(source || '') === 'vault';
+}
+
+// hostHelpUrl is the help link target for the card.
+function hostHelpUrl() {
+  return GIT_HOST_HELP_URL;
+}
+
+// hostTestPath is the POST path for one host's connection test.
+function hostTestPath(name) {
+  return '/api/git/hosts/' + encodeURIComponent(String(name || '')) + '/test';
+}
+
+// hostsFromConfig turns GET /api/config's git.hosts into editable groups.
+// Only the editable fields and the signing fields the save must carry back
+// are kept; an empty credential source reads as host_login.
+function hostsFromConfig(cfg) {
+  const list = cfg && cfg.git && Array.isArray(cfg.git.hosts) ? cfg.git.hosts : [];
+  return list.filter((h) => h && typeof h === 'object').map((h) => ({
+    name: String(h.name || ''),
+    kind: String(h.kind || 'github'),
+    base_url: String(h.base_url || ''),
+    credential_source: String(h.credential_source || 'host_login'),
+    vault_secret: String(h.vault_secret || ''),
+    sign_tags: h.sign_tags === true,
+    signing_key: String(h.signing_key || ''),
+  }));
+}
+
+// readinessRowsFromEntries flattens GET /api/git/hosts entries
+// ({name, kind, readiness:{...}}) into the HostReadiness-shaped rows
+// renderHostRow reads, each keyed by the entry name.
+function readinessRowsFromEntries(payload) {
+  const entries = payload && Array.isArray(payload.hosts) ? payload.hosts : [];
+  return entries.filter((e) => e && typeof e === 'object').map((e) => {
+    const r = e.readiness && typeof e.readiness === 'object' ? e.readiness : {};
+    return Object.assign({}, r, { host: String(e.name || r.host || '') });
+  });
+}
+
+// buildHostsPatch validates the edited groups and returns the git.hosts value
+// for PUT /api/config. It returns {value, errors}: errors is a list of
+// {index, key} where key is a git_hosts_ i18n key; value is null when any
+// error is present. Credentials never enter this object: only the vault
+// secret NAME is carried.
+function buildHostsPatch(groups) {
+  const list = Array.isArray(groups) ? groups : [];
+  const errors = [];
+  const seen = new Set();
+  const value = [];
+  list.forEach((g, index) => {
+    const row = g || {};
+    const name = String(row.name || '').trim();
+    const kind = String(row.kind || '').trim();
+    const source = String(row.credential_source || 'host_login').trim() || 'host_login';
+    const base = String(row.base_url || '').trim();
+    const vault = String(row.vault_secret || '').trim();
+    if (!name) errors.push({ index, key: 'git_hosts_err_name' });
+    else if (seen.has(name)) errors.push({ index, key: 'git_hosts_err_duplicate' });
+    seen.add(name);
+    if (!GIT_HOST_KINDS.includes(kind)) errors.push({ index, key: 'git_hosts_err_kind' });
+    if (!GIT_CREDENTIAL_SOURCES.includes(source)) errors.push({ index, key: 'git_hosts_err_source' });
+    if (baseUrlRequired(kind) && !base) errors.push({ index, key: 'git_hosts_err_base_url' });
+    if (vaultSecretVisible(source) && !vault) errors.push({ index, key: 'git_hosts_err_vault' });
+    const entry = {
+      name,
+      kind,
+      credential_source: source,
+      sign_tags: row.sign_tags === true,
+    };
+    if (baseUrlVisible(kind) && base) entry.base_url = base;
+    if (vaultSecretVisible(source)) entry.vault_secret = vault;
+    const signingKey = String(row.signing_key || '').trim();
+    if (signingKey) entry.signing_key = signingKey;
+    value.push(entry);
+  });
+  return { value: errors.length ? null : value, errors };
+}
+
+// testResultKey picks the i18n key for a connection-test result.
+function testResultKey(result) {
+  return result && result.ok === true ? 'git_hosts_test_ok' : 'git_hosts_test_failed';
+}
+
+const api = {
+  shouldShowGitHostsCard, renderHostRow,
+  GIT_HOST_KINDS, GIT_CREDENTIAL_SOURCES,
+  baseUrlVisible, baseUrlRequired, vaultSecretVisible, hostHelpUrl, hostTestPath,
+  hostsFromConfig, readinessRowsFromEntries, buildHostsPatch, testResultKey,
+};
 
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.gitHostsCard = api;

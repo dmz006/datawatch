@@ -10353,6 +10353,15 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- Git hosts — editable git.hosts list (GET/PUT /api/config) with
+             readiness from GET /api/git/hosts. Filled by loadGitHostsCard(). -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('git_hosts', t('git_hosts_title'))}
+          <div id="settings-sec-git_hosts" style="${secContent('git_hosts')}">
+            <div id="gitHostsCard" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
+
         <!-- BL234 — Language card removed from General; canonical location is Settings → About. -->
 
         <!-- BL220 Bundle F — General tab additions -->
@@ -11227,6 +11236,7 @@ function renderSettingsView() {
   loadServers();
   loadCommsConfig();
   loadProxySettings();
+  loadGitHostsCard();
   // Populate auth token fields in comms tab.
   // Proxy-aware (version-skew audit): _apiPath routes to the selected
   // peer when one is active (no-op for local/all), matching loadCommsConfig.
@@ -21914,6 +21924,149 @@ function updateProxySetting(key, val) {
   apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ key, value: num }) })
     .then(() => showToast('Saved', 'success', 1500))
     .catch(e => showToast('Save failed: ' + e.message, 'error'));
+}
+
+// ── Git hosts card (Settings → General) ───────────────────────────────────────
+// Editable git.hosts list. Config comes from GET /api/config, readiness from
+// GET /api/git/hosts, saves go through PUT /api/config and the connection test
+// through POST /api/git/hosts/<name>/test. Pure helpers and row data live in
+// app-git-hosts.js (window.gitHostsCard). No token or secret value is ever
+// read into this card: a vault source shows the secret NAME only.
+let _gitHostsGroups = null; // editable draft; null until the first good load
+
+function _ghApi() { return window.gitHostsCard || null; }
+
+function loadGitHostsCard() {
+  const el = document.getElementById('gitHostsCard');
+  const GH = _ghApi();
+  if (!el) return;
+  if (!GH) { el.textContent = t('git_hosts_unavailable'); return; }
+  Promise.all([apiFetch('/api/config'), apiFetch('/api/git/hosts')]).then(([cfg, ready]) => {
+    _gitHostsGroups = GH.hostsFromConfig(cfg);
+    _gitHostsReadiness = GH.readinessRowsFromEntries(ready);
+    renderGitHostsCard();
+  }).catch(e => {
+    // Without a loaded config the editor stays off, so a save can never
+    // overwrite git.hosts with a list the operator never saw.
+    if (_gitHostsGroups === null) {
+      el.textContent = (t('git_hosts_load_failed') || 'Git hosts unavailable') + (e && e.message ? ': ' + e.message : '');
+    } else {
+      renderGitHostsCard();
+    }
+  });
+}
+let _gitHostsReadiness = [];
+
+// _ghSyncDraft copies what is typed in the card back into the draft.
+function _ghSyncDraft() {
+  if (!_gitHostsGroups) return;
+  document.querySelectorAll('#gitHostsCard [data-gh-field]').forEach((inp) => {
+    const g = _gitHostsGroups[Number(inp.getAttribute('data-gh-idx'))];
+    if (g) g[inp.getAttribute('data-gh-field')] = inp.value;
+  });
+}
+
+function renderGitHostsCard() {
+  const el = document.getElementById('gitHostsCard');
+  const GH = _ghApi();
+  if (!el || !GH || !_gitHostsGroups) return;
+  const groups = _gitHostsGroups;
+  const opts = (list, sel, labelOf) => list.map((v) =>
+    `<option value="${escHtml(v)}" ${v === sel ? 'selected' : ''}>${escHtml(labelOf(v))}</option>`).join('');
+  // Literal keys, not prefix concatenation, so the locale guard sees each one.
+  const kindKeys = { github: 'git_hosts_kind_github', gitlab: 'git_hosts_kind_gitlab', gitea: 'git_hosts_kind_gitea', bitbucket: 'git_hosts_kind_bitbucket', git: 'git_hosts_kind_git' };
+  const sourceKeys = { host_login: 'git_hosts_source_host_login', vault: 'git_hosts_source_vault', broker: 'git_hosts_source_broker' };
+  const kindLabel = (k) => t(kindKeys[k] || 'git_hosts_kind_unknown');
+  const sourceLabel = (s) => t(sourceKeys[s] || 'git_hosts_source_host_login');
+  const field = (label, body) => `<div style="display:flex;flex-direction:column;gap:2px;margin-top:4px;">
+      <span class="settings-label" style="font-size:12px;">${escHtml(label)}</span>${body}</div>`;
+  const input = (i, f, val, extra) => `<input class="form-input" data-gh-idx="${i}" data-gh-field="${f}" value="${escHtml(val || '')}" ${extra || ''} />`;
+  const select = (i, f, list, sel, labelOf, onchange) => `<select class="form-input" data-gh-idx="${i}" data-gh-field="${f}" onchange="${onchange}">${opts(list, sel, labelOf)}</select>`;
+
+  const rows = groups.map((g, i) => {
+    const r = GH.renderHostRow(g, _gitHostsReadiness);
+    const showBase = GH.baseUrlVisible(g.kind);
+    const showVault = GH.vaultSecretVisible(g.credential_source);
+    const status = [r.stateLabel, r.accountLabel, r.scopesLabel].join(' · ');
+    return `<div class="git-host-group" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+        <strong style="color:var(--text);font-size:13px;">${escHtml(g.name || t('git_hosts_new_host'))}</strong>
+        <a href="${escHtml(GH.hostHelpUrl())}" target="_blank" rel="noopener" title="${escHtml(t('git_hosts_help_tip'))}" aria-label="${escHtml(t('git_hosts_help_tip'))}" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(status)}</div>
+      ${r.problem ? `<div style="font-size:11px;color:var(--error,#ef4444);margin-top:2px;">${escHtml(r.problem)}</div>` : ''}
+      ${r.fixCommand ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(r.fixLabel)}: <code>${escHtml(r.fixCommand)}</code></div>` : ''}
+      ${field(t('git_hosts_field_name'), input(i, 'name', g.name))}
+      ${field(t('git_hosts_field_kind'), select(i, 'kind', GH.GIT_HOST_KINDS, g.kind, kindLabel, 'gitHostsFieldChanged()'))}
+      ${showBase ? field(t('git_hosts_field_base_url'), input(i, 'base_url', g.base_url, 'placeholder="https://git.example.com"')) : ''}
+      ${field(t('git_hosts_field_source'), select(i, 'credential_source', GH.GIT_CREDENTIAL_SOURCES, g.credential_source, sourceLabel, 'gitHostsFieldChanged()'))}
+      ${showVault ? field(t('git_hosts_field_vault_secret'), input(i, 'vault_secret', g.vault_secret, 'placeholder="GH_TOKEN_OPERATOR"')) : ''}
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn-secondary" style="font-size:11px;" onclick="testGitHost(${i})">${escHtml(t('git_hosts_test'))}</button>
+        <button class="btn-secondary" style="font-size:11px;" onclick="removeGitHost(${i})">${escHtml(t('git_hosts_remove'))}</button>
+        <span id="gh-test-${i}" style="font-size:11px;color:var(--text2);"></span>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);padding:0 0 4px;">${escHtml(t('git_hosts_intro'))}</div>
+    ${groups.length === 0 ? `<div style="font-size:12px;color:var(--text2);padding:4px 0;">${escHtml(t('git_hosts_empty'))}</div>` : ''}
+    ${rows}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+      <button class="btn-secondary" style="font-size:11px;" onclick="addGitHost()">${escHtml(t('git_hosts_add'))}</button>
+      <button class="btn-success" style="font-size:11px;" onclick="saveGitHosts()">${escHtml(t('git_hosts_save'))}</button>
+      <span id="gh-save-msg" style="font-size:11px;color:var(--text2);"></span>
+    </div>`;
+}
+
+// gitHostsFieldChanged keeps typed values, then redraws so the base URL and
+// vault secret rows follow the kind and credential source.
+function gitHostsFieldChanged() { _ghSyncDraft(); renderGitHostsCard(); }
+
+function addGitHost() {
+  _ghSyncDraft();
+  _gitHostsGroups.push({ name: '', kind: 'github', base_url: '', credential_source: 'host_login', vault_secret: '', sign_tags: false, signing_key: '' });
+  renderGitHostsCard();
+}
+
+function removeGitHost(i) {
+  _ghSyncDraft();
+  _gitHostsGroups.splice(i, 1);
+  renderGitHostsCard();
+}
+
+// testGitHost runs the connection test for one host by its saved name.
+function testGitHost(i) {
+  const GH = _ghApi();
+  if (!GH) return;
+  _ghSyncDraft();
+  const out = document.getElementById('gh-test-' + i);
+  const name = String((_gitHostsGroups[i] || {}).name || '').trim();
+  if (!name) { if (out) out.textContent = t('git_hosts_err_name'); return; }
+  if (out) out.textContent = t('git_hosts_testing');
+  apiFetch(GH.hostTestPath(name), { method: 'POST' }).then((res) => {
+    if (out) out.textContent = t(GH.testResultKey(res)) + (res && res.message ? ': ' + res.message : '');
+  }).catch((e) => {
+    if (out) out.textContent = t('git_hosts_test_failed') + ': ' + (e && e.message ? e.message : '');
+  });
+}
+
+// saveGitHosts validates the draft locally, then writes git.hosts in one PUT.
+function saveGitHosts() {
+  const GH = _ghApi();
+  if (!GH || !_gitHostsGroups) return;
+  _ghSyncDraft();
+  const msg = document.getElementById('gh-save-msg');
+  const res = GH.buildHostsPatch(_gitHostsGroups);
+  if (res.errors.length) {
+    const e = res.errors[0];
+    if (msg) msg.textContent = t('git_hosts_row_label', [e.index + 1]) + ': ' + t(e.key);
+    return;
+  }
+  apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ key: 'git.hosts', value: res.value }) })
+    .then(() => { showToast(t('git_hosts_saved'), 'success', 1500); loadGitHostsCard(); })
+    .catch((e) => showToast(t('git_hosts_save_failed') + ': ' + e.message, 'error'));
 }
 
 // ── Memory Stats & Browser ────────────────────────────────────────────────────
