@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.116.0 (2026-11-09).** Release approval is now a setting: each release size (patch, minor, major) is auto, ask or manual, per project or globally, and the daemon's merge run enforces it through a release gate. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.117.0 (2026-11-09).** Template tasks and the closing script gate now run in the daemon instead of starting a model session; set a template's mode to llm to bring a session back. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

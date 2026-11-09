@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.117.0 — Template tasks and script gates run in the daemon
+
+### Added
+
+- **The daemon now carries out template tasks and the closing script gate itself, so these no longer start a model session.** Measured on 2026-11-08, template task sessions (changelog entry, parity draft, docs set, bounded load note, release version note, final gate) cost about 19 percent of the week's Claude use, wrote no code and failed often. The daemon already generates the changelog draft, parity draft, registry row and tracker rows when an Automaton completes, so it now does that work for the template tasks too.
+  - **What no longer starts a session by default:** the changelog entry, parity issue draft, bounded load note and release version note tasks (mode `daemon`), and the final gate task (the daemon runs its script, with no worker session and no verifier). The docs set keeps its session (mode `llm`). In `daemon` mode the daemon writes the same artefact through the existing generator, marks the task completed with a decision that says the daemon did it, and the task counts toward its story as before. In `off` mode the task is not created.
+  - **How to turn a session back on:** set the template's mode to `llm`, for example `datawatch config set autonomous.task_templates.mode.changelog_entry llm`, or `configure autonomous.task_templates.mode.changelog_entry=llm` in chat, or `task_templates_mode` on the MCP `autonomous_config_set` tool, or the per-template select on the Settings page. The final gate has no session mode: `off` removes it, and a session-run closing check is a custom template of another kind. See `docs/howto/automaton-daemon-task-modes.md`.
+  - **Script gate:** a final gate task whose check is a script file in the project verify folder, or the project's configured build and test command, is run by the daemon with a hard time limit, its output is captured into the task report, and the task completes or fails by exit status. A gate the daemon cannot run fails with the reason, never left waiting. `autonomous.script_gate_timeout_seconds` (default 900, 0 means no cap, a negative or fractional value is refused) sets the limit.
+  - **Project gate command:** `autonomous.project_gate_command`, with a per-project override in the project policy, names the project's own build and test command so the gate is not tied to one language. When unset the gate uses the verification scripts the tasks already declare.
+  - **Decompose lint and plan coverage** no longer report findings for template tasks that run in daemon mode.
+  - **Surfaces:** the three new settings reach config.yaml, the Settings page (with help entries), `GET` and `PUT /api/config`, the comm channel `configure` verb, MCP `autonomous_config_get` and `autonomous_config_set`, and `datawatch config set`; an invalid write is refused on every surface.
+  - **Migration:** none needed, but note that new and existing Automata now get daemon-run template tasks by default; set the mode to `llm` per template to keep the old behaviour.
+
 ## v9.116.0 — Release approval modes for the merge pipeline
 
 ### Added
