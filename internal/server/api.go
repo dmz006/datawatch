@@ -6300,6 +6300,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 					"fingerprints": s.cfg.Git.SecretScan.AllowList.Fingerprints,
 				},
 			},
+			// git.hosts — the hosts datawatch may push to. Each entry shows
+			// its stored fields with the effective credential_source (empty
+			// reads host_login); the vault source shows the vault entry NAME
+			// only — the secret value is never stored in the config and never
+			// leaves it.
+			"hosts": gitHostsForDisplay(s.cfg.Git.Hosts),
 		},
 		"mcp": map[string]interface{}{
 			"enabled":           s.cfg.MCP.Enabled,
@@ -7770,6 +7776,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Git hosts (git.hosts / git.hosts.<name>.<field>): the patch is
+	// simulated through the shared helpers (internal/config/git_hosts.go)
+	// before anything is applied, so an unknown host or field, a malformed
+	// key, a bad kind or credential source, or a non-boolean sign_tags
+	// rejects the whole PUT with a clear message instead of storing a
+	// partial host list.
+	if verr := validateGitHostsPatch(s.cfg.Git.Hosts, patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := validateRulesContextPatch(s.cfg.Autonomous.RulesContext, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -8132,6 +8148,11 @@ func autonomousFieldJSONByTag(cfg config.AutonomousConfig, tag string) (json.Raw
 // instead, which hot-swaps the live credential with a 60s overlap).
 func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
 	var skipped []string
+	// gitHostsPatchApplied: the git host keys (git.hosts and
+	// git.hosts.<name>.<field>) are applied once, atomically over the whole
+	// patch, whichever key the loop hits first — the other git host keys in
+	// the same patch just re-confirm it.
+	gitHostsPatchApplied := false
 	for k, v := range patch {
 		if strings.HasPrefix(k, "tracing.backends.") {
 			_ = applyTracingKey(&cfg.Tracing, k, v)
@@ -8163,6 +8184,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		if service, ok := strings.CutPrefix(k, "plugins.services.per_service."); ok && service != "" {
 			if ov, verr := normalizePluginServiceOverride(service, v); verr == nil {
 				applyPluginServiceOverride(cfg, service, ov)
+			}
+			continue
+		}
+		// git.hosts.<name>.<field> — the dotted per-field git host keys
+		// (internal/config/git_hosts.go) are applied once, atomically, through
+		// applyGitHostsPatch: the whole list and every per-field key are
+		// judged together over the final state, so a single write can set
+		// credential_source=vault with its vault_secret. The PUT pre-validates
+		// the same shape with the same message.
+		if strings.HasPrefix(k, "git.hosts.") {
+			if !gitHostsPatchApplied {
+				gitHostsPatchApplied = applyGitHostsPatch(cfg, patch)
 			}
 			continue
 		}
@@ -8425,6 +8458,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Trimmed; empty resets to the built-in default (origin),
 			// resolved via GitConfig.EffectivePushRemote.
 			cfg.Git.PushRemote = strings.TrimSpace(toString(v))
+		case "git.hosts":
+			// The whole host list in one write, applied atomically with the
+			// other git host keys of this patch (see applyGitHostsPatch).
+			if !gitHostsPatchApplied {
+				gitHostsPatchApplied = applyGitHostsPatch(cfg, patch)
+			}
 		case "tracing.mode", "tracing.arg_cap_bytes", "tracing.retention_days", "tracing.backends":
 			// Pre-validated by the PUT handler (validateTracingPatch).
 			_ = applyTracingKey(&cfg.Tracing, k, v)
@@ -10811,6 +10850,123 @@ func toString(v interface{}) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// gitHostsForDisplay renders git.hosts for the GET /api/config section:
+// every entry's fields as stored, with the effective credential_source
+// (empty reads host_login). The vault entry shows the vault entry NAME
+// only — the secret value is never stored in the config, so it can never
+// appear in the response.
+func gitHostsForDisplay(hosts []config.GitHostConfig) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(hosts))
+	for _, h := range hosts {
+		source := h.CredentialSource
+		if source == "" {
+			source = config.GitCredentialHostLogin
+		}
+		out = append(out, map[string]interface{}{
+			"name":              h.Name,
+			"kind":              h.Kind,
+			"base_url":          h.BaseURL,
+			"credential_source": source,
+			"vault_secret":      h.VaultSecret,
+			"sign_tags":         h.SignTags,
+			"signing_key":       h.SigningKey,
+		})
+	}
+	return out
+}
+
+// gitHostsFromPatchValue decodes the git.hosts PUT value — a JSON array of
+// host objects (wire form []interface{}, or an already-decoded slice) —
+// into the config type, with one clear error when it is not one.
+func gitHostsFromPatchValue(v interface{}) ([]config.GitHostConfig, error) {
+	if hosts, ok := v.([]config.GitHostConfig); ok {
+		return hosts, nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, errors.New("git.hosts: must be an array of host objects (name, kind, base_url, credential_source, vault_secret, sign_tags, signing_key)")
+	}
+	var hosts []config.GitHostConfig
+	if err := json.Unmarshal(b, &hosts); err != nil {
+		return nil, fmt.Errorf("git.hosts: must be an array of host objects (name, kind, base_url, credential_source, vault_secret, sign_tags, signing_key): %v", err)
+	}
+	return hosts, nil
+}
+
+// validateGitHostsPatch simulates the git host keys a PUT carries — the
+// whole list under git.hosts plus each dotted key
+// git.hosts.<name>.<field> — through config.ValidateGitHostsPatch, which
+// applies them onto a copy of the current list and validates the
+// combined final state once. An error (to answer as a 400 with the clear
+// message) is returned when the patch is not storable.
+func validateGitHostsPatch(current []config.GitHostConfig, patch map[string]interface{}) error {
+	list, fields, err := gitHostsPatchParts(patch)
+	if err != nil {
+		return err
+	}
+	if list == nil && len(fields) == 0 {
+		return nil
+	}
+	_, verr := config.ValidateGitHostsPatch(current, gitHostsPatchDeref(list), fields)
+	return verr
+}
+
+// gitHostsPatchParts decodes the git host keys in a PUT into the shape
+// config.ValidateGitHostsPatch consumes: the whole list (when present)
+// and each dotted field key with its string value. Returns an error when
+// the list value is not a host-object array.
+func gitHostsPatchParts(patch map[string]interface{}) (*[]config.GitHostConfig, map[string]string, error) {
+	var list *[]config.GitHostConfig
+	if raw, ok := patch["git.hosts"]; ok {
+		hosts, err := gitHostsFromPatchValue(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		list = &hosts
+	}
+	fields := map[string]string{}
+	for k, v := range patch {
+		if strings.HasPrefix(k, "git.hosts.") {
+			fields[k] = toString(v)
+		}
+	}
+	return list, fields, nil
+}
+
+// gitHostsPatchDeref unwraps the maybe-absent whole list for
+// config.ValidateGitHostsPatch (nil means the PUT did not carry one).
+func gitHostsPatchDeref(list *[]config.GitHostConfig) []config.GitHostConfig {
+	if list == nil {
+		return nil
+	}
+	return *list
+}
+
+// applyGitHostsPatch applies every git host key in the patch atomically —
+// the whole list under git.hosts and each git.hosts.<name>.<field> key,
+// judged together over the final state (so one write can set
+// credential_source=vault together with the vault_secret it needs). It
+// reports true when the patch is applied, false (with the problem logged,
+// the stored list unchanged) when it is not; the PUT already rejected the
+// same shape with the same message before the apply.
+func applyGitHostsPatch(cfg *config.Config, patch map[string]interface{}) bool {
+	list, fields, err := gitHostsPatchParts(patch)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[config] git.hosts: %v\n", err)
+		return false
+	}
+	if list == nil && len(fields) == 0 {
+		return false
+	}
+	hosts, verr := config.ValidateGitHostsPatch(cfg.Git.Hosts, gitHostsPatchDeref(list), fields)
+	if verr != nil {
+		fmt.Fprintf(os.Stderr, "[config] git.hosts: %v\n", verr)
+		return false
+	}
+	cfg.Git.Hosts = hosts
+	return true
 }
 
 // parsePinCheckSeconds reads pin_check_seconds from a PUT /api/config

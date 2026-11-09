@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -263,4 +264,73 @@ func findGitHost(hosts []GitHostConfig, name string) (GitHostConfig, bool) {
 		}
 	}
 	return GitHostConfig{}, false
+}
+
+// ValidateGitHostsPatch applies the whole host list (when present) and the
+// per-field keys git.hosts.<name>.<field> onto a copy of the current list,
+// then validates the final combined state ONCE — so one write can set
+// credential_source=vault together with the vault_secret it needs, and a
+// batch that would leave a host inconsistent is rejected as a whole. A
+// malformed key, unknown host, unknown field or non-boolean sign_tags is
+// reported with the same clear message as SetGitHostField. The inputs are
+// never mutated; the new list and nil are returned on success.
+func ValidateGitHostsPatch(current, listValue []GitHostConfig, fieldPatches map[string]string) ([]GitHostConfig, error) {
+	nextHosts := make([]GitHostConfig, len(current))
+	copy(nextHosts, current)
+	if listValue != nil {
+		nextHosts = append(make([]GitHostConfig, 0, len(listValue)), listValue...)
+	}
+	names := make([]string, 0, len(fieldPatches))
+	for k := range fieldPatches {
+		if strings.HasPrefix(k, gitHostPrefix) {
+			names = append(names, k)
+		}
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		name, field, err := parseGitHostKey(k)
+		if err != nil {
+			return nil, err
+		}
+		if field == "name" {
+			return nil, fmt.Errorf("git host name cannot be changed; it is the key")
+		}
+		idx := -1
+		for i := range nextHosts {
+			if nextHosts[i].Name == name {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return nil, fmt.Errorf("git host %q not found", name)
+		}
+		h := &nextHosts[idx]
+		value := fieldPatches[k]
+		switch field {
+		case "kind":
+			h.Kind = value
+		case "base_url":
+			h.BaseURL = value
+		case "credential_source":
+			h.CredentialSource = value
+		case "vault_secret":
+			h.VaultSecret = value
+		case "sign_tags":
+			b, perr := strconv.ParseBool(value)
+			if perr != nil {
+				return nil, fmt.Errorf("git.hosts.%s.sign_tags must be true or false, got %q", name, value)
+			}
+			h.SignTags = b
+		case "signing_key":
+			h.SigningKey = value
+		default:
+			return nil, fmt.Errorf("unknown git host field %q (want one of %s)", field, strings.Join(gitHostFields, ", "))
+		}
+	}
+	applyGitHostDefaults(&GitConfig{Hosts: nextHosts})
+	if err := ValidateGitHosts(nextHosts); err != nil {
+		return nil, err
+	}
+	return nextHosts, nil
 }
