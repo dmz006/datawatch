@@ -49,8 +49,10 @@ a PWA card; see "Where the shadow state is read" below.
   whether it blocks.
 - Run the plan's checks before the trial merge: an Automaton task branch that
   holds commits the work branch does not blocks the plan with
-  `unmerged_task_branch`, and the trial merge and every gate are then recorded
-  as skipped (see "The plan's checks and gates" below).
+  `unmerged_task_branch`, a recorded review verdict that names a commit other
+  than the branch head blocks it with `review_stale`, and when either does the
+  trial merge and every gate are then recorded as skipped
+  (see "The plan's checks and gates" below).
 
 **Never does:**
 
@@ -110,6 +112,46 @@ the gate output reports only the count of broken targets; the checker never
 names them. It is the answer to the broken plan link: a link that cannot resolve
 keeps the merge from passing its gate.
 
+**Review of an older commit — `review_stale` (blocks).** When a review verdict
+on the work branch is recorded with the plan, the same step-0 run checks it
+against the branch head: a verdict that names no commit, one that names a commit
+the repository does not have, or one that names a commit other than the branch
+head blocks the plan with a single `review_stale` finding — the review
+examined some other commit, so its verdict says nothing about the work the
+merge would land — and the trial merge and every gate are recorded as skipped.
+A review of the current head produces no finding, and the check changes nothing
+in the repository. It is the replay of the review that passed on a branch that
+did not yet carry its fix.
+
+**Failing tests named in the `test` gate.** When the `test` gate fails, its
+detail names the failing tests — parsed from the run's `go test -json` output,
+in the order they failed — and the first non-empty output line of the first
+failing test (its first assertion), kept next to the original detail (e.g. `exit status 1`). A run that produced no JSON,
+or none that failed, keeps its original detail unchanged. It is the answer to
+the stale settings-count test: a test that fails because its expected count is
+out of date fails the gate with its name and its assertion in the plan, not
+lost in a wall of output.
+
+**Hung gate suite — the timeout kills the whole process group.** Each gate's
+process starts in its own process group, and every process the gate starts
+inherits that group (on unix; elsewhere the timeout kills the gate's process
+only, as before). When the gate's timeout ends, the whole group is killed, so
+a hung PWA suite — one stuck on a browser or a server, and whatever it spawned
+— ends together with the gate and nothing it started survives it; the gate is
+recorded `timeout`. It is the replay of the PWA test suite that hangs: the gate
+can only end by its timeout, and after it ends the suite is gone.
+
+**Version bump that is not safe to run twice.** The planned version is derived
+from the default branch's version and the release size alone — a pure function
+of those two inputs, and a base that is not a plain `X.Y.Z` version (or a size
+that is not `patch`, `minor` or `major`) is refused, nothing is guessed. The
+trial tree's own version is only ever compared against the result, never used
+to compute it: planning twice over the same base and size gives the same
+planned version, and a trial tree that already carries the bump is reported as
+already at planned (with the version files that differ from the planned
+version — or hold no version at all — listed as stale). A bump applied twice
+therefore cannot move the version twice.
+
 ## Where the shadow state is read
 
 All five surfaces proxy one daemon endpoint and read — none of them writes:
@@ -143,7 +185,7 @@ to its defaults are indistinguishable.
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
 | `autonomous.merge_shadow.enabled` | bool | `true` (when unset) | Master switch: when `true` the supervisor's release step runs the shadow plan; when `false` no plan is recorded at all. It is not a mode — there is no `on` state. |
-| `autonomous.merge_shadow.gate_timeout` | duration | `20m` | The wait budget each gate of the throwaway trial merge may use before giving up — a per-gate budget, not a cap across all gates. A value that is not a positive Go duration is refused with the problem named on every write surface (nothing is written); a stored value that fails to parse falls back to the default at read time. |
+| `autonomous.merge_shadow.gate_timeout` | duration | `20m` | The wait budget each gate of the throwaway trial merge may use before giving up — a per-gate budget, not a cap across all gates. When the budget ends, the gate's whole process group is killed (unix), so a hung suite leaves no children behind (see "Hung gate suite" in the checks section). A value that is not a positive Go duration is refused with the problem named on every write surface (nothing is written); a stored value that fails to parse falls back to the default at read time. |
 | `autonomous.merge_shadow.plan_keep` | int | `200` | How many shadow merge plans are kept per project; anything older than the newest N is pruned. Values below `1` fall back to the default. |
 
 ## Where the settings can be set
@@ -265,8 +307,12 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
   today, and filing them into the defect queue is a separate job.
 - The plan's findings that name a test to watch or a merge to fix: the
   `load_sensitive` gate (a test that failed under load and passed when rerun
-  alone is still a test to watch), and the blocking `unmerged_task_branch`,
-  `stray_root_file` and `lint_version_mismatch` findings (see
+  alone is still a test to watch), the failing tests named in a failed `test`
+  gate's detail (a stale expected count is a test to fix before the next merge),
+  and the blocking `unmerged_task_branch`, `stray_root_file`,
+  `lint_version_mismatch` and `review_stale` findings (a `review_stale` review
+  is a verdict on an older commit — the current head is not reviewed yet, so
+  review it before the merge lands) (see
   [The plan's checks and gates](#the-plans-checks-and-gates)).
 - The parity-issue and gate lines in the plan, per
   [merge-pipeline.md](merge-pipeline.md#what-is-still-yours-to-do).
