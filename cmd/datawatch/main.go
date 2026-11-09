@@ -6701,6 +6701,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// merge_pipeline — the merge-shadow comparison after a ship reads
 			// version files and the registry file from it.
 			amgr.SetMergePipelineConfig(cfg.Autonomous.MergePipeline)
+			// autonomous.merge_shadow — the finish-time shadow merge plan reads
+			// its enabled switch and gate timeout from it.
+			amgr.SetMergeShadowConfig(cfg.Autonomous.MergeShadow)
 			// autonomous.shipped.backfill_on_start (default off) — now that the
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
