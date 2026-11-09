@@ -140,23 +140,50 @@ alerts already dismissed on GitHub are subtracted (see the `--compare` step).
 The CodeQL workflow's alert-gate job makes two kinds of call to the
 code-scanning API: it waits for the default setup analyses to appear for
 the commit, and then it reads the open alerts once. Both steps treat a
-rate-limited response as wait-and-retry — the gate waits, longer when GitHub
-reports a reset time, and tries again within the job's total wait budget — so
-a rate limit can turn the run red even when nothing is wrong with the code.
+rate-limited response as wait-and-retry: the gate waits, longer when GitHub
+reports a reset time, and tries again. It keeps retrying only while its total
+wait budget lasts. When GitHub's reset time is later than the time left in
+that budget, the gate does not wait for it: it ends at once, and the red run
+then needs a rerun after the reset time. So a rate limit can turn the run red
+even when nothing is wrong with the code.
 
 The step log is the check that tells the two red outcomes apart:
 
-- **`Rate limited`, with a reset time**, is a wait-and-retry that used up its
-  budget, not a finding. Wait until the reset time, then push a new commit or
-  start the check again yourself.
+- **`Rate limited`, as an error line, on the analyses step
+  (`wait-analyses`)**, means the gate could not see the analyses inside its
+  wait budget. Either the reset is later than the budget that was left, so the
+  gate stopped at once instead of waiting, or the budget was spent while the
+  API kept limiting it. It is not a finding: the analyses were never seen, so
+  the `No analysis for` result never appears. The line names the reset epoch
+  when the gate learned one; with no reset reported it reads
+  `core reset epoch: unknown`.
+  Wait until the reset time it names, then push a new commit or start the
+  check again yourself.
+- **`Rate limited`, as a notice, saying the gate is retrying within the
+  budget**, is a wait-and-retry that is still inside its budget. While the
+  gate is waiting it retries on its own, and nothing is needed from you unless
+  the run then ends red; a run that ends red does so on one of the two error
+  lines in this list, never on the notice.
+- **`Rate limited`, as an error line that names a core reset epoch, on the
+  alerts step (`open-alerts`)**, means the gate could not read the alerts
+  inside its wait budget. Either the reset is later than the budget that was
+  left, so the gate stopped at once instead of waiting, or the budget was spent
+  while the API kept limiting it. Both cases are not a finding: the alerts were
+  not read, so the zero-alert result never appears. The line names the reset
+  epoch when the gate learned one; in the spent-budget case with no reset
+  reported it reads `core reset epoch: unknown`.
+  Wait until the reset time it names, then start the check again yourself.
 - **`No analysis for`** is the real missing-analysis timeout: the API answered,
   but the analyses never appeared within the budget. That one is worth
   investigating.
 
 The gate's exit codes are unchanged by the rate-limit handling: both steps
-still exit 0 when clean and 2 on a usage error, and a spent rate-limit budget
-exits 1 with the `Rate limited` notice — reported as a rate limit, never as a
-missing analysis or as a zero-alert read.
+still exit 0 when clean and 2 on a usage error. In both steps, a rate limit
+that the gate cannot ride out — a reset later than the remaining budget, or a
+spent budget — exits 1 with the `Rate limited` error line; when the reset is
+out of reach the gate ends early at once instead of waiting it out. Either way
+the run is reported as a rate limit, never as a missing analysis or as a
+zero-alert read.
 
 ## Optional: run it before every push
 

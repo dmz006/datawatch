@@ -22,9 +22,11 @@
 #   print a '::notice title=Rate limited::' line, make one extra call to
 #   the rate-limit endpoint to learn the core reset epoch, wait until it
 #   (at least 1 second, never longer than the remaining budget; the
-#   current interval when no reset is reported) and retry. Any other
-#   API failure keeps the old behaviour: nothing seen yet, retried on
-#   the normal schedule.
+#   current interval when no reset is reported) and retry. When the
+#   reset is later than the remaining budget, the gate does not wait at
+#   all: it prints a '::error title=Rate limited::' line naming the reset
+#   epoch and exits 1 at once. Any other API failure keeps the old
+#   behaviour: nothing seen yet, retried on the normal schedule.
 #
 #   Inputs (environment):
 #     REPO                 owner/name of the repository (required)
@@ -63,7 +65,10 @@
 #   (WAIT_INITIAL_SECONDS when no reset time is known) and reads again,
 #   while the total budget WAIT_MAX_SECONDS (default 1500) lasts. If
 #   the budget is used up it exits 1 with '::error title=Rate limited::'
-#   and the reset time.
+#   and the reset time. When the reset is later than the remaining budget,
+#   the rate-limit retry ends early at once, without waiting, with the
+#   same '::error title=Rate limited::' line naming the reset epoch. That
+#   is reported as a rate limit and never as an open-alerts result.
 #
 #   Inputs (environment):
 #     REPO   owner/name of the repository (required)
@@ -138,6 +143,19 @@ require_env() {
 # API call is a core rate limit (429) failure.
 rate_limit_from_error() {
   printf '%s\n' "$1" | grep -qiE 'rate limit|HTTP 429'
+}
+
+# reset_out_of_reach <reset_epoch> <waited> <wait_max> — true (0) when the
+# reset is later than the remaining budget (wait_max - waited), so waiting
+# for it cannot finish inside the budget. Prints nothing.
+reset_out_of_reach() {
+  local reset="$1"
+  local waited="$2"
+  local wait_max="$3"
+  local now remaining
+  now="$(date +%s)"
+  remaining=$((wait_max - waited))
+  [ $((reset - now)) -gt "$remaining" ]
 }
 
 # lookup_rate_reset <api_command> — one extra call to learn the core
@@ -297,6 +315,11 @@ wait_analyses() {
       return 1
     fi
 
+    if [ "$rate_limited" -eq 1 ] && [ -n "$reset" ] && reset_out_of_reach "$reset" "$waited" "$wait_max"; then
+      echo "::error title=Rate limited::The core rate limit resets at epoch ${reset}, which is later than the remaining wait budget of $((wait_max - waited))s. This is not a code problem, rerun the check after the reset time."
+      return 1
+    fi
+
     if [ "$rate_limited" -eq 1 ]; then
       echo "::notice title=Rate limited::API rate limit hit while checking analyses; retrying within the budget."
       if [ -n "$reset" ]; then
@@ -380,6 +403,11 @@ open_alerts() {
     if [ "$waited" -ge "$wait_max" ]; then
       # A rate limit is not an open-alerts result.
       echo "::error title=Rate limited::Waited ${waited}s while the API kept returning rate limits (core reset epoch: ${last_reset:-unknown}). This is not a code problem, rerun the check after the reset time."
+      return 1
+    fi
+
+    if [ -n "$reset" ] && reset_out_of_reach "$reset" "$waited" "$wait_max"; then
+      echo "::error title=Rate limited::The core rate limit resets at epoch ${reset}, which is later than the remaining wait budget of $((wait_max - waited))s. This is not a code problem, rerun the check after the reset time."
       return 1
     fi
 
