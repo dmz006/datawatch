@@ -1536,7 +1536,7 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 ## Concepts & Glossary
 
-**Rate-limit reset out of reach** — the CodeQL alert gate's state when GitHub's core rate limit resets later than the wait budget that is left (`WAIT_MAX_SECONDS` minus the time already waited). It applies to both steps: `wait-analyses` and `open-alerts`. The gate does not sleep toward a reset it cannot reach: it prints a `Rate limited` error line naming the reset epoch and exits 1 at once. A reset inside the budget is waited for and retried; a rate limit with no reset time is retried on the normal interval until the budget runs out. Either way the run is a rate limit, not a missing analysis, and `open-alerts` never reports a zero-alert result from it. See [`howto/codeql-local-scan.md`](howto/codeql-local-scan.md#red-check-from-a-rate-limit).
+**Rate-limit reset out of reach** — the CodeQL alert gate's state when GitHub's core rate limit resets later than the wait budget that is left (`WAIT_MAX_SECONDS` minus the time already waited). It applies to both steps: `wait-analyses` and `open-alerts`. The gate does not sleep toward a reset it cannot reach: it prints a `Rate limited` error line (naming the reset epoch when one is known) and exits 1 at once. A reset inside the budget is waited for and retried; a rate limit with no reset time is retried on the normal interval until the budget runs out. Either way the run is a rate limit, not a missing analysis, and `open-alerts` never reports a zero-alert result from it. See [`howto/codeql-local-scan.md`](howto/codeql-local-scan.md#red-check-from-a-rate-limit).
 
 
 Key terms used across the docs, API, and hook payloads.

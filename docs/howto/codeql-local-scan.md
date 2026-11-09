@@ -158,8 +158,10 @@ The step log is the check that tells the two red outcomes apart:
   alerts step (`open-alerts`)**, means the gate could not read the alerts
   inside its wait budget. Either the reset is later than the budget that was
   left, so the gate stopped at once instead of waiting, or the budget was spent
-  while the API kept limiting it. Both cases name the reset epoch and are not a
-  finding: the alerts were not read, so the zero-alert result never appears.
+  while the API kept limiting it. Both cases are not a finding: the alerts were
+  not read, so the zero-alert result never appears. The line names the reset
+  epoch when the gate learned one; in the spent-budget case with no reset
+  reported it reads `core reset epoch: unknown`.
   Wait until the reset time it names, then start the check again yourself.
 - **`No analysis for`** is the real missing-analysis timeout: the API answered,
   but the analyses never appeared within the budget. That one is worth
