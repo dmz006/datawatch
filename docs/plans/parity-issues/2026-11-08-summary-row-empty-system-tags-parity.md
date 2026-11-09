@@ -44,10 +44,13 @@ sends, and on each operator-facing client that reads those rows:
   that reports it gone.
 - **Documentation.** `docs/howto/automata-tags.md` (the Sessions chip
   bullets and the placement section), `docs/api/sessions.md` (compact view
+  section), `docs/howto/list-endpoints-and-paging.md` (the sessions-list
   section), the *Placement axes* entry in
   `docs/datawatch-definitions.md`, and the session-list section of
-  `docs/operations.md` all state the same settled rule, and each notes
-  that a page reload always agrees with the server.
+  `docs/operations.md` all state the same settled rule — every row shape
+  carries `system_tags`, an empty array means "no placement tags now",
+  and a key-less row (older server) keeps the chips already held — and
+  each notes that a page reload always agrees with the server.
 - **The app-side clients (the gap this draft covers).** Android and
   iPhone/iOS read the same REST contract. The earlier drafts of this same
   family — the first-load data path
@@ -119,7 +122,7 @@ key-less row (older server) never adds chips.
 ## Suggested next step
 
 Nothing on the daemon side is open: the behavior is implemented, pinned by
-the Go and PWA tests above, documented in the four docs listed in *Affected
+the Go and PWA tests above, documented in the five docs listed in *Affected
 area*, and recorded in `CHANGELOG.md` under v9.112.8. There is no setting
 and no migration to make.
 
