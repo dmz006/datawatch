@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.11 (2026-11-08).** A planning request that waits ten minutes now competes with workers by priority, so planning is no longer starved. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.113.0 (2026-11-09).** The size of a release step is now decided by layered rules: an explicit size on the Automaton, an Automation milestone, a per-kind size map, then built-in defaults, with a breaking-change flag and settings for major trigger, cadence and version scheme. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

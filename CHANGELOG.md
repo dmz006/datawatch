@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.113.0 — Release size rules
+
+### Settings > Automation > Merge pipeline shows the release settings
+
+- **Four release settings are now editable in the web UI** on the Merge pipeline card: release size by kind (a row per Automaton kind with its size), major release trigger, release cadence and version scheme. Each has a `?` link to the Release size entry of the [definitions](docs/datawatch-definitions.md#release-size), and the new [release size and milestones](docs/howto/release-size-and-milestones.md) how-to explains them. Cadence `batch` and `manual`, and any version scheme other than `semver`, are shown but the save is refused with the daemon's reason.
+- Labels and help text are in all five locale bundles (en, de, es, fr, ja).
+
+### The release size a merge adds is now decided by rules, not by convention (part of finishing review and merge by the daemon, Phase 4)
+
+- **The release size of an Automaton — the version step its merge adds (patch, minor, major or none) — is resolved in layers, most specific first.** (1) An explicit `release_size` on the Automaton wins, including an explicit `none` and an explicit major. (2) When the Automation (arc) an Automaton belongs to is marked as a milestone and has completed, and the project's `major_trigger` is `milestone`, the step is raised to major — the arc is the major feature being grown out of the minors and patches that land under it. (3) The project's kind-to-size setting (`autonomous.merge_pipeline.release_size_map`, with the per-project override in `autonomous.merge_pipeline.projects`) — by default feature is a minor and bug is a patch. (4) The built-in default: feature minor, bug patch, anything else no release step.
+  - **A major is never inferred from a diff or a kind.** A `major` value written in the size map does not raise the release step on its own — a major comes only from an explicit `release_size` of `major` on the Automaton, or a completed milestone under the `milestone` trigger — and the breaking-change flag on an Automaton (`breaking_change`) raises its release to the major approval mode whatever the resolved size, so a breaking change is never merged quietly.
+  - **New settings, all overridable per project.** `autonomous.merge_pipeline.major_trigger` — `manual` (default), `milestone` or `never`: when a major release step is raised. `autonomous.merge_pipeline.release_size_map` — kind to size, adding to or overriding the built-in map. `autonomous.merge_pipeline.release_cadence` (default `per_merge`) and `autonomous.merge_pipeline.version_scheme` (default `semver`) are reserved: only `per_merge` and `semver` are accepted today; `batch`, `manual` and other schemes are refused until they exist, so a refused value names exactly what to change.
+  - **How it shows up:** an Automaton record now carries its explicit `release_size` and `breaking_change`, an Automation (arc) carries its `milestone` mark, and resolving one Automaton's size is a pure function of those values plus the project settings — the same answer on every surface, before the merge's version step consumes it. Setting an unknown size, an unknown major trigger or a not-yet-available cadence or scheme is refused at the setting's own path (for example `autonomous.merge_pipeline.projects.p.release_size_map.docs`) and nothing is stored; unset settings read the defaults above.
+  - **Migration:** none — every new setting is unset and reads the built-in defaults (feature minor, bug patch, major `manual`), so an existing project resolves exactly as it did before. Choose your milestone and size-map settings when you want a project or an arc to raise a major.
+  - **MCP:** `autonomous_config_set` takes `merge_pipeline_release_size_map`, `merge_pipeline_major_trigger`, `merge_pipeline_release_cadence` and `merge_pipeline_version_scheme` (with `merge_pipeline_project` for one project). `autonomous_merge_pipeline_get` shows the release settings in effect, in text and in JSON. A cadence or scheme that is not available yet is refused as a tool error that names the value to use.
+
+### Automata show their release size and breaking change in the web UI (part of finishing review and merge by the daemon, Phase 4)
+
+- **The Automaton list row and detail header show the release size and its source layer.** A `patch`, `minor` or `major` size shows as a chip naming the layer that decided it (set on this Automaton, Automation milestone, project size map, or built-in default). An Automaton with no size, or a size of `none`, shows nothing unless its breaking-change flag is set.
+- **A breaking-change badge** shows on the row and header when the flag is set, so a change that breaks users is visible before it merges.
+- **The settings modal sets both values:** the explicit release size (resolve again, patch, minor, major or none) and the breaking-change flag, through the existing `set_release_size` and `set_breaking_change` actions.
+- **Layers beyond the explicit size need a server field.** The web UI reads a resolved size from `release_size_resolved` and `release_size_source` when the server reports them. Until the server adds those fields, an Automaton with no explicit size shows no chip.
+- Labels are in all five locale bundles (en, de, es, fr, ja).
+
 ## v9.112.11 — Planner age
 
 ### Fixed
