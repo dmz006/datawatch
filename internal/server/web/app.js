@@ -21234,11 +21234,12 @@ function workerProfileNames(cfg, withBlank) {
 
 // workerProfileInForceHTML renders the read-only "Profile in force" list that
 // sits below the Worker session profiles selects: one line per worker role and
-// task kind, read from the in_force block GET /api/config serves. Each line
-// shows the key, the profile applied (or none) and the tier that set it. The
-// tier names are the ones workerprofile reports; an unknown tier shows raw.
+// task kind, read from cfg.autonomous.in_force (GET /api/config serves the
+// in_force block inside the autonomous block). Each line shows the key, the
+// profile applied (or none) and the tier that set it. The tier names are the
+// ones workerprofile reports; an unknown tier shows raw.
 function workerProfileInForceHTML(cfg, f, fLabel) {
-  const rows = Array.isArray(cfg && cfg.in_force) ? cfg.in_force : [];
+  const rows = Array.isArray(cfg && cfg.autonomous && cfg.autonomous.in_force) ? cfg.autonomous.in_force : [];
   if (!rows.length) return '';
   const tierKeys = {
     'built-in': 'settings_worker_profile_in_force_tier_built_in',

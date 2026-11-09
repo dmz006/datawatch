@@ -112,11 +112,12 @@ test('workerProfileInForceHTML renders one line per in_force entry with its prof
   const sb = loadApp();
   const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
   sb.window._i18n = { bundle, fallback: bundle };
-  const cfg = { in_force: [
+  // Same shape GET /api/config serves: in_force sits inside the autonomous block.
+  const cfg = { autonomous: { in_force: [
     { scope: 'role', key: 'worker', profile: 'full', tier: 'daemon', reason: '' },
     { scope: 'kind', key: 'docs', profile: 'minimal', tier: 'built-in', reason: '' },
     { scope: 'kind', key: 'note', profile: '', tier: 'none', reason: '' },
-  ] };
+  ] } };
   sb.__cfg = cfg;
   const html = vm.runInContext(
     "workerProfileInForceHTML(__cfg, {labelKey: 'settings_worker_profile_in_force_label', helpKey: 'settings_worker_profile_in_force_help'}, 'Profile in force')", sb);
@@ -132,6 +133,15 @@ test('workerProfileInForceHTML renders one line per in_force entry with its prof
 test('workerProfileInForceHTML renders nothing when the daemon reports no in_force block', () => {
   const sb = loadApp();
   sb.__cfg = {};
+  const html = vm.runInContext("workerProfileInForceHTML(__cfg, {}, 'x')", sb);
+  assert.equal(html, '');
+});
+
+test('workerProfileInForceHTML ignores a top-level in_force key the daemon never serves', () => {
+  const sb = loadApp();
+  const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
+  sb.window._i18n = { bundle, fallback: bundle };
+  sb.__cfg = { in_force: [{ scope: 'role', key: 'worker', profile: 'full', tier: 'daemon', reason: '' }] };
   const html = vm.runInContext("workerProfileInForceHTML(__cfg, {}, 'x')", sb);
   assert.equal(html, '');
 });
