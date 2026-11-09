@@ -136,6 +136,26 @@ closure of this follow-up. All of these are additive; none of them change the
 behavior this work shipped, the gate and the version note pass the verifier
 exactly as the docs now describe.
 
+## Verification notes
+
+Checked against the working tree on 2026-11-08 at 20:57 local time:
+
+- The write-time guard is wired: `validateTaskTemplateVerificationScripts` is called
+  from the `task_templates` config write path in internal/autonomous/api.go.
+- The apply-time skip is wired: `applyTemplatesToStory` in
+  internal/autonomous/task_templates.go calls `validateReportPath` and
+  `validateTemplateVerificationScript` and `continue`s past a refused template with no
+  log, finding or note, which confirms the silent-drop gap described above.
+- The built-in `final_gate` template is `ReadOnly: true` with a `ReportPath` under
+  `.datawatch/reports/` and no `VerificationScript`, as described in
+  internal/autonomous/task_templates_defaults.go.
+- The config package (internal/config) has no command-string check on
+  `verification_script`; its only mentions are in the decompose-lint rule types, which
+  supports the config-load gap described above.
+- The story file named in the originating task,
+  `internal/autonomous/fresh_decompose_templates_test.go`, does not exist in this tree.
+  The tests that pin this behavior are the three files listed under Affected area.
+
 ## Filing record
 
 Not yet filed. File as a datawatch daemon issue (the config-load and apply-skip
