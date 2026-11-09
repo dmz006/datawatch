@@ -3983,17 +3983,34 @@ needs no migration or restart — a refreshed PWA shows the corrected menu. The
 tag filter rows elsewhere are unchanged. See
 [howto/automata-tags.md](howto/automata-tags.md) for the operator view.
 
-**Placement tags on every session (operator check).** Every session that can
-carry a placement tag now carries every axis that applies to it. Planner
-(decompose) sessions gain a `compute:<node>` tag for the node they run on, next
-to their `automaton:`, `kind:`, `lane:` and `role:planner` tags, and supervisor
-sessions carry their applicable axes, including `role:supervisor` and
-`compute:<node>`. Sessions that already exist get the same tags only through
-the tag sweep: run `datawatch autonomous tags sweep --dry-run` to see which
-sessions would change, then the sweep without `--dry-run` to apply it. After the
-change, confirm on a live daemon that a new planner session and a new supervisor
-session show the axes listed in the howto. See
-[howto/automata-tags.md](howto/automata-tags.md#stamping-re-stamping-and-the-startup-backfill).
+**Placement tags from recorded launch facts (operator check).** A session
+that records its launch facts now carries every placement axis that applies
+to it: the launch role, kind and stage stored on the session record, the
+node it ran on — for a session that ran locally and stored no node, the
+local node, so the tag reads `compute:local` — and the backend, lane,
+project, Automaton and Automation it already had. A session with **no
+recorded launch facts keeps exactly the tags it had before**: the sweep's
+session pass falls back to the derivation it always used (role and kind
+from the session name, no node fallback), so a pass over such sessions
+leaves them unchanged and the daemon never invents an axis the record does
+not carry. See
+[howto/automata-tags.md](howto/automata-tags.md#stamping-re-stamping-and-the-startup-backfill)
+for the axis list.
+
+**Still needs your review — confirm on a live daemon:**
+
+- **No launch path records the facts yet.** The record fields (launch
+  role, kind, stage) exist and the sweep reads them, but no production
+  launch path writes them today; sessions gain the extra axes once the
+  launch side starts recording them.
+- **The `compute:local` value.** A local session that records launch facts
+  and stored no node is tagged `compute:local`. Confirm that naming is
+  what you expect to see in filters, counts and the Sessions Tags menu.
+- **Roll-forward, never hand-edited.** If a session later gains launch
+  facts, run `datawatch autonomous tags sweep --dry-run` first to see
+  exactly which sessions would change, then the sweep without `--dry-run`
+  to apply it — the tags are system tags and the registry refuses manual
+  rename or delete of them.
 
 ---
 

@@ -482,20 +482,28 @@ tree:
   project and, for an Automaton's work, its Automaton, Automation, stage and
   kind (and the peer, when the placement names one). The tags live in the
   session's `system_tags`, which the machine owns.
-- **Every session that can carry a placement tag carries every axis that
-  applies to it.** The rule is the same for every kind of session, so a
-  session never carries a partial set just because of the job it does:
-  - a **worker** session carries the full set its facts support;
-  - a **planner** (decompose) session carries its `automaton:`, `kind:decompose`,
-    `lane:` and `role:planner` tags **and** `compute:<node>` for the node it
-    runs on;
-  - a **supervisor** session carries the axes its own facts support, with
-    `role:supervisor` and `compute:<node>` for the node it runs on, plus
-    `backend:` and `lane:` when it runs in one.
+- **A session that records its launch facts carries every axis that
+  applies to it.** The launch role, kind and stage are stored on the
+  session record, and the session's placement is built from those facts
+  plus the record's own: the node it ran on — for a session that ran
+  locally and stored no node, the local node, so the tag reads
+  `compute:local` — its role and kind (such as `role:planner` or
+  `role:supervisor`) and its stage, alongside the backend, lane and
+  project it records and the Automaton and Automation the work belongs
+  to. The axes present are exactly the ones the record supports (the rule
+  is in [The ten axes](#the-ten-axes) above). Turn an axis off and its
+  tag is no longer written on any session.
+- **A session with no recorded launch facts keeps the tags it already
+  has.** Records written before launch facts existed load with empty
+  values, and their sessions re-derive the way they always have: role and
+  kind from the session name, and no node fallback when the record names
+  no node. The daemon never invents an axis it cannot read from the
+  record, so a pass over such sessions leaves them unchanged.
 
-  An axis with no fact behind it still writes no tag (the rule is in
-  [The ten axes](#the-ten-axes) above). Turn an axis off and its tag is no
-  longer written on any session.
+  For now, note that no production launch path records those facts yet —
+  a session gains the extra axes once its launch side starts recording
+  them, and from then on the record — not the session name — is what the
+  daemon reads.
 - **A retry on another node re-stamps the same session.** The whole
   `system_tags` list is replaced, so the old node's `compute:` tag and any
   old `peer:` tag are gone and the new placement's tags are the ones you
@@ -517,7 +525,13 @@ The tag sweep applies the in-force `tags.placement` block to **everything
 that already exists**: one pass over every session (live and archived) and
 every record the Automata own — Automata, tasks, Automations, decision
 records, templates and held questions — re-deriving each one's system tags
-from its stored facts and writing only the ones that changed.
+from its stored facts and writing only the ones that changed. For a
+session that records its launch facts the pass rebuilds the placement
+through the same build as at launch — including the local node
+(`compute:local`) for a local session that stored no node — while a
+session without launch facts keeps the derivation it always had, so the
+sweep leaves those sessions unchanged rather than guessing at missing
+facts.
 
 It is safe to run any time:
 
@@ -680,6 +694,12 @@ An empty tag list clears an Automaton's or a session's own tags.
 - **Looking for a `peer:` tag on local work.** Local sessions run on this
   daemon and write no peer tag; `peer:<name>` appears only when the session
   ran on another daemon.
+- **Expecting the sweep to add a `compute:` tag to an old local session.**
+  A session that stored no node only gains `compute:local` once its record
+  carries launch facts — the sweep then rebuilds its placement from the
+  record, with the local-node fallback. A record without launch facts keeps
+  the derivation it always had, node tag or not. To see exactly what a
+  sweep would do to your sessions, run it with `--dry-run` first.
 - **Expects a `stage:` or `kind:` tag on an Automaton.** An Automaton carries
   its own project, its Automation and itself; the stage rides on its tasks
   and the kind on the runs. Filter a task or session list by the axis.
