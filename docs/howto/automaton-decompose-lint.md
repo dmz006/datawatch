@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, decompose, decompose lint, standard tasks, task templates, guidance, findings]
+  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings]
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
@@ -237,7 +237,7 @@ when the planner did not produce a task for them. Apply is **idempotent**
 `template:<id>` in its title or spec, or whose title closely matches the
 task's) is detected, and nothing is added twice. Slots `{{feature}}`,
 `{{files}}` and `{{files_list}}` are filled from the feature name and the
-union of the story's task files; a task's `depends_on` lists *template* ids
+union of the story's task files; a task's `depends_on` lists *standard-task* ids
 it must run after, and the resulting task also depends on the story's
 other tasks. Each standard task runs in the `model session` mode — a model
 session does the work like any other task.
@@ -264,7 +264,7 @@ decompose-lint finding, and no hosting-CLI side effects.
 
 Standard tasks are applied in **shadow and enforce** (off applies
 nothing), and `autonomous.task_templates.enabled` (default **true**) gates
-them globally. Your operator templates are the ceiling over the built-in
+them globally. Your operator standard tasks are the ceiling over the built-in
 pack: **same id replaces, new id appends**; `autonomous.task_templates.projects`
 holds the per-project on/off switch (below), and the reads below list the
 resolved pack.
@@ -288,7 +288,7 @@ and `mode` — `model session` for each):
 All four render the same `autonomous.ListStandardTasks` listing, so they
 always agree (pinned against `testdata/standard-tasks/expected.json`).
 
-### A custom template with slots
+### A custom standard task with slots
 
 ```yaml
 autonomous:
@@ -330,7 +330,7 @@ what apply sees for that project.
 ```yaml
   projects:
     "/srv/projects/web":
-      enabled: false   # template apply off for this project only
+      enabled: false   # standard-task apply off for this project only
     "billing":
       enabled: true     # on, even if the global were off
 ```
