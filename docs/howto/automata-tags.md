@@ -252,13 +252,13 @@ started it.
   the chips never wait for the full record to load. The placement chip in
   particular is drawn on the very first frame, before the tag registry
   even arrives — it renders from the tag name itself, not from a registry
-  entry. Every row shape the server sends carries `system_tags` — the
-  summary row, a list refresh and a session update alike — and a session
-  with no placement tags is sent as `system_tags: []`, never as a missing
-  key or null. A row that carries the key wins even when it is empty, so
-  when a session loses its last placement tag the first update that
-  reports the placement as gone removes the chip from the tile; a page
-  reload always agrees with the server.
+  entry. The summary rows and the legacy session list records always carry
+  the `system_tags` key: a session with no placement tags is sent as
+  `system_tags: []`, never as a missing key or null. An explicit empty array
+  removes the placement chip from the tile, so when a session loses its last
+  placement tag the update that reports it removes the chip. A row or push
+  that omits the key keeps the chip (older servers). A page reload always
+  agrees with the server.
 - **Inherited tags are read-only.** They change when you change the
   Automaton's tags, not on the session. The session editor never sends them.
 - **Edit a session's own tags.** Open the session and choose **Tags → This
@@ -496,11 +496,13 @@ tree:
   for filtering and grouping. The placement chip is named, not id-resolved,
   so it paints on the first frame even before the tag registry has loaded;
   when the registry does arrive, the own and inherited operator chips join
-  the tile without dropping it. Every row shape the server sends carries
-  `system_tags`, with an empty list sent as `system_tags: []` (never a
-  missing key and never null); a row that carries the key wins even when
-  it is empty, so a session that loses its last placement tag drops the
-  chip on that update — and a page reload always agrees with the server.
+  the tile without dropping it. The summary rows and the legacy session
+  list records always carry the `system_tags` key, with an empty list sent
+  as `system_tags: []` (never a missing key and never null). An explicit
+  empty array removes the placement chip from the tile, so a session that
+  loses its last placement tag drops the chip on that update. A row or push
+  that omits the key keeps the chip (older servers). A page reload always
+  agrees with the server.
 
 ### Stamping, re-stamping and the startup backfill
 

@@ -1620,17 +1620,14 @@ inherited `inherited_tags` and the placement `system_tags` (see
 — which is what lets the PWA draw the placement chips on the session cards
 at first load of the Sessions page, without a fetch of each full record.
 The placement chip paints from the tag name, so it shows even before the
-tag registry has loaded. `system_tags` is always present in every session
-row shape the server sends — the summary row, a `session_state` push, a
-list record and a full record: a session with no placement tags is sent as
-`"system_tags": []`, never as a missing key or null (pinned for the summary
-row and the list record by
-`internal/server/session_summary_row_empty_system_tags_test.go`). A row
-that carries the key wins even when it is empty, so a session that loses
-its last placement tag drops its chips on that update; a row that omits
-the key (a shape the server does not send, e.g. an older server) is
-treated as "no update" and keeps the chips the page already holds. A page
-reload always agrees with the server. Example query:
+tag registry has loaded. The summary rows and the legacy session list records
+always carry the `system_tags` key, as an empty array (`"system_tags": []`)
+when the session holds no placement tag, never as a missing key or null
+(pinned for the summary row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). An explicit
+empty array removes the placement chip from the Sessions tile. A row or push
+that omits the key keeps the chip the page already holds (older servers). A
+page reload always agrees with the server. Example query:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
@@ -1654,7 +1651,7 @@ wire changed": correct that wording before filing,
 included — its Option A / Option B question is now settled in favour of
 always-present. Nothing on this daemon is open: no setting and no
 migration, the behavior is implemented and pinned, and the CHANGELOG
-(`v9.112.8`) already records it.
+already records it.
 
 ### Allowed project roots
 
