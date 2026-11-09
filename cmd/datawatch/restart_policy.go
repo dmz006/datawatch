@@ -98,6 +98,12 @@ func guardRestartForce(restart func(force bool), mgrFn func() restartPolicyManag
 // the planning Automata, verifying tasks, running judges, running tasks and
 // live sessions a restart would interrupt, the policy, and how to pass force.
 func restartGuardReport(rep autonomous.RestartInterruption) string {
+	return restartGuardReportWith(rep, `POST /api/restart?force=true (or {"force": true})`)
+}
+
+// restartGuardReportWith is restartGuardReport with the line that says how to
+// restart anyway supplied by the surface that prints it.
+func restartGuardReportWith(rep autonomous.RestartInterruption, howToForce string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[restart] refused: a restart now would interrupt work that needs force\n")
 	fmt.Fprintf(&b, "  restart policy: %s (quiet timeout %ds, on timeout %s)\n", rep.Policy, rep.QuietTimeoutSec, rep.OnTimeout)
@@ -118,6 +124,6 @@ func restartGuardReport(rep autonomous.RestartInterruption) string {
 		fmt.Fprintf(&b, "    - %s/%s status=%s session=%s\n", t.PRDID, t.TaskID, t.Status, t.SessionID)
 	}
 	fmt.Fprintf(&b, "  live sessions (%d): %s\n", len(rep.LiveSessions), strings.Join(rep.LiveSessions, ", "))
-	fmt.Fprintf(&b, "  to restart anyway: POST /api/restart?force=true (or {\"force\": true})\n")
+	fmt.Fprintf(&b, "  to restart anyway: %s\n", howToForce)
 	return b.String()
 }

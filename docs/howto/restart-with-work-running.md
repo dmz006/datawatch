@@ -134,6 +134,24 @@ list still names those five states and their old skips), so re-run the matrix
 and review before relying on them (the *Still to review (operator)* notes in
 [operations.md](../operations.md)).
 
+## Forcing a restart past running work
+
+A restart that would interrupt running Automata work is refused unless it is
+forced. The refusal names what would be interrupted: the planning Automata,
+the verifying tasks, the running judges, the running tasks and the live
+sessions, with their ids and the restart policy in force. Nothing is stopped.
+
+| Surface | Refused without force | Force |
+|---------|-----------------------|-------|
+| CLI | `datawatch restart` prints the report and exits non-zero | `datawatch restart --force` |
+| REST | `POST /api/restart` answers 409 with the report | `POST /api/restart?force=true` or `{"force": true}` |
+| MCP | `restart_daemon` returns an error result carrying the report | `restart_daemon` with `force=true` |
+| Messaging channels | `restart` replies with the report | `restart force` |
+
+When nothing that would be interrupted is running, every surface restarts as it
+did before, with no force needed. The restart policy (`autonomous.restart_policy`)
+still applies to a forced restart.
+
 ## Checking the value
 
 `GET /api/config` returns the stored value as `planning_restart_policy` in the

@@ -55,6 +55,7 @@ type Router struct {
 	version              string
 	checkUpdate          func() string                          // optional func that returns latest version string
 	restartFn            func()                                 // optional func to restart the daemon
+	restartForceFn       func(force bool)                       // optional force-aware restart (the guard); preferred over restartFn
 	reloadFn             func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
 	channelInfoFn        func() string                          // v5.27.10 — channel bridge introspection
 	channelDiagnosticsFn func() string                          // BL362 — per-session bridge diagnostics
@@ -143,6 +144,11 @@ func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 
 // SetRestartFunc sets an optional function that restarts the daemon.
 func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
+
+// SetRestartFuncForce wires the force-aware restart function (the restart
+// guard). A comm `restart` refused for running work is retried with force only
+// when its message carries the word force.
+func (r *Router) SetRestartFuncForce(fn func(force bool)) { r.restartForceFn = fn }
 
 // SetReloadFn (v5.27.2) wires the subsystem-aware hot reload entry
 // so chat-channel `reload [subsystem]` can fire the same /api/reload
@@ -1112,7 +1118,7 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdVersion:
 		r.handleVersion()
 	case CmdRestart:
-		r.handleRestart()
+		r.handleRestart(cmd)
 	case CmdUpdateCheck:
 		r.handleUpdateCheck()
 	case CmdSchedule:
@@ -1471,18 +1477,6 @@ func (r *Router) aboutText() string {
     ║  Sessions: %d active / %-10d ║
     ║  Backend:  %-22s  ║
     ╚═══════════════════════════════════╝`, v, r.hostname, active, len(sessions), r.manager.ActiveBackend())
-}
-
-func (r *Router) handleRestart() {
-	if r.restartFn == nil {
-		r.send(fmt.Sprintf("[%s] restart not available.", r.hostname))
-		return
-	}
-	r.send(fmt.Sprintf("[%s] Restarting daemon…", r.hostname))
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		r.restartFn()
-	}()
 }
 
 func (r *Router) handleUpdateCheck() {

@@ -3113,7 +3113,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			v, _ := fetchLatestVersion()
 			return v
 		})
-		r.SetRestartFunc(guardRestart(func() {
+		r.SetRestartFuncForce(guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -9415,7 +9415,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
-		RestartFn: guardRestart(func() {
+		RestartForceFn: guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -11163,12 +11163,23 @@ func runStop(cmd *cobra.Command, _ []string) error {
 // ---- restart command ------------------------------------------------------
 
 func newRestartCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	c := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the datawatch daemon",
-		Long:  "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.",
-		RunE:  runRestart,
+		Long: "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.\n\n" +
+			"While running Automata work would be interrupted, the restart is refused: the interruption report " +
+			"(planning Automata, verifying tasks, running judges, running tasks and live sessions) is printed and " +
+			"the command exits non-zero. Pass --force to restart anyway. See docs/howto/restart-with-work-running.md.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := restartCLIGuard(force, progressGet, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			return runRestart(cmd, args)
+		},
 	}
+	c.Flags().BoolVar(&force, "force", false, "restart even when running Automata work would be interrupted")
+	return c
 }
 
 func runRestart(_ *cobra.Command, _ []string) error {
