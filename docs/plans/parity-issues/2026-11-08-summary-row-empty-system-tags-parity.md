@@ -76,14 +76,16 @@ On the datawatch side, the gap this work set out to close is closed:
 
 What the work leaves is app-side:
 
-- The earlier app drafts of this family were written before the summary
-  row started always carrying the field, and the removal-half draft
+- The earlier drafts of this family were written before the summary row
+  started always carrying the field. The removal-half draft
   ([2026-11-08-sessions-empty-system-tags-removal-parity.md](2026-11-08-sessions-empty-system-tags-removal-parity.md))
-  still states the old per-shape split — "summary rows … no key at all …
-  an empty array never arrives in a summary row". That sentence is false
-  against v9.112.8 and later, and the two rules in that draft (empty array
-  clears; omitted key keeps) now live in a different arrangement of shapes
-  than it describes.
+  still stated the old per-shape split — "a session with no placement
+  tags has no key at all in those rows. An empty array never arrives in a
+  summary row" — a sentence that is false against v9.112.8 and later, so
+  it was not filed; it has since been retired in favour of a corrected
+  draft at the same path that carries the settled rule this draft states.
+  The first-load data-path draft likewise still describes the field as
+  `omitempty` on summary rows and needs the same correction before filing.
 - Any app client that was built or reviewed against the old contract —
   summary rows omitting the key and only full records sending `[]` — has
   acceptance criteria that no longer match the wire. The chip-lifecycle
@@ -132,13 +134,15 @@ On the app side the operator files one follow-up, not one new feature:
   asks for the Android and iPhone sessions-list acceptance criteria to be
   re-stated against it, including the case of a tile that loses its last
   placement tag.
-- **Correct the sibling draft before it is filed or reused.** The removal
-  half of the family in this repo still asserts the per-shape split that
-  v9.112.8 retired; its "empty array never arrives in a summary row"
-  sentence and its "older server shape" framing need the same per-rule
-  wording this draft carries. `docs/operations.md` already points at both
-  corrections; this file and that file should not ship to the app tracker
-  with conflicting wire descriptions.
+- **The conflicting wire description no longer exists in the tracked
+  drafts.** The removal-half draft that asserted the per-shape split v9.112.8
+  retired has been retired in favour of a corrected draft at
+  [2026-11-08-sessions-empty-system-tags-removal-parity.md](2026-11-08-sessions-empty-system-tags-removal-parity.md)
+  carrying the same per-rule wording this draft has, so this file and that
+  file no longer conflict. The first-load data-path draft still describes
+  the summary-row field as `omitempty` and should get the same correction
+  before filing; `docs/operations.md`'s *Operator review still owed* note
+  already flags the family's pre-filing corrections.
 - No further datawatch changes are needed for this gap. If the operator
   later wants a client-visible affordance for the empty state (for example a
   dimmed placeholder where chips would be), that is a separate app-side
