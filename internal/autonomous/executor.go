@@ -1741,6 +1741,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					TaskSpec: t.Spec,
 				})
 			}
+			// A requested-but-unfound profile name falls back to the role
+			// default: record the decision on the task (overwritten by each
+			// attempt) and in the PRD decision log. A resolved name writes
+			// nothing.
+			m.recordWorkerProfileDecision(prd, t)
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode

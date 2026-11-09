@@ -1138,6 +1138,12 @@ type Task struct {
 	// It overrides the global layer (config worker_profiles and the role and
 	// task-kind defaults). Empty means no task-level override.
 	WorkerProfile string `json:"worker_profile,omitempty"`
+	// WorkerProfileDecision records the launch's worker-profile fallback when
+	// the profile name the launch requested was not found:
+	// "requested=<name> layer=<layer> applied=<name or none> reason=<reason>".
+	// Every launch attempt overwrites it. Empty means no set name on the last
+	// attempt fell back; a task with no profile name carries it empty always.
+	WorkerProfileDecision string `json:"worker_profile_decision,omitempty"`
 	// ComputeNode is the compute node the task's worker was started on, as the
 	// start handler reports it. A daemon restart adopts the surviving worker
 	// onto this node before it looks at anything else.
