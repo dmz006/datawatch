@@ -5394,7 +5394,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		gitFlag = s.cfg.Session.GitDefault
 	}
 
-	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend)
+	var profileFallbackReason string
+	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend, &profileFallbackReason)
 
 	opts := &session.StartOptions{
 		LaunchFn:              workerProfileLaunchFn,
@@ -5538,6 +5539,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	// The launch ran inside Start, so the fallback reason (if any) is already set.
+	sess.ProfileFallbackReason = profileFallbackReason
 	if capacityHolder != "" && s.capacityBind != nil {
 		s.capacityBind(capacityHolder, sess.FullID)
 	}
