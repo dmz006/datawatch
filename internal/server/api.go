@@ -6540,6 +6540,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
 			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
 			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
+			// in_force: the profile each worker role and task kind starts with,
+			// from the live values (read-only; see workerProfileInForceForDisplay).
+			"in_force": workerProfileInForceForDisplay(s.cfg.Autonomous),
 			// Host load check: effective mode, multiple and minutes.
 			"host_load_alert": hostLoadAlertForDisplay(s.cfg.Autonomous.HostLoadAlert),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
