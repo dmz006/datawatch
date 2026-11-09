@@ -186,6 +186,8 @@ When the daemon starts, it looks at every Automaton that was in flight and decid
 
 Each is checked against two things: its age, compared with `autonomous.resume_max_age_seconds`, and whether its project directory still exists.
 
+A PRD that was in `planning` (decompose in flight) is a third case, with its own rule: it is not reset to `draft`, and its planner session is not ended. At boot the daemon re-attaches a reader to the live planner session and its output file; if the planner session ended while the daemon was down it ingests the complete plan; if neither yields a usable plan it restarts planning once. The plan then proceeds to review (approve/revise) as usual. The operator decision (2026-11-08) is recorded in [`restart-matrix-findings.md`](../plans/restart-matrix-findings.md); the old behavior — ending the decompose session and resetting the PRD to `draft` — is retired.
+
 | `autonomous.resume_max_age_seconds` | Meaning |
 |---|---|
 | `3600` (default) | Resume only Automata that were active within the last hour |

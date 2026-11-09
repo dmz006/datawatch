@@ -229,6 +229,13 @@ channels:  # see comm-channels.md
   the task reset to pending if the session didn't survive, and left
   alone (resumed, not duplicated) if it did. See
   [`../flow/task-session-reconcile-flow.md`](../flow/task-session-reconcile-flow.md).
+- **Daemon restart while a decompose is in flight.** The planner session
+  is not ended and the PRD is not reset to `draft` — at boot the daemon
+  re-attaches a reader to the live planner session and its output file,
+  ingests the complete plan if the planner session ended, or restarts
+  planning once if nothing usable survives. See
+  [`autonomous-recovery.md`](autonomous-recovery.md) (what happens to
+  Automata when the daemon restarts).
 - **Update mid-session.** Safe — `datawatch update` swaps the binary;
   `datawatch restart` re-attaches via pipe-pane. Sessions reach
   `LastChannelEventAt = now` and continue.
