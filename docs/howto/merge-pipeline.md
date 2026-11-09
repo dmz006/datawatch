@@ -228,7 +228,7 @@ The surfaces that show the lock and the last validator result are listed in
 ## The order inside the lock
 
 Once a run holds the lock, it works through these steps in order. The
-step names are the built-in ones in the table above.
+step names are the built-in ones listed in [The built-in pipeline](#the-built-in-pipeline) below.
 
 1. **Rebase onto the latest main.** Main is fetched first when the project has
    a remote, and each branch is rebased onto it. A branch that conflicts stops

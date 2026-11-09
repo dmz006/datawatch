@@ -127,7 +127,7 @@ Each project can define its merge pipeline in a file in its repository or as a r
 
 ## Merge lock — one merge run per base repository, persisted lock store — next patch above main
 
-A merge run takes a lock on its base repository before it starts and releases it when it ends. A second run into the same repository is refused with the holding run named. The lock is kept in `merge-locks.json` in the daemon store directory, is shown in the merge status and in the `merge_lock` field of `GET /api/autonomous/merge` (a new response field), and a corrupt lock file refuses merges rather than running them unlocked. Operator guide: `docs/howto/merge-pipeline.md#one-merge-at-a-time-the-merge-lock`. Definitions: `docs/datawatch-definitions.md#merge-lock`.
+A merge run takes a lock on its base repository before it starts and releases it when it ends. A second run into the same repository is refused with the holding run named. The lock is kept in `merge-locks.json` in the daemon store directory, is shown in the merge status and in the `merge_lock` field of `GET /api/autonomous/merge` (a new response field), and a corrupt lock file refuses merges rather than running them unlocked. Operator guide: `docs/howto/merge-pipeline.md#the-merge-lock-one-merge-per-repository`. Definitions: `docs/datawatch-definitions.md#merge-lock`.
 
 **Validated rows.** None yet. Every row below is unit-tested only; live validation is left unmarked until the smoke task runs.
 
