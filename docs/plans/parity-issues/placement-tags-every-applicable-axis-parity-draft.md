@@ -1,61 +1,154 @@
-# Placement tags on every session — parity issue draft
+# [parity] Placement tags: full applicable axis set on every taggable session (datawatch app)
 
-> Draft only. Not filed. Nothing in this file has been posted to any tracker. Post it to the app repo only after the operator confirms the scope below.
+**Not filed yet.** — this is the tracked draft; the GitHub issue is opened when
+the operator files it. Filing the issue does not change a line of this repo.
+This draft is a file write only: it never runs any hosting CLI and creates
+nothing on any host.
 
-**Feature:** every session that can carry a placement (system) tag carries the full set of placement axes that apply to it.
-**Found:** 2026-11-08, from the operator's answer to the planner / supervisor tag question.
+**Feature:** every session that can carry a placement (system) tag carries the
+full set of placement axes that apply to it.
+**Found:** 2026-11-08, from the operator's answer to the planner / supervisor
+tag question.
 **Related plan:** [placement auto-tags parity plan](../2026-11-03-placement-auto-tags-parity.md).
-**Related docs:** [howto/automata-tags.md](../../howto/automata-tags.md) (section *Stamping, re-stamping and the startup backfill*) and [operations.md](../../operations.md) (Tag browser section, placement tags check).
+**Related story files:** `internal/server/session_launch_tags.go`,
+`internal/server/session_launch_tags_test.go`,
+`cmd/datawatch/launch_tags_test.go`, `internal/mcp/server.go`.
 
 ## Affected area
 
-Placement (system) tags on sessions, for the three session kinds the autonomous executor starts:
+Placement (system) tags on sessions, across all ten built-in axes —
+`compute:<node>`, `peer:<name>`, `backend:<name>`, `lane:<name>`,
+`role:<name>`, `project:<name>`, `automaton:<name>`, `automation:<name>`,
+`stage:<name>` and `kind:<name>` — plus any operator-defined custom axes. The
+surfaces this work touches are the session start itself
+(`POST /api/sessions/start`, the REST body, the MCP `start_session` tool and
+`datawatch session new`), the one-shot launch sites the daemon runs (decompose
+planner, verifier, guardrail judge and rejudge, supervisor loop, task worker and
+auto-fix), the tag sweep that re-stamps existing sessions, and the read surfaces
+that show the result: the session list, the tag browser and the placement-tag
+settings.
 
-- **Worker** sessions, which run an Automaton task.
-- **Planner** (decompose) sessions, which break an Automaton into tasks.
-- **Supervisor** sessions, which watch Automata and their lanes.
+The operator guidance for all of it now lives in
+[docs/howto/automata-tags.md](../../howto/automata-tags.md) (the axes table,
+the supervisor-role note, *Stamping, re-stamping and the startup backfill* and
+*The tag sweep*), the Tag browser / placement-tags sections of
+[docs/operations.md](../../operations.md), and the entries in
+[docs/datawatch-definitions.md](../../datawatch-definitions.md).
 
-The axes in question are the ten built-in ones — `compute:<node>`, `peer:<name>`, `backend:<name>`, `lane:<name>`, `role:<name>`, `project:<name>`, `automaton:<name>`, `automation:<name>`, `stage:<name>` and `kind:<name>` — plus any operator-defined custom axes. The app-side surfaces that show these tags are the session list, the Automaton list and the settings for placement tags.
+## Current behavior (what this work delivers on the server and PWA)
 
-## Current behavior
+The datawatch side is closed. A start through `POST /api/sessions/start` now
+accepts the four optional launch fields — `launch_role`, `launch_kind`,
+`launch_automaton` and `launch_stage` — and the validation is up front: a role
+outside `worker | verifier | planner | judge | supervisor`, or a kind outside
+`task | decompose | review | rejudge | auto-fix`, is refused with 400 before any
+session is started. Tagging then runs for every started session, a plain start
+with no launch fields included: it stamps `compute:` (the local node, so the
+tag reads `compute:local`, when the session stored no node), its backend,
+its lane when the backend names one and its project — and none of the role,
+kind, stage, automaton or automation axes, because it records none of those
+facts.
 
-The daemon stamps a session from its placement record. Before this work, that left some sessions with a partial set. Planner sessions carried `automaton:`, `kind:decompose`, `lane:` and `role:planner`, but no `compute:` tag, even though they run on a node. The supervisor session carried no system tags at all.
+A start that does record launch facts carries every axis those facts support:
+the role and kind (such as `role:planner` or `role:supervisor`), the stage, and
+the Automaton and Automation the work belongs to. Tagging is best-effort after
+the session already exists: a failure is logged and the session stays usable
+without its tags. The one-shot sites post their own facts through the shared
+one-shot body, and are pinned by test so a site silently losing its tags fails
+the suite instead of showing up as untagged sessions later: the decompose
+planner posts `planner | decompose` plus its Automaton, the verifier posts
+`verifier | task` plus the story stage, the guardrail judge posts `judge |
+review` (or `rejudge` on a re-judgment), the supervisor loop posts `supervisor`
+with no Automaton, and the task worker and auto-fix carry the worker role with
+the production `task | auto-fix` kind rule. An unset field is never posted —
+a caller with no launch facts posts the same body it posted before this
+feature existed. The operator's supervisor session gets its role from any of
+three surfaces: REST `launch_role: supervisor`, the MCP `start_session` tool's
+new optional `launch_role` parameter, or `datawatch session new --launch-role
+supervisor`; it then carries `role:supervisor` plus the compute, backend, lane
+and project tags and no automaton tag.
 
-This work landed the shared building blocks: one pure builder (`SessionPlacement`) that maps a session record to its placement — including the local node for local work that stored no node, and the launch role, kind and stage recorded on the session record — and a tag-sweep rebuild that uses that same builder for sessions that carry launch facts, while sessions with none keep exactly the legacy derivation (role and kind read from the session name, no node fallback), so the sweep leaves them unchanged rather than guessing. The launch facts themselves live on the session record (`LaunchRole`, `LaunchKind`, `LaunchStage`, persisted in the store) and are written by the manager's `SetLaunchFacts`.
+Existing sessions are covered by the tag sweep (`datawatch autonomous tags
+sweep`, first with `--dry-run`): it rebuilds the placement of every session
+that records launch facts through the same build as at launch — including the
+local-node fallback — while a session with no recorded launch facts keeps the
+legacy derivation (role and kind from the session name, no node fallback) and
+is left unchanged rather than guessed at, and turning an axis off clears its
+tag on the next re-stamp instead of rewriting it. The manager's
+placement-start hook fires once per successful start, so the stamping rides the
+real start paths.
 
-But the launch side does not call it yet: no production launch path records launch facts, so a new planner or supervisor session is still stamped from the placement record its launch side gives it, the way it always was. The docs set shipped on 2026-11-08 says so plainly: it promises that a session recording its launch facts carries every axis that applies — a planner gains `compute:<node>`, a supervisor carries `role:supervisor` and `compute:<node>` plus `backend:` and `lane:` when it runs in one — and it notes that a session gains the extra axes once its launch side starts recording them. The docs also say that existing sessions gain the tags through the tag sweep, and that the sweep should be run with `--dry-run` first. That launch-side wiring is the missing half: the builder, the store fields and the sweep path are all in place, but the full axes are not yet observable on a running daemon until a launch path records its facts (or the operator's daemon is already on a build where it does — the docs commit records that verification was not run before it landed, and this draft confirms it in neither direction).
+The gap this leaves is on the operator-facing clients. The app meets a wider
+tag vocabulary than it has met before: sessions that carried one or two tags
+now carry up to ten, and the role and kind axes each have values the client
+may not know (`verifier`, `judge`, `supervisor`; `decompose`, `review`,
+`rejudge`, `auto-fix`). The session start gained four optional fields the app
+does not post; omitting them behaves exactly as the app's current plain start
+does, so nothing in the app is broken — it is one capability behind the PWA.
+Nothing here changes a REST or MCP contract the clients already parse:
+`system_tags` remains the same list field and every new field on the start body
+is optional. The parity work is rendering, vocabulary and the start-surface
+fields, not integration.
 
 ## Expected behavior
 
-- A new worker, planner or supervisor session carries every placement axis that has a fact behind it and is enabled. An axis with no fact writes no tag. For a planner and a supervisor session that means their launch records the role, kind and stage so the shared builder can build the full placement — until that wiring lands, they carry only the axes their placement record already gives them, and the app side must not promise the new axes before it does.
-- A planner session carries `compute:<node>` for the node it runs on, next to its existing tags.
-- A supervisor session carries `role:supervisor`, `compute:<node>`, and `backend:` and `lane:` when it runs in one.
-- Turning an axis off stops that tag from being written on any session.
-- Existing sessions gain the new tags only through the tag sweep. The sweep is run as a dry run first, then applied.
-- The app shows these tags as read-only system tags, in the same way as the PWA. Local work shows no `peer:` tag.
+Once parity is met, a client on any platform can do what the PWA can: render
+every axis the server writes as a read-only system tag on the session, in the
+same grouping the PWA uses — including `role:supervisor` on the operator's
+supervisor session next to `compute:local`, and no `peer:` tag at all on local
+work — and accept the full role and kind vocabularies in any tag filter or
+axis shortcut, so a supervisor session and a `kind:rejudge` one-shot are
+findable rather than dropped. A client that offers a session-start surface
+posts `launch_role` (and the other three launch fields) only when the operator
+picked a value, treats a 400 back from the server as a plain input error with
+the known-vocabulary hint, and keeps behaving exactly as it does today when it
+posts none of them. A client whose settings mirror the
+`autonomous.tags.placement` block needs no new control — the axis switches and
+templates existed before this work — and simply continues to pass the block
+through. In the absence of all of that, a client must at minimum not
+misrender or silently drop the new tags or the new role/kind values —
+unknown-but-valid tags should read as their payload says, not as errors or
+blanks.
+
+## Suggested next step
+
+File one `feat(session):`-prefixed issue in datawatch-app covering the three
+items above — the full axis set rendered as read-only system tags on a
+supervisor session, a plain start and a one-shot (verifier or judge) session;
+the widened role/kind vocabulary in the client's tag filters and labels; and
+`launch_role` on the client's session-start surface, with omit-when-unset
+semantics and the server's 400 wording as the input-error path — referencing
+this draft and the placement howto above as the source of truth for wording and
+shapes. Where the app already renders `system_tags` generically, the acceptance
+criteria are pass-through: one session per shape (supervisor, plain, one-shot,
+federated with a `peer:` tag) must display every axis the PWA shows for the
+same session on both Android and iPhone, and each role/kind value must be
+selectable in the filter. A client that has no start surface at all owes only
+the rendering and vocabulary half.
+
+Before filing, run the live check: on the operator's daemon, start a plain
+session and a supervisor session and confirm their system tags against the
+howto's axes table (a plain start: `compute:local`, backend, lane, project and
+nothing else; a supervisor start: those plus `role:supervisor`). Then run
+datawatch's tag sweep with `--dry-run`, review the list of sessions that would
+change, and apply it only after that list is reviewed. Record the live-check
+result in the placement parity plan's open-items list; do not mark the feature
+validated until that check has been run on a live daemon.
 
 ## Parity surface
 
 | Surface | Status | Reason |
 |---|---|---|
-| REST | Included | Session JSON carries `system_tags`. The sweep and tag listing are reached through the existing autonomous tag endpoints. |
-| MCP | Included | The tag listing and the placement config keys are reachable through the existing tools. |
-| CLI | Included | `datawatch autonomous tags sweep --dry-run` and the sweep without the flag. |
-| Comm channel | Included, with a caveat | The tag verbs and the sweep (`autonomous tags sweep [dry-run]`) are on the comm channel, like the REST and CLI surfaces. The session-list axis filter shortcuts (`--stage`, `--kind`, and the rest) are not exposed on the comm channel, which is an existing gap, not new in this work. |
-| YAML/config | Included | The `autonomous.tags.placement` block in `docs/config-reference.yaml` holds the axis switches. No new key is added by this draft. |
-| PWA | Included | The session list grouping and the placement filter already exist. The new axes appear in them without a new control. |
-| Android | Owed to the app repo | The app must show the new axes on the same sessions as the PWA. This draft does not file that work. |
-| iPhone/iOS | Owed to the app repo | Same as Android. |
-
-## Suggested next step
-
-1. The operator confirms the exact axis set for the supervisor session on a live daemon. The docs say it is `role:supervisor`, `compute:`, and `backend:` and `lane:` when it runs in one. This must be checked before the app issue is filed.
-2. Run a dry-run tag sweep on the operator's daemon and read the list of sessions that would change. Apply the sweep only after that list is reviewed.
-3. Confirm the launch-side wiring: check whether a follow-up task is already planned to have the executor record launch facts (`SetLaunchFacts`) on the planner and supervisor starts, and if not, scope it — without it the "full axes" rule applies only to sessions the launch side starts recording, and the app-side issue would ask for visible behavior that a stock daemon does not have.
-4. Once the live check passes, file the app-side note in the datawatch-app repo. Use the wording in the placement parity plan as the starting point, and add one acceptance line: a new planner session and a new supervisor session show the new axes on both platforms.
-5. Record the live check result in the parity plan's open-items list. Do not mark the feature validated until that check has been run on a live daemon.
+| REST | included | `POST /api/sessions/start` gains the four optional `launch_*` fields with the 400 vocabulary guard; the stamped tags ride the existing session JSON's `system_tags` list — no new endpoint. |
+| MCP | included | `start_session` gained the optional `launch_role`; the tag listing and the placement config keys stay on the existing tools. |
+| CLI | included | `datawatch session new --launch-role supervisor` starts the operator's supervisor session; `datawatch autonomous tags sweep --dry-run` and without the flag cover existing sessions. |
+| comm channel | existing gap | The channel's session-start does not forward the `launch_*` fields; the sweep and the tag listing are reachable as before. |
+| YAML/config | unchanged | The `autonomous.tags.placement` block (master switch, per-axis `enabled`, templates) is read by the same stamping path; no new key. |
+| PWA | included | The session list grouping and the placement filter already render `system_tags`; the new axes appear without a new control. |
+| Android | owed to the app repo | Capability parity only — rendering, vocabulary and `launch_role` on the start surface; no implementation parity, no app code in this repo. |
+| iPhone/iOS | owed to the app repo | Same as Android. |
 
 ## Open questions for the operator
 
-- Is a tag sweep the wanted rollout for existing sessions, or should the daemon re-stamp them automatically?
-- Should a supervisor session show `backend:` and `lane:` only when it runs in a lane, as the docs say, or always?
+- Is the tag sweep the wanted rollout for existing sessions, or should the
+  daemon re-stamp them automatically on the next start?
