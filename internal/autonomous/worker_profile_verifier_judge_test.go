@@ -2,8 +2,6 @@ package autonomous
 
 import (
 	"testing"
-
-	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 func TestSessionLaunchInputRoleIsVerifierOrJudge(t *testing.T) {
@@ -52,5 +50,4 @@ func TestSessionProfileConfiguredRoleApplies(t *testing.T) {
 	if _, applied := m.ResolveSessionProfile("judge", prd, task); applied {
 		t.Error("judge has no configured default; none should apply")
 	}
-	var _ workerprofile.WorkerProfile = p
 }
