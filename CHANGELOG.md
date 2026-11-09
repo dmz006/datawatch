@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.118.3 — Shell backend hands long script tasks over by file
+
+### Fixed
+
+- **The shell backend no longer refuses a long task in its script form.** A task longer than the tmux send-keys limit is now handed to the script as a file path instead of being refused: the daemon writes the task to an owner-only file in the project's `.datawatch` folder, passes that path to the script, and sweeps any leftover task files at daemon start. A short task is passed inline exactly as before, byte for byte. This let the sandbox restart matrix plan and run work. The interactive form still refuses an oversize task.
+
 ## v9.118.2 — Fix a release push test that needed a git identity
 
 ### Fixed
