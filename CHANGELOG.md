@@ -7,9 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **The CodeQL alert gate stops at once when the rate limit cannot reset inside its wait budget.** Previously, `wait-analyses` and `open-alerts` kept waiting on a rate limit whose reset time was later than the remaining `WAIT_MAX_SECONDS` budget, so the wait could never finish in time. Now the gate exits 1 immediately with a `::error title=Rate limited::` line that names the reset epoch and the remaining budget.
-  - **How it shows up:** a run that hits a rate limit with a reset past the budget fails straight away instead of sitting in a wait. The log shows the `Rate limited` error with the reset epoch; it is reported as a rate limit, never as an open-alerts or analysis result. Rate limits that reset inside the budget still wait and retry as before.
-  - **Migration:** none for the workflow. Rerun the check after the reset time named in the error.
+- **The CodeQL alert gate stops at once when a rate limit cannot reset inside its wait budget.** Previously `wait-analyses` and `open-alerts` could sit waiting for a reset that landed after the remaining `WAIT_MAX_SECONDS` budget, so the wait could never finish in time. Now the gate exits 1 immediately with a `::error title=Rate limited::` line.
+  - **How it shows up:** the run fails straight away and is reported as a rate limit, never as an alert or analysis result. The line names the reset epoch; if the gate learned none (spent budget), it reads `core reset epoch: unknown`. Rate limits that reset inside the budget still wait and retry as before.
+  - **Migration:** none for the workflow. Wait until the named reset time, then rerun the check yourself.
 
 ## v9.112.7 — Update dependencies and workflow action pins to the newest majors
 
