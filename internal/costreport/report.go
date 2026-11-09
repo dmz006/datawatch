@@ -616,9 +616,9 @@ func Build(
 	lifetimeFallback := res.LifetimeFallback ||
 		since.Before(now.AddDate(0, 0, -RetentionDays))
 
-	attempts := []Attempt{}
-	if res != nil {
-		attempts = res.Attempts
+	attempts := res.Attempts
+	if attempts == nil {
+		attempts = []Attempt{}
 	}
 
 	return &Report{

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.115.1 — Fix a lint failure in the cost report
+
+### Fixed
+
+- **The release build lint step passes again.** The cost report loaded its attempt list behind a nil check on a value it had already used, which the CI linter rejected. The list is now read directly and an empty report still returns an empty list. No behaviour change.
+
 ## v9.115.0 — Worker session profiles and generated starting context
 
 ### Added
