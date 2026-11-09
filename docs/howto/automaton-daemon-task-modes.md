@@ -108,9 +108,22 @@ custom template with a different kind (for example `docs`) and give that
 template the mode `llm`.
 
 To change a mode over MCP, use `autonomous_config_set` with
-`task_templates_mode`. Entries merge onto the stored map, so an id you leave
-out keeps its mode. A write through the decompose-lint configuration surface
-replaces the whole `task_templates` block instead. Read the block back there
+`task_templates_mode`; the Settings page's per-template select, the CLI
+`datawatch config set autonomous.task_templates.mode.<id> <mode>`, chat or
+comm `configure autonomous.task_templates.mode.<id>=<mode>`, and REST
+`PUT /api/config` with that one key do the same. These merge one mode onto
+the stored map, so an id you leave out keeps its mode, and `enabled`,
+`templates` and `projects` are untouched.
+
+A write through the decompose-lint configuration surface (the MCP
+`autonomous_decompose_lint_config_set` tool, REST
+`PUT /api/autonomous/decompose-lint/config`, or the Settings page's
+decompose-lint panel) replaces the whole `task_templates` block instead: a
+block that carries only `enabled` resets `mode`, `templates` and `projects`,
+and ids fall back to their shipped defaults. The decompose-lint panel is
+exactly such a write — it sends only its enabled checkbox — so saving it
+resets your per-template modes; check your modes after you save there. If
+you write the block yourself through that surface, read the block back
 first, change the mode map, and write the whole block.
 
 ## 4. The script gate
@@ -120,23 +133,30 @@ When the executor reaches a task of kind `final_gate`, the daemon runs the
 and the evidence to the task's report, and completes or fails the task. No
 worker session is spawned, no verifier runs and there is no retry loop.
 
-**What runs.** The first match wins, and only that match runs:
+**What runs.** The preference is strict, and a higher step takes the whole
+run over a lower one:
 
-1. the task's own verification script, when it is a real file under the
-   project's `.datawatch/verify/` folder. It runs alone;
+1. the task's own verification script, when it is a path under the project's
+   `.datawatch/verify/` folder. It runs alone — a valid path whose file is
+   missing fails the gate with "script missing", it does not fall through;
 2. otherwise, the **project gate command**: the project's own policy value first,
    then the global `autonomous.project_gate_command`. It runs alone, as one line
    of shell text through `sh`;
-3. otherwise, only if neither of the above is available, the verification
-   scripts of the story's other tasks, in order, until the first failure.
+3. otherwise, only if neither of the above is available, **every**
+   verification script the story's other tasks declare, in story order,
+   until the first failure. Steps 1 and 2 are exclusive — a higher step
+   replaces the lower ones, it does not add to them — while step 3 runs all
+   the scripts it finds.
 
 Every script the gate runs must resolve inside `.datawatch/verify/`. A script
 path outside that folder, or the project root itself, is refused and dropped
 from the run, and nothing is written for it.
 
-**Exit status decides.** Each check's combined stdout and stderr is appended to
-the report as it runs. A clean pass (exit status zero) completes the task. A
-failed check fails it. The report is the task's own `report_path`. For the
+**Exit status decides.** Each check's combined stdout and stderr goes into its
+own report section, and the report — every section plus the final verdict — is
+written once, when the gate run ends. A clean pass (every check exit status
+zero) completes the task; a failed check fails it and stops the run. The
+report is the task's own `report_path`. For the
 template-appended gate that is `.datawatch/reports/<feature>-final-gate.txt`. A
 custom gate with no path writes `.datawatch/reports/final-gate.txt`. The
 evidence is on disk before you read the task status. A decision record is added
@@ -155,7 +175,8 @@ check on its own.
 - `0` removes the cap. The gate may run as long as its script needs.
 - A negative value is refused on write, and the refusal text is returned. Nothing
   is stored.
-- A check that hits the deadline fails the task.
+- A check that hits the deadline fails the task, and the running check's whole
+  process group is killed — nothing it spawned survives the deadline.
 
 Keep the cap above the longest honest run of your build-and-test command.
 

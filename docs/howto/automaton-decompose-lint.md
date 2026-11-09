@@ -283,13 +283,28 @@ autonomous:
       final_gate: llm
 ```
 
-**How to change a mode without wiping the block.** Every config surface
-that writes `task_templates` (the MCP `…_config_set` tool, the REST `PUT`,
-the PWA panel) replaces the **whole block**: a write that carries only
-`mode` resets `enabled` to false and drops your `templates` and `projects`.
-So to change one template's mode, read the live config first (`datawatch
-autonomous lint config` or the panel), change the `mode` map in the
-task-templates block you read back, and write that whole block back.
+**How to change a mode.** There are two writes, and they behave differently:
+
+- **Per-template mode keys** — `autonomous.task_templates.mode.<id>`,
+  written by the per-template select in Settings,
+  `datawatch config set autonomous.task_templates.mode.<id> daemon` on the
+  CLI, `PUT /api/config` with that one key, chat or comm
+  `configure autonomous.task_templates.mode.<id>=<mode>`, or the MCP
+  `autonomous_config_set` `task_templates_mode` — **merge one mode onto the
+  stored mode map**: an id you leave out keeps its mode, and `enabled`,
+  `templates` and `projects` are untouched.
+- **The decompose-lint config surface** — the MCP
+  `autonomous_decompose_lint_config_set` tool, the REST
+  `PUT /api/autonomous/decompose-lint/config`, and the Settings page's
+  decompose-lint panel — **replaces the `task_templates` block as a whole
+  when it is sent**: a block that carries only `enabled` resets `mode`,
+  `templates` and `projects`. The decompose-lint panel itself is such a
+  write — it sends only its enabled checkbox, so saving that panel resets
+  your per-template modes, custom templates and per-project overrides to
+  the shipped defaults; check your modes after you save there. If you write
+  the block yourself through that surface, read the live config first
+  (`datawatch autonomous lint config`) and write the whole block back with
+  the mode map changed.
 
 **What a daemon-mode task does differently:**
 
@@ -421,16 +436,22 @@ is no retry loop, whatever the mode allowed for it. The mode keeps its
 meaning for the lint and the verifier exemption — what is gone is *who
 performs the verification*.
 
-**What runs — the first match wins, and only it runs:**
+**What runs — strict preference, and a higher step takes the whole run:**
 
-1. the task's own `verification_script` — if it is a real file under
-   `.datawatch/verify/`; it runs alone; or
+1. the task's own `verification_script` — when it is a path under
+   `.datawatch/verify/`; it runs alone (a path that is valid but whose file
+   is missing fails the gate rather than falling through); or
 2. the **project gate command** — the project's `policy
    project_gate_command` first, else the global
    `autonomous.project_gate_command` (the first set one wins); it runs as a
    single command through `sh`, alone; or
 3. (only if neither of the above is available) the `verification_script`
-   of the story's **other** tasks, run in order until the first failure.
+   of **every** other task in the story, in story order, until the first
+   failure.
+
+Steps 1 and 2 are exclusive — a command or the task's own script replaces the
+story's scripts, it does not add to them — while step 3 runs all the scripts
+it finds, each with the time still left on the shared deadline.
 
 Every script the gate runs must resolve inside the project's
 `.datawatch/verify/` — anything outside (or the project root itself) is
@@ -442,8 +463,11 @@ deliberately, and only through the gate.
 **Deadline and report.** One shared deadline covers the whole gate run —
 all checks together, not each one: `autonomous.script_gate_timeout_seconds`,
 default **900** seconds; `0` removes the cap, and a negative value is
-refused on write. Each check's combined stdout and stderr is appended to
-the report as it runs. The report is the task's own `report_path` —
+refused on write; when the deadline hits, the running check's whole process
+group is killed, so nothing it spawned survives. Each check's combined
+stdout and stderr goes into its own report section, and the report — every
+section plus the final verdict — is written once, when the gate run ends, to
+the task's own `report_path` —
 `.datawatch/reports/\<feature\>-final-gate.txt` for the
 template-appended gate — or, for a custom gate task that carries no path,
 `.datawatch/reports/final-gate.txt`. So the evidence of what ran is on
