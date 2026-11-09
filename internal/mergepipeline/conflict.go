@@ -187,6 +187,10 @@ const (
 	// AttemptShadowComputed means a proposal passed the gate in shadow mode and
 	// was recorded; nothing was committed.
 	AttemptShadowComputed = "shadow_computed"
+	// AttemptAwaitingConfirmation means a proposal passed the gate in on mode
+	// but the project's first N code or document conflicts still need the
+	// operator's confirmation; it is held, not applied.
+	AttemptAwaitingConfirmation = "awaiting_confirmation"
 )
 
 // ModelAttempt summarises what the model step did.
@@ -244,6 +248,16 @@ type Merger struct {
 	// VersionFiles are the repository-relative files that carry the release
 	// version line; a conflict in one of them is classed ClassVersionLine.
 	VersionFiles []string
+	// Project names the project in the conflict counter and the pending
+	// confirmations. Empty means the base name of Dir.
+	Project string
+	// Counter counts the model-resolved code or document conflicts applied per
+	// project in on mode. Nil counts nothing, and a proposal that needs
+	// confirmation is then always asked about.
+	Counter ConflictCounterStore
+	// Pending holds model proposals waiting for the operator's confirmation.
+	// Nil keeps them in memory for the life of this Merger.
+	Pending *ConfirmStore
 }
 
 func (m *Merger) settings() ConflictSettings {
@@ -397,6 +411,14 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 		msg = "Merge branch '" + req.Branch + "'"
 	}
 
+	if set.Policy == PolicyMechanicalAndModel && set.Mode == ConflictModeOn {
+		// A proposal the operator confirmed for this exact HEAD and branch is
+		// applied instead of asking the model again.
+		if o, handled, cerr := m.applyConfirmedProposal(ctx, set, req, headSHA, branchSHA, msg); handled || cerr != nil {
+			return o, cerr
+		}
+	}
+
 	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "-m", msg, req.Branch)
 	if err != nil {
 		m.abortQuietly(m.Dir)
@@ -447,14 +469,24 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	if set.Policy == PolicyMechanicalAndModel {
 		att, prop := m.proposeWithModel(ctx, set, req, out.Files)
 		att.Mode = set.Mode
+		var held *modelProposal
 		if prop != nil {
-			if set.Mode == ConflictModeShadow {
+			switch {
+			case set.Mode == ConflictModeShadow:
 				// Recorded only: the project keeps its pre-merge HEAD.
 				att.Result = AttemptShadowComputed
 				att.Proposal = prop.Texts
-			} else {
+			case m.confirmationNeeded(set, out.Files):
+				// Held: the project keeps its pre-merge HEAD until the operator confirms.
+				held = prop
+				att.Result = AttemptAwaitingConfirmation
+				att.Detail = "the proposal passed the test step and waits for the operator's confirmation"
+			default:
 				att = m.fastForwardTo(ctx, prop)
 				att.Mode = set.Mode
+				if att.Result == AttemptAccepted {
+					m.recordApplied(out.Files)
+				}
 			}
 		}
 		out.Attempt = &att
@@ -463,6 +495,9 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 			out.Summary = fmt.Sprintf("merged %s; the conflict model's proposal for %d hunk(s) passed the project's test step and was committed",
 				req.Branch, att.Hunks)
 			return out, nil
+		}
+		if held != nil {
+			return m.holdForConfirmation(req, out, held, headSHA, branchSHA)
 		}
 	}
 
