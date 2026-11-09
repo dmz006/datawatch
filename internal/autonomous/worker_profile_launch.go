@@ -124,3 +124,32 @@ func (m *Manager) recordWorkerProfileFallbackDecision(prdID, taskID, note string
 		log.Printf("[autonomous] prd=%s save worker_profile_fallback decision: %v", prdID, err)
 	}
 }
+
+// sessionLaunchInput is workerLaunchInput filled for a verifier or judge
+// session. Kind comes from the task where one exists; the task and Automaton
+// names come from the task and PRD where they exist (empty otherwise).
+func (m *Manager) sessionLaunchInput(role string, prd *PRD, t *Task) workerprofile.LaunchInput {
+	in := m.workerLaunchInput()
+	in.Role = role
+	if t != nil {
+		in.Kind = t.Kind
+		in.TaskName = t.WorkerProfile
+	}
+	if prd != nil {
+		in.AutomatonName = prd.WorkerProfile
+	}
+	return in
+}
+
+// ResolveSessionProfile resolves the profile a verifier or judge session
+// starts with. role is "verifier" or "judge"; prd and t may be nil. It returns
+// the profile and true only when one is applied; with nothing configured the
+// launch carries no profile. The caller passes the profile on the session
+// start request, the same path the worker's profile takes.
+func (m *Manager) ResolveSessionProfile(role string, prd *PRD, t *Task) (workerprofile.WorkerProfile, bool) {
+	p, applied, _ := workerprofile.ResolveForLaunch(m.sessionLaunchInput(role, prd, t))
+	if !applied {
+		return workerprofile.WorkerProfile{}, false
+	}
+	return p, true
+}

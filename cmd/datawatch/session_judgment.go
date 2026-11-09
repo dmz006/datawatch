@@ -21,6 +21,7 @@ import (
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // decomposeSessionName is the sessionName the PRD decompose one-shot
@@ -199,6 +200,10 @@ type launchTags struct {
 	Kind      string // launch_kind:      task|decompose|review|rejudge|auto-fix
 	Automaton string // launch_automaton: the PRD's Automaton id
 	Stage     string // launch_stage:     the Automaton stage the session serves
+	// Profile is the applied worker profile for a verifier or judge launch
+	// (claude-code only; the daemon ignores it for other backends). Nil posts
+	// no worker_profile, so the launch is the plain, non-profile one.
+	Profile *workerprofile.WorkerProfile
 }
 
 // The builders below name the exact launch tags each one-shot site posts —
@@ -234,6 +239,20 @@ func launchTagsForJudge(prdID string, rejudge bool) launchTags {
 		kind = "rejudge"
 	}
 	return launchTags{Role: "judge", Kind: kind, Automaton: prdID}
+}
+
+// withSessionProfile resolves the verifier or judge worker profile and, when
+// one is applied, sets it on the launch so the session start carries it, the
+// way the worker's does. A nil manager, or nothing configured, leaves the
+// launch unchanged. prd and task may be nil.
+func withSessionProfile(m *autonomouspkg.Manager, tags launchTags, role string, prd *autonomouspkg.PRD, task *autonomouspkg.Task) launchTags {
+	if m == nil {
+		return tags
+	}
+	if p, ok := m.ResolveSessionProfile(role, prd, task); ok {
+		tags.Profile = &p
+	}
+	return tags
 }
 
 // launchTagsForSupervisorLoop tags the supervisor loop's one-shot session
@@ -409,6 +428,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		}
 		if launchTags.Stage != "" {
 			startReq["launch_stage"] = launchTags.Stage
+		}
+		if launchTags.Profile != nil {
+			startReq["worker_profile"] = launchTags.Profile
 		}
 		body, _ := json.Marshal(startReq)
 

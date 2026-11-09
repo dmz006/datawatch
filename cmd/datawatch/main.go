@@ -6398,7 +6398,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode,
-					launchTagsForVerify(prd.ID, task.StoryID))
+					withSessionProfile(autonomousMgrRef, launchTagsForVerify(prd.ID, task.StoryID), "verifier", prd, task))
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -6572,10 +6572,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 							deliverPrompt := autonomouspkg.JudgePromptForDelivery(req.ProjectDir, req.UnitID+"-"+req.Guardrail, gbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
 							sessionTask := sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)
+							var judgePRD *autonomouspkg.PRD
+							var judgeTask *autonomouspkg.Task
+							if autonomousMgrRef != nil {
+								judgePRD, _ = autonomousMgrRef.Store().GetPRD(req.PRDID)
+								if req.Level == "task" {
+									judgeTask, _ = autonomousMgrRef.Store().GetTask(req.UnitID)
+								}
+							}
 							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
-								launchTagsForJudge(req.PRDID, req.Rejudge))
+								withSessionProfile(autonomousMgrRef, launchTagsForJudge(req.PRDID, req.Rejudge), "judge", judgePRD, judgeTask))
 							if serr != nil {
 								att.TimedOut = isOneShotTimeout(serr)
 								// BL410 Phase 0 — the SESSION itself failed (timeout,
