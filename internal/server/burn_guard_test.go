@@ -155,7 +155,7 @@ func burnGuardRig(t *testing.T, cfg *config.BurnGuardConfig) (*BurnGuard, *fakeA
 }
 
 func TestBurnGuardClimbsAndNeverEndsASession(t *testing.T) {
-	cfg := config.DefaultBurnGuard()
+	cfg := rungFixtureConfig()
 	// ask_on_change is off by default (alerts only); turn it on to exercise the question path.
 	cfg.AskOnChange = true
 	g, adm, nt, ses := burnGuardRig(t, &cfg)
@@ -177,7 +177,7 @@ func TestBurnGuardClimbsAndNeverEndsASession(t *testing.T) {
 		t.Fatalf("alerts=%d questions=%d, want 3 each", len(nt.alerts), len(nt.questions))
 	}
 	for _, s := range append(append([]string{}, nt.alerts...), nt.questions...) {
-		if !strings.Contains(s, "projected") && !strings.Contains(s, "projects to") {
+		if !strings.Contains(s, "guard ") {
 			t.Fatalf("notice carries no numbers: %q", s)
 		}
 	}
@@ -208,7 +208,7 @@ func TestBurnGuardClimbsAndNeverEndsASession(t *testing.T) {
 // nothing changes, every tick renews the hold flag; when the projection returns under the pace
 // line and the rung steps back, the release clears it.
 func TestBurnGuardRenewsHoldWhileAppliedAndClearsOnStepBack(t *testing.T) {
-	cfg := config.DefaultBurnGuard()
+	cfg := rungFixtureConfig()
 	cfg.Enabled = true
 	cfg.Ladder = []string{burnguard.RungHoldClaude}
 
@@ -340,7 +340,7 @@ func TestBurnGuardRefitWakesOnReading(t *testing.T) {
 }
 
 func TestBurnGuardAskOnChangeOffAlertsOnly(t *testing.T) {
-	cfg := config.DefaultBurnGuard()
+	cfg := rungFixtureConfig()
 	if cfg.AskOnChange {
 		t.Fatal("default ask_on_change = true, want false")
 	}
@@ -410,7 +410,7 @@ func TestBurnGuardStatusEndpoint(t *testing.T) {
 		t.Fatalf("unwired body = %s (%v)", rec.Body.String(), err)
 	}
 
-	cfg := config.DefaultBurnGuard()
+	cfg := rungFixtureConfig()
 	g, _, _, _ := burnGuardRig(t, &cfg)
 	g.Tick(context.Background())
 	s.burnGuard = g
@@ -427,5 +427,36 @@ func TestBurnGuardStatusEndpoint(t *testing.T) {
 	s.handleBurnGuardStatus(rec, httptest.NewRequest(http.MethodPost, "/api/usage/burn-guard", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST = %d", rec.Code)
+	}
+}
+
+// rungFixtureConfig is the default config with the projection-gap check off. The rung
+// fixtures pin the ladder's behaviour on the guard projection; the gap check has its own
+// tests in internal/burnguard and in TestBurnGuardGapLimitComesFromConfig.
+func rungFixtureConfig() config.BurnGuardConfig {
+	cfg := config.DefaultBurnGuard()
+	cfg.MaxProjectionGapPoints = 0
+	return cfg
+}
+
+// TestBurnGuardGapLimitComesFromConfig checks the configured max_projection_gap_points
+// reaches the ladder: the default limit (25) decides on the lower projection, and a zero
+// limit decides on the guard projection alone.
+func TestBurnGuardGapLimitComesFromConfig(t *testing.T) {
+	cfg := config.DefaultBurnGuard()
+	g, _, _, _ := burnGuardRig(t, &cfg)
+	d := g.Tick(context.Background())
+	if d.Direction != burnguard.DirectionHold || !strings.Contains(d.Reason, "using the lower") {
+		t.Fatalf("default gap limit: decision = %+v, want a hold that uses the lower projection", d)
+	}
+	if d.Gap <= cfg.MaxProjectionGapPoints {
+		t.Fatalf("fixture gap %v is not over the default limit %v", d.Gap, cfg.MaxProjectionGapPoints)
+	}
+
+	cfg = config.DefaultBurnGuard()
+	cfg.MaxProjectionGapPoints = 0
+	g, _, _, _ = burnGuardRig(t, &cfg)
+	if d := g.Tick(context.Background()); d.Direction != burnguard.DirectionClimb || !strings.Contains(d.AlertText, "using the guard") {
+		t.Fatalf("zero gap limit: decision = %+v, want a climb on the guard projection", d)
 	}
 }

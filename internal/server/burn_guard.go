@@ -239,7 +239,10 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	autonomous.SetBurnGuardLimits(&autonomous.BurnGuardLimits{
 		Enabled: cfg.Enabled, EffortCeiling: cfg.EffortCeiling, RetryLimitClaude: cfg.RetryLimitClaude,
 	})
-	set := burnguard.LadderSettings{Enabled: cfg.Enabled, Ladder: cfg.Ladder, StepBack: cfg.StepBack, MarginPoints: cfg.MarginPoints, AskOnChange: cfg.AskOnChange}
+	set := burnguard.LadderSettings{
+		Enabled: cfg.Enabled, Ladder: cfg.Ladder, StepBack: cfg.StepBack, MarginPoints: cfg.MarginPoints,
+		MaxProjectionGapPoints: cfg.MaxProjectionGapPoints, AskOnChange: cfg.AskOnChange,
+	}
 
 	var proj burnguard.Projection
 	if cfg.Enabled {

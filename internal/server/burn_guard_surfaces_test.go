@@ -112,7 +112,7 @@ func TestBurnGuardRunEndpoint(t *testing.T) {
 		t.Fatalf("GET run = %d, want 405", rr.Code)
 	}
 
-	cfg := config.DefaultBurnGuard()
+	cfg := rungFixtureConfig()
 	g, adm, _, sessions := burnGuardRig(t, &cfg)
 	s.burnGuard = g
 	rr := doBurnGuard(s, http.MethodPost, "/api/usage/burn-guard/run", "", s.handleBurnGuardRun)
@@ -137,7 +137,7 @@ func TestBurnGuardRunEndpoint(t *testing.T) {
 
 func TestBurnGuardStatusCarriesRungLineAndMargin(t *testing.T) {
 	s := &Server{}
-	cfg := config.DefaultBurnGuard()
+	cfg := rungFixtureConfig()
 	g, _, _, _ := burnGuardRig(t, &cfg)
 	g.Tick(context.Background())
 	s.burnGuard = g

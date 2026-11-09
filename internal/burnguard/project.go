@@ -55,6 +55,10 @@ type Projection struct {
 	HoursLeft float64 `json:"hours_left"`
 	// Projected is the percentage expected at the reset if the burn continues.
 	Projected float64 `json:"projected"`
+	// AdviceProjected is the percentage usagecalc's advice projects at the reset on the
+	// readings alone, using its recent-burn projection (ProjectedEndRecent). It is the
+	// readings-only counterpart of Projected, which adds the token-priced burn.
+	AdviceProjected float64 `json:"advice_projected"`
 	// Line is the pace line at the newest reading (usagecalc's PaceLine); LineNow is the
 	// same line at Now.
 	Line    float64 `json:"line"`
@@ -123,6 +127,7 @@ func Project(in ProjectInput) Projection {
 		AdviceVerdict: adv.Verdict,
 	}
 	p.Target = p.Ceiling - margin
+	p.AdviceProjected = adv.ProjectedEndRecent
 
 	cal := ComputeCalibratedBurn(in.Buckets, in.Readings, readAt, in.Now, through, in.Coef)
 	p.CalibrationRatio = cal.Ratio
