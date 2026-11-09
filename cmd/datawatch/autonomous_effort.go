@@ -162,6 +162,11 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 			sessionBody["claude_effort"] = ce
 		}
 	}
+	// Applied worker profile: only the claude-code launch applies one, and it
+	// is passed per launch (never set on the shared backend).
+	if req.WorkerProfileApplied && autonomousClaudeEffortApplies(req.Backend, defaultBackend) {
+		sessionBody["worker_profile"] = req.WorkerProfile
+	}
 	// Git (PRD-owned git sessions): when the PRD has git settings (prd.Git
 	// populated or a project profile), forward StartOptions.Git=true so the
 	// session manager runs git activity — pre-session snapshot, checkpoint

@@ -69,6 +69,7 @@ import (
 	"github.com/dmz006/datawatch/internal/usagecalc"
 	"github.com/dmz006/datawatch/internal/vision"
 	"github.com/dmz006/datawatch/internal/websearch"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // PipelineAPI is the interface for pipeline operations from the HTTP server.
@@ -4952,6 +4953,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// resolved per-task → per-story → per-PRD chain. Empty = the
 		// session manager's own pi.thinking_level config applies.
 		ThinkingLevel string `json:"thinking_level,omitempty"`
+		// WorkerProfile — the resolved worker session profile to apply to
+		// this one launch (claude-code only; ignored by other backends).
+		// Absent = the plain, non-profile launch.
+		WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -5389,7 +5394,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		gitFlag = s.cfg.Session.GitDefault
 	}
 
+	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend)
+
 	opts := &session.StartOptions{
+		LaunchFn:              workerProfileLaunchFn,
 		Name:                  req.Name,
 		Backend:               req.Backend,
 		ResumeID:              req.ResumeID,
