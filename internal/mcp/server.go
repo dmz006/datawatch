@@ -698,6 +698,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetPriority(), tracked(s.handleAutonomousPRDSetPriority))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetKind(), tracked(s.handleAutonomousPRDSetKind))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetWorkerProfile(), tracked(s.handleAutonomousPRDSetWorkerProfile))
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
 	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
@@ -1039,6 +1040,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDeleteSession(), tracked(s.handleDeleteSession))
 	mcpSrv.AddTool(s.toolRestartSession(), tracked(s.handleRestartSession))
 	mcpSrv.AddTool(s.toolGetStats(), tracked(s.handleGetStats))
+	mcpSrv.AddTool(s.toolWorkerProfileStatus(), tracked(s.handleWorkerProfileStatus))
 	mcpSrv.AddTool(s.toolGetConfig(), tracked(s.handleGetConfig))
 
 	// v6.0.4 (BL210-remaining) — detection filters, backends, session state,

@@ -995,6 +995,8 @@ type AutonomousAPI interface {
 	SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error)
 	SetPRDPriority(prdID string, n int) (any, error)
 	SetPRDKind(prdID, kind string) (any, error)
+	// Per-Automaton worker profile name (built-in or user-defined; empty clears it).
+	SetPRDWorkerProfile(prdID, name string) (any, error)
 
 	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
 	SetPRDLanePreference(prdID, pref string) (any, error)

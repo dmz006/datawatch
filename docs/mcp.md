@@ -269,7 +269,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
-| Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
+| Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `worker_profile_status`, `autonomous_prd_set_worker_profile`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
 | Identity | `get_identity`, `set_identity`, `update_identity`, `configure_identity`, `identity_backups`, `restore_identity`, `reset_identity` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
@@ -1256,6 +1256,16 @@ returns
 ```json
 {"session": "host-a1b2", "enabled": true, "project_override": null, "text_version": 1, "delivery": "rules_file"}
 ```
+
+### `worker_profile_status`
+
+Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`) and task kind (`implementation`, `docs`, `note`, `final_gate`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). Takes no parameters.
+
+Configure profiles with `config_set` on `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile`; read them back with `get_config section=autonomous`. A refused value changes nothing.
+
+### `autonomous_prd_set_worker_profile`
+
+Set the worker profile an Automaton's sessions start with. Parameters: `id` (required, the Automaton ID) and `worker_profile` (required; a built-in or user-defined profile name, empty to clear the override). Posts to `POST /api/autonomous/prds/{id}/set_worker_profile`, which refuses a name that is neither built in nor in `autonomous.worker_profiles`; a refused call changes nothing.
 
 ### `audit_access_query`
 

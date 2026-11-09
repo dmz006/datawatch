@@ -293,6 +293,7 @@ func (f *fakeOrchAutonomous) SetPRDConcurrency(string, int) (any, error)        
 func (f *fakeOrchAutonomous) SetPRDDirs(string, []string, []string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDPriority(string, int) (any, error)            { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDKind(string, string) (any, error)             { return nil, nil }
+func (f *fakeOrchAutonomous) SetPRDWorkerProfile(string, string) (any, error)  { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDLanePreference(string, string) (any, error)   { return nil, nil }
 func (f *fakeOrchAutonomous) LaneFillStatus(int) autonomous.LaneFillStatus {
 	return autonomous.LaneFillStatus{}

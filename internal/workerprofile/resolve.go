@@ -149,3 +149,19 @@ func lookupProfile(in ResolveInput, name string) (WorkerProfile, bool) {
 	}
 	return in.Lookup(name)
 }
+
+// RoleDefaults returns a copy of the built-in role -> profile name defaults.
+// Callers may change the returned map freely.
+func RoleDefaults() map[string]string { return copyDefaults(roleDefaults) }
+
+// KindDefaults returns a copy of the built-in task kind -> profile name
+// defaults. Callers may change the returned map freely.
+func KindDefaults() map[string]string { return copyDefaults(kindDefaults) }
+
+func copyDefaults(src map[string]string) map[string]string {
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
