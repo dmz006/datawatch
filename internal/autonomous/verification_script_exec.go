@@ -87,16 +87,9 @@ func runVerificationScript(scriptRelPath, projectDir string) (output string, exi
 // ceiling launch l (nil = no ceiling). It records the path actually used
 // back on l.
 func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaunch) (output string, exitCode int, err error) {
-	if scriptRelPath == "" {
-		return "", -1, errors.New("verification script path is empty")
-	}
-	if filepath.IsAbs(scriptRelPath) {
-		return "", -1, fmt.Errorf("verification script path %q must be relative to the project dir", scriptRelPath)
-	}
-	scriptPath := filepath.Clean(filepath.Join(projectDir, scriptRelPath))
-	rel, relErr := filepath.Rel(filepath.Clean(projectDir), scriptPath)
-	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", -1, fmt.Errorf("verification script path %q escapes the project dir", scriptRelPath)
+	scriptPath, pathErr := checkVerifyScriptPath(scriptRelPath, projectDir)
+	if pathErr != nil {
+		return "", -1, pathErr
 	}
 	if info, statErr := os.Stat(scriptPath); statErr != nil || !info.Mode().IsRegular() {
 		return "", -1, fmt.Errorf("%w: %s", ErrVerificationScriptMissing, scriptRelPath)
@@ -113,6 +106,25 @@ func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaun
 		return output, -1, runErr
 	}
 	return output, 0, nil
+}
+
+// checkVerifyScriptPath applies the path checks every verification script
+// run shares: the path must be non-empty, relative, and resolve inside
+// projectDir. It returns the cleaned absolute path. It does not touch the
+// file system, so a missing script is still the caller's to report.
+func checkVerifyScriptPath(scriptRelPath, projectDir string) (string, error) {
+	if scriptRelPath == "" {
+		return "", errors.New("verification script path is empty")
+	}
+	if filepath.IsAbs(scriptRelPath) {
+		return "", fmt.Errorf("verification script path %q must be relative to the project dir", scriptRelPath)
+	}
+	scriptPath := filepath.Clean(filepath.Join(projectDir, scriptRelPath))
+	rel, relErr := filepath.Rel(filepath.Clean(projectDir), scriptPath)
+	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("verification script path %q escapes the project dir", scriptRelPath)
+	}
+	return scriptPath, nil
 }
 
 // truncateScriptOutput keeps the LAST maxVerificationScriptOutput bytes
