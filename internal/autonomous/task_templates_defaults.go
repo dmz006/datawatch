@@ -88,6 +88,9 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Spec: "Record the bounded-load-step posture for '{{feature}}': " + boundedLoadStepRule +
 				" This is a note, not a change: it writes no files and touches nothing else (no files).",
 			Kind: "note",
+			// Same B124 exemption as the version note: a posture note has
+			// no file or script to check.
+			VerificationScriptReason: "note-only task: it writes no file and runs nothing, so there is no script to run; its record is the posture the story states up front",
 			AppliesWhen: "Always offered as a posture note: any story that could " +
 				"carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task).",
 		},
@@ -110,6 +113,10 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Title: "Release version note for {{feature}}",
 			Spec:  "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
 			Kind:  "note",
+			// A note writes no file, so there is no script to run. The
+			// exemption is stated explicitly (B124) so the plan-coverage
+			// gate accepts the task and it can complete.
+			VerificationScriptReason: "note-only task: it writes no file and changes no version field, so there is no script to run; its record is the operator's own",
 			AppliesWhen: "Offered to make the versioning posture explicit in the " +
 				"story without any task touching versioning itself.",
 		},

@@ -92,6 +92,7 @@ type compiledMatch struct {
 	readOnly   *bool
 	verifEmpty bool
 	reportEmpt bool
+	verifBad   bool
 	anyOf      []compiledMatch
 	allOf      []compiledMatch
 }
@@ -110,6 +111,9 @@ func (m *compiledMatch) matchTask(t Task) bool {
 		return false
 	}
 	if m.reportEmpt && taskHasUsableReportPath(t) {
+		return false
+	}
+	if m.verifBad && !verificationScriptLooksLikeCommand(t.VerificationScript) {
 		return false
 	}
 	if m.files != nil {
@@ -183,7 +187,12 @@ func compileRules(rules []Rule) []compiledRule {
 // predicates, nested any_of/all_of). An empty pattern means the
 // condition is absent, not the empty regular expression.
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
-	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty}
+	cm := &compiledMatch{
+		readOnly:   m.ReadOnly,
+		verifEmpty: m.VerificationScriptEmpty,
+		reportEmpt: m.ReportPathEmpty,
+		verifBad:   m.VerificationScriptUnexecutable,
+	}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {

@@ -72,9 +72,9 @@ const filtersGateSpecMissing = "READ FIRST: the coverage check in internal/auton
 // extraction.
 const filtersGatePlan = `{"title":"gate record with filters","stories":[
 	{"title":"gate record work","tasks":[
-		{"title":"add the gate record type","files":["internal/autonomous/plan_coverage_gate_record.go"],"spec":"add a gate record in a new source file internal/autonomous/plan_coverage_gate_record.go that applies both finding filters and stores how many findings they suppressed","verification_script":"go test ./..."},
-		{"title":"add the gate record test","files":["internal/autonomous/plan_coverage_gate_record_test.go"],"spec":"add a test file internal/autonomous/plan_coverage_gate_record_test.go that proves the record pins the filters in effect at compute time","verification_script":"go test ./..."},
-		{"title":"write the gate record doc","files":["docs/howto/gate-record.md"],"spec":"write the how-to doc docs/howto/gate-record.md explaining the stored counts","verification_script":"go test ./..."}
+		{"title":"add the gate record type","files":["internal/autonomous/plan_coverage_gate_record.go"],"spec":"add a gate record in a new source file internal/autonomous/plan_coverage_gate_record.go that applies both finding filters and stores how many findings they suppressed","verification_script":"scripts/verify.sh"},
+		{"title":"add the gate record test","files":["internal/autonomous/plan_coverage_gate_record_test.go"],"spec":"add a test file internal/autonomous/plan_coverage_gate_record_test.go that proves the record pins the filters in effect at compute time","verification_script":"scripts/verify.sh"},
+		{"title":"write the gate record doc","files":["docs/howto/gate-record.md"],"spec":"write the how-to doc docs/howto/gate-record.md explaining the stored counts","verification_script":"scripts/verify.sh"}
 	]}
 ]}`
 
@@ -88,8 +88,8 @@ Constraints: add a test file internal/autonomous/plan_coverage_gate_record_test.
 `
 	filtersGateUncreatablePlan = `{"title":"gate record uncreatable file","stories":[
 		{"title":"gate record work","tasks":[
-			{"title":"reuse the resolver","files":["internal/autonomous/plan_coverage_gate_record.go"],"spec":"add a gate record in internal/autonomous/plan_coverage_gate_record.go that reuses the resolver from internal/never_created_module/things.go for the filter settings","verification_script":"go test ./..."},
-			{"title":"add the gate record test","files":["internal/autonomous/plan_coverage_gate_record_test.go"],"spec":"add a test file internal/autonomous/plan_coverage_gate_record_test.go that proves the record pins the filters in effect at compute time","verification_script":"go test ./..."}
+			{"title":"reuse the resolver","files":["internal/autonomous/plan_coverage_gate_record.go"],"spec":"add a gate record in internal/autonomous/plan_coverage_gate_record.go that reuses the resolver from internal/never_created_module/things.go for the filter settings","verification_script":"scripts/verify.sh"},
+			{"title":"add the gate record test","files":["internal/autonomous/plan_coverage_gate_record_test.go"],"spec":"add a test file internal/autonomous/plan_coverage_gate_record_test.go that proves the record pins the filters in effect at compute time","verification_script":"scripts/verify.sh"}
 		]}
 	]}`
 )

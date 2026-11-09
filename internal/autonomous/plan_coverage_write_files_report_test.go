@@ -23,7 +23,7 @@ const (
 // writeFilesReportStories is a two-story, six-task plan shaped like a real
 // decomposed PRD. Only the last task is a write task with no files.
 func writeFilesReportStories() []Story {
-	script := "go test ./..."
+	script := "scripts/verify.sh"
 	return []Story{
 		{
 			Title: "Report the finding",

@@ -132,6 +132,7 @@ and never name a particular project, repository or home directory.
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
 | `no_verification_script` | warn | a task with no verification script |
+| `verification_script_unexecutable` | block | a task whose verification script is a command string (shell operators, whitespace) or not one repo-relative script file (absolute, or a `..` segment); the verifier cannot run it, so put the commands in a script file and name that file |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 
 ## 4. Writing your own rules — a worked example
@@ -193,6 +194,7 @@ hold for the same task. The leaves:
 | `read_only` | tri-state: absent = don't check; `true`/`false` = assert the flag |
 | `verification_script_empty` | assert the task declares no verification script |
 | `report_path_empty` | assert the task has no usable report path (empty, or not a clean path under `.datawatch/reports/`) |
+| `verification_script_unexecutable` | assert the task's verification script is not one repo-relative script file (a command string, an absolute path, or a `..` segment) |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
 

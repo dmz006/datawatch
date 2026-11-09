@@ -6,8 +6,12 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -185,6 +189,100 @@ func readOnlyStatusViolation(now, baseline string) error {
 		return nil
 	}
 	return fmt.Errorf("read-only task changed the tree: git status is dirty after it finished (%s)", entries[0])
+}
+
+// strayReportDirs are the folders a read-only task can write its verdict
+// into by mistake instead of its declared report path. Files a task leaves
+// there are adopted into the report path's folder (see
+// relocateStrayReportFiles) rather than failing the task.
+var strayReportDirs = []string{"docs/plans/reports", ".datawatch/reports"}
+
+// snapshotStrayReportFiles returns the repo-relative, slash-separated set of
+// regular files already under the stray report folders of root. A missing
+// folder contributes nothing.
+func snapshotStrayReportFiles(root string) map[string]bool {
+	seen := map[string]bool{}
+	for _, dir := range strayReportDirs {
+		_ = filepath.WalkDir(filepath.Join(root, filepath.FromSlash(dir)), func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d == nil {
+				return nil
+			}
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			if rel, rerr := filepath.Rel(root, p); rerr == nil {
+				seen[filepath.ToSlash(rel)] = true
+			}
+			return nil
+		})
+	}
+	return seen
+}
+
+// relocateStrayReportFiles moves each regular file a read-only task wrote
+// under a stray report folder, and that was not there before the task
+// started (before, from snapshotStrayReportFiles), into the folder of the
+// task's declared report path, keeping its file name. A file is left where
+// it is when the task declares no usable report path, when it already sits in
+// that folder, or when the destination exists (nothing is overwritten). It
+// returns the repo-relative destinations it moved to.
+func relocateStrayReportFiles(root, reportPath string, before map[string]bool) ([]string, error) {
+	if reportPath == "" || validateReportPath(reportPath) != nil {
+		return nil, nil
+	}
+	destDir := path.Dir(reportPath)
+	now := snapshotStrayReportFiles(root)
+	keys := make([]string, 0, len(now))
+	for rel := range now {
+		keys = append(keys, rel)
+	}
+	sort.Strings(keys)
+	var moved []string
+	for _, rel := range keys {
+		if before[rel] || rel == reportPath {
+			continue
+		}
+		dest := path.Join(destDir, path.Base(rel))
+		if dest == rel {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(dest))); err == nil {
+			continue
+		}
+		dstAbs := filepath.Join(root, filepath.FromSlash(dest))
+		if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
+			return moved, fmt.Errorf("adopt report %s: %w", rel, err)
+		}
+		if err := os.Rename(filepath.Join(root, filepath.FromSlash(rel)), dstAbs); err != nil {
+			return moved, fmt.Errorf("adopt report %s: %w", rel, err)
+		}
+		moved = append(moved, dest)
+	}
+	return moved, nil
+}
+
+// strayReportSnapshot records the stray report files present before a
+// read-only task starts. An unresolvable tree yields an empty set, so no file
+// is ever adopted without a baseline.
+func (m *Manager) strayReportSnapshot(prd *PRD, t *Task) map[string]bool {
+	_, root, err := ResolveTreeKey(prd, t)
+	if err != nil {
+		return map[string]bool{}
+	}
+	return snapshotStrayReportFiles(root)
+}
+
+// readOnlyFinishCheck runs when a read-only task has finished: it adopts the
+// report files the task left in a stray folder into its report path's folder,
+// then fails the task only if the tree is still dirty against baseline.
+func (m *Manager) readOnlyFinishCheck(ctx context.Context, prd *PRD, t *Task, baseline string, strays map[string]bool) error {
+	_, root, err := ResolveTreeKey(prd, t)
+	if err == nil {
+		if _, aerr := relocateStrayReportFiles(root, reportPathOf(t), strays); aerr != nil {
+			return aerr
+		}
+	}
+	return m.readOnlyViolation(ctx, prd, t, baseline)
 }
 
 // ReportPathOf is the exported form of reportPathOf: the task's report

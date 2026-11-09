@@ -143,8 +143,14 @@ type DecomposeLintMatch struct {
 	// emits nothing to inspect when it fails. Use it with
 	// verification_script_empty to flag such tasks. Absent (false) = do
 	// not check.
-	ReportPathEmpty bool   `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
-	FilesRegex      string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	ReportPathEmpty bool `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
+	// VerificationScriptUnexecutable asserts the task's verification
+	// script is not one repo-relative script file: it is a command string
+	// (shell operators, whitespace), an absolute path, or escapes the
+	// project with a .. segment. Such a script cannot be executed, so the
+	// task is reported rather than verified. Absent (false) = do not check.
+	VerificationScriptUnexecutable bool   `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
+	FilesRegex                     string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.
@@ -197,6 +203,10 @@ type TaskTemplateDef struct {
 	// (the build and test commands its spec asserts) so it is not an
 	// unverifiable read-only task while it changes nothing.
 	VerificationScript string `yaml:"verification_script,omitempty" json:"verification_script,omitempty"`
+	// VerificationScriptReason, when set, is copied onto the task as its
+	// explicit B124 exemption: a note-kind template that writes no file
+	// has no script to run and states why instead.
+	VerificationScriptReason string `yaml:"verification_script_reason,omitempty" json:"verification_script_reason,omitempty"`
 	// ReportPath, for a read-only template, is the one repo-relative
 	// file under .datawatch/reports/ the task may write its verdict
 	// and evidence to. It takes the same slots as the other string

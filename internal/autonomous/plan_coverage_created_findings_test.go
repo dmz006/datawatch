@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-const createdFilesVerifyScript = "go test ./..."
+const createdFilesVerifyScript = "scripts/verify.sh"
 
 // createdFilesTree builds a temporary project tree that already has an
 // internal/x directory and a docs directory (as the real plans' trees

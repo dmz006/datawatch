@@ -148,6 +148,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"read_only_but_writes_files",
 				"read_only_unverifiable",
 				"no_verification_script",
+				"verification_script_unexecutable",
 				"names_tracker_id",
 				"unbounded_load_step",
 			},

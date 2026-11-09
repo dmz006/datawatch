@@ -80,11 +80,11 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			positive: mkDecomposeLintTask(
 				"t1", "Bump the manifest version",
 				"Update the VERSION constant to 1.2.3 in the manifest.",
-				[]string{"internal/app/manifest.go"}, false, "go test ./internal/app/..."),
+				[]string{"internal/app/manifest.go"}, false, "scripts/check.sh"),
 			negative: mkDecomposeLintTask(
 				"n1", "Fix the widget render",
 				"Repair the layout math in internal/w.go and run the package tests.",
-				[]string{"internal/w.go"}, false, "go test ./internal/..."),
+				[]string{"internal/w.go"}, false, "scripts/check.sh"),
 			wantMatchedSubstr: "VERSION constant",
 		},
 		{
@@ -93,11 +93,11 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			positive: mkDecomposeLintTask(
 				"t2", "Open the pull request",
 				"Open the pull request with gh pr create --fill, then post the checklist.",
-				nil, false, "go test ./..."),
+				nil, false, "scripts/check.sh"),
 			negative: mkDecomposeLintTask(
 				"n2", "Publish the package",
 				"Publish the package to the operator's registry and record the digest.",
-				nil, false, "go build ./..."),
+				nil, false, "scripts/check.sh"),
 			wantMatchedSubstr: "gh pr",
 		},
 		{
@@ -106,11 +106,11 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			positive: mkDecomposeLintTask(
 				"t3", "Warm the cache",
 				"Start the cache with systemctl start cachd before running the benchmark.",
-				nil, false, "go test -bench . -count=1 ./internal/bench/..."),
+				nil, false, "scripts/check.sh"),
 			negative: mkDecomposeLintTask(
 				"n3", "Benchmark the parser",
 				"Run the in-process benchmark loop and write the timing table.",
-				nil, false, "go test ./internal/..."),
+				nil, false, "scripts/check.sh"),
 			wantMatchedSubstr: "systemctl start",
 		},
 		{
@@ -119,11 +119,11 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			positive: mkDecomposeLintTask(
 				"t4", "Dump the local data",
 				"Read the operator's private store at ~/.datawatch/session.json and print the token.",
-				nil, false, "sh -c 'true'"),
+				nil, false, "scripts/check.sh"),
 			negative: mkDecomposeLintTask(
 				"n4", "Read the repo docs",
 				"Read docs/README.md for the expected output format.",
-				[]string{"docs/README.md"}, false, "sh -c 'true'"),
+				[]string{"docs/README.md"}, false, "scripts/check.sh"),
 			wantMatchedSubstr: ".datawatch",
 		},
 		{
@@ -132,11 +132,11 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			positive: mkDecomposeLintTask(
 				"t5", "Survey the tree",
 				"Collect the dependency inventory for the tree.",
-				[]string{"internal/autonomous/models.go"}, true, "sh -c 'true'"),
+				[]string{"internal/autonomous/models.go"}, true, "scripts/check.sh"),
 			negative: mkDecomposeLintTask(
 				"n5", "Survey the tree",
 				"Collect the dependency inventory for the tree.",
-				nil, true, "sh -c 'true'"),
+				nil, true, "scripts/check.sh"),
 			wantMatchedSubstr: "internal/autonomous/models.go",
 		},
 		{
@@ -169,7 +169,7 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			negative: mkDecomposeLintTask(
 				"n6", "Refactor the allocator",
 				"Consolidate the arena paths in internal/mem/arena.go.",
-				[]string{"internal/mem/arena.go"}, false, "go test ./internal/mem/..."),
+				[]string{"internal/mem/arena.go"}, false, "scripts/check.sh"),
 			wantMatchedSubstr: "verification_script",
 		},
 		{
@@ -178,11 +178,11 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			positive: mkDecomposeLintTask(
 				"t7", "Fix the reported crash",
 				"Reproduce and fix the crash described in BL123 in internal/core/sched.go.",
-				[]string{"internal/core/sched.go"}, false, "go test ./internal/core/..."),
+				[]string{"internal/core/sched.go"}, false, "scripts/check.sh"),
 			negative: mkDecomposeLintTask(
 				"n7", "Tighten the scheduler",
 				"Reduce preemption overhead in internal/core/sched.go and add a regression test.",
-				[]string{"internal/core/sched.go"}, false, "go test ./internal/core/..."),
+				[]string{"internal/core/sched.go"}, false, "scripts/check.sh"),
 			wantMatchedSubstr: "BL123",
 		},
 	}
@@ -238,6 +238,7 @@ func TestDecomposeLintEffectiveRulesDefault(t *testing.T) {
 		{"read_only_but_writes_files", "block"},
 		{"read_only_unverifiable", "block"},
 		{"no_verification_script", "warn"},
+		{"verification_script_unexecutable", "block"},
 		{"names_tracker_id", "warn"},
 		{"unbounded_load_step", "warn"},
 	}
@@ -273,8 +274,8 @@ func TestDecomposeLintOperatorOverride(t *testing.T) {
 		},
 	}
 	got := EffectiveRules(cfg)
-	if len(got) != 10 {
-		t.Fatalf("got %d rules, want 9 built-in + 1 new", len(got))
+	if len(got) != 11 {
+		t.Fatalf("got %d rules, want 10 built-ins + 1 operator rule", len(got))
 	}
 	// replaced at its original position (index 1)
 	if got[1].ID != "runs_hosting_cli" || got[1].Message != "Operator-local guidance for hosting CLI use." {
@@ -291,7 +292,7 @@ func TestDecomposeLintOperatorOverride(t *testing.T) {
 
 	// and the override is visible through the engine
 	story := mkDecomposeLintStory("s1", mkDecomposeLintTask(
-		"t1", "hosting", "call the custom hosting helper to register the route.", nil, false, "sh -c 'true'"))
+		"t1", "hosting", "call the custom hosting helper to register the route.", nil, false, "scripts/check.sh"))
 	f := LintTasks([]Story{story}, got)
 	if len(f) != 1 || f[0].RuleID != "runs_hosting_cli" || f[0].Severity != "warn" {
 		t.Fatalf("engine after override: %v, want one warn finding from runs_hosting_cli", f)
@@ -331,8 +332,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		t.Fatalf("Validate with bare disabled rules: %v", err)
 	}
 	gotA := EffectiveRules(cfgA)
-	if ids := idsOf(gotA); len(ids) != 7 {
-		t.Fatalf("disabled-flag: got %v, want the 7 non-disabled built-ins", ids)
+	if ids := idsOf(gotA); len(ids) != 8 {
+		t.Fatalf("disabled-flag: got %v, want the 8 non-disabled built-ins", ids)
 	}
 	absent(t, gotA, "runs_hosting_cli", "names_tracker_id")
 
@@ -341,21 +342,21 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		DisabledRules: []string{"edits_version_variable", "no_verification_script"},
 	}
 	gotB := EffectiveRules(cfgB)
-	if ids := idsOf(gotB); len(ids) != 7 {
-		t.Fatalf("disabled-list: got %v, want the 7 non-listed built-ins", ids)
+	if ids := idsOf(gotB); len(ids) != 8 {
+		t.Fatalf("disabled-list: got %v, want the 8 non-listed built-ins", ids)
 	}
 	absent(t, gotB, "edits_version_variable", "no_verification_script")
 
 	// (c) disabling an operator-added rule removes it; the built-in
-	// pack (8 rules) is untouched.
+	// pack (10 rules) is untouched.
 	cfgC := config.DecomposeLintConfig{
 		Rules: []config.DecomposeLintRule{
 			{ID: "operator_rule", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}, Disabled: true},
 		},
 	}
 	gotC := EffectiveRules(cfgC)
-	if ids := idsOf(gotC); len(ids) != 9 {
-		t.Fatalf("operator rule disabled: got %v, want the 9 built-ins", ids)
+	if ids := idsOf(gotC); len(ids) != 10 {
+		t.Fatalf("operator rule disabled: got %v, want the 10 built-ins", ids)
 	}
 	absent(t, gotC, "operator_rule")
 
@@ -366,8 +367,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		Rules:         []config.DecomposeLintRule{{ID: "runs_hosting_cli", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}}},
 	}
 	gotD := EffectiveRules(cfgD)
-	if len(gotD) != 8 {
-		t.Fatalf("list-wins: got %v, want 8 rules", idsOf(gotD))
+	if len(gotD) != 9 {
+		t.Fatalf("list-wins: got %v, want 9 rules", idsOf(gotD))
 	}
 	absent(t, gotD, "runs_hosting_cli")
 }
@@ -401,7 +402,7 @@ func TestDecomposeLintInvalidRegexTolerance(t *testing.T) {
 		},
 	}
 
-	story := mkDecomposeLintStory("s1", mkDecomposeLintTask("t1", "x", "has operatormarker inside", nil, false, "sh -c 'true'"))
+	story := mkDecomposeLintStory("s1", mkDecomposeLintTask("t1", "x", "has operatormarker inside", nil, false, "scripts/check.sh"))
 
 	findings, errs := LintTasksWithErrors([]Story{story}, []Rule{badTop, good, badNested})
 	if len(errs) != 2 {
@@ -453,7 +454,7 @@ func TestDecomposeLintMatchPredicateAndComposition(t *testing.T) {
 					{TitleRegex: "banana"},
 				}},
 			},
-			task: mkDecomposeLintTask("t", "banana split", "nothing to report", nil, false, "sh -c 'true'"),
+			task: mkDecomposeLintTask("t", "banana split", "nothing to report", nil, false, "scripts/check.sh"),
 			want: 1,
 		},
 		{
@@ -465,7 +466,7 @@ func TestDecomposeLintMatchPredicateAndComposition(t *testing.T) {
 					{TitleRegex: "banana"},
 				}},
 			},
-			task: mkDecomposeLintTask("t", "cider press", "nothing to report", nil, false, "sh -c 'true'"),
+			task: mkDecomposeLintTask("t", "cider press", "nothing to report", nil, false, "scripts/check.sh"),
 			want: 0,
 		},
 		{
@@ -498,7 +499,7 @@ func TestDecomposeLintMatchPredicateAndComposition(t *testing.T) {
 				ID: "read_only_false_asserts", Severity: "warn", Message: "m",
 				Match: config.DecomposeLintMatch{ReadOnly: &roFalse},
 			},
-			task: mkDecomposeLintTask("t", "edit", "change the parser", []string{"internal/p.go"}, true, "sh -c 'true'"),
+			task: mkDecomposeLintTask("t", "edit", "change the parser", []string{"internal/p.go"}, true, "scripts/check.sh"),
 			want: 0,
 		},
 		{
@@ -507,7 +508,7 @@ func TestDecomposeLintMatchPredicateAndComposition(t *testing.T) {
 				ID: "files_regex_requires_an_entry", Severity: "warn", Message: "m",
 				Match: config.DecomposeLintMatch{FilesRegex: "internal/"},
 			},
-			task: mkDecomposeLintTask("t", "edit", "change the parser", []string{"docs/notes.md"}, false, "sh -c 'true'"),
+			task: mkDecomposeLintTask("t", "edit", "change the parser", []string{"docs/notes.md"}, false, "scripts/check.sh"),
 			want: 0,
 		},
 	}

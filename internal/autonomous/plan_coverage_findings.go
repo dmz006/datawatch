@@ -142,6 +142,11 @@ const (
 	// nor a usable report path under .datawatch/reports/; with neither,
 	// its failure produces nothing to inspect. No task kind is exempt.
 	FindingReadOnlyUnverifiable = "readonly_unverifiable"
+	// FindingVerificationScriptUnexecutable — a task whose
+	// verification_script is a command string or otherwise not one
+	// repo-relative script file, so the verifier cannot execute it. The
+	// finding names the task; the plan is not silently trimmed.
+	FindingVerificationScriptUnexecutable = "verification_script_unexecutable"
 )
 
 // StructuralFinding is one typed, deterministic finding in a decomposed
@@ -647,6 +652,24 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 						"verification_script_reason; per B124 a task without a script must state an explicit exemption reason",
 				})
 			}
+		}
+	}
+
+	// --- Rule 4b: a verification script must be executable. ---
+	// A script that is a command string (or any non-file shape) is
+	// reported on the task it sits on, never dropped.
+	for _, s := range stories {
+		for _, t := range s.Tasks {
+			if !verificationScriptLooksLikeCommand(t.VerificationScript) {
+				continue
+			}
+			add(StructuralFinding{
+				Kind:    FindingVerificationScriptUnexecutable,
+				StoryID: s.ID,
+				TaskID:  t.ID,
+				Detail: "task " + t.ID + " verification_script " + strconv.Quote(t.VerificationScript) +
+					" is not one repo-relative script file; the verifier cannot execute a command string",
+			})
 		}
 	}
 

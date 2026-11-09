@@ -102,6 +102,14 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "verification_script_unexecutable",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "Task verification script is not a repo-relative script file (it is a command string, an absolute path, or escapes the project); it cannot be executed. Put the commands in a script file under .datawatch/verify/ and name that file.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptUnexecutable: true,
+			},
+		},
+		{
 			ID:       "names_tracker_id",
 			Severity: config.DecomposeLintSeverityWarning,
 			Message:  "Task spec or title names a tracker id; task text should describe the work itself, not reference external tracking items by id.",

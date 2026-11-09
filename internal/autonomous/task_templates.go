@@ -16,7 +16,6 @@
 package autonomous
 
 import (
-	"fmt"
 	"path"
 	"strings"
 	"time"
@@ -191,10 +190,13 @@ func taskForTemplate(story Story, def config.TaskTemplateDef, baseDepends []stri
 		Kind:               def.Kind,
 		ReadOnly:           def.ReadOnly,
 		VerificationScript: def.VerificationScript,
-		ReportPath:         reportPathForTemplate(def),
-		FilesPlanned:       splitTemplateFiles(def.Files),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		// The B124 exemption is copied as written: a note template with
+		// no script states its reason here, so plan coverage accepts it.
+		VerificationScriptReason: def.VerificationScriptReason,
+		ReportPath:               reportPathForTemplate(def),
+		FilesPlanned:             splitTemplateFiles(def.Files),
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 }
 
@@ -314,11 +316,6 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 		if err := validateReportPath(reportPathForTemplate(rendered)); err != nil {
 			continue
 		}
-		// Likewise a template whose verification_script is a command
-		// string rather than a repo-relative script file.
-		if err := validateTemplateVerificationScript(def); err != nil {
-			continue
-		}
 		if storyAlreadyHasTemplate(story, rendered) {
 			continue
 		}
@@ -395,27 +392,4 @@ func verificationScriptLooksLikeCommand(s string) bool {
 		}
 	}
 	return path.Clean(s) == "."
-}
-
-// validateTemplateVerificationScript rejects one template whose
-// verification_script is a command string. The error names the template
-// id and says a verification script must be a repo-relative script file.
-// The value is checked untrimmed: it is copied verbatim onto the task,
-// so surrounding whitespace would reach the verifier too.
-func validateTemplateVerificationScript(def config.TaskTemplateDef) error {
-	if !verificationScriptLooksLikeCommand(def.VerificationScript) {
-		return nil
-	}
-	return fmt.Errorf("task template %q: verification_script %q is a command string; a verification script must be a repo-relative script file (for example scripts/verify.sh)", strings.TrimSpace(def.ID), def.VerificationScript)
-}
-
-// validateTaskTemplateVerificationScripts checks every template in a set
-// and returns the first rejection, if any.
-func validateTaskTemplateVerificationScripts(templates []config.TaskTemplateDef) error {
-	for _, def := range templates {
-		if err := validateTemplateVerificationScript(def); err != nil {
-			return err
-		}
-	}
-	return nil
 }

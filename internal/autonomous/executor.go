@@ -1408,6 +1408,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		inherited = false
 		// Tree state before a read-only task starts; compared after it ends.
 		roBaseline, roBaselineOK := "", false
+		var roStrays map[string]bool
 
 		// On daemon restart the task may already be in TaskVerifying with a
 		// session that survived the restart. Skip the spawn so we don't create
@@ -1756,6 +1757,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			if readOnly {
 				roBaseline, roBaselineOK = m.readOnlyTreeStatus(ctx, prd, t)
+				roStrays = m.strayReportSnapshot(prd, t)
 			}
 			// BL447: lint against the task's own resolved dir/write scope.
 			// scope_lint decides what a hit does: enforce blocks the task,
@@ -2006,7 +2008,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// status differ, which fails the task. Operators who flag a task read-only
 		// should not run writers on the same tree at the same time.
 		if readOnly && roBaselineOK {
-			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
+			if verr := m.readOnlyFinishCheck(ctx, prd, t, roBaseline, roStrays); verr != nil {
 				oldStatus := t.Status
 				m.store.WithLock(func() {
 					t.Status = TaskFailed
