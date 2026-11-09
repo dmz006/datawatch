@@ -51,6 +51,7 @@ func newMergeRepo(t *testing.T) string {
 	putFile(t, dir, "cmd/datawatch/main.go", ver)
 	putFile(t, dir, "internal/server/api.go", ver)
 	putFile(t, dir, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## v1.2.3 — older\n")
+	putFile(t, dir, "README.md", "# Project\n\n**Current release: v1.2.3 (2026-01-01).** Older notes.\n")
 	putFile(t, dir, "shared.txt", "line one\n")
 	for _, s := range []string{"check-merge-version.sh", "merge-branches-bump-version.sh", "set-release-version.sh"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", s))
@@ -182,9 +183,14 @@ func TestDefaultPipelineMatchesMergeHelperScript(t *testing.T) {
 		t.Fatalf("result %q source %q", res.Run.Result, res.Run.Source)
 	}
 
-	// the same content, the same history shape, the same worktree
-	if a, b := runGit(t, scriptRepo, "rev-parse", "HEAD^{tree}"), runGit(t, runRepo, "rev-parse", "HEAD^{tree}"); a != b {
-		t.Errorf("tree differs: script %s, runner %s", a, b)
+	// the same content, the same history shape, the same worktree. The one
+	// deliberate difference is the README: the pipeline's set-readme-release-line
+	// step rewrites its Current release: line, which the script does not touch.
+	if a, b := treeWithoutReadme(t, scriptRepo), treeWithoutReadme(t, runRepo); a != b {
+		t.Errorf("tree differs outside README.md:\nscript:\n%s\nrunner:\n%s", a, b)
+	}
+	if got := readRepoText(t, runRepo, "README.md"); !strings.Contains(got, "**Current release: v1.2.4 (") {
+		t.Errorf("runner README does not carry the release line:\n%s", got)
 	}
 	if a, b := runGit(t, scriptRepo, "log", "--format=%s", "--first-parent"), runGit(t, runRepo, "log", "--format=%s", "--first-parent"); a != b {
 		t.Errorf("history differs:\nscript:\n%s\nrunner:\n%s", a, b)

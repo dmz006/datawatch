@@ -44,22 +44,23 @@ const (
 
 // Built-in actions a step may name instead of a shell command.
 const (
-	ActionRebaseOntoMain      = "rebase_onto_main"
-	ActionCheckBranchVersions = "check_branch_versions"
-	ActionMergeBranches       = "merge_branches"
-	ActionSetReleaseVersion   = "set_release_version"
-	ActionInsertChangelog     = "insert_changelog_heading"
-	ActionCommitReleaseBump   = "commit_release_bump"
-	ActionTagRelease          = "tag_release"
-	ActionValidateReleaseBump = "validate_release_bump"
-	ActionPushRelease         = "push_release"
-	ActionDeployLatest        = "deploy_latest"
+	ActionRebaseOntoMain       = "rebase_onto_main"
+	ActionCheckBranchVersions  = "check_branch_versions"
+	ActionMergeBranches        = "merge_branches"
+	ActionSetReleaseVersion    = "set_release_version"
+	ActionInsertChangelog      = "insert_changelog_heading"
+	ActionSetReadmeReleaseLine = "set_readme_release_line"
+	ActionCommitReleaseBump    = "commit_release_bump"
+	ActionTagRelease           = "tag_release"
+	ActionValidateReleaseBump  = "validate_release_bump"
+	ActionPushRelease          = "push_release"
+	ActionDeployLatest         = "deploy_latest"
 )
 
 // BuiltinActions lists every valid built-in action name.
 func BuiltinActions() []string {
 	return []string{ActionRebaseOntoMain, ActionCheckBranchVersions, ActionMergeBranches, ActionSetReleaseVersion,
-		ActionInsertChangelog, ActionCommitReleaseBump, ActionTagRelease,
+		ActionInsertChangelog, ActionSetReadmeReleaseLine, ActionCommitReleaseBump, ActionTagRelease,
 		ActionValidateReleaseBump, ActionPushRelease, ActionDeployLatest}
 }
 

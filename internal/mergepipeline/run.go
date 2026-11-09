@@ -192,12 +192,13 @@ type runState struct {
 // release, or leave the machine with, a version nobody asked for. The
 // deploy step is not listed: it is a daemon restart, not a release.
 var releaseSteps = map[string]bool{
-	ActionSetReleaseVersion:   true,
-	ActionInsertChangelog:     true,
-	ActionCommitReleaseBump:   true,
-	ActionTagRelease:          true,
-	ActionValidateReleaseBump: true,
-	ActionPushRelease:         true,
+	ActionSetReleaseVersion:    true,
+	ActionInsertChangelog:      true,
+	ActionSetReadmeReleaseLine: true,
+	ActionCommitReleaseBump:    true,
+	ActionTagRelease:           true,
+	ActionValidateReleaseBump:  true,
+	ActionPushRelease:          true,
 }
 
 // nothingNewNote is the detail recorded on a release step a run skipped.
@@ -581,6 +582,8 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 			return "", err
 		}
 		return r.insertChangelog(v, s.req.Title)
+	case ActionSetReadmeReleaseLine:
+		return s.setReadmeReleaseLine()
 	case ActionCommitReleaseBump:
 		return s.commitBump(ctx)
 	case ActionValidateReleaseBump:
@@ -797,6 +800,11 @@ func (s *runState) commitBump(ctx context.Context) (string, error) {
 	}
 	args := append([]string{"add", "--"}, s.r.versionFiles()...)
 	args = append(args, s.r.changelog())
+	// The README joins the bump when the project has one: its Current
+	// release: line is rewritten by set-readme-release-line.
+	if _, err := os.Stat(filepath.Join(s.r.Dir, filepath.FromSlash(s.r.readme()))); err == nil {
+		args = append(args, s.r.readme())
+	}
 	if _, err := s.m.gitOK(ctx, s.r.Dir, args...); err != nil {
 		return "", err
 	}
@@ -1194,6 +1202,52 @@ func (r *Runner) insertChangelog(version, title string) (string, error) {
 		return "", err
 	}
 	return "inserted the heading for v" + version, nil
+}
+
+// readmeReleaseShape matches the version and date on a Current release: line,
+// such as "**Current release: v1.2.3 (2026-11-08).**". Groups are the version
+// and the date.
+var readmeReleaseShape = regexp.MustCompile(`Current release: v([0-9]+\.[0-9]+\.[0-9]+) \(([0-9]{4}-[0-9]{2}-[0-9]{2})\)`)
+
+// setReadmeReleaseLine rewrites the version and date on the README's Current
+// release: line to the run's release version and the runner's date. Nothing
+// else in the line or the file changes. A line that already names the version
+// is left alone, so a repeated run leaves the file as the earlier run did.
+func (s *runState) setReadmeReleaseLine() (string, error) {
+	v, err := s.releaseVersionOf()
+	if err != nil {
+		return "", err
+	}
+	name := s.r.readme()
+	p, data, err := s.r.readInside(name)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(data), "\n")
+	at := -1
+	for i, l := range lines {
+		if _, ok := releaseLineRest(l); ok {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return "", fmt.Errorf("no %s line in %s; nothing changed", currentReleasePrefix, name)
+	}
+	loc := readmeReleaseShape.FindStringSubmatchIndex(lines[at])
+	if loc == nil {
+		return "", fmt.Errorf("the %s line in %s has no vX.Y.Z (YYYY-MM-DD) to rewrite; nothing changed", currentReleasePrefix, name)
+	}
+	line := lines[at]
+	if line[loc[2]:loc[3]] == v {
+		return "the " + currentReleasePrefix + " line in " + name + " already names v" + v, nil
+	}
+	date := s.r.now().Format("2006-01-02")
+	lines[at] = line[:loc[2]] + v + line[loc[3]:loc[4]] + date + line[loc[5]:]
+	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644); err != nil { // #nosec G306 -- README, normal mode
+		return "", err
+	}
+	return "set the " + currentReleasePrefix + " line in " + name + " to v" + v + " (" + date + ")", nil
 }
 
 // ---- keeping secrets out of records and logs ----

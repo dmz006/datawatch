@@ -9151,7 +9151,7 @@ components:
         name: {type: string, description: "A name that is unique within the pipeline"}
         kind: {type: string, enum: [test, lint, version_bump, changelog, ship, tag, deploy, post_ship_hook, custom], description: "What the step is for"}
         command: {type: string, description: "A shell command line to run in the project"}
-        action: {type: string, enum: [rebase_onto_main, check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, commit_release_bump, tag_release, validate_release_bump, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
+        action: {type: string, enum: [rebase_onto_main, check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, set_readme_release_line, commit_release_bump, tag_release, validate_release_bump, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
         dir: {type: string, description: "A directory inside the project to run in; empty means the project root"}
         on_failure: {type: string, enum: [stop, continue], description: "What the pipeline does when the step fails; stop by default"}
         requires_make_target: {type: string, description: "Run the step only when the project's Makefile defines this target"}

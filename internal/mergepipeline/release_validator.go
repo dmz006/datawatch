@@ -351,11 +351,11 @@ func checkReadmeMatches(in ValidateInput, version string) autonomous.MergeValida
 		return failCheck(checkReadmeLine, "could not read "+in.ReadmeFile+": "+err.Error())
 	}
 	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, currentReleasePrefix) {
+		rest, ok := releaseLineRest(line)
+		if !ok {
 			continue
 		}
-		m := versionInText.FindStringSubmatch(strings.TrimPrefix(trimmed, currentReleasePrefix))
+		m := versionInText.FindStringSubmatch(rest)
 		if m == nil {
 			return failCheck(checkReadmeLine, "the Current release: line in "+in.ReadmeFile+" names no version")
 		}
@@ -365,6 +365,17 @@ func checkReadmeMatches(in ValidateInput, version string) autonomous.MergeValida
 		return passCheck(checkReadmeLine, fmt.Sprintf("the Current release: line in %s names v%s", in.ReadmeFile, version))
 	}
 	return failCheck(checkReadmeLine, "no Current release: line in "+in.ReadmeFile)
+}
+
+// releaseLineRest reports whether line is the README's Current release: line
+// and returns the text after the prefix. A leading bold marker or spaces are
+// allowed, so the line may read "**Current release: vX.Y.Z (DATE).**".
+func releaseLineRest(line string) (string, bool) {
+	t := strings.TrimLeft(strings.TrimSpace(line), "*_ \t")
+	if !strings.HasPrefix(t, currentReleasePrefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(t, currentReleasePrefix), true
 }
 
 // gitOutput runs git in dir with the operator's tmux variables removed and

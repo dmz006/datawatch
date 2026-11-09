@@ -22,7 +22,7 @@ func newValidatedReleaseRepo(t *testing.T, readmeVersion string) string {
 	runGit(t, dir, "remote", "add", "origin", origin)
 	runGit(t, dir, "push", "-q", "origin", "main", "v1.2.3")
 	runGit(t, dir, "checkout", "-q", "feature")
-	putFile(t, dir, "README.md", "# App\n\nCurrent release: v"+readmeVersion+"\n")
+	putFile(t, dir, "README.md", "# App\n\n**Current release: v"+readmeVersion+" (2026-01-01).**\n")
 	runGit(t, dir, "add", "-A")
 	runGit(t, dir, "commit", "-q", "-m", "readme")
 	runGit(t, dir, "checkout", "-q", "main")
@@ -32,6 +32,18 @@ func newValidatedReleaseRepo(t *testing.T, readmeVersion string) string {
 // definitionWithoutReleaseValidator is the built-in pipeline minus its
 // validate-release-bump step. Tests of other run behavior use it, so their
 // fixtures need no README or origin remote; the validator has its own tests.
+// definitionWithoutReadmeStep is the default pipeline minus the step that
+// rewrites the README's Current release: line.
+func definitionWithoutReadmeStep() Definition {
+	var steps []Step
+	for _, s := range DefaultDefinition().Steps {
+		if s.Action != ActionSetReadmeReleaseLine {
+			steps = append(steps, s)
+		}
+	}
+	return Definition{Steps: steps}
+}
+
 func definitionWithoutReleaseValidator() Definition {
 	var steps []Step
 	for _, s := range DefaultDefinition().Steps {
@@ -91,7 +103,10 @@ func TestValidatorFailureStopsBeforePush(t *testing.T) {
 	dir := newValidatedReleaseRepo(t, "1.2.3") // stale README line
 	rec := &memRecorder{}
 	ship := &fakeShip{}
-	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
+	// The README step would correct the stale line before the validator sees
+	// it, so this run leaves that step out to test the validator's own check.
+	r := &Runner{Resolver: resolverWithRecord(t, definitionWithoutReadmeStep()), VersionFiles: testVersionFiles,
+		Dir: dir, Project: "p", Ship: ship, Recorder: rec}
 	res, err := r.Run(context.Background(), RunRequest{Title: "stale readme", Branches: []string{"feature"}})
 	if err == nil {
 		t.Fatal("run succeeded; want a failure from the validator")
