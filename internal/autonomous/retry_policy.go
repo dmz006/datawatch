@@ -412,7 +412,23 @@ func orContentCategory(category string) string {
 // judge completes, a successful verdict is stored under that triple. A
 // timed-out or otherwise unfinished judge is never cached, and with the
 // cache disabled the behavior is byte-for-byte the pre-cache loop.
+//
+// Judge resume at boot (judge_resume.go): if this same judgment was in
+// flight when the daemon restarted, it is not judged again. A surviving
+// guardrail-judge session is re-attached to — the daemon's background
+// waiter collects its verdict (ConsumeJudgeResult) and it is returned —
+// or a surviving, still-unrecorded result file is consumed as the
+// verdict, recorded by the caller exactly as a fresh one. Only when
+// neither survives does the judge below run once, as usual. The resume
+// sits ahead of the cache lookup: a pending judgment's surviving verdict
+// precedes any replay, and a resumed verdict is not cached (a resume is
+// not a fresh judgment).
 func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
+	// Judge resume at boot (judge_resume.go): if a verdict for this unit's
+	// in-flight judgment can resume, it is the answer — no judge spawns.
+	if v, resumed := m.judgeResume(ctx, prd, inv); resumed {
+		return *v, nil
+	}
 	if !judgeVerdictCacheLookupBypassed(ctx) {
 		if v, ok := m.judgeVerdictCacheHit(prd, inv); ok {
 			return v, nil
