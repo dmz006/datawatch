@@ -120,8 +120,10 @@ In that case the job log is the check that tells the two reds apart: a
 `Rate limited` line means the gate was waiting on the API, or — on the analyses
 step only — stopped at once because the API's reset time fell beyond its wait
 budget, so wait until the reset time
-it names; a `No analysis for` line is the real missing-analysis timeout and the
-one worth investigating.
+it names; a `Rate limited` line naming a reset later than the run's wait budget
+means the gate ends early at once, so the rerun must wait for that reset. A
+`No analysis for` line is the real missing-analysis timeout and the one worth
+investigating.
 
 ## The alert
 
