@@ -143,6 +143,11 @@ type ProjectPolicy struct {
 	// PlatformContextEnabled overrides the global platform_context.enabled for
 	// this project's sessions (nil = use the global value).
 	PlatformContextEnabled *bool `yaml:"platform_context_enabled,omitempty" json:"platform_context_enabled,omitempty"`
+
+	// ProjectGateCommand overrides autonomous.project_gate_command for this
+	// project (nil = inherit the daemon value; an empty string explicitly
+	// unsets it for the project). Same validity rules as the daemon key.
+	ProjectGateCommand *string `yaml:"project_gate_command,omitempty" json:"project_gate_command,omitempty"`
 }
 
 // FailureEscalationLevel is one tier's view of the failure escalation
@@ -238,6 +243,9 @@ type EffectivePolicy struct {
 	BurnGuardAskOnChange    Field[bool]
 	ParallelReadOnlyTasks   Field[bool]
 	ParallelWorktreePerTask Field[bool]
+
+	// Project gate command (empty = unset).
+	ProjectGateCommand Field[string]
 }
 
 // ValidateProjectPolicy checks that every field set in p is a value the key
@@ -343,6 +351,11 @@ func ValidateProjectPolicy(p *ProjectPolicy, keyPrefix string) error {
 			fatal("%s.uncommitted_work_scope: %q is invalid; use task_files or worktree", keyPath, *v)
 		}
 	}
+	if v := p.ProjectGateCommand; v != nil {
+		if err := ValidateProjectGateCommand(keyPath, *v); err != nil {
+			fatal("%v", err)
+		}
+	}
 	return first
 }
 
@@ -397,6 +410,7 @@ type daemonPolicyValues struct {
 	burnGuardAskOnChange    bool
 	parallelReadOnlyTasks   bool
 	parallelWorktreePerTask bool
+	projectGateCommand      string
 }
 
 func newDaemonPolicyValues(src DaemonPolicySource) daemonPolicyValues {
@@ -448,6 +462,7 @@ func newDaemonPolicyValues(src DaemonPolicySource) daemonPolicyValues {
 	v.burnGuardAskOnChange = src.BurnGuard.AskOnChange
 	v.parallelReadOnlyTasks = policyPointerOr(a.Parallel.ReadOnlyTasks, true)
 	v.parallelWorktreePerTask = policyPointerOr(a.Parallel.WorktreePerTask, true)
+	v.projectGateCommand = strings.TrimSpace(a.ProjectGateCommand)
 	return v
 }
 
@@ -604,6 +619,11 @@ func ResolveProjectPolicy(daemon DaemonPolicySource, project *ProjectPolicy, aut
 			nil, projectPolicyPointer(project, func(p *ProjectPolicy) *bool { return p.ParallelReadOnlyTasks })),
 		ParallelWorktreePerTask: boolField(d.parallelWorktreePerTask,
 			nil, projectPolicyPointer(project, func(p *ProjectPolicy) *bool { return p.ParallelWorktreePerTask })),
+
+		// Project gate command: the project's value (even empty, which
+		// explicitly unsets it) beats the daemon value.
+		ProjectGateCommand: stringField(projectPolicyPointer(project, func(p *ProjectPolicy) *string { return p.ProjectGateCommand }),
+			d.projectGateCommand, strings.TrimSpace),
 	}
 }
 

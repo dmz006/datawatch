@@ -204,7 +204,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.115.2"
+var Version = "9.118.2"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6734,6 +6734,17 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
 			"parallel": parallelSurface(s.cfg.Autonomous.Parallel),
+			// Task template modes: the stored {template id: mode} map (nil
+			// renders as {}, not null); an unset id reads its shipped default
+			// (llm) via EffectiveTaskTemplateMode.
+			"task_templates": map[string]interface{}{
+				"mode": taskTemplateModeSurface(s.cfg.Autonomous.TaskTemplates.Mode),
+			},
+			// Script gate: raw stored values; an unset timeout reads the 900-
+			// second default and an unset command stays empty, both via the
+			// Effective* accessors.
+			"script_gate_timeout_seconds": s.cfg.Autonomous.ScriptGateTimeoutSeconds,
+			"project_gate_command":        s.cfg.Autonomous.ProjectGateCommand,
 			// Decision record keys: effective values (the shipped defaults when a
 			// key is absent).
 			"decisions": decisionRecordSurface(s.cfg.Autonomous.Decisions),
@@ -7607,6 +7618,49 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The task template modes (autonomous.task_templates.mode as a whole
+	// {template id: mode} object, and the dotted form
+	// autonomous.task_templates.mode.<id>) are llm, daemon or off. The merged
+	// map is validated by the same rule the config file load uses
+	// (TaskTemplatesConfig.Validate), so an unknown mode, daemon on a
+	// non-daemon-capable template, or daemon on final_gate rejects the whole
+	// PUT before a value is applied.
+	if taskTemplateModePatchTouched(patch) {
+		candidate, cerr := taskTemplateModePatchCandidate(s.cfg.Autonomous.TaskTemplates.Mode, patch)
+		if cerr != nil {
+			http.Error(w, cerr.Error(), http.StatusBadRequest)
+			return
+		}
+		tc := config.TaskTemplatesConfig{Mode: candidate}
+		if verr := tc.Validate(); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The script gate timeout (autonomous.script_gate_timeout_seconds) is a
+	// whole number of seconds >= 0 (0 = no cap). A negative or non-whole
+	// value rejects the whole PUT by the same rule the config file load
+	// uses (validateScriptGateTimeout), so nothing is stored.
+	if v, ok := patch["autonomous.script_gate_timeout_seconds"]; ok {
+		if _, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr != nil {
+			http.Error(w, "autonomous.script_gate_timeout_seconds: must be a whole number of seconds >= 0 (0 = no cap)", http.StatusBadRequest)
+			return
+		}
+	}
+	// The project gate command (autonomous.project_gate_command) is a single
+	// line of shell text (empty = unset). Same whole-PUT rejection, by the
+	// same rule the config file load uses (ValidateProjectGateCommand).
+	if v, ok := patch["autonomous.project_gate_command"]; ok {
+		cmd, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.project_gate_command: must be a string (empty = unset)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateProjectGateCommand("autonomous", cmd); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// The held state ids cover tasks parked in one of the five known states.
 	// An absent key means all five, an explicit empty list means none; an
 	// unknown id names the valid ones and rejects the whole PUT before
@@ -8238,6 +8292,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		if service, ok := strings.CutPrefix(k, "plugins.services.per_service."); ok && service != "" {
 			if ov, verr := normalizePluginServiceOverride(service, v); verr == nil {
 				applyPluginServiceOverride(cfg, service, ov)
+			}
+			continue
+		}
+		// autonomous.task_templates.mode.<id> — the per-template mode in
+		// dotted key form (one key per template id), handled before the
+		// switch like its dynamic-map siblings above. Validated in
+		// handlePutConfig by the shared rule set; a direct applyConfigPatch
+		// caller's bad value is left unchanged.
+		if id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode."); ok && id != "" {
+			if mode, isStr := v.(string); isStr {
+				tc := config.TaskTemplatesConfig{Mode: map[string]string{id: mode}}
+				if tc.Validate() == nil {
+					if cfg.Autonomous.TaskTemplates.Mode == nil {
+						cfg.Autonomous.TaskTemplates.Mode = map[string]string{}
+					}
+					cfg.Autonomous.TaskTemplates.Mode[id] = mode
+				}
 			}
 			continue
 		}
@@ -9868,6 +9939,39 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig to shadow or on.
 			if mode, ok := v.(string); ok {
 				cfg.Autonomous.Questions.DecisionGateMode = mode
+			}
+		// autonomous.task_templates.mode — the whole {template id: mode}
+		// object (llm, daemon, off). Validated in handlePutConfig against
+		// the merged map by the shared load-time rule; a direct
+		// applyConfigPatch caller's bad value is left unchanged.
+		case "autonomous.task_templates.mode":
+			if m, ok := v.(map[string]interface{}); ok {
+				next := make(map[string]string, len(m))
+				for id, mv := range m {
+					if s, isStr := mv.(string); isStr {
+						next[id] = s
+					}
+				}
+				tc := config.TaskTemplatesConfig{Mode: next}
+				if tc.Validate() == nil {
+					cfg.Autonomous.TaskTemplates.Mode = next
+				}
+			}
+		// The script gate time cap in whole seconds (0 = no cap). Validated
+		// in handlePutConfig by the shared load-time rule; a value that
+		// fails here is left unchanged.
+		case "autonomous.script_gate_timeout_seconds":
+			if n, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr == nil {
+				cfg.Autonomous.ScriptGateTimeoutSeconds = n
+			}
+		// The project gate command: a single line of shell text (empty =
+		// unset). Validated in handlePutConfig by the shared load-time rule;
+		// a value that fails here is left unchanged.
+		case "autonomous.project_gate_command":
+			if s, ok := v.(string); ok {
+				if config.ValidateProjectGateCommand("autonomous", s) == nil {
+					cfg.Autonomous.ProjectGateCommand = s
+				}
 			}
 		case "autonomous.questions.held_mode":
 			// Validated in handlePutConfig to off, shadow or on. The gate
@@ -14829,6 +14933,72 @@ func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
 		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
 		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
 	}
+}
+
+// taskTemplateModeSurface renders the stored task template mode map on the
+// GET /api/config surface: nil becomes {} (an empty object, not null), so
+// an unset mode map visibly has no per-template overrides and an absent id
+// reads its shipped default (llm) via EffectiveTaskTemplateMode.
+func taskTemplateModeSurface(m map[string]string) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for id, mode := range m {
+		out[id] = mode
+	}
+	return out
+}
+
+// taskTemplateModePatchTouched reports whether a PUT /api/config patch sets
+// any task template mode key: the whole map under
+// autonomous.task_templates.mode, or a dotted form under
+// autonomous.task_templates.mode.<id>.
+func taskTemplateModePatchTouched(patch map[string]interface{}) bool {
+	if _, ok := patch["autonomous.task_templates.mode"]; ok {
+		return true
+	}
+	for k := range patch {
+		if id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode."); ok && id != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// taskTemplateModePatchCandidate merges the stored task template mode map
+// with a PUT's entries: the whole object under
+// autonomous.task_templates.mode (each value a string) and each dotted key
+// under autonomous.task_templates.mode.<id>. A non-object mode map, a
+// non-string entry, or an empty template id is an error; the result is the
+// map to validate (TaskTemplatesConfig.Validate) and store.
+func taskTemplateModePatchCandidate(stored map[string]string, patch map[string]interface{}) (map[string]string, error) {
+	candidate := make(map[string]string, len(stored))
+	for id, mode := range stored {
+		candidate[id] = mode
+	}
+	if v, ok := patch["autonomous.task_templates.mode"]; ok {
+		obj, isObj := v.(map[string]interface{})
+		if !isObj {
+			return nil, errors.New(`autonomous.task_templates.mode: must be an object of template id to mode ("llm", "daemon" or "off")`)
+		}
+		for id, mv := range obj {
+			mode, isStr := mv.(string)
+			if !isStr || id == "" {
+				return nil, fmt.Errorf(`autonomous.task_templates.mode[%q]: template id and mode must be non-empty strings ("llm", "daemon" or "off")`, id)
+			}
+			candidate[id] = mode
+		}
+	}
+	for k, v := range patch {
+		id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode.")
+		if !ok || id == "" {
+			continue
+		}
+		mode, isStr := v.(string)
+		if !isStr {
+			return nil, fmt.Errorf(`autonomous.task_templates.mode[%q]: must be a string ("llm", "daemon" or "off")`, id)
+		}
+		candidate[id] = mode
+	}
+	return candidate, nil
 }
 
 // validateParallelPatch checks every autonomous.parallel.* value present

@@ -33,3 +33,22 @@ func TestMergeRunRecordsAreBoundedAndNewestFirst(t *testing.T) {
 		t.Fatal("limit not applied")
 	}
 }
+
+func TestMergeLocksAccessorIsLazyAndShared(t *testing.T) {
+	th := newTriageHarness(t, 1, 10)
+	m := th.h.m
+	first, err := m.MergeLocks()
+	if err != nil || first == nil {
+		t.Fatalf("MergeLocks: %v", err)
+	}
+	second, err := m.MergeLocks()
+	if err != nil || second != first {
+		t.Fatalf("the store should be opened once and shared, got %p and %p (err %v)", first, second, err)
+	}
+	if _, err := first.Acquire("/repo", MergeLockHolder{RunID: "r1", AutomatonID: "a1"}); err != nil {
+		t.Fatalf("Acquire through the accessor: %v", err)
+	}
+	if _, held := second.Status("/repo"); !held {
+		t.Fatal("a lock taken through one accessor call must be seen through the next")
+	}
+}

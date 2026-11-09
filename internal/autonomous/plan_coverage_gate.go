@@ -133,7 +133,7 @@ func (m *Manager) recordPlanCoverage(prd *PRD, s []Story, settings config.PlanCo
 		Sections: filters.RequirementSections,
 		MinChars: filters.MinRequirementChars,
 	})
-	structured := CheckPlanStructureWithOptions(prd, s, PlanStructureOptions{
+	structured := CheckPlanStructureWithOptions(prd, m.daemonModeStories(s), PlanStructureOptions{
 		SuppressCreatedFiles: filters.SuppressCreatedFiles,
 	})
 	pc := &PlanCoverage{

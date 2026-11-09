@@ -41,16 +41,19 @@ const mergePipelineProjectsPrefix = mergePipelineKeyPrefix + "projects."
 
 // The keys of the block, global and per project.
 const (
-	mergePipelineFieldFileName          = "file_name"
-	mergePipelineFieldSourceOrder       = "source_order"
-	mergePipelineFieldFallbackOnBadFile = "fallback_on_bad_file"
-	mergePipelineFieldConflictPolicy    = "conflict_policy"
-	mergePipelineFieldConflictModel     = "conflict_model"
-	mergePipelineFieldVersionFiles      = "version_files"
-	mergePipelineFieldReleaseSizeMap    = "release_size_map"
-	mergePipelineFieldMajorTrigger      = "major_trigger"
-	mergePipelineFieldReleaseCadence    = "release_cadence"
-	mergePipelineFieldVersionScheme     = "version_scheme"
+	mergePipelineFieldFileName             = "file_name"
+	mergePipelineFieldSourceOrder          = "source_order"
+	mergePipelineFieldFallbackOnBadFile    = "fallback_on_bad_file"
+	mergePipelineFieldConflictPolicy       = "conflict_policy"
+	mergePipelineFieldConflictModel        = "conflict_model"
+	mergePipelineFieldVersionFiles         = "version_files"
+	mergePipelineFieldReleaseSizeMap       = "release_size_map"
+	mergePipelineFieldMajorTrigger         = "major_trigger"
+	mergePipelineFieldReleaseCadence       = "release_cadence"
+	mergePipelineFieldVersionScheme        = "version_scheme"
+	mergePipelineFieldReleaseApprovalPatch = "release_approval.patch"
+	mergePipelineFieldReleaseApprovalMinor = "release_approval.minor"
+	mergePipelineFieldReleaseApprovalMajor = "release_approval.major"
 )
 
 // mergePipelineFields lists the keys in a fixed order, so the first bad value
@@ -60,6 +63,8 @@ var mergePipelineFields = []string{
 	mergePipelineFieldConflictPolicy, mergePipelineFieldConflictModel, mergePipelineFieldVersionFiles,
 	mergePipelineFieldReleaseSizeMap, mergePipelineFieldMajorTrigger, mergePipelineFieldReleaseCadence,
 	mergePipelineFieldVersionScheme,
+	mergePipelineFieldReleaseApprovalPatch, mergePipelineFieldReleaseApprovalMinor,
+	mergePipelineFieldReleaseApprovalMajor,
 }
 
 // The post-ship hook keys. The post_ship block is global: the settings keep
@@ -139,6 +144,10 @@ type mergePipelineView struct {
 	// regardless of the source: the block is global, so the same for every
 	// project: on or off, how many hooks are defined, and which would run.
 	PostShip mergePipelinePostShipView `json:"post_ship"`
+	// ReleaseApprovalInEffect is the approval mode acted on for each release
+	// size for the requested project: the project's override, else the global
+	// value, else the default.
+	ReleaseApprovalInEffect mergepipeline.ReleaseApprovalInEffect `json:"release_approval_in_effect"`
 }
 
 // mergePipelineSettingsView is the resolution and version settings in effect.
@@ -329,6 +338,10 @@ func (s *Server) handleMergePipeline(w http.ResponseWriter, r *http.Request) {
 		},
 		ConflictPolicy: cfg.EffectiveConflictPolicy(project),
 		ConflictModel:  cfg.EffectiveConflictModel(project),
+	}
+	approval := cfg.EffectiveReleaseApprovalModes(project)
+	view.ReleaseApprovalInEffect = mergepipeline.ReleaseApprovalInEffect{
+		Patch: approval.Patch, Minor: approval.Minor, Major: approval.Major,
 	}
 	if len(res.Definition.Steps) > 0 {
 		def := res.Definition
@@ -574,6 +587,7 @@ func mergePipelineConfigSurface(c config.MergePipelineConfig) map[string]any {
 		mergePipelineFieldMajorTrigger:      c.EffectiveMajorTrigger(""),
 		mergePipelineFieldReleaseCadence:    c.EffectiveReleaseCadence(""),
 		mergePipelineFieldVersionScheme:     c.EffectiveVersionScheme(""),
+		"release_approval":                  c.EffectiveReleaseApprovalModes(""),
 		"post_ship": map[string]any{
 			"enabled":              c.PostShip.Enabled,
 			"hooks":                c.PostShip.Hooks,
@@ -705,6 +719,7 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 			ConflictPolicy: c.ConflictPolicy, ConflictModel: c.ConflictModel, VersionFiles: c.VersionFiles,
 			ReleaseSizeMap: c.ReleaseSizeMap, MajorTrigger: c.MajorTrigger,
 			ReleaseCadence: c.ReleaseCadence, VersionScheme: c.VersionScheme,
+			ReleaseApproval: c.ReleaseApproval,
 		}
 	} else {
 		o = c.Projects[pk.project]
@@ -717,6 +732,7 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 		c.ConflictPolicy, c.ConflictModel, c.VersionFiles = o.ConflictPolicy, o.ConflictModel, o.VersionFiles
 		c.ReleaseSizeMap, c.MajorTrigger = o.ReleaseSizeMap, o.MajorTrigger
 		c.ReleaseCadence, c.VersionScheme = o.ReleaseCadence, o.VersionScheme
+		c.ReleaseApproval = o.ReleaseApproval
 		return true, nil
 	}
 	if c.Projects == nil {
@@ -724,7 +740,7 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 	}
 	if o.FileName == "" && o.SourceOrder == nil && o.FallbackOnBadFile == "" && o.ConflictPolicy == "" &&
 		o.ConflictModel == nil && o.VersionFiles == nil && o.ReleaseSizeMap == nil && o.MajorTrigger == "" &&
-		o.ReleaseCadence == "" && o.VersionScheme == "" {
+		o.ReleaseCadence == "" && o.VersionScheme == "" && o.ReleaseApproval == (config.ReleaseApprovalModes{}) {
 		delete(c.Projects, pk.project)
 		return true, nil
 	}
@@ -771,6 +787,21 @@ func setMergePipelineField(o *config.MergePipelineOverride, key, field string, v
 			o.ConflictModel = &m
 		default:
 			return fmt.Errorf("%s: %v is invalid; use a model name from the LLM registry, or an empty string for no model", key, v)
+		}
+	case mergePipelineFieldReleaseApprovalPatch, mergePipelineFieldReleaseApprovalMinor, mergePipelineFieldReleaseApprovalMajor:
+		// An empty mode clears the size back to inheriting; anything else must
+		// pass config.ValidateReleaseApprovalMode, or nothing is stored.
+		mode, err := mergePipelineReleaseApprovalMode(key, v)
+		if err != nil {
+			return err
+		}
+		switch field {
+		case mergePipelineFieldReleaseApprovalPatch:
+			o.ReleaseApproval.Patch = mode
+		case mergePipelineFieldReleaseApprovalMinor:
+			o.ReleaseApproval.Minor = mode
+		default:
+			o.ReleaseApproval.Major = mode
 		}
 	case mergePipelineFieldSourceOrder, mergePipelineFieldVersionFiles:
 		list, err := mergePipelineList(key, v)
@@ -911,6 +942,26 @@ func mergePipelineSizeMap(key string, v any) (map[string]string, error) {
 		return nil, fmt.Errorf("%s: %d entries is too many; use at most %d", key, len(out), mergePipelineMaxListItems)
 	}
 	return out, nil
+}
+
+// mergePipelineReleaseApprovalMode reads a release approval mode: null or the
+// empty string clears the size (""), anything else must be auto, ask or manual.
+// The error names the key and lists the accepted values.
+func mergePipelineReleaseApprovalMode(key string, v any) (string, error) {
+	var mode string
+	switch x := v.(type) {
+	case nil:
+		return "", nil
+	case string:
+		mode = strings.TrimSpace(x)
+	default:
+		return "", fmt.Errorf("%s: %v is invalid; use %q, %q or %q", key, v,
+			config.ReleaseApprovalAuto, config.ReleaseApprovalAsk, config.ReleaseApprovalManual)
+	}
+	if err := config.ValidateReleaseApprovalMode(mode); err != nil {
+		return "", fmt.Errorf("%s: %w", key, err)
+	}
+	return mode, nil
 }
 
 // mergePipelineText reads a text value; null reads as unset (empty).

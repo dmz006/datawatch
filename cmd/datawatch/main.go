@@ -122,7 +122,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.115.2"
+var Version = "9.118.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -11966,6 +11966,14 @@ func newConfigSetCmd() *cobra.Command {
 			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
 			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
 			"autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet). Each also takes the form autonomous.merge_pipeline.projects.<project>.<key> for one project.\n\n" +
+			"Merge pipeline release approval keys: autonomous.merge_pipeline.release_approval.<size> " +
+			"(the global value) and autonomous.merge_pipeline.projects.<project>.release_approval.<size> " +
+			"(one project's value; unset inherits the global value), where <size> is patch, minor or major " +
+			"and the value is one of:\n" +
+			"  auto    - ship the release without waiting for the operator (default for patch and minor)\n" +
+			"  ask     - ask the operator before the release ships (default for major)\n" +
+			"  manual  - leave the release for the operator to ship\n" +
+			"Any other value is refused and the error names the key.\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
@@ -12019,6 +12027,10 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		return runWorkerProfileConfigSet(cfg, key, value)
 	}
 	url := loopbackBaseURL(cfg) + "/api/config"
+	if isMergePipelineReleaseApprovalKey(key) {
+		// auto|ask|manual only; refused here before anything is sent.
+		return runMergePipelineReleaseApprovalSet(url, cfg.Server.Token, key, value)
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and

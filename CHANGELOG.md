@@ -5,11 +5,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.118.2 — Fix a release push test that needed a git identity
+
+### Fixed
+
+- **The release build's Go test step passes on a clean runner.** Two push guard tests in the merge pipeline ran the real tag step, which needs a git author and committer identity. They passed on a machine with an identity configured and failed on a CI runner with none. The test now sets an identity for its own process. No behaviour change in the daemon.
+
+## v9.118.1 — Decompose lint card keeps the task template block
+
+### Fixed
+
+- Saving the decompose lint card in the web Settings page no longer resets the task template mode settings and overrides. The card sent only the enabled flag of the task template block, which erased the operator's per-template mode map and overrides on every save; it now sends back the block it loaded, with only the enabled checkbox changed. Found while filing the daemon task modes release.
+- The config reference now lists the task template mode setting (`autonomous.task_templates.mode`), its values, default and the surfaces that set it.
+
+## v9.118.0 — Merge lock, release validator and idempotent merge steps
+
 ### Added
 
-- **The release readiness of a size is readable over REST: `GET /api/autonomous/release-readiness?size=patch|minor|major`.** With optional `project`, it judges a release from the stored shadow-merge comparisons: how many of the plans held up against the landed state, how many of those merges would have had conflicts, how many of them touched the PWA, and whether any comparison found a defect that blocks the release — against the default bar (10 records, 2 conflicts, 2 PWA changes). A size with no comparisons is not hidden: the answer is the full shape with zero counts and a sentence for each short condition. A missing or unknown `size` is refused with a 400 that names the size it got; the gate is the same as the other autonomous reads, and the endpoint is documented in the OpenAPI spec.
-  - **How it shows up:** the readiness page and any operator can ask "is the patch ready?" without recomputing by hand; the same answer is ready for a future PWA card.
+- **The merge pipeline checks the release bump before it pushes.** A new built-in step, `validate-release-bump` (action `validate_release_bump`), runs between `tag-release` and `push-release` in the default pipeline. It runs the five release-bump checks: version files agree, the changelog's first heading is the release, the release is one step above the newest local tag, its tag is free on the remote, and the README's `Current release:` line names it. A failing check fails the step and names every check that failed, so `push-release` never runs. The result is stored on the run record as `validator` (`pass`, `version`, `checked_at`, `checks`).
+  - **Migration:** the built-in pipeline now rewrites the README `Current release:` line itself in a `set-readme-release-line` step, so the line must already have the `vX.Y.Z (YYYY-MM-DD)` shape (for example `**Current release: v1.2.3 (2026-11-08).**`); a line without a date stops the run and names it.
+
+- **Merge runs into the same repository are serialized by a merge lock.** Two merge runs can no longer ship into one base repository at the same time. A run takes a lock on its repository before it starts and releases it when it ends, and a second run is refused with a plain reason that names the run holding the lock.
+  - **How it shows up:** while a merge runs, the merge status shows the held lock (`Merge lock held: run <id> for Automaton <id> (branches …) since <time>`). A refused run's reason says the lock is held by the named run. The lock is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a daemon restart, and a resumed run takes its own lock back.
+  - **Migration:** none. If `merge-locks.json` is unreadable or corrupt, merge runs are refused rather than run unlocked; repair or restore that file in the daemon store directory.
+- **The daemon's merge run finishes version-safe against a moving main.** Before merging anything, the run fetches the main branch and rebases each branch onto it (a rebase that hits a conflict stops the run with that branch left untouched), and the release version is computed after the merge, from main's version as it stands at that point — not the version the branch was cut from. The push step is fast-forward-only: it checks the remote's head against the local one first and refuses to push a head that would rewrite the remote.
+  - **When the remote's main has moved since the merge, the run redoes instead of failing:** it undoes the merge, version bump and tag it made locally, brings the local main up to the remote's, and starts again from the rebase step so the version is recomputed from the new main. It redoes up to three times, then stops with a plain reason; a move to the local main it did not make itself stops the run instead of being undone.
+  - **The steps are safe to run twice:** a branch already based on main is left alone by the rebase, and the changelog heading insertion does nothing when the heading for that version is already there.
+  - **How it shows up:** the run record gains `release_version` (the version the run released) and one recorded step per redo (`main-moved-redo-1`, …), each with a plain note of what it did. A refused push says why: the remote's branch sits at a head the push would not contain, and nothing was pushed.
+  - **Migration:** none. A project with its own merge pipeline file keeps it as-is; the built-in pipeline now starts with the rebase step and computes the version after the merge.
+- **Bounded load-step rule.** A task that asks for a CPU-load or stress step must bound it before it runs: niced (`nice -n 19`), workers capped at a quarter of the cores (minimum one), a hard timeout, and cleanup of its children on exit. The rule is applied in three places: the built-in `bounded_load_step` task template, the rules block the decompose planner reads, and a warn-severity `unbounded_load_step` finding in decompose lint for a spec that asks for an unbounded load step.
+  - **How it shows up:** a spec that asks for an unbounded load step shows the `unbounded_load_step` warning in decompose lint.
   - **Migration:** none.
+
+## v9.117.1 — Close the discussion folder path scanner alert
+
+### Fixed
+
+- **The high code scanning alert for the discussion folder path is closed by checking the cleaned path at the point of use.** Every discussion route that builds a folder from a discussion id now goes through one helper, `discussionFolderForID`, which validates the id, joins it to the discussions folder, cleans the result and refuses it unless it stays inside that folder. The discussions how-to has one added line saying so. There is no setting change and no behaviour change for valid ids; ids that were refused before are still refused.
+
+## v9.117.0 — Template tasks and script gates run in the daemon
+
+### Added
+
+- **The daemon now carries out template tasks and the closing script gate itself, so these no longer start a model session.** Measured on 2026-11-08, template task sessions (changelog entry, parity draft, docs set, bounded load note, release version note, final gate) cost about 19 percent of the week's Claude use, wrote no code and failed often. The daemon already generates the changelog draft, parity draft, registry row and tracker rows when an Automaton completes, so it now does that work for the template tasks too.
+  - **What no longer starts a session by default:** the changelog entry, parity issue draft, bounded load note and release version note tasks (mode `daemon`), and the final gate task (the daemon runs its script, with no worker session and no verifier). The docs set keeps its session (mode `llm`). In `daemon` mode the daemon writes the same artefact through the existing generator, marks the task completed with a decision that says the daemon did it, and the task counts toward its story as before. In `off` mode the task is not created.
+  - **How to turn a session back on:** set the template's mode to `llm`, for example `datawatch config set autonomous.task_templates.mode.changelog_entry llm`, or `configure autonomous.task_templates.mode.changelog_entry=llm` in chat, or `task_templates_mode` on the MCP `autonomous_config_set` tool, or the per-template select on the Settings page. The final gate has no session mode: `off` removes it, and a session-run closing check is a custom template of another kind. See `docs/howto/automaton-daemon-task-modes.md`.
+  - **Script gate:** a final gate task whose check is a script file in the project verify folder, or the project's configured build and test command, is run by the daemon with a hard time limit, its output is captured into the task report, and the task completes or fails by exit status. A gate the daemon cannot run fails with the reason, never left waiting. `autonomous.script_gate_timeout_seconds` (default 900, 0 means no cap, a negative or fractional value is refused) sets the limit.
+  - **Project gate command:** `autonomous.project_gate_command`, with a per-project override in the project policy, names the project's own build and test command so the gate is not tied to one language. When unset the gate uses the verification scripts the tasks already declare.
+  - **Decompose lint and plan coverage** no longer report findings for template tasks that run in daemon mode.
+  - **Surfaces:** the three new settings reach config.yaml, the Settings page (with help entries), `GET` and `PUT /api/config`, the comm channel `configure` verb, MCP `autonomous_config_get` and `autonomous_config_set`, and `datawatch config set`; an invalid write is refused on every surface.
+  - **Migration:** none needed, but note that new and existing Automata now get daemon-run template tasks by default; set the mode to `llm` per template to keep the old behaviour.
+
+## v9.116.0 — Release approval modes for the merge pipeline
+
+### Added
+
+- **Release approval is now a setting with one mode per size of release, as the first step of the daemon finishing review and merge by itself (Phase 4 of the autonomy handover plan).** Until now the approval of a release was convention: the supervisor decided minor releases by hand and left major releases to the operator by rule, with no setting behind either. The `autonomous.merge_pipeline` block now carries `release_approval`, with a mode for each size — `patch`, `minor`, `major` — each `auto` (ships without waiting), `ask` (asks the operator before the release ships) or `manual` (left for the operator to ship). Each size inherits when unset, and a project's value in `autonomous.merge_pipeline.projects.<name>.release_approval` takes precedence over the global one.
+  - **How it shows up:** `autonomous.merge_pipeline.release_approval.patch` / `.minor` / `.major` appear in YAML config, `datawatch config` and the config surfaces along with the rest of the merge pipeline block — including the web Settings page, where each size is a select over the three modes (label, hint and mode names translated in every locale). Each value is validated, so an unknown mode is refused with the key named rather than stored silently, and an empty value or null on a project key clears that size back to inheriting. The merge pipeline view (`GET /api/autonomous/merge-pipeline`) now names the mode in effect for the requested project in `release_approval_in_effect` (`patch`, `minor`, `major`, each always resolved), and its CLI, chat and MCP renderings show a `Release approval: patch …, minor …, major …` line; the OpenAPI spec documents both the new settings keys and the view field.
+  - **Defaults (today's behaviour):** patch `auto`, minor `auto`, major `ask` — a major release is never shipped quietly, and a release whose size is not understood resolves to `ask` rather than being shipped, so nothing goes out silently because a size was unread.
+  - **Scope of this step:** it lands the approval setting and its resolution (project override, then global, then the built-in defaults) that the daemon's review-and-merge path will honour. The daemon's own merge — which the plan runs in shadow beside the supervisor's manual merge, recording every difference as a defect — and its push-and-tag step come in later steps of the same Phase 4 work; until they do, releases are made exactly as before.
+  - **Migration:** none. The keys are unset until set, the defaults match today's behaviour, nothing is shipped by this change alone, and no existing setting changes meaning.
+  - **CLI:** `datawatch config set` takes `autonomous.merge_pipeline.release_approval.<patch|minor|major>` and `autonomous.merge_pipeline.projects.<project>.release_approval.<size>`; any value other than `auto`, `ask` or `manual` is refused with the key and the three modes named, before the daemon is called. `datawatch config set --help` lists the keys with the meaning of each mode and the defaults.
+  - **MCP:** `autonomous_config_set` takes `merge_pipeline_release_approval_patch`, `merge_pipeline_release_approval_minor` and `merge_pipeline_release_approval_major` (with `merge_pipeline_project` for one project); a bad mode is refused with its key named before any request is sent. `config_set` takes the same dotted keys, and `autonomous_merge_pipeline_get` reports the mode in effect for each size.
 
 ## v9.115.2 — The CodeQL gate stops waiting when a rate limit cannot reset in time
 

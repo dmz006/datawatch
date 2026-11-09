@@ -9744,6 +9744,10 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     'merge_pipeline_release_size_', 'merge_pipeline_major_', 'merge_pipeline_cadence_', 'merge_pipeline_scheme_'],
     DOCS_DEFINITIONS + '#release-size'],
   [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
+  // The release approval fields, their card rows and the card label link to the
+  // Release approval modes section of the how-to. Before the generic prefixes.
+  [['autonomous.merge_pipeline.release_approval.', 'settings_merge_pipeline_release_approval_',
+    'merge_pipeline_release_approval_'], 'howto/merge-pipeline.md#release-approval-modes'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
     'merge_pipeline_source'], DOCS_DEFINITIONS + '#merge-pipeline-source'],
@@ -9751,6 +9755,8 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     DOCS_DEFINITIONS + '#merge-conflict-policy'],
   [['autonomous.merge_pipeline.conflict_model', 'settings_merge_pipeline_conflict_model', 'merge_pipeline_conflict_model'],
     DOCS_DEFINITIONS + '#merge-conflict-model'],
+  [['merge_lock_'], DOCS_DEFINITIONS + '#merge-lock'],
+  [['merge_validator_'], DOCS_DEFINITIONS + '#release-bump-validator'],
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
 ];
 
@@ -18438,6 +18444,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.judge_verdict_cache_enabled', label: 'Judge verdict cache', labelKey: 'settings_judge_verdict_cache', helpKey: 'settings_judge_verdict_cache_help', type: 'toggle', default: true },
     { key: 'autonomous.judge_prompt_file_threshold_lines', label: 'Judge prompt file threshold (lines, 0=always send in full)', labelKey: 'settings_judge_prompt_file_threshold', helpKey: 'settings_judge_prompt_file_threshold_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 100000, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_prompt_file_threshold_lines', this)" },
     { key: 'autonomous.judge_delivery_wait_per_thousand_lines_seconds', label: 'Judge extra wait per 1000 prompt lines (sec, 0=none)', labelKey: 'settings_judge_delivery_wait', helpKey: 'settings_judge_delivery_wait_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 3600, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_delivery_wait_per_thousand_lines_seconds', this)" },
+    // Daemon task modes and gate settings. The mode control renders one select
+    // per built-in template id (daemon only for the daemon-capable ids). A write
+    // the daemon refuses shows the daemon's own text.
+    { key: 'autonomous.task_templates.mode', label: 'Task template modes (llm, daemon or off, per template)', labelKey: 'settings_daemon_task_modes', helpKey: 'settings_daemon_task_modes_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'task_template_modes' },
+    { key: 'autonomous.script_gate_timeout_seconds', label: 'Script gate time cap (seconds, 0 = no cap, default 900)', labelKey: 'settings_daemon_script_gate_timeout', helpKey: 'settings_daemon_script_gate_timeout_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'number', min: 0, step: 1, placeholder: '900', default: '900', onchange: "saveDaemonTaskNumberField('autonomous.script_gate_timeout_seconds', this)" },
+    { key: 'autonomous.project_gate_command', label: 'Project gate command (one line of shell text, empty = unset)', labelKey: 'settings_daemon_project_gate_command', helpKey: 'settings_daemon_project_gate_command_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'text', onchange: "saveDaemonTaskTextField('autonomous.project_gate_command', this)" },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/
@@ -18799,6 +18811,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.fallback_on_bad_file', label: 'Merge pipeline when the project file is bad (record, default or none; default record)', labelKey: 'settings_merge_pipeline_fallback_on_bad_file', hintKey: 'settings_merge_pipeline_fallback_on_bad_file_hint', docsKey: 'autonomous.merge_pipeline.fallback_on_bad_file', type: 'select', options: ['record', 'default', 'none'], optionLabelKeys: { record: 'settings_merge_pipeline_fallback_record', default: 'settings_merge_pipeline_fallback_default', none: 'settings_merge_pipeline_fallback_none' }, default: 'record' },
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
+    { key: 'autonomous.merge_pipeline.release_approval.patch', label: 'Release approval for patch releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_patch', hintKey: 'settings_merge_pipeline_release_approval_patch_hint', docsKey: 'autonomous.merge_pipeline.release_approval.patch', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
+    { key: 'autonomous.merge_pipeline.release_approval.minor', label: 'Release approval for minor releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_minor', hintKey: 'settings_merge_pipeline_release_approval_minor_hint', docsKey: 'autonomous.merge_pipeline.release_approval.minor', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
+    { key: 'autonomous.merge_pipeline.release_approval.major', label: 'Release approval for major releases (auto, ask or manual; default ask)', labelKey: 'settings_merge_pipeline_release_approval_major', hintKey: 'settings_merge_pipeline_release_approval_major_hint', docsKey: 'autonomous.merge_pipeline.release_approval.major', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'ask' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
     { key: 'autonomous.merge_pipeline.release_size_map', label: 'Release size by kind (the step each Automaton kind adds to the version)', labelKey: 'settings_merge_pipeline_release_size_map', helpKey: 'settings_merge_pipeline_release_size_map_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'release_size_map' },
     { key: 'autonomous.merge_pipeline.major_trigger', label: 'Major release trigger (manual, milestone or never; default manual)', labelKey: 'settings_merge_pipeline_major_trigger', helpKey: 'settings_merge_pipeline_major_trigger_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['manual', 'milestone', 'never'], optionLabelKeys: { manual: 'merge_pipeline_major_manual', milestone: 'merge_pipeline_major_milestone', never: 'merge_pipeline_major_never' }, default: 'manual', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.major_trigger', this)" },
@@ -20234,6 +20249,8 @@ function loadGeneralConfig() {
             // Populate once the card is in the DOM (GET the current config
             // from the dedicated endpoint; silent on daemons without it).
             setTimeout(() => { if (window.settingsDecomposeLintLoad) window.settingsDecomposeLintLoad(pid); }, 0);
+          } else if (f.type === 'task_template_modes') {
+            html += taskTemplateModesHTML(f, fLabel, val);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -20496,18 +20513,28 @@ function _failureEscalationStepsText(steps) {
 // pid) collects it, accepts a rules array or {rules, disabled_rules}, issues
 // the PUT, and displays either the success line or the daemon's 400 text in
 // the card's feedback slot (validation feedback from the PUT).
+// decomposeLintLoadedTemplateBlocks keeps the full task_templates block from
+// the last successful GET per card pid, so the card's save (which only knows
+// the enabled checkbox) can send the block back intact instead of the daemon
+// replacing it with just {enabled: ...}.
+const decomposeLintLoadedTemplateBlocks = {};
 function settingsDecomposeLintLoadCore(pid) {
   apiFetch('/api/autonomous/decompose-lint/config').then(cfg => {
     if (!document.getElementById(pid)) return; // view changed while loading
     cfg = cfg || {};
     const dl = cfg.decompose_lint || {};
-    const tt = cfg.task_templates || {};
+    const tt = cfg.task_templates;
+    if (tt && typeof tt === 'object' && !Array.isArray(tt)) {
+      decomposeLintLoadedTemplateBlocks[pid] = JSON.parse(JSON.stringify(tt));
+    } else {
+      delete decomposeLintLoadedTemplateBlocks[pid];
+    }
     const modeEl = document.getElementById(pid + '-mode');
     if (modeEl) modeEl.value = String(dl.mode || 'off');
     const mrEl = document.getElementById(pid + '-maxretries');
     if (mrEl) mrEl.value = (dl.max_retries !== undefined && dl.max_retries !== null) ? dl.max_retries : 2;
     const tEl = document.getElementById(pid + '-tasktemplates');
-    if (tEl) tEl.checked = !!tt.enabled;
+    if (tEl) tEl.checked = !!(tt && tt.enabled);
     const gEl = document.getElementById(pid + '-guidance');
     if (gEl) gEl.value = String(cfg.decompose_guidance || '');
     const rEl = document.getElementById(pid + '-rules');
@@ -20564,9 +20591,17 @@ window.settingsDecomposeLintSave = function (pid) {
   }
   const body = {
     decompose_lint: { mode: String(val(pid + '-mode') || 'shadow'), max_retries: maxRet },
-    task_templates: { enabled: chk(pid + '-tasktemplates') },
     decompose_guidance: String(val(pid + '-guidance') || ''),
   };
+  // Send the loaded block back intact, with only enabled updated from the
+  // checkbox; if we never loaded a block, omit task_templates so the daemon
+  // leaves the stored block untouched.
+  const loadedTemplateBlock = decomposeLintLoadedTemplateBlocks[pid];
+  if (loadedTemplateBlock) {
+    const templateBlock = JSON.parse(JSON.stringify(loadedTemplateBlock));
+    templateBlock.enabled = chk(pid + '-tasktemplates');
+    body.task_templates = templateBlock;
+  }
   if (rules.length) body.decompose_lint.rules = rules;
   if (disabledRules.length) body.decompose_lint.disabled_rules = disabledRules;
 
@@ -21184,6 +21219,129 @@ function saveJudgePromptNumberField(key, el) {
   saveGeneralConfigPut(key, n);
 }
 window.saveJudgePromptNumberField = saveJudgePromptNumberField;
+
+// Daemon task modes. The built-in decomposition template ids, and the subset
+// the daemon can carry out (daemon is offered only for those; final_gate is
+// never daemon). They mirror config.DefaultTaskTemplateModes.
+const DAEMON_TASK_TEMPLATE_IDS = ['changelog_entry', 'parity_issue_draft', 'docs_set', 'bounded_load_step', 'final_gate', 'version_bump_left_to_merge'];
+const DAEMON_TASK_DAEMON_CAPABLE_IDS = ['changelog_entry', 'parity_issue_draft', 'bounded_load_step', 'version_bump_left_to_merge'];
+
+// Locale keys for the template and mode labels, spelled out in full so each
+// key is visible to the locale coverage check.
+const DAEMON_TASK_TEMPLATE_LABEL_KEYS = {
+  changelog_entry: 'settings_daemon_task_template_changelog_entry',
+  parity_issue_draft: 'settings_daemon_task_template_parity_issue_draft',
+  docs_set: 'settings_daemon_task_template_docs_set',
+  bounded_load_step: 'settings_daemon_task_template_bounded_load_step',
+  final_gate: 'settings_daemon_task_template_final_gate',
+  version_bump_left_to_merge: 'settings_daemon_task_template_version_bump_left_to_merge',
+};
+const DAEMON_TASK_MODE_LABEL_KEYS = {
+  llm: 'settings_daemon_task_mode_llm',
+  daemon: 'settings_daemon_task_mode_daemon',
+  off: 'settings_daemon_task_mode_off',
+};
+
+function daemonTaskModeOptions(id) {
+  return DAEMON_TASK_DAEMON_CAPABLE_IDS.includes(id) ? ['llm', 'daemon', 'off'] : ['llm', 'off'];
+}
+
+function daemonTaskDefaultMode(id) {
+  return DAEMON_TASK_DAEMON_CAPABLE_IDS.includes(id) ? 'daemon' : 'llm';
+}
+
+// taskTemplateModesHTML renders the autonomous.task_templates.mode control: a
+// heading with its ? help entry, then one select per built-in template id.
+// Each select saves its own dotted key on change.
+function taskTemplateModesHTML(f, fLabel, val) {
+  const stored = (val && typeof val === 'object' && !Array.isArray(val)) ? val : {};
+  const head = `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+    <div class="settings-label">${escHtml(fLabel)}${settingsHelpLink(f)}</div>
+    ${_settingsHelpTextHTML(f)}
+  </div>`;
+  const rows = DAEMON_TASK_TEMPLATE_IDS.map(id => {
+    const cur = stored[id] ? String(stored[id]) : daemonTaskDefaultMode(id);
+    const opts = daemonTaskModeOptions(id).map(m =>
+      `<option value="${escHtml(m)}" ${cur === m ? 'selected' : ''}>${escHtml(t(DAEMON_TASK_MODE_LABEL_KEYS[m]))}</option>`
+    ).join('');
+    return `<div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(t(DAEMON_TASK_TEMPLATE_LABEL_KEYS[id]))}</div>
+      <select class="form-select general-cfg-input" data-daemon-task-template="${escHtml(id)}" data-saved="${escHtml(cur)}" onchange="saveDaemonTaskModeSetting('${escHtml(id)}', this)">${opts}</select>
+    </div>`;
+  }).join('');
+  return head + rows;
+}
+
+// saveDaemonTaskSetting PUTs one dotted key to /api/config. On success it shows
+// a short confirmation and resolves true. On a refusal (the daemon answers 400
+// with its own text) it shows that text as the error, runs onRefused to put the
+// control back, and resolves false.
+function saveDaemonTaskSetting(key, value, onRefused) {
+  return fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast(t('settings_daemon_task_saved'), 'success', 1500);
+        return true;
+      }
+      return r.text().then(msg => {
+        const text = String(msg || '').trim() || t('settings_daemon_task_save_failed');
+        showToast(text, 'error', 8000);
+        if (onRefused) onRefused();
+        return false;
+      });
+    })
+    .catch(() => {
+      showToast(t('settings_daemon_task_save_failed'), 'error');
+      return false;
+    });
+}
+
+// saveDaemonTaskModeSetting saves one template's mode (autonomous.task_templates.mode.<id>).
+function saveDaemonTaskModeSetting(id, el) {
+  const mode = String(el && el.value ? el.value : '');
+  const prev = el && el.dataset ? (el.dataset.saved || '') : '';
+  saveDaemonTaskSetting('autonomous.task_templates.mode.' + id, mode, () => {
+    if (el) el.value = prev;
+  }).then(ok => {
+    if (ok && el && el.dataset) el.dataset.saved = mode;
+  });
+}
+
+// saveDaemonTaskNumberField saves the script gate time cap as typed. An empty
+// or non-numeric box is reported here and sends nothing; any other value goes to
+// the daemon, which refuses a negative or fractional value with its own text.
+function saveDaemonTaskNumberField(key, el) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isFinite(n)) {
+    showToast(t('settings_daemon_task_number_invalid'), 'error');
+    if (el && el.defaultValue !== undefined) el.value = el.defaultValue;
+    return;
+  }
+  saveDaemonTaskSetting(key, n, () => {
+    if (el) el.value = el.defaultValue !== undefined ? el.defaultValue : '';
+  }).then(ok => {
+    if (ok && el) el.defaultValue = String(n);
+  });
+}
+
+// saveDaemonTaskTextField saves the project gate command. Empty clears it; a
+// multi-line or over-long value is refused by the daemon with its own text.
+function saveDaemonTaskTextField(key, el) {
+  const value = String(el && el.value != null ? el.value : '').trim();
+  saveDaemonTaskSetting(key, value, () => {
+    if (el) el.value = el.defaultValue !== undefined ? el.defaultValue : '';
+  }).then(ok => {
+    if (ok && el) el.defaultValue = value;
+  });
+}
+window.saveDaemonTaskModeSetting = saveDaemonTaskModeSetting;
+window.saveDaemonTaskNumberField = saveDaemonTaskNumberField;
+window.saveDaemonTaskTextField = saveDaemonTaskTextField;
 
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and
@@ -29585,8 +29743,10 @@ function _infraRetryLoadMax(prd) {
 // /api/autonomous/merge-pipeline body into the Automation Setup card for one
 // project: where the pipeline in effect comes from (file, record or default)
 // with the reason, the steps in order, the conflict policy and the conflict
-// model. The operator can edit the record the daemon keeps, choose the policy
-// and choose the model from the registry list (opts.models, names). A missing
+// model, and the release approval mode in effect for each release size. The
+// operator can edit the record the daemon keeps, choose the policy, choose the
+// model from the registry list (opts.models, names) and choose a release
+// approval mode per size. A missing
 // view renders the placeholder; the loader owns the failed state. Every value
 // is escaped. The key maps hold literal locale keys, so the key-coverage guard
 // can see them.
@@ -29611,6 +29771,62 @@ function _mergePipelineStepHtml(step, n) {
 function _mergePipelineSelect(id, onchange, options, selected) {
   const opts = options.map(([v, label]) => `<option value="${escHtml(v)}"${v === selected ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
   return `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="${onchange}(this.value)">${opts}</select>`;
+}
+// The release approval rows: one per release size, each with the three modes.
+// The row shows the mode in effect (release_approval_in_effect); a change is
+// saved as that project's override, like the card's policy and model.
+const MERGE_PIPELINE_RELEASE_SIZES = [
+  ['patch', 'merge_pipeline_release_approval_patch'],
+  ['minor', 'merge_pipeline_release_approval_minor'],
+  ['major', 'merge_pipeline_release_approval_major'],
+];
+const MERGE_PIPELINE_RELEASE_MODES = [
+  ['auto', 'merge_pipeline_release_approval_mode_auto'],
+  ['ask', 'merge_pipeline_release_approval_mode_ask'],
+  ['manual', 'merge_pipeline_release_approval_mode_manual'],
+];
+// ── Merge lock and last validator lines ─────────────────────────────────────
+// _mergeStatusBlockHtml(status) draws the read-only lines of GET
+// /api/autonomous/merge under the Merge pipeline card: one line while the merge
+// lock on the base repository is held (Automaton, branches, since) and one line
+// for the last release-bump validator result, with each failing check under
+// it. Nothing is drawn when both are absent. Each line carries a ? link to its
+// definitions entry, found by the merge_lock_ and merge_validator_ keys in
+// DOCS_MERGE_PIPELINE_LINKS. Every value is escaped.
+function _mergeHelpLink(key, tipKey) {
+  if (localStorage.getItem('cs_show_docs_links') === '0') return '';
+  const target = docsLinkForKey(key) || DOCS_DEFINITIONS;
+  const tip = escHtml(t(tipKey));
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="merge-status-help" title="${tip}" aria-label="${tip}" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+}
+function _mergeLockLineHtml(lock) {
+  const branches = (Array.isArray(lock.branches) ? lock.branches : []).filter(b => typeof b === 'string' && b);
+  const names = branches.length ? branches.join(', ') : t('merge_lock_no_branches');
+  const since = (typeof lock.since === 'string' && lock.since !== '') ? _triageTime(lock.since) : '';
+  const text = t('merge_lock_line', [String(lock.automaton_id || '—'), names, since || '—']);
+  return `<div class="merge-status-lock" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(text)}${_mergeHelpLink('merge_lock_line', 'merge_lock_help')}</div>`;
+}
+function _mergeValidatorLineHtml(v) {
+  const pass = v.pass === true;
+  const at = (typeof v.checked_at === 'string' && v.checked_at !== '') ? _triageTime(v.checked_at) : '';
+  const text = t(pass ? 'merge_validator_pass' : 'merge_validator_fail', [String(v.version || '—'), at || '—']);
+  const line = `<div class="merge-status-validator" style="font-size:12px;color:${pass ? 'var(--text2)' : 'var(--error,#c00)'};overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_validator_pass', 'merge_validator_help')}</div>`;
+  const checks = (Array.isArray(v.checks) ? v.checks : [])
+    .filter(c => c && typeof c === 'object' && c.pass !== true)
+    .map(c => {
+      const name = String(c.name || '—');
+      const detail = String(c.detail || '');
+      const msg = detail ? t('merge_validator_check', [name, detail]) : t('merge_validator_check_bare', [name]);
+      return `<div class="merge-validator-check" style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;margin-left:12px;">${escHtml(msg)}${_mergeHelpLink('merge_validator_check', 'merge_validator_help')}</div>`;
+    }).join('');
+  return line + checks;
+}
+function _mergeStatusBlockHtml(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const lines = [];
+  if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
+  if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
 }
 window.mergePipelineCardHtml = function(view, opts) {
   opts = opts || {};
@@ -29643,6 +29859,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<label for="mergePipelineProject" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_project'))}</label>` +
     `<input id="mergePipelineProject" class="form-input" list="mergePipelineProjects" value="${escHtml(project)}" style="flex:1;min-width:120px;max-width:100%;font-size:12px;" onchange="window.mergePipelineSelectProject(this.value)" autocomplete="off" />` +
     `<datalist id="mergePipelineProjects">${projects.map(p => `<option value="${escHtml(p)}"></option>`).join('')}</datalist></div>`;
+  const statusBlock = _mergeStatusBlockHtml(opts.mergeStatus);
   const srcKey = _mergePipelineKey(MERGE_PIPELINE_SOURCE_KEYS, view.source);
   const srcName = srcKey ? view.source : 'none';
   const srcLabel = srcKey ? t(srcKey) : t('merge_pipeline_source_none');
@@ -29671,6 +29888,21 @@ window.mergePipelineCardHtml = function(view, opts) {
   const model = `<div class="merge-pipeline-model" style="margin-top:8px;min-width:0;">` +
     `<label for="mergePipelineConflictModel" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_conflict_model_label'))}${defsLink('merge_pipeline_conflict_model_label')}</label> ` +
     _mergePipelineSelect('mergePipelineConflictModel', 'window.mergePipelineSetModel', modelOptions, current) + `</div>`;
+  // The mode in effect per size. The daemon always sends all three, so every
+  // row has a mode to show.
+  const inEffect = view.release_approval_in_effect && typeof view.release_approval_in_effect === 'object' ? view.release_approval_in_effect : {};
+  const releaseModeOptions = MERGE_PIPELINE_RELEASE_MODES.map(([v, k]) => [v, t(k)]);
+  const releaseRows = MERGE_PIPELINE_RELEASE_SIZES.map(([size, labelKey]) => {
+    const id = 'mergePipelineReleaseApproval-' + size;
+    return `<div class="merge-pipeline-release-approval-row" data-size="${size}" style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:4px;min-width:0;">` +
+      `<label for="${id}" style="font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}${defsLink(labelKey)}</label>` +
+      `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="window.mergePipelineSetReleaseApproval('${size}', this.value)">` +
+      releaseModeOptions.map(([v, label]) => `<option value="${escHtml(v)}"${v === inEffect[size] ? ' selected' : ''}>${escHtml(label)}</option>`).join('') +
+      `</select></div>`;
+  }).join('');
+  const releaseApproval = `<div class="merge-pipeline-release-approval" style="margin-top:8px;min-width:0;">` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_release_approval_label'))}${defsLink('merge_pipeline_release_approval_label')}</div>` +
+    releaseRows + `</div>`;
   const recordText = view.source === 'record' && view.definition ? JSON.stringify(view.definition, null, 2) : '';
   const editor = `<details class="merge-pipeline-editor" style="margin-top:8px;min-width:0;"><summary style="cursor:pointer;font-size:12px;">${escHtml(t('merge_pipeline_edit_record'))}</summary>` +
     `<div style="font-size:11px;color:var(--text2);margin:4px 0;">${escHtml(t('merge_pipeline_record_hint'))}</div>` +
@@ -29679,7 +29911,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<button type="button" class="btn-primary merge-pipeline-save" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineSaveRecord()">${escHtml(t('merge_pipeline_save_record'))}</button>` +
     `<button type="button" class="btn-secondary merge-pipeline-clear" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineClearRecord()">${escHtml(t('merge_pipeline_clear_record'))}</button></div>` +
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
-  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${editor}</div>`;
+  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${releaseApproval}${statusBlock}${editor}</div>`;
 };
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the
@@ -29722,6 +29954,13 @@ function _mergePipelineSetting(field, value) {
 }
 window.mergePipelineSetPolicy = function(value) { return _mergePipelineSetting('conflict_policy', value); };
 window.mergePipelineSetModel = function(value) { return _mergePipelineSetting('conflict_model', value); };
+// mergePipelineSetReleaseApproval saves one size's mode as the shown project's
+// override. The size and mode are checked here before anything is sent.
+window.mergePipelineSetReleaseApproval = function(size, value) {
+  if (!MERGE_PIPELINE_RELEASE_SIZES.some(([s]) => s === size)) return Promise.resolve();
+  if (!MERGE_PIPELINE_RELEASE_MODES.some(([v]) => v === value)) return Promise.resolve();
+  return _mergePipelineSetting('release_approval.' + size, value);
+};
 window.mergePipelineSaveRecord = function() {
   const ta = document.getElementById('mergePipelineRecord');
   if (!ta) return Promise.resolve();
@@ -30422,7 +30661,7 @@ const MERGE_BADGE_STATES = ['pending', 'needs_look'];
 const MERGE_MIN_REFETCH_MS = 5000;
 // _mergeStatus is the last good GET /api/autonomous/merge read, indexed by
 // Automaton id. A failed read keeps it, so a flaky poll never blinks a badge.
-const _mergeStatus = { byId: {}, at: 0, inflight: null };
+const _mergeStatus = { byId: {}, body: null, at: 0, inflight: null };
 window._mergeStatus = _mergeStatus;
 function _mergeIndex(body) {
   const byId = {};
@@ -30461,6 +30700,7 @@ window.loadMergeStatus = function() {
   if (_mergeStatus.at && (Date.now() - _mergeStatus.at) < MERGE_MIN_REFETCH_MS) return Promise.resolve(_mergeStatus.byId);
   _mergeStatus.inflight = Promise.resolve().then(() => apiFetch('/api/autonomous/merge')).then(body => {
     _mergeStatus.byId = _mergeIndex(body);
+    _mergeStatus.body = (body && typeof body === 'object') ? body : null;
     _mergeStatus.at = Date.now();
     return _mergeStatus.byId;
   }).catch(() => _mergeStatus.byId).then(byId => { _mergeStatus.inflight = null; return byId; });
@@ -35213,12 +35453,14 @@ function _automationMergePipelineLoader() {
   _mergePipelineLoadLists();
   return window._listLoaders.automation_merge_pipeline || listLoader({
     key: 'automation_merge_pipeline', el: 'automationMergePipelineCard', get url() { return _mergePipelineUrl(); }, pollMs: 0,
-    fetch: _mergePipelineFetch,
+    // The merge status (lock and last validator) is read with the pipeline;
+    // a failed status read leaves its lines out and never fails the card.
+    fetch: (url, o) => Promise.all([_mergePipelineFetch(url, o), window.loadMergeStatus().catch(() => null)]).then(r => r[0]),
     failedText: msg => t('merge_pipeline_failed', [msg]),
     active: () => !!document.getElementById('automationMergePipelineCard'),
     render: view => {
       if (view && view.project) window._mergePipelineShown = view.project;
-      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects });
+      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects, mergeStatus: window._mergeStatus.body });
     },
   });
 }

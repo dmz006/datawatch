@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -453,15 +456,247 @@ func TestMergePipelineMCP_ConfigSetSendsKeys(t *testing.T) {
 func TestMergePipelineMCP_ConfigSetToolHasArguments(t *testing.T) {
 	props := (&Server{}).toolAutonomousConfigSet().InputSchema.Properties
 	for _, k := range []string{"merge_pipeline_project", "merge_pipeline_file_name", "merge_pipeline_source_order",
-		"merge_pipeline_fallback_on_bad_file", "merge_pipeline_conflict_policy", "merge_pipeline_conflict_model", "merge_pipeline_version_files"} {
+		"merge_pipeline_fallback_on_bad_file", "merge_pipeline_conflict_policy", "merge_pipeline_conflict_model", "merge_pipeline_version_files",
+		"merge_pipeline_release_approval_patch", "merge_pipeline_release_approval_minor", "merge_pipeline_release_approval_major"} {
 		if _, ok := props[k]; !ok {
 			t.Errorf("autonomous_config_set lacks %s", k)
 		}
 	}
 }
 
-// The release readiness read on the MCP surface: autonomous_release_readiness
-// proxies GET /api/autonomous/release-readiness and returns its body unchanged.
+// mergePipelineViewReleaseBody is the view with the release approval mode in
+// effect for each size, as the daemon reports it for a project.
+const mergePipelineViewReleaseBody = `{"project":"demo","definition":{"steps":[{"name":"run tests","kind":"test","command":"make test"}]},"source":"default","reason":"no file, no record","settings":{"file_name":".datawatch/merge-pipeline.yaml","source_order":["file","record","default"],"fallback_on_bad_file":"record","version_files":[]},"conflict_policy":"stop_and_ask","conflict_policy_in_effect":"stop_and_ask","conflict_model":"","conflict_model_in_effect":"","overrides":null,"release_approval_in_effect":{"patch":"auto","minor":"ask","major":"manual"}}`
+
+// checkSentKeys fails the test for each want key whose sent value differs.
+func checkSentKeys(t *testing.T, sent, want map[string]any) {
+	t.Helper()
+	for k, v := range want {
+		if sent[k] != v {
+			t.Errorf("%s = %v, want %v (sent %v)", k, sent[k], v, sent)
+		}
+	}
+}
+
+func TestMergePipelineMCP_ReleaseApprovalValidSet(t *testing.T) {
+	args := map[string]any{
+		"merge_pipeline_release_approval_patch": "auto",
+		"merge_pipeline_release_approval_minor": "ask",
+		"merge_pipeline_release_approval_major": "manual",
+	}
+	want := map[string]any{
+		"autonomous.merge_pipeline.release_approval.patch": "auto",
+		"autonomous.merge_pipeline.release_approval.minor": "ask",
+		"autonomous.merge_pipeline.release_approval.major": "manual",
+	}
+	got, err := mergePipelineConfigArgs(callReq(args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkSentKeys(t, got, want)
+	if len(got) != len(want) {
+		t.Errorf("unexpected entries: %v", got)
+	}
+
+	// Through autonomous_config_set the three keys reach the one config PUT.
+	var sent map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &sent)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	res, _ := s.handleAutonomousConfigSet(context.Background(), mcpsdk.CallToolRequest{Params: mcpsdk.CallToolParams{Arguments: args}})
+	if res == nil || res.IsError {
+		t.Fatalf("res=%+v", res)
+	}
+	checkSentKeys(t, sent, want)
+}
+
+func TestMergePipelineMCP_ReleaseApprovalRefusesInvalid(t *testing.T) {
+	cases := []struct {
+		arg, key string
+		value    any
+	}{
+		{"merge_pipeline_release_approval_minor", "autonomous.merge_pipeline.release_approval.minor", "sometimes"},
+		{"merge_pipeline_release_approval_patch", "autonomous.merge_pipeline.release_approval.patch", 3},
+		{"merge_pipeline_release_approval_major", "autonomous.merge_pipeline.release_approval.major", "Ask"},
+	}
+	for _, c := range cases {
+		_, err := mergePipelineConfigArgs(callReq(map[string]any{c.arg: c.value}))
+		if err == nil {
+			t.Errorf("%s=%v must be refused", c.arg, c.value)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.key) || !strings.Contains(err.Error(), "auto") {
+			t.Errorf("refusal must name %s and the valid modes: %v", c.key, err)
+		}
+	}
+
+	// Through autonomous_config_set a bad mode is refused before any request.
+	called := false
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) { called = true })
+	res, _ := s.handleAutonomousConfigSet(context.Background(), mcpsdk.CallToolRequest{Params: mcpsdk.CallToolParams{
+		Arguments: map[string]any{"merge_pipeline_release_approval_major": "yes"},
+	}})
+	if res == nil || !res.IsError {
+		t.Fatal("a bad release approval mode must be an error result")
+	}
+	if text := automationText(t, res); !strings.Contains(text, "autonomous.merge_pipeline.release_approval.major") {
+		t.Errorf("the refusal must name the key: %s", text)
+	}
+	if called {
+		t.Error("a refused mode must not reach the daemon")
+	}
+}
+
+func TestMergePipelineMCP_ReleaseApprovalProjectSet(t *testing.T) {
+	args := map[string]any{"merge_pipeline_project": "demo", "merge_pipeline_release_approval_major": "manual"}
+	got, err := mergePipelineConfigArgs(callReq(args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkSentKeys(t, got, map[string]any{"autonomous.merge_pipeline.projects.demo.release_approval.major": "manual"})
+	if len(got) != 1 {
+		t.Errorf("a project set sends one key: %v", got)
+	}
+
+	// The project name is part of the refusal's key.
+	_, err = mergePipelineConfigArgs(callReq(map[string]any{"merge_pipeline_project": "demo", "merge_pipeline_release_approval_major": "sometimes"}))
+	if err == nil || !strings.Contains(err.Error(), "autonomous.merge_pipeline.projects.demo.release_approval.major") {
+		t.Errorf("a bad per-project mode must name the project key: %v", err)
+	}
+
+	var sent map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &sent)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	res, _ := s.handleAutonomousConfigSet(context.Background(), mcpsdk.CallToolRequest{Params: mcpsdk.CallToolParams{Arguments: args}})
+	if res == nil || res.IsError {
+		t.Fatalf("res=%+v", res)
+	}
+	checkSentKeys(t, sent, map[string]any{"autonomous.merge_pipeline.projects.demo.release_approval.major": "manual"})
+	if _, global := sent["autonomous.merge_pipeline.release_approval.major"]; global {
+		t.Errorf("a project set must not write the global mode: %v", sent)
+	}
+}
+
+func TestMergePipelineMCP_ReleaseApprovalGetEachSize(t *testing.T) {
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(mergePipelineViewReleaseBody))
+	})
+	res, _ := s.handleAutonomousMergePipelineGet(context.Background(), callReq(map[string]any{"project": "demo"}))
+	if res == nil || res.IsError {
+		t.Fatalf("res=%+v", res)
+	}
+	text := automationText(t, res)
+	if !strings.Contains(text, "Release approval: patch auto, minor ask, major manual") {
+		t.Errorf("the text must show the mode in effect for each size:\n%s", text)
+	}
+
+	res, _ = s.handleAutonomousMergePipelineGet(context.Background(), callReq(map[string]any{"project": "demo", "format": "json"}))
+	if res == nil || res.IsError {
+		t.Fatalf("res=%+v", res)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(automationText(t, res)), &obj); err != nil {
+		t.Fatal(err)
+	}
+	rea, ok := obj["release_approval_in_effect"].(map[string]any)
+	if !ok {
+		t.Fatalf("the json reply lacks release_approval_in_effect: %v", obj)
+	}
+	for size, want := range map[string]string{"patch": "auto", "minor": "ask", "major": "manual"} {
+		if rea[size] != want {
+			t.Errorf("release_approval_in_effect.%s = %v, want %s", size, rea[size], want)
+		}
+	}
+}
+
+func TestMergePipelineMCP_ReleaseApprovalConfigSetRouting(t *testing.T) {
+	var mu sync.Mutex
+	stored := map[string]any{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		if r.Method != http.MethodPut || r.URL.Path != "/api/config" || json.Unmarshal(raw, &body) != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		// The daemon's check for the release approval keys: text, and one of
+		// the three modes, with the key named in the refusal.
+		for k, v := range body {
+			if !strings.HasPrefix(k, "autonomous.merge_pipeline.release_approval.") {
+				continue
+			}
+			mode, isStr := v.(string)
+			if !isStr {
+				http.Error(w, k+": not text", http.StatusBadRequest)
+				return
+			}
+			if err := config.ValidateReleaseApprovalModeKey(k, mode); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		mu.Lock()
+		for k, v := range body {
+			stored[k] = v
+		}
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	t.Cleanup(srv.Close)
+	s := &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	ctx := context.Background()
+	set := func(key, value string) *mcpsdk.CallToolResult {
+		t.Helper()
+		res, err := s.handleConfigSet(ctx, mcpsdk.CallToolRequest{Params: mcpsdk.CallToolParams{
+			Arguments: map[string]any{"key": key, "value": value},
+		}})
+		if err != nil || res == nil {
+			t.Fatalf("config_set %s=%s: err=%v res=%+v", key, value, err, res)
+		}
+		return res
+	}
+
+	const patch = "autonomous.merge_pipeline.release_approval.patch"
+	if res := set(patch, "ask"); res.IsError {
+		t.Fatalf("a valid mode must be accepted: %s", automationText(t, res))
+	}
+	mu.Lock()
+	if stored[patch] != "ask" {
+		t.Errorf("config_set stored %v for %s, want ask", stored[patch], patch)
+	}
+	mu.Unlock()
+
+	// A bad mode is refused with the key named and nothing is stored.
+	if text := automationText(t, set(patch, "bogus")); !strings.Contains(text, patch) {
+		t.Errorf("a refused mode must name the key: %s", text)
+	}
+	mu.Lock()
+	if stored[patch] != "ask" {
+		t.Errorf("a refused mode must not change the stored value: %v", stored[patch])
+	}
+	mu.Unlock()
+}
+
+func TestMergePipelineMCP_ReleaseApprovalConfigSchema(t *testing.T) {
+	props := (&Server{}).toolAutonomousConfigSet().InputSchema.Properties
+	for size, def := range map[string]string{"patch": "auto", "minor": "auto", "major": "ask"} {
+		prop, ok := props["merge_pipeline_release_approval_"+size].(map[string]any)
+		if !ok {
+			t.Fatalf("autonomous_config_set lacks merge_pipeline_release_approval_%s", size)
+		}
+		desc, _ := prop["description"].(string)
+		for _, want := range []string{"autonomous.merge_pipeline.release_approval." + size, "auto", "ask", "manual", "Default " + def + "."} {
+			if !strings.Contains(desc, want) {
+				t.Errorf("%s description lacks %q: %s", size, want, desc)
+			}
+		}
+	}
+}
 
 const releaseReadinessMCPBody = `{"size":"minor","project":"demo","readiness":{"size":"minor","ready":false},"bar":{"records":10,"conflicts":2,"pwa_changes":2}}`
 

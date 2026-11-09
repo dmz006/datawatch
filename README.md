@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.115.2 (2026-11-09).** The CodeQL alert gate now fails at once with a rate-limit error when the reset falls outside its wait budget instead of waiting for nothing. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.118.1 (2026-11-09).** Saving the decompose lint card in the web Settings page no longer resets the task template mode settings and overrides. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -632,6 +632,9 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	for si, s := range stories {
 		checkFileTokens("story "+s.ID, &s, si, -1, s.Title, s.Description)
 		for ti, t := range s.Tasks {
+			if daemonRunsTask(t) {
+				continue // daemon-mode template task: no per-task rule (daemon_mode_checks.go)
+			}
 			checkFileTokens("task "+t.ID, &s, si, ti, t.Title, t.Spec)
 			// Task FilesGenerated entries are declared outputs by
 			// construction (that list *is* the producer record);
@@ -643,6 +646,9 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	// --- Rule 4: verification script OR explicit B124 reason. ---
 	for _, s := range stories {
 		for _, t := range s.Tasks {
+			if daemonRunsTask(t) {
+				continue
+			}
 			if t.VerificationScript == "" && t.VerificationScriptReason == "" {
 				add(StructuralFinding{
 					Kind:    FindingMissingVerification,
@@ -659,7 +665,7 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	for _, s := range stories {
 		for _, t := range s.Tasks {
 			script := strings.TrimSpace(t.VerificationScript)
-			if script == "" {
+			if script == "" || daemonRunsTask(t) {
 				continue
 			}
 			reason := ""
@@ -704,6 +710,9 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 			})
 		}
 		for _, t := range s.Tasks {
+			if daemonRunsTask(t) {
+				continue
+			}
 			names := append([]string{t.Title}, t.FilesGenerated...)
 			names = append(names, s.FilesGenerated...) // story-level generated names
 			for _, name := range names {
@@ -723,7 +732,7 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	for _, s := range stories {
 		for _, t := range s.Tasks {
 			verb, ok := writeVerbOf(t.Title)
-			if !ok || len(t.FilesPlanned) > 0 || specIsReadOnly(t.Spec) ||
+			if !ok || daemonRunsTask(t) || len(t.FilesPlanned) > 0 || specIsReadOnly(t.Spec) ||
 				t.ReadOnly || t.ReportPath != "" ||
 				t.Kind == TaskKindSmoke || t.Kind == TaskKindFinalGate ||
 				titleIsGateTask(t.Title) {
@@ -742,7 +751,7 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	// --- Rule 8: report_path is only valid on read-only tasks. ---
 	for _, s := range stories {
 		for _, t := range s.Tasks {
-			if t.ReportPath == "" || t.ReadOnly || specIsReadOnly(t.Spec) {
+			if t.ReportPath == "" || t.ReadOnly || specIsReadOnly(t.Spec) || daemonRunsTask(t) {
 				continue
 			}
 			add(StructuralFinding{
@@ -765,7 +774,7 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	// nor a usable report path is unverifiable; no task kind is exempt.
 	for _, s := range stories {
 		for _, t := range s.Tasks {
-			if !t.ReadOnly && !specIsReadOnly(t.Spec) {
+			if (!t.ReadOnly && !specIsReadOnly(t.Spec)) || daemonRunsTask(t) {
 				continue
 			}
 			if strings.TrimSpace(t.VerificationScript) != "" || taskHasUsableReportPath(t) {

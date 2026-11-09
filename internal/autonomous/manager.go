@@ -19,10 +19,10 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
-	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -256,6 +256,12 @@ type Config struct {
 	// config. No omitempty and no normalization: 0 means the size rule is off
 	// and must round-trip as 0.
 	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
+	// ScriptGateTimeoutSeconds and ProjectGateCommand mirror
+	// autonomous.script_gate_timeout_seconds and autonomous.project_gate_command
+	// in config. No omitempty on the timeout: an explicit 0 (no cap) must
+	// round-trip as 0.
+	ScriptGateTimeoutSeconds int    `json:"script_gate_timeout_seconds"`
+	ProjectGateCommand       string `json:"project_gate_command,omitempty"`
 	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
 	// the strong judge backend a large diff is routed to first, empty = the
 	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
@@ -1011,14 +1017,15 @@ func (c AutomationConfig) EffectiveDiskAlertPercent() int {
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:             false,
-		PollIntervalSeconds: 30,
-		MaxConcurrentTasks:  1,
-		MaxEnginesPerNode:   1,
-		GateDisagreement:    "warn",
-		FailureEscalation:   defaultFailureEscalationPolicy(),
-		AutoFixRetries:      1,
-		SecurityScan:        true,
+		Enabled:                  false,
+		PollIntervalSeconds:      30,
+		MaxConcurrentTasks:       1,
+		MaxEnginesPerNode:        1,
+		ScriptGateTimeoutSeconds: config.DefaultScriptGateTimeoutSeconds,
+		GateDisagreement:         "warn",
+		FailureEscalation:        defaultFailureEscalationPolicy(),
+		AutoFixRetries:           1,
+		SecurityScan:             true,
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
@@ -1334,9 +1341,9 @@ type Manager struct {
 	// /api/autonomous/status, returned verbatim by the autonomous_status
 	// MCP tool). Guarded by mu. Nil = the check is not wired.
 	hostLoadStatusFn func() HostLoadStatus
-	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose                  DecomposeFn
-	guardrail                  GuardrailFn
+	templates        *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose        DecomposeFn
+	guardrail        GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
 	guardrailClassify *guardrailClassify
 	// scopeBreadth is the scope-breadth classifier call site (nil = off).
@@ -1387,6 +1394,9 @@ type Manager struct {
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 	// mergeRunStore is the merge pipeline run history, opened on first use.
 	mergeRunStore *MergeRunRecords
+	// mergeLockStore is the per-repository merge lock store, opened on first
+	// use by MergeLocks.
+	mergeLockStore *MergeLocks
 
 	// Cleanup status (cleanup_status.go) — the in-memory + persisted
 	// record of the two safety-net passes and their disk readings.
