@@ -187,19 +187,60 @@ func TestRecordNewKeyAddsOnlyNewCandidates(t *testing.T) {
 	}
 }
 
-func TestRecordRerunWithNewTimestampIsNewCandidates(t *testing.T) {
-	// Keys include created_at. A fresh comparison run has a new timestamp, so
-	// its candidates have new keys. This is the documented behaviour.
+func TestRecordRerunNewTimestampNotDuplicated(t *testing.T) {
+	// A fresh Compare run on unchanged data stamps a new comparison time. Its
+	// candidates have the same content as the stored ones, so none is stored
+	// again, and the stored records keep their first created_at and key.
 	dir := t.TempDir()
-	if _, err := RecordComparisonCandidates(dir, candidateTestComparison("auto-a", candidateTestTime)); err != nil {
+	first, err := RecordComparisonCandidates(dir, candidateTestComparison("auto-a", candidateTestTime))
+	if err != nil {
 		t.Fatalf("first record: %v", err)
 	}
 	created, err := RecordComparisonCandidates(dir, candidateTestComparison("auto-a", candidateTestTime.Add(time.Minute)))
 	if err != nil {
-		t.Fatalf("second record: %v", err)
+		t.Fatalf("rerun record: %v", err)
 	}
-	if len(created) != 2 {
-		t.Fatalf("created %d for a new timestamp, want 2", len(created))
+	if created == nil || len(created) != 0 {
+		t.Fatalf("rerun created %d, want none", len(created))
+	}
+	list, err := ListDefectCandidates(dir, "auto-a")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("listed %d after rerun, want 2", len(list))
+	}
+	for _, got := range list {
+		if !got.CreatedAt.Equal(candidateTestTime) {
+			t.Errorf("stored created_at changed to %v on rerun", got.CreatedAt)
+		}
+		found := false
+		for _, f := range first {
+			if f.Key == got.Key {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("stored key %s changed on rerun", got.Key)
+		}
+	}
+}
+
+func TestRecordChangedContentAfterRerunIsNew(t *testing.T) {
+	// A rerun whose landed value changed is a different difference, so it is
+	// stored as a new candidate with the new comparison's created_at.
+	dir := t.TempDir()
+	if _, err := RecordComparisonCandidates(dir, candidateTestComparison("auto-a", candidateTestTime)); err != nil {
+		t.Fatalf("first record: %v", err)
+	}
+	later := candidateTestComparison("auto-a", candidateTestTime.Add(time.Minute))
+	later.Differences[0].Landed = "9.112.0"
+	created, err := RecordComparisonCandidates(dir, later)
+	if err != nil {
+		t.Fatalf("rerun record: %v", err)
+	}
+	if len(created) != 1 || created[0].Landed != "9.112.0" || !created[0].CreatedAt.Equal(later.CreatedAt) {
+		t.Fatalf("created %+v, want one new candidate stamped with the later time", created)
 	}
 }
 
@@ -250,6 +291,7 @@ func TestListDefectCandidatesEmptyAndSorted(t *testing.T) {
 	old := candidateTestComparison("auto-a", candidateTestTime)
 	newer := candidateTestComparison("auto-a", candidateTestTime.Add(time.Hour))
 	newer.Differences = newer.Differences[:1]
+	newer.Differences[0].Landed = "9.112.0" // new content, so a new candidate
 	if _, err := RecordComparisonCandidates(dir, old); err != nil {
 		t.Fatalf("record old: %v", err)
 	}

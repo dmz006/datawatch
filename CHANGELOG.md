@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- **Each difference from a merge comparison is kept as a defect candidate.** The merge shadow now turns every difference in a comparison into a candidate with a stable key (Automaton id, field, planned and landed values, release size, status and created_at) and stores it under the daemon data directory. Running the same comparison again does not store a second copy of a candidate with the same key. Candidates are recorded only; they are not filed into the defect queue, which stays with the existing defect intake (`internal/mergeshadow/defect_candidate.go`).
+- **Each difference from a merge comparison is kept as a defect candidate.** The merge shadow now turns every difference in a comparison into a candidate with a stable key (Automaton id, field, planned and landed values, release size, status and created_at) and stores it under the daemon data directory. Running the comparison again on unchanged data does not store a second copy: a candidate with the same content keeps the created_at and key it was first stored with. Candidates are recorded only; they are not filed into the defect queue, which stays with the existing defect intake (`internal/mergeshadow/defect_candidate.go`).
 
 ## v9.112.4 — Discussion folder paths are built through one cleaned-path helper for the last open CodeQL alert
 

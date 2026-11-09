@@ -83,14 +83,17 @@ func DefectCandidatesFromComparison(c *Comparison) ([]DefectCandidate, error) {
 }
 
 // RecordComparisonCandidates derives the candidates of c and persists them to
-// <dataDir>/defect-candidates/<automaton id>.json. A candidate whose key is
-// already stored is not written again. The returned slice holds only the
-// candidates created by this call; it is empty, not nil, when none were new.
-// Nothing is written when no new candidate exists.
+// <dataDir>/defect-candidates/<automaton id>.json. The returned slice holds
+// only the candidates created by this call; it is empty, not nil, when none
+// were new. Nothing is written when no new candidate exists.
 //
-// Keys include created_at, so running Compare again produces a new comparison
-// timestamp and therefore new keys. Only a repeat record of the same
-// comparison, with the same created_at, is a duplicate.
+// Duplicates are judged on what the candidate says: the Automaton id, field,
+// planned and landed values, release size and status. Running Compare again
+// on unchanged data stamps a new comparison time, but the candidate it
+// produces has the same content as one already stored, so it is not stored
+// again and the stored record keeps its original created_at and key. A
+// candidate whose planned or landed value changed is new, with the
+// comparison's created_at.
 func RecordComparisonCandidates(dataDir string, c *Comparison) ([]DefectCandidate, error) {
 	derived, err := DefectCandidatesFromComparison(c)
 	if err != nil {
@@ -108,16 +111,17 @@ func RecordComparisonCandidates(dataDir string, c *Comparison) ([]DefectCandidat
 	if err != nil {
 		return nil, err
 	}
-	seen := make(map[string]bool, len(stored)+len(derived))
+	known := make(map[string]bool, len(stored)+len(derived))
 	for _, s := range stored {
-		seen[s.Key] = true
+		known[candidateContentID(s)] = true
 	}
 	created := []DefectCandidate{}
 	for _, cand := range derived {
-		if seen[cand.Key] {
+		id := candidateContentID(cand)
+		if known[id] {
 			continue
 		}
-		seen[cand.Key] = true
+		known[id] = true
 		stored = append(stored, cand)
 		created = append(created, cand)
 	}
@@ -133,6 +137,21 @@ func RecordComparisonCandidates(dataDir string, c *Comparison) ([]DefectCandidat
 		return nil, err
 	}
 	return created, nil
+}
+
+// candidateContentID is the duplicate identity of a candidate: every field
+// the key covers except created_at. Two candidates with the same content id
+// describe the same difference, whatever comparison run produced them.
+func candidateContentID(c DefectCandidate) string {
+	data, _ := json.Marshal([]string{ // marshalling a []string cannot fail
+		c.AutomatonID,
+		c.Field,
+		c.Planned,
+		c.Landed,
+		string(c.ReleaseSize),
+		c.Status,
+	})
+	return string(data)
 }
 
 // ListDefectCandidates returns the stored candidates for one Automaton, newest
