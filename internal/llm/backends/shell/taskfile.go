@@ -49,11 +49,11 @@ func writeTaskFile(projectDir, session, task string) (string, error) {
 		return "", fmt.Errorf("task file: open %s: %w", path, err)
 	}
 	if err := f.Chmod(0o600); err != nil {
-		f.Close()
+		_ = f.Close()
 		return "", fmt.Errorf("task file: chmod %s: %w", path, err)
 	}
 	if _, err := f.WriteString(task); err != nil {
-		f.Close()
+		_ = f.Close()
 		return "", fmt.Errorf("task file: write %s: %w", path, err)
 	}
 	if err := f.Close(); err != nil {

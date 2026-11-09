@@ -169,7 +169,7 @@ func TestSweepStaleTaskFilesCollectsErrorsAndContinues(t *testing.T) {
 	if err := os.Chmod(folderBad, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(folderBad, 0o700)
+	defer func() { _ = os.Chmod(folderBad, 0o700) }()
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
