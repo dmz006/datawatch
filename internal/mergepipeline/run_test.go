@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // ---- helpers ----
@@ -682,5 +683,111 @@ func TestRunWithoutVersionFilesFailsTheBumpStep(t *testing.T) {
 	_, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || !strings.Contains(err.Error(), "version_files") {
 		t.Fatalf("want a version_files error, got %v", err)
+	}
+}
+
+// TestMergePipelineHostSteps covers the steps that leave the machine through
+// a git host. A project whose remote belongs to a configured git.hosts entry
+// files its parity issue through the host facade; a project without one keeps
+// the ShipRunner (gh) path unchanged. The configured host is a plain-git kind,
+// so the facade answers with ErrNoForgeAPI without any network call: that
+// error proves the facade ran, and the ShipRunner recorded no issue.
+func TestMergePipelineHostSteps(t *testing.T) {
+	companion := PostShipSettings{
+		Enabled:             true,
+		CompanionRepository: "acme/companion",
+		IssueTitleTemplate:  "Shipped {project} {version}",
+		Hooks:               []PostShipHook{{Name: "parity", Builtin: "parity_issue", Enabled: true}},
+	}
+	configured := []git.GitHostConfig{{Name: "gitea-lab", Kind: "gitea", BaseURL: "https://git.example.test"}}
+
+	cases := []struct {
+		name       string
+		hosts      []git.GitHostConfig
+		remote     string
+		wantResult string
+		wantCalls  string
+		wantDetail string
+	}{
+		{
+			name:       "configured host takes the facade and never reaches gh",
+			hosts:      configured,
+			remote:     "git@git.example.test:acme/p.git",
+			wantResult: autonomous.MergeStepFailed,
+			wantCalls:  "push main v1.2.3",
+			wantDetail: "on host gitea-lab",
+		},
+		{
+			name:       "remote on a host with no configured entry keeps the gh path",
+			hosts:      configured,
+			remote:     "https://github.com/acme/p.git",
+			wantResult: autonomous.MergeStepOK,
+			wantCalls:  "push main v1.2.3|issue acme/companion Shipped p 1.2.3",
+		},
+		{
+			name:       "no configured hosts keeps the gh path",
+			hosts:      nil,
+			remote:     "git@git.example.test:acme/p.git",
+			wantResult: autonomous.MergeStepOK,
+			wantCalls:  "push main v1.2.3|issue acme/companion Shipped p 1.2.3",
+		},
+		{
+			name:       "configured hosts but no remote URL keeps the gh path",
+			hosts:      configured,
+			remote:     "",
+			wantResult: autonomous.MergeStepOK,
+			wantCalls:  "push main v1.2.3|issue acme/companion Shipped p 1.2.3",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := newMergeRepo(t)
+			ship := &fakeShip{}
+			r := &Runner{
+				VersionFiles: testVersionFiles, Dir: dir, Project: "p",
+				Resolver: postShipPipeline(t), Ship: ship,
+				PostShip: companion,
+				Hosts:    tc.hosts, RemoteURL: tc.remote,
+			}
+			res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+			if err != nil || res.Run.Result != autonomous.MergeRunOK {
+				t.Fatalf("run %q err %v: a failed parity hook never changes the run result", res.Run.Result, err)
+			}
+			if got := stepResults(res.Run)["parity"]; got != tc.wantResult {
+				t.Errorf("parity step %q, want %q", got, tc.wantResult)
+			}
+			if got := strings.Join(ship.calls, "|"); got != tc.wantCalls {
+				t.Errorf("ship calls %q, want %q", got, tc.wantCalls)
+			}
+			if tc.wantDetail != "" {
+				var detail string
+				for _, s := range res.Run.Steps {
+					if s.Step == "parity" {
+						detail = s.Detail
+					}
+				}
+				if !strings.Contains(detail, tc.wantDetail) || !strings.Contains(detail, "no forge API integration") {
+					t.Errorf("parity detail %q: want the facade's ErrNoForgeAPI on %q", detail, tc.wantDetail)
+				}
+			}
+		})
+	}
+}
+
+// TestMergePipelineHostStepsConfiguredEntryWins checks that the facade is
+// handed the operator's configured entry, not the built-in fallback that
+// ResolveProjectHost would otherwise return for a github.com remote.
+func TestMergePipelineHostStepsConfiguredEntryWins(t *testing.T) {
+	r := &Runner{
+		Hosts:     []git.GitHostConfig{{Name: "github", Kind: "github", CredentialSource: "vault", VaultSecret: "gh-token"}},
+		RemoteURL: "https://github.com/acme/p.git",
+	}
+	h, ok := r.configuredHost()
+	if !ok || h.CredentialSource != "vault" || h.VaultSecret != "gh-token" {
+		t.Fatalf("configuredHost = %+v, %v; want the configured github entry", h, ok)
+	}
+	r.Hosts = nil
+	if _, ok := r.configuredHost(); ok {
+		t.Fatal("no configured hosts must not resolve, even for a github.com remote")
 	}
 }

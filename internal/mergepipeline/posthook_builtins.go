@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // PostShipSettings is the autonomous.merge_pipeline.post_ship block copied
@@ -201,23 +203,52 @@ func RunParityIssue(ctx context.Context, ship ShipRunner, dir, project, version 
 	if ship == nil {
 		return "", builtinErr("no ship runner is wired, so the parity_issue hook was not run")
 	}
-	repo := strings.TrimSpace(render(s.CompanionRepository, project, version))
-	if repo == "" {
-		return "", builtinErr("the parity_issue hook has no companion_repository setting")
-	}
-	title := strings.TrimSpace(render(s.IssueTitleTemplate, project, version))
-	if title == "" {
-		return "", builtinErr("the parity_issue hook has no issue_title_template setting")
-	}
-	body := strings.TrimSpace(render(s.NotifyTemplate, project, version))
-	if body == "" {
-		body = "Shipped " + version + " of " + project +
-			": parity is required on the other client surfaces for this release."
+	repo, title, body, err := parityIssueText(project, version, s)
+	if err != nil {
+		return "", err
 	}
 	if err := ship.FileIssue(ctx, dir, repo, title, body); err != nil {
 		return "", builtinErr("filing the parity issue in %s: %s", repo, err)
 	}
 	return "filed the parity issue in " + repo, nil
+}
+
+// RunParityIssueOnHost is the parity_issue built-in for a project whose
+// remote belongs to a configured git host. The issue is filed through the
+// provider-neutral host facade (git.FileIssue) instead of gh.
+func RunParityIssueOnHost(ctx context.Context, host git.GitHostConfig, project, version string, s PostShipSettings) (string, error) {
+	repo, title, body, err := parityIssueText(project, version, s)
+	if err != nil {
+		return "", err
+	}
+	res, err := git.FileIssue(ctx, host, git.IssueOptions{Repo: repo, Title: title, Body: body})
+	if err != nil {
+		return "", builtinErr("filing the parity issue in %s on host %s: %s", repo, host.Name, err)
+	}
+	note := "filed the parity issue in " + repo + " on host " + host.Name
+	if res.URL != "" {
+		note += " at " + res.URL
+	}
+	return note, nil
+}
+
+// parityIssueText renders the repository, title and body of the parity
+// issue from the hook's settings. Each one that is empty fails the hook.
+func parityIssueText(project, version string, s PostShipSettings) (repo, title, body string, err error) {
+	repo = strings.TrimSpace(render(s.CompanionRepository, project, version))
+	if repo == "" {
+		return "", "", "", builtinErr("the parity_issue hook has no companion_repository setting")
+	}
+	title = strings.TrimSpace(render(s.IssueTitleTemplate, project, version))
+	if title == "" {
+		return "", "", "", builtinErr("the parity_issue hook has no issue_title_template setting")
+	}
+	body = strings.TrimSpace(render(s.NotifyTemplate, project, version))
+	if body == "" {
+		body = "Shipped " + version + " of " + project +
+			": parity is required on the other client surfaces for this release."
+	}
+	return repo, title, body, nil
 }
 
 // RunTag is the tag built-in: it tags the release, skipping rather than
