@@ -298,16 +298,24 @@ subject to this rule. That is why a legacy, invalid folder name can still show u
 list-all response even though every id-bearing route above refuses it — see the operator
 review note below.
 
-**How the check is enforced:** every id-bearing route builds its folder path through the same
-helper, `discussionFolderPath` (`internal/server/discussion_folder.go`). The helper validates
-the id, refuses an id that carries `/`, `\`, or exactly `.`/`..`, and — only after joining the
-id into the base folder and cleaning the result — refuses the path unless it is still a direct
-child of that base folder. Because a valid id can never carry a path separator, an id can never
-be used to name a file outside its own discussion folder (the WAL under
+**How the check is enforced:** every id-bearing route builds its folder path through a shared
+helper in `internal/server/discussion_folder.go`, never by joining the id into a path inline.
+The discussion memory routes (scope, WAL, participants, conflicts, receive) use the server
+method `discussionFolderForID`, which pins the base folder to `<data dir>/discussions`; the
+file-service discussion folder route uses the plain helper `discussionFolderPath` with its
+base set to `<file_service_root>/discussions`. Both run the same core check: they validate
+the id, refuse an id that carries `/`, `\`, or exactly `.`/`..`, and — only after joining the
+id into the base folder and cleaning the result — refuse the path unless it is still a direct
+child of that base folder. As a second barrier form, `discussionFolderForID` additionally
+requires the id to be a local name (`filepath.IsLocal`) and that the cleaned join stays
+reachable from the base without a hop out of it, so a cleaned id cannot name a sibling or
+ancestor folder even in principle. Because a valid id can never carry a path separator, an id
+can never be used to name a file outside its own discussion folder (the WAL under
 `<data dir>/discussions/<id>/`, or the matching file-service folder under
 `<file_service_root>/discussions/<id>/`), and a refused id never opens or creates a file.
-Behavior for valid ids is unchanged; centralizing the validation and the containment check in
-one helper is what makes the guard visible on the data flow in the code.
+Behavior for valid ids is unchanged; the shared containment check sitting visibly at the join,
+in both helpers and unit-tested against traversal ids, is what makes the guard visible on the
+data flow in the code.
 
 ```sh
 # An id with a slash is rejected.
