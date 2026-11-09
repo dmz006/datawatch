@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-08 as https://github.com/dmz006/datawatch-app/issues/404 (release v9.112.10). -->
 # Fix the built-in task templates so a decomposed Automaton's final gate and version note tasks pass the verifier
 
 ## Affected area
