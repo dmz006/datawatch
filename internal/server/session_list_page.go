@@ -59,8 +59,9 @@ type sessionSummaryRow struct {
 	InheritedTags []string `json:"inherited_tags"`
 	// SystemTags carries the machine-derived placement tags
 	// (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
-	// project:<name>) that the Sessions tiles draw as chips.
-	SystemTags []string `json:"system_tags,omitempty"`
+	// project:<name>) that the Sessions tiles draw as chips. Always sent:
+	// an empty list is an empty array, never null and never absent.
+	SystemTags []string `json:"system_tags"`
 }
 
 // sessionListPage is the paged envelope.
@@ -229,7 +230,7 @@ func (s *Server) sessionSummaryRow(sess *session.Session, textChars int) session
 		EstCostUSD: sess.EstCostUSD, TokensIn: sess.TokensIn, TokensOut: sess.TokensOut,
 		StatusLine: sessionStatusLine(sess, textChars),
 		Tags:       sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
-		SystemTags: sess.SystemTags,
+		SystemTags: append([]string{}, sess.SystemTags...),
 	}
 	if sess.LastChannelEventAt.After(row.LastActivity) {
 		row.LastActivity = sess.LastChannelEventAt
