@@ -990,3 +990,165 @@ func TestRebaseOntoMainSkipsFetchWithoutRemote(t *testing.T) {
 		t.Errorf("detail %q", d)
 	}
 }
+
+// ---- steps run twice leave the same state ----
+
+// The merge step runs twice on the same branch. The first run merges it; the
+// second finds the branch already in main, adds nothing, and leaves the main
+// head where the first run left it.
+func TestMergeBranchesTwiceLeavesMainHeadUnchanged(t *testing.T) {
+	dir := newMergeRepo(t)
+	st := &runState{r: &Runner{Dir: dir}, m: &Merger{Dir: dir}, req: RunRequest{Branches: []string{"feature"}}}
+	ctx := context.Background()
+
+	note, err := st.mergeBranches(ctx)
+	if err != nil {
+		t.Fatalf("first merge: %v", err)
+	}
+	if !strings.Contains(note, "merged: feature") {
+		t.Fatalf("first note = %q, want it to say merged: feature", note)
+	}
+	headAfterFirst := runGit(t, dir, "rev-parse", "HEAD")
+
+	note, err = st.mergeBranches(ctx)
+	if err != nil {
+		t.Fatalf("second merge must succeed: %v", err)
+	}
+	if !st.nothingNew || !strings.Contains(note, "nothing new") {
+		t.Fatalf("second note = %q (nothingNew=%v), want a nothing-new note", note, st.nothingNew)
+	}
+	if head := runGit(t, dir, "rev-parse", "HEAD"); head != headAfterFirst {
+		t.Fatalf("main head moved from %s to %s on the second merge", headAfterFirst, head)
+	}
+}
+
+// countChangelogHeadings returns how many lines of text are a heading for version v.
+func countChangelogHeadings(text, v string) int {
+	n := 0
+	for _, l := range strings.Split(text, "\n") {
+		if strings.HasPrefix(l, "## v"+v+" ") {
+			n++
+		}
+	}
+	return n
+}
+
+// The changelog heading step runs twice for the same version. The second run
+// finds the heading already there and leaves the file bytes exactly as the
+// first run wrote them, with one heading for the version.
+func TestInsertChangelogHeadingTwiceLeavesOneHeading(t *testing.T) {
+	dir := newMergeRepo(t)
+	r := &Runner{Dir: dir}
+
+	if _, err := r.insertChangelog("1.2.4", "repeat release"); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	afterFirst := readRepoText(t, dir, "CHANGELOG.md")
+	if n := countChangelogHeadings(afterFirst, "1.2.4"); n != 1 {
+		t.Fatalf("after first insert %d headings for v1.2.4, want 1", n)
+	}
+
+	note, err := r.insertChangelog("1.2.4", "repeat release")
+	if err != nil {
+		t.Fatalf("second insert must succeed: %v", err)
+	}
+	if !strings.Contains(note, "already has a heading for v1.2.4") {
+		t.Fatalf("second note = %q, want it to say the heading exists", note)
+	}
+	afterSecond := readRepoText(t, dir, "CHANGELOG.md")
+	if afterSecond != afterFirst {
+		t.Fatalf("second insert changed the changelog bytes:\nfirst:\n%s\nsecond:\n%s", afterFirst, afterSecond)
+	}
+	if n := countChangelogHeadings(afterSecond, "1.2.4"); n != 1 {
+		t.Fatalf("after second insert %d headings for v1.2.4, want 1", n)
+	}
+}
+
+// countBumpCommits returns how many commits in the history of dir carry the
+// release bump subject for version v.
+func countBumpCommits(t *testing.T, dir, v string) int {
+	t.Helper()
+	n := 0
+	for _, subject := range strings.Split(runGit(t, dir, "log", "--format=%s"), "\n") {
+		if subject == "chore(release): v"+v+" bump for merged branches" {
+			n++
+		}
+	}
+	return n
+}
+
+// The bump commit step runs twice after the version and changelog are written.
+// The first run commits them; the second finds nothing staged and makes no
+// commit, so the history holds exactly one bump commit.
+func TestCommitReleaseBumpTwiceMakesOneCommit(t *testing.T) {
+	dir := newMergeRepo(t)
+	st := &runState{r: &Runner{Dir: dir, VersionFiles: testVersionFiles}, m: &Merger{Dir: dir}}
+	ctx := context.Background()
+	for _, a := range []string{ActionSetReleaseVersion, ActionInsertChangelog} {
+		if _, err := st.action(ctx, Step{Action: a}); err != nil {
+			t.Fatalf("%s: %v", a, err)
+		}
+	}
+	countBefore := runGit(t, dir, "rev-list", "--count", "HEAD")
+
+	if _, err := st.action(ctx, Step{Action: ActionCommitReleaseBump}); err != nil {
+		t.Fatalf("first commit-release-bump: %v", err)
+	}
+	countAfterFirst := runGit(t, dir, "rev-list", "--count", "HEAD")
+	if countAfterFirst == countBefore {
+		t.Fatalf("first commit-release-bump made no commit; count stayed at %s", countBefore)
+	}
+	if n := countBumpCommits(t, dir, "1.2.4"); n != 1 {
+		t.Fatalf("after first run %d bump commits, want 1", n)
+	}
+
+	note, err := st.action(ctx, Step{Action: ActionCommitReleaseBump})
+	if err != nil {
+		t.Fatalf("second commit-release-bump must succeed: %v", err)
+	}
+	if !strings.Contains(note, "nothing staged") {
+		t.Fatalf("second note = %q, want it to say nothing staged", note)
+	}
+	if countAfterSecond := runGit(t, dir, "rev-list", "--count", "HEAD"); countAfterSecond != countAfterFirst {
+		t.Fatalf("second run changed the commit count from %s to %s", countAfterFirst, countAfterSecond)
+	}
+	if n := countBumpCommits(t, dir, "1.2.4"); n != 1 {
+		t.Fatalf("after second run %d bump commits, want 1", n)
+	}
+}
+
+// The push step runs twice against a local bare remote. The first push sends
+// main and the release tag; the second finds the remote already at HEAD and
+// leaves every ref on the remote as the first push left it.
+func TestPushReleaseTwiceLeavesRemoteUnchanged(t *testing.T) {
+	dir := newMergeRepo(t)
+	bare := withOrigin(t, dir)
+	runGit(t, dir, "merge", "--no-ff", "-q", "-m", "merge feature", "feature")
+	st := &runState{r: &Runner{Dir: dir, VersionFiles: testVersionFiles, Ship: ExecShipRunner{}},
+		m: &Merger{Dir: dir}}
+	ctx := context.Background()
+	for _, a := range []string{ActionSetReleaseVersion, ActionInsertChangelog, ActionCommitReleaseBump, ActionTagRelease} {
+		if _, err := st.action(ctx, Step{Action: a}); err != nil {
+			t.Fatalf("%s: %v", a, err)
+		}
+	}
+
+	if _, err := st.action(ctx, Step{Action: ActionPushRelease}); err != nil {
+		t.Fatalf("first push-release: %v", err)
+	}
+	remoteAfterFirst := runGit(t, bare, "for-each-ref", "--format=%(refname) %(objectname)")
+	head := runGit(t, dir, "rev-parse", "HEAD")
+	if !strings.Contains(remoteAfterFirst, "refs/heads/main "+head) {
+		t.Fatalf("remote main after first push = %q, want it at HEAD %s", remoteAfterFirst, head)
+	}
+	if !strings.Contains(remoteAfterFirst, "refs/tags/v1.2.4 ") {
+		t.Fatalf("remote after first push has no v1.2.4 tag:\n%s", remoteAfterFirst)
+	}
+
+	if _, err := st.action(ctx, Step{Action: ActionPushRelease}); err != nil {
+		t.Fatalf("second push-release must succeed: %v", err)
+	}
+	if remoteAfterSecond := runGit(t, bare, "for-each-ref", "--format=%(refname) %(objectname)"); remoteAfterSecond != remoteAfterFirst {
+		t.Fatalf("second push changed the remote:\nfirst:\n%s\nsecond:\n%s", remoteAfterFirst, remoteAfterSecond)
+	}
+}
