@@ -74,8 +74,23 @@ func ResolveMechanicalFile(class FileClass, rel string, conflicted string, ours 
 		return b.String(), settled, notes, nil
 	case ClassLocale:
 		return resolveLocale(rel, conflicted, ours, theirs)
+	case ClassGenerated:
+		// A generated file is never merged by hand: the ours side is kept as
+		// the settled text and the caller rebuilds the file from its sources.
+		return ours, true, []string{fmt.Sprintf("%s: generated file; kept ours, regenerate it", rel)}, nil
 	}
 	return conflicted, false, []string{fmt.Sprintf("%s: class %q has no mechanical rule", rel, class)}, nil
+}
+
+// MakefileHasDocsIndexTarget reports whether makefileText defines a docs-index
+// target, that is, whether any line starts with "docs-index:".
+func MakefileHasDocsIndexTarget(makefileText string) bool {
+	for _, l := range strings.Split(makefileText, "\n") {
+		if strings.HasPrefix(l, "docs-index:") {
+			return true
+		}
+	}
+	return false
 }
 
 // parseFlatLocale parses a flat JSON object whose values are all strings.
