@@ -37,7 +37,7 @@ and the MCP tool definitions alone make up about 36,000 of those.
 
 Before attempt cost, every retry and every hop to the next worker on the ladder
 spawned a fresh session. A task that failed three times on the strong worker
-therefore paid the full starting context three times, about 285,000 tokens, for
+therefore paid the full starting context three times, about 255,000 tokens, for
 work that had already shown it would not succeed.
 
 With attempt cost in place, the same failing task is priced differently:
@@ -46,7 +46,7 @@ With attempt cost in place, the same failing task is priced differently:
   `note` task that fails has spent one cheap start, not three strong ones.
 - **A retry can resume the failed session.** The retry then costs one summary line
   and the continuation, not another starting context
-  ([Resuming a retry](#resuming-a-retry)).
+  ([Retrying in the same session](#retrying-in-the-same-session-or-starting-a-new-one)).
 - **Nothing else changes.** The attempt order, the failure ladder and the review
   hold work as they did. A first-try success runs on the worker its kind resolves
   to, which is unchanged if you set no first-attempt worker.
@@ -119,6 +119,8 @@ then a hosted model:
 The ladder is set with `autonomous.failure_escalation.steps`, and its failure
 count with `max_failures` (default 3). See
 [Failure escalation](failure-escalation.md) for the ladder and the review hold.
+
+<a id="resuming-a-retry"></a>
 
 ## Retrying in the same session, or starting a new one
 
@@ -193,9 +195,10 @@ its review entry, as `last_resumed`, `last_resume_reason` and `no_retry_reason`.
 
 To read the record:
 
-- **Status output.** `datawatch autonomous status` lists each held task with its
-  last worker, its failed-attempt count, whether the last attempt resumed and why,
-  and any no-retry reason.
+- **Status output.** `datawatch autonomous status` prints the daemon's status JSON
+  (`/api/autonomous/status`). Each `review_needed` row carries `last_backend`,
+  `last_backend_reason`, `last_resumed`, `last_resume_reason` and `no_retry_reason`,
+  and the fields are omitted when not recorded.
 - **The task.** Read the Automaton with `autonomous_prd_get`, or open the task row
   in the Automaton's review panel. The panel shows the attempt list with the
   worker reason and the resumed or fresh session, and a **No retry** line where
@@ -296,7 +299,8 @@ configure autonomous.first_attempt_escalate_after_failures=2
 configure autonomous.retry_resume_max_context_tokens=0
 ```
 
-A successful write replies `Set <key> = <value>`. A refused one replies
+A successful write replies `[<host>] Set <key> = <value>. Restart may be required.`
+A refused one replies
 `Refused:` followed by the same validator message, and nothing is written:
 
 ```
