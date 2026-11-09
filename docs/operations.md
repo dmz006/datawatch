@@ -970,7 +970,7 @@ exempt:
 
 To fix the plan, add either a `verification_script` or a `report_path` to
 the task. The path must be a clean repo-relative path under
-`.datawatch/reports/`. The built-in final-gate template already ships in
+`.datawatch/reports/`. The built-in final-gate standard task already ships in
 this shape: its spec says to write its output to
 `.datawatch/reports/<feature>-final-gate.txt`, sets `report_path` to the
 same file and carries a verification script — a useful example of a
