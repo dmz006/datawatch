@@ -870,14 +870,42 @@ func (s *runState) ship(ctx context.Context, action string) (string, error) {
 	tag := "v" + v
 	switch action {
 	case ActionTagRelease:
-		note, err := doneOr("tagged "+tag, s.r.Ship.Tag(ctx, s.r.Dir, tag, "Release "+tag))
-		if err == nil {
-			s.tagMade = tag
-		}
-		return note, err
+		return s.tagRelease(ctx, tag)
 	default:
 		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
 	}
+}
+
+// tagRelease makes the release tag on HEAD, unless it is already there. A tag
+// that already points at HEAD is left alone and the step succeeds, so a step
+// run twice changes nothing. A tag that points at another commit fails the
+// step, naming the tag and that commit, because moving it could rewrite a
+// release someone has already published. Only a tag this call creates is
+// recorded in tagMade, so a redo never deletes a tag the run did not make.
+func (s *runState) tagRelease(ctx context.Context, tag string) (string, error) {
+	dir := s.r.Dir
+	head, err := s.m.gitOK(ctx, dir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("read HEAD before tagging %s: %w", tag, err)
+	}
+	head = strings.TrimSpace(head)
+	res, err := s.m.git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("check for tag %s: %w", tag, err)
+	}
+	if res.Code == 0 {
+		at := strings.TrimSpace(res.Out)
+		if at == head {
+			return "already tagged " + tag + " at HEAD; nothing to do", nil
+		}
+		return "", fmt.Errorf("tag %s already exists on commit %s, not HEAD %s; refusing to move it", tag, at, head)
+	}
+	note, err := doneOr("tagged "+tag, s.r.Ship.Tag(ctx, dir, tag, "Release "+tag))
+	if err != nil {
+		return "", err
+	}
+	s.tagMade = tag
+	return note, nil
 }
 
 // doneOr returns the success note, or no note with the error.
