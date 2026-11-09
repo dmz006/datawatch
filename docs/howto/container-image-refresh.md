@@ -28,6 +28,56 @@ Every day at 05:30 UTC it:
 Staging tags older than three days are removed by the weekly `ghcr-cleanup`
 workflow (see below).
 
+## How CI installs Trivy
+
+Found in a 2026-11-09 release run: the inline
+`curl -sfL …/trivy/main/contrib/install.sh | sh` form of an "Install Trivy"
+step can **fail silently**. A flaky or partial download finishes the step
+without an error, and the worker ends up with no Trivy. A blocking scan step
+then dies with `trivy: command not found`, and a non-blocking one (a trailing
+`|| true`) skips the scan without saying so.
+
+`scripts/ci-install-trivy.sh` is the hardened installer; an install step
+invokes it as:
+
+```bash
+bash scripts/ci-install-trivy.sh "<trivy-version-tag>" <install-dir>
+```
+
+It guarantees, in order:
+
+- **Fails loudly.** `set -euo pipefail` throughout. A download that fails
+  exits non-zero with curl's status, the failing URL is written to stderr
+  (for example `download failed: <url> (curl exit 22)`), and the install
+  directory is left empty. Step fails, run red, nothing hides.
+- **Retries before giving up.** The download gets 5 attempts, 10 s apart, on
+  any error (`--retry-all-errors`), with a 20 s connect timeout and a 120 s
+  total cap. A transient blip is absorbed; an outage is not.
+- **Pinned, not moving.** The install script is fetched for the **pinned
+  version tag** (`aquasecurity/trivy/<tag>/contrib/install.sh`), not from
+  the moving `main` branch — the script that runs is the one that belongs to
+  the version being installed.
+- **No pipe-to-shell.** The script downloads first into a temp file in the
+  repository tree, then runs `sh <tmpfile> -b <install-dir> <tag>` over the
+  file. `sh` never receives a pipe as its script source, and the temp file
+  is cleaned up on exit.
+
+Run its coverage with
+`bash scripts/tests/ci-install-trivy_test.sh` — the test fakes `curl` on the
+PATH and exercises the success, the persistent-failure, and the
+missing-argument paths, asserting the error text, the exit code and the state
+left behind.
+
+**Still pending review:** at the time of writing, the "Install Trivy" steps
+in `release.yaml`, `containers.yaml` and `image-refresh.yaml` (8 lines
+across the three workflow files) still use the inline `curl … | sh` form,
+fetching the installer from `main`. Migrate each one to
+`bash scripts/ci-install-trivy.sh "v<the pinned version>" /usr/local/bin`
+(image-refresh pins it via the workflow's `TRIVY_VERSION`; the others name
+the tag inline in the step) so the guarantees above hold there as well. The
+migration is the operator's call — the script is safe to invoke as-is, but
+the scan pipeline is only as loud as its install step.
+
 ## Running it by hand
 
 GitHub > Actions > `image-refresh` > Run workflow. Options:
