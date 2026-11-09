@@ -2067,8 +2067,15 @@ autonomous:
   #   release whose size cannot be read resolves to ask, never to shipping.
   #   An unset size inherits the project's
   #   autonomous.merge_pipeline.projects.<project>.release_approval, then the
-  #   global value, then that default. First step of the daemon finishing the
-  #   review and merge by itself; the daemon's merge path honours these modes.
+  #   global value, then that default. The merge run honours these modes:
+  #   auto ships a release whose checks pass and reports afterwards; ask raises
+  #   one "Ship this release?" decision and ships only on a yes; manual prepares
+  #   and reports, and a person ships. A failed check holds the release in every
+  #   mode. Example, one project ships minor releases by hand:
+  #     projects:
+  #       myproject:
+  #         release_approval:
+  #           minor: manual
   # merge_pipeline:
   #   file_name: .datawatch/merge-pipeline.yaml
   #   source_order: [file, record]

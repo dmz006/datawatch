@@ -176,19 +176,112 @@ sure the name you give exists. If you run a model of your own, name that one.
 
 ## Release approval modes
 
-`autonomous.merge_pipeline.release_approval` decides, for each size of release, who has to approve it before the release ships. There is one key per size — `patch`, `minor` and `major` — and each takes one of three modes:
+Release approval decides what happens to a prepared release before it leaves the
+machine: the tag, the push and the deploy. The daemon's merge run prepares the
+release in every mode — the branches are merged, the version is bumped, the
+changelog is written and the commit is made. The mode decides who ships it.
 
-| Mode | What happens |
+### The three modes
+
+| Mode | What the daemon does |
 |---|---|
-| `auto` | With the pipeline's checks passing, the release ships without waiting for anyone; a failed check holds it for a person to look. |
-| `ask` | The operator is asked before it ships, and it ships only on their yes. |
-| `manual` | The release is held for the operator to ship; nothing is asked. |
+| `auto` | Runs the checks. When they pass, it ships the release and reports afterwards. Nobody is asked first. |
+| `ask` | Prepares everything, raises one decision with the merge plan, and ships only after a yes. |
+| `manual` | Prepares the release and reports. A person ships it. |
 
-The defaults are patch `auto`, minor `auto`, major `ask`: a major release is never shipped quietly, and a release whose size cannot be read resolves to `ask` rather than being shipped. The daemon's merge run honours this setting through the release gate ([The release gate](#the-release-gate)). A mode is only `auto`, `ask` or `manual` — anything else is refused with the key named rather than stored, wherever it is set. Over MCP, `autonomous_config_set` takes `merge_pipeline_release_approval_patch`, `merge_pipeline_release_approval_minor` and `merge_pipeline_release_approval_major` (each written as `autonomous.merge_pipeline.release_approval.<size>`), and `merge_pipeline_project` with them sets the mode for that project only; `config_set` takes the same dotted keys.
+In every mode a failed check holds the release for a person to look at. It is
+never shipped on a failed check, and "auto" never overrides that. See
+[The release gate](#the-release-gate).
 
-You can see where the inheritance lands for a project: the read answer carries `release_approval_in_effect` with the resolved mode per size (the project's value, else the global one, else the default above), its text answers (`show` on the command line, the chat verb and the MCP tool's text) add a `Release approval: patch …, minor …, major …` line, and `GET /api/config` reads the block's effective `release_approval` back with the same per-size resolution. The PWA merge pipeline card shows the mode in effect for each size, and choosing a mode there writes that project's override, the same way the card's conflict policy and model work. The settings page (Settings > Automation, the Merge pipeline group) carries one global field per size; choosing a mode there writes the global `autonomous.merge_pipeline.release_approval.<size>`.
+### The three sizes
 
-Each size inherits when unset, in this order — a project's value in `autonomous.merge_pipeline.projects.<project>.release_approval`, then the global `release_approval`, then the defaults above. For example, to leave the defaults in place and make one project ship minor releases manually:
+Each size of release has its own mode, under one key per size: `patch`, `minor`
+and `major`. Which size a given release is (patch, minor or major) is decided
+elsewhere, by the release's own versioning. This setting does not choose the
+size; it only says what to do with a release of each size.
+
+### The defaults
+
+| Size | Default mode |
+|---|---|
+| `patch` | `auto` |
+| `minor` | `auto` |
+| `major` | `ask` |
+
+A major release is never shipped quietly. A release whose size cannot be read
+resolves to `ask`, never to shipping.
+
+### Resolution order
+
+For each size, the mode in effect is the first one that is set:
+
+1. the project's override, under `autonomous.merge_pipeline.projects.<project>.release_approval`;
+2. the global value, under `autonomous.merge_pipeline.release_approval`;
+3. the default in the table above.
+
+A size left unset inherits. Sending `null` for a size clears the override and
+the size inherits again.
+
+### Set the mode on each surface
+
+Each surface sets the same keys. A mode is only `auto`, `ask` or `manual`.
+
+- **config.yaml** — the global modes, in the `autonomous.merge_pipeline` block:
+
+  ```yaml
+  autonomous:
+    merge_pipeline:
+      release_approval:
+        patch: auto
+        minor: auto
+        major: ask
+  ```
+
+- **Web UI** — Settings > Automation, in the Merge pipeline group, has one field per size. Set the Major field to `ask` to change the global default. For one project, the Merge pipeline card has a Release approval select per size, and choosing a mode there saves that project's override.
+- **REST API** — `PUT /api/config` with the dotted key:
+
+  ```
+  PUT /api/config
+  {"autonomous.merge_pipeline.release_approval.major": "ask"}
+  ```
+
+- **Comm channel** — the `configure` verb:
+
+  ```
+  configure autonomous.merge_pipeline.release_approval.major=ask
+  ```
+
+- **MCP** — `autonomous_config_set` with the size argument. Add `merge_pipeline_project` to set it for one project only:
+
+  ```
+  autonomous_config_set(merge_pipeline_release_approval_minor="manual", merge_pipeline_project="myproject")
+  ```
+
+- **Command line** — `datawatch config set`:
+
+  ```
+  datawatch config set autonomous.merge_pipeline.release_approval.major ask
+  ```
+
+A value outside the three modes is refused on every surface, with the key named,
+and nothing is stored. The same goes for a size that is not `patch`, `minor` or
+`major`.
+
+### Read the mode in effect
+
+Read the modes that apply to a project, with the inheritance already resolved:
+
+- **Merge pipeline view** — the Merge pipeline card in Settings > Automation shows the mode in effect for each size.
+- **Command line and chat** — `datawatch autonomous merge-pipeline show [--project P]`, or the chat verb `autonomous merge-pipeline`. The text answer carries a `Release approval: patch …, minor …, major …` line.
+- **MCP** — `autonomous_merge_pipeline_get`. Its answer carries `release_approval_in_effect`, the resolved mode for each size.
+- **REST API** — `GET /api/autonomous/merge-pipeline?project=NAME` carries the same `release_approval_in_effect`. `GET /api/config` returns the effective `release_approval` block for the global settings.
+
+For one project, the mode in effect is what the merge run will act on. Read it
+before you change a size, because the project's own override wins over the
+global value.
+
+A project can also have its own mode for one size. For example, to leave the
+defaults in place and make one project ship minor releases manually:
 
 ```yaml
 autonomous:
@@ -199,7 +292,27 @@ autonomous:
           minor: manual
 ```
 
-Set or read a mode with `datawatch config set autonomous.merge_pipeline.release_approval.major ask`, `PUT /api/config` with `{"autonomous.merge_pipeline.release_approval.major": "ask"}`, MCP `config_set`, or the comm channel `configure autonomous.merge_pipeline.release_approval.major=ask`; sending `null` for a size clears it back to inheriting. Moving a size toward `auto` — above all `major`, which is the operator's by default — is a decision to make deliberately and record with its evidence: the daemon's merge run honours these modes, so `auto` means it ships that size on its own — with the checks passing; a failed check holds the release for a person in every mode.
+### Answer the decision
+
+In `ask` mode the daemon raises one decision for the release, once per project,
+Automaton and size. It appears as the question "Ship this release?", with the
+merge plan in it: the project, the Automaton, the size, the version the release
+would get, the branches it merges, the checks and their results, and the steps
+that would leave the machine, in the order they would run.
+
+Answer it with **yes (ship it)** to let the run ship the release, or **no (do not
+ship)** to hold it. "No" is the default, so an unanswered decision never ships.
+Answer it where questions are answered: the question list in the web UI, the chat
+channel, or the `question_answer` MCP tool. A later answer replaces an earlier one,
+and only the current answer counts. A run that is re-run for the same release
+finds the decision already raised rather than raising a second one.
+
+### Changing a mode
+
+Moving a size toward `auto` — above all `major`, which is `ask` by default — is a
+decision to make deliberately and record with its evidence. In `auto` the daemon
+ships that size on its own once the checks pass, and a failed check still holds
+the release for a person in every mode.
 
 ## The release gate
 
