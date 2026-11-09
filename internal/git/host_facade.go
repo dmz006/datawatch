@@ -138,12 +138,18 @@ func remoteHostName(remote string) string {
 // URL.
 func OpenChangeRequest(ctx context.Context, host GitHostConfig, opts PROptions) (HostResult, error) {
 	u, err := forgeFactory(host).OpenPR(ctx, opts)
+	if err == nil {
+		recordHostOperation(ctx, host, HostAuditMR, opts.Repo, opts.HeadBranch)
+	}
 	return hostResult(host, u), err
 }
 
 // FileIssue files an issue on host and returns its URL.
 func FileIssue(ctx context.Context, host GitHostConfig, opts IssueOptions) (HostResult, error) {
 	u, err := forgeFactory(host).CreateIssue(ctx, opts)
+	if err == nil {
+		recordHostOperation(ctx, host, HostAuditIssue, opts.Repo, opts.Title)
+	}
 	return hostResult(host, u), err
 }
 
@@ -151,6 +157,9 @@ func FileIssue(ctx context.Context, host GitHostConfig, opts IssueOptions) (Host
 // its URL.
 func PublishRelease(ctx context.Context, host GitHostConfig, opts ReleaseOptions) (HostResult, error) {
 	u, err := forgeFactory(host).CreateRelease(ctx, opts)
+	if err == nil {
+		recordHostOperation(ctx, host, HostAuditRelease, opts.Repo, opts.Tag)
+	}
 	return hostResult(host, u), err
 }
 
