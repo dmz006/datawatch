@@ -1620,9 +1620,12 @@ inherited `inherited_tags` and the placement `system_tags` (see
 — which is what lets the PWA draw the placement chips on the session cards
 at first load of the Sessions page, without a fetch of each full record.
 The placement chip paints from the tag name, so it shows even before the
-tag registry has loaded; a later row or `session_state` push that omits
-`system_tags` keeps the chip, and only an explicit empty `system_tags`
-removes it:
+tag registry has loaded. The server leaves `system_tags` out of a row when
+the session has no placement tags (the field is `omitempty`), so an empty
+list is never sent. A row, `session_state` push or full record that omits
+the key keeps the placement chips the page already holds for that session;
+a chip drawn once clears only when the page is reloaded or a row carries a
+non-empty list. Example query:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
@@ -1637,6 +1640,14 @@ and the PWA drawing discipline
 — are tracked in this repo but **not filed yet**; the operator opens the
 issue on the app tracker when ready. Nothing else is owed on this daemon:
 no setting, no migration.
+
+**Operator decision still owed (not made here):** the summary row drops an
+empty `system_tags` (`omitempty`), so a placement chip cannot be cleared by a
+live update, only by a page reload. Clearing it live would mean sending an
+empty array, which changes the wire contract and is a code change, so this
+docs change does not make it. The two parity drafts above also still say an
+explicit empty array removes the chip; they need the same correction before
+they are filed.
 
 ### Allowed project roots
 
