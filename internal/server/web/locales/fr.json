@@ -183,6 +183,8 @@
   "automata_status_paused": "paused",
   "automata_tab_automata": "Automates",
   "automata_tab_templates": "Modèles d'automate",
+  "automata_templates_subtab_automaton": "Modèles d'automate",
+  "automata_templates_subtab_standard": "Tâches standard",
   "automata_tmpl_btn_create": "Créer",
   "automata_tmpl_btn_launch": "Lancer",
   "automata_tmpl_btn_save": "Enregistrer",

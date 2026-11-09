@@ -183,6 +183,8 @@
   "automata_status_paused": "paused",
   "automata_tab_automata": "Automaten",
   "automata_tab_templates": "Automat-Vorlagen",
+  "automata_templates_subtab_automaton": "Automat-Vorlagen",
+  "automata_templates_subtab_standard": "Standardaufgaben",
   "automata_tmpl_btn_create": "Erstellen",
   "automata_tmpl_btn_launch": "Starten",
   "automata_tmpl_btn_save": "Speichern",

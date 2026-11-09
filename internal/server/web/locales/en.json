@@ -195,6 +195,8 @@
   "automata_status_paused": "paused",
   "automata_tab_automata": "Automata",
   "automata_tab_templates": "Automaton templates",
+  "automata_templates_subtab_automaton": "Automaton templates",
+  "automata_templates_subtab_standard": "Standard tasks",
   "automata_tmpl_btn_create": "Create",
   "automata_tmpl_btn_launch": "Launch",
   "automata_tmpl_btn_save": "Save",
