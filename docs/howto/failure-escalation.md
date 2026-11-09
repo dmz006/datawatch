@@ -540,6 +540,8 @@ retry count is still `autonomous.auto_fix_retries`.
 
 ## See also
 
+- [failed-attempt-cost.md](failed-attempt-cost.md): what a failed attempt costs,
+  the first-attempt worker, resuming a retry and every attempt-cost setting
 - [retry-policy.md](retry-policy.md): failure categories and the retry budgets
   that apply before and after this policy
 - [autonomous-review-approve.md](autonomous-review-approve.md): the review gate
