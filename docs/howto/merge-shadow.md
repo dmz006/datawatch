@@ -1,7 +1,7 @@
 ---
 title: "How to: Merge shadow"
 description: "What the three merge shadow settings enable, their defaults and the values they accept, every way they are set, where the shadow state is read (REST, MCP, CLI, comm channel, PWA card) and what the daemon never does"
-last_updated: "2026-11-07"
+last_updated: "2026-11-09"
 topics:
   - merge
   - shadow
@@ -102,10 +102,90 @@ block, one place it is read back from:
 | --- | --- |
 | **YAML** | `config.yaml` → `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`, `autonomous.merge_shadow.plan_keep` |
 | **REST** | `PUT /api/config` with any of the three keys (the `GET /api/config` read returns the merged default for each) |
-| **MCP** | The `autonomous_config_set` tool carries each key as its own argument |
+| **MCP** | The generic `config_set` tool, with the key `autonomous.merge_shadow.<key>` and its value. The shadow has no dedicated MCP setter; `get_config` reads it back. |
 | **CLI** | `datawatch config set autonomous.merge_shadow.enabled true|false` and friends |
-| **Comm channel** | `configure autonomous.merge_shadow.enabled false`, `configure autonomous.merge_shadow.gate_timeout 1m`, `configure autonomous.merge_shadow.plan_keep 50` |
-| **Web UI** | Settings → Automation section → **Merge shadow** card (one toggle + two fields, each linking to this howto); the state read above lives on the **Merge shadow** card of the Automation **Setup and policy** sub-tab |
+| **Comm channel** | `configure autonomous.merge_shadow.enabled=false`, `configure autonomous.merge_shadow.gate_timeout=1m`, `configure autonomous.merge_shadow.plan_keep=50` |
+| **Web UI** | Settings → Automation → **Merge shadow** group: one toggle (`enabled`) and two fields (`gate_timeout`, `plan_keep`). The state read above lives on the **Merge shadow** card of the Automation **Setup and policy** sub-tab |
+
+## Reading the counts on each surface
+
+The counts are tallied per release size, in the fixed order `patch`, `minor`,
+`major`, `none`. One comparison is counted once: it is **different** when it
+holds at least one difference, and **matched** otherwise. The tally is the
+number of comparisons, not the number of fields.
+
+- **REST** — `counts` on each project: `{"patch": {"matched": 4, "different": 1}, …}`.
+  Nothing is summed; add the projects yourself.
+- **MCP** — the same per-project `counts`; pass `project` to read one project.
+- **CLI `status`** — one line per size, summed over all projects. Every size is
+  printed, so a zero is visible.
+- **CLI `compare <automaton-id>`** — one Automaton only. It prints its `matched`,
+  `different` and `not_compared` field counts, then each difference as
+  `<field> [<severity>]: planned “…”, landed “…”`. A missing landed value shows
+  as `(missing)`.
+- **Comm** — one line, `Merge shadow: patch 4 matched, 1 different; …`.
+- **PWA card** — the same per-size figures, summed over every project, shown only
+  when the shadow is enabled and at least one comparison is stored.
+
+Read the empty states as facts, not faults. `projects: []`, `no merge shadow
+comparison exists yet`, `No merge comparisons yet`, and a missing card all mean
+the same thing today: no comparison is stored.
+
+## From a difference to a defect candidate
+
+Each difference the grader finds becomes one **defect candidate**. The steps:
+
+1. **Grade.** Each field is compared with the landed value read from the default
+   branch's ref. A difference is **major** when a version is wrong or missing, a
+   planned changelog heading, README line or registry row landed nowhere, a
+   required parity issue did not land, or a planned gate is absent from or
+   different in the manual gate record. It is **minor** when a heading, README
+   line or registry row drifted in wording, or a parity issue landed although
+   the plan did not require one.
+2. **Record.** The candidate carries its Automaton, field, planned value, landed
+   value, severity, release size, status `candidate` and creation time. Its key is
+   derived from that content, so the same difference is stored once.
+3. **Stop there.** The candidate is written to
+   `<data directory>/defect-candidates/<automaton id>.json` and nothing else. It
+   is not filed into the defect queue, it does not alert, and it does not hold or
+   block anything. Filing is the defect intake's job, and no read surface shows
+   candidates yet.
+
+Two lines cannot yet produce a difference from the shipped flow, so a silent
+match there is not evidence. The parity-issue line compares the plan's flag with
+itself, so a required parity issue that never landed is not caught. The gate line
+has no manual gate record in that flow, so gates are counted as *not compared*,
+never as failures. Count these as known blind spots when you grade a merge by
+hand.
+
+## Switching from shadow to on
+
+The shadow itself has no `on` state: `autonomous.merge_shadow.enabled` is only a
+switch for writing the plan. The shadow-to-on decision belongs to the **release
+approval modes** of Phase 4 of the
+[autonomy handover plan](../plans/2026-11-03-autonomy-handover-plan.md). Those
+modes (`auto`, `ask`, `manual`, one per release size) are designed and filed as a
+draft; **no approval-mode setting exists yet**. Until they land, the daemon's merge
+runs in shadow beside the supervisor's manual merge, and nothing is switched.
+
+The handover plan sets the switch's terms, recorded here so the evidence is read
+the same way every time:
+
+- **Evidence bar.** Ten merges where the daemon's plan equals the manual merge or
+  is better, at least two with conflicts, at least two with PWA changes, and no
+  blocking comparison defect.
+- **Who decides.** The supervisor validates the checks and reports the
+  comparison. Patch and minor modes are the supervisor's to move toward `auto` as
+  the daemon improves. The major mode stays `ask` unless the operator changes it.
+- **Record.** Each mode change is kept as a decision with its evidence.
+- **Falling back.** After a switch, a size drops back to `ask` on a failed
+  validator, a red release CI within its window, or a merge that needed a manual
+  fix. The daemon raises an alert and files a defect.
+
+Before you use that bar, know its limit: the comparison records are not stored
+yet, so the evidence has to come from the stored plans and the defect candidates
+in the data directory. Check the plan against the manual merge by hand until the
+comparison reads show data.
 
 ## Do not confuse
 
