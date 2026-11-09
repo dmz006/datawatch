@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.11 — Planner age
+
+### Fixed
+
+- **Planning is no longer starved while workers keep every slot busy.** A planning request that waits ten minutes now competes with workers by priority instead of waiting behind them, so planning is no longer starved while workers keep every slot busy. Verifiers still go first, and a planner that has waited less than ten minutes still ranks after workers.
+  - **How it shows up:** a decompose request queued behind a steady stream of workers gets a slot after about ten minutes, in priority order with the workers, instead of waiting indefinitely.
+  - **Migration:** none. The ten minutes is a built-in default; there is no setting.
+
 ## v9.112.10 — Built-in final gate and note tasks pass the verifier
 
 ### Added

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.10 (2026-11-08).** A decomposed Automaton's final gate verifies through its report, its closing note carries an exemption reason, and a command string is refused as a verification script. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.11 (2026-11-08).** A planning request that waits ten minutes now competes with workers by priority, so planning is no longer starved. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
