@@ -3826,6 +3826,29 @@ autonomous:
     #     digest_mode: all
     #     digest_max_bytes: 8192
 
+  # Worker session profiles: what a worker session starts with (MCP servers,
+  # tools, skills, project context, model, effort). Built-in names: minimal,
+  # digest, full, datawatch-tools; a user profile may not reuse them.
+  #   worker_profiles: map of profile name to a profile. Profile fields are
+  #     name (must match the key or be empty), mcp {mode: none|datawatch|list,
+  #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
+  #     minimal|digest|full, model, effort. Default empty.
+  #   worker_profile_defaults.role: planner|worker|verifier|judge -> profile
+  #     name. worker_profile_defaults.kind: implementation|docs|note|final_gate
+  #     -> profile name. Empty value = no default. Default empty.
+  #   worker_profile: global profile name; empty = the role default.
+  #   Refused at load: a built-in name reused, an invalid profile, a value
+  #   naming an unknown profile, an unknown role or kind key.
+  worker_profiles: {}
+  #   reviewer:
+  #     mcp: {mode: list, servers: [github]}
+  #     tools: {mode: allow, allow: [Read, Grep]}
+  #     context: digest
+  worker_profile_defaults:
+    role: {}
+    kind: {}
+  worker_profile: ""
+
   # Named upstream repos a project-rule's file_upstream_issue action can
   # reference (e.g. a parity gap this repo's own PRD can't close alone).
   upstream_repos: [] # [{name: "app", owner_repo: "org/repo"}, ...]

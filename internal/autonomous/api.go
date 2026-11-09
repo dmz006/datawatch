@@ -1990,6 +1990,17 @@ func (a *API) SetPRDBreakingChange(prdID string, breaking bool) (any, error) {
 	return prd, nil
 }
 
+// SetPRDWorkerProfile sets the worker profile name of an Automaton; an empty
+// name clears it so the global layer applies again.
+func (a *API) SetPRDWorkerProfile(prdID, name string) (any, error) {
+	if err := a.M.SetPRDWorkerProfile(prdID, name); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
 // SetPRDLanePreference sets which kind of lane suits the Automaton: gpu,
 // claude or any.
 func (a *API) SetPRDLanePreference(prdID, pref string) (any, error) {

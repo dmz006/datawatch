@@ -240,6 +240,11 @@ type SystemStats struct {
 	// by the git package's counters through SetSecretScanStatsFunc; nil
 	// (and therefore omitted from JSON) when the daemon never scanned.
 	SecretScan *SecretScanStats `json:"secret_scan,omitempty"`
+
+	// WorkerStartup is the average startup token size per worker profile
+	// and per role (see WorkerStartupStats). Always present; both maps are
+	// empty when no attempt carries a startup size.
+	WorkerStartup WorkerStartupStats `json:"worker_startup"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
@@ -394,6 +399,10 @@ type Collector struct {
 	// (SecretScan field).
 	secretScanStatsFn func(*SystemStats)
 
+	// workerStartupStatsFn populates the worker_startup block (WorkerStartup
+	// field) from the attempt startup records.
+	workerStartupStatsFn func(*SystemStats)
+
 	// uiPromptsFn returns the daemon-side in-memory interstitial UI-prompt
 	// dismissal outcome counters (from the session manager).
 	uiPromptsFn func() *UIPromptStats
@@ -525,6 +534,12 @@ func (c *Collector) SetAutonomousStatsFunc(fn func(*SystemStats)) {
 // SetWebSearchStatsFunc sets a callback that populates web search stats on each snapshot (BL372).
 func (c *Collector) SetWebSearchStatsFunc(fn func(*SystemStats)) {
 	c.webSearchStatsFn = fn
+}
+
+// SetWorkerStartupStatsFunc sets a callback that populates the worker
+// startup averages (SystemStats.WorkerStartup) on each snapshot.
+func (c *Collector) SetWorkerStartupStatsFunc(fn func(*SystemStats)) {
+	c.workerStartupStatsFn = fn
 }
 
 // SetSecretScanStatsFunc sets a callback that populates the pre-push
@@ -693,6 +708,13 @@ func (c *Collector) collect() {
 	// Pre-push secret-scan counters
 	if c.secretScanStatsFn != nil {
 		c.secretScanStatsFn(&s)
+	}
+
+	// Worker startup averages per profile and role: the block always
+	// carries empty maps, never nil ones, so its JSON shape is stable.
+	s.WorkerStartup = BuildWorkerStartupStats(nil)
+	if c.workerStartupStatsFn != nil {
+		c.workerStartupStatsFn(&s)
 	}
 
 	// Ollama server stats (BL71) — poll every collection cycle

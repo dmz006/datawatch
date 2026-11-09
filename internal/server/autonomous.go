@@ -2710,6 +2710,39 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_breaking_change", "automaton", id, map[string]any{"breaking_change": *req.BreakingChange})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Per-Automaton worker profile: the named profile its sessions start with
+	// (built-in or user-defined; empty clears the override).
+	case "set_worker_profile":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			WorkerProfile string `json:"worker_profile"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := validateWorkerProfileName(s.cfg, req.WorkerProfile); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDWorkerProfile(id, req.WorkerProfile)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_worker_profile", "automaton", id, map[string]any{"worker_profile": req.WorkerProfile})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
 	// Record the Automaton's shipped state: release, merged time, merge commit
 	// and source. Status is never touched; the record is idempotent per commit.
 	case "shipped":

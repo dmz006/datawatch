@@ -8967,6 +8967,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// BL367 — autonomous quality gate stats in WS broadcast.
 		if autonomousMgrRef != nil {
 			amgrRef := autonomousMgrRef
+			// Worker startup averages per profile and role (worker_startup block).
+			statsCollector.SetWorkerStartupStatsFunc(func(s *statspkg.SystemStats) {
+				s.WorkerStartup = statspkg.BuildWorkerStartupStats(workerStartupAttempts(amgrRef))
+			})
 			statsCollector.SetAutonomousStatsFunc(func(s *statspkg.SystemStats) {
 				st := amgrRef.Status()
 				s.QualityGateRuns = st.QualityGateRuns
@@ -11348,6 +11352,14 @@ func newStatsCmd() *cobra.Command {
 				}
 			}
 
+			// Worker startup averages per profile and role (worker_startup block).
+			var workerStartup statspkg.WorkerStartupStats
+			if raw, err := json.Marshal(s["worker_startup"]); err == nil {
+				_ = json.Unmarshal(raw, &workerStartup)
+			}
+			fmt.Println()
+			fmt.Println(statspkg.WorkerStartupText(workerStartup))
+
 			if cs, ok := s["comm_stats"].([]interface{}); ok && len(cs) > 0 {
 				fmt.Println()
 				fmt.Println("── Communication Channels ──")
@@ -11970,7 +11982,12 @@ func newConfigSetCmd() *cobra.Command {
 			"Automata placement tag keys: autonomous.tags.placement.enabled (true|false; the master switch), " +
 			"and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind) " +
 			"autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template " +
-			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).",
+			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).\n\n" +
+			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
+			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
+			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
+			"starts with worker_profile is refused as unknown.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -11998,6 +12015,9 @@ func newConfigGetCmd() *cobra.Command {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
+	if isWorkerProfileConfigKeyFamily(key) {
+		return runWorkerProfileConfigSet(cfg, key, value)
+	}
 	url := loopbackBaseURL(cfg) + "/api/config"
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
@@ -12045,6 +12065,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
+	key = workerProfileGetKey(key)
 	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if cfg.Server.Token != "" {

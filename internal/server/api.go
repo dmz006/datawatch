@@ -997,6 +997,8 @@ type AutonomousAPI interface {
 	SetPRDKind(prdID, kind string) (any, error)
 	SetPRDReleaseSize(prdID, size string) (any, error)
 	SetPRDBreakingChange(prdID string, breaking bool) (any, error)
+	// Per-Automaton worker profile name (built-in or user-defined; empty clears it).
+	SetPRDWorkerProfile(prdID, name string) (any, error)
 
 	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
 	SetPRDLanePreference(prdID, pref string) (any, error)
@@ -6518,6 +6520,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// stronger-verifier settings. Rendered whole so an unset policy
 			// shows its zero values rather than a missing object.
 			"verifier_policy": verifierPolicyForDisplay(s.cfg.Autonomous.VerifierPolicy),
+			// Worker session profiles (autonomous.worker_profiles / .worker_profile_defaults
+			// / .worker_profile) — the user profiles keyed by name, the role/kind
+			// defaults and the global profile name; unset tables read as empty
+			// objects and the unset global name reads as "". Built-in profile
+			// names (minimal, digest, full, datawatch-tools) are reserved and
+			// never appear in worker_profiles.
+			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
+			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
+			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
 			// Host load check: effective mode, multiple and minutes.
 			"host_load_alert": hostLoadAlertForDisplay(s.cfg.Autonomous.HostLoadAlert),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
@@ -7788,6 +7799,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// next startup), so the patch is simulated onto the stored block and the
 	// load-time validator is run over the result before anything is applied.
 	if err := validatePluginServicesPatch(s.cfg.Plugins.Services, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Worker session profile settings (autonomous.worker_profiles,
+	// autonomous.worker_profile_defaults, autonomous.worker_profile):
+	// simulate the patch onto a copy of the current config and run the
+	// load-time validator over the result, so a built-in profile name, an
+	// unknown profile reference or an unknown role/kind key rejects the whole
+	// PUT (400 with the validation message) before anything is applied — the
+	// same rule the config file load uses.
+	if err := validateWorkerProfilePatch(s.cfg, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9359,6 +9381,25 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.TaskOverrideStatuses = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
+			}
+		// Worker session profile settings — the PUT /api/config path
+		// pre-validates the combined state with validateWorkerProfilePatch,
+		// so a direct applyConfigPatch caller's badly-shaped value is left
+		// unchanged rather than stored.
+		case "autonomous.worker_profiles":
+			if m, ok := parseWorkerProfilesValue(v); ok {
+				if len(m) == 0 {
+					m = nil
+				}
+				cfg.Autonomous.WorkerProfiles = m
+			}
+		case "autonomous.worker_profile_defaults":
+			if d, ok := parseWorkerProfileDefaultsValue(v); ok {
+				cfg.Autonomous.WorkerProfileDefaults = d
+			}
+		case "autonomous.worker_profile":
+			if s, ok := v.(string); ok {
+				cfg.Autonomous.WorkerProfile = s
 			}
 		case "autonomous.override_queued_tasks":
 			// Boolean: true enables overriding the LLM of a not-yet-started

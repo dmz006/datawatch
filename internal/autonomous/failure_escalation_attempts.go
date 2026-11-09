@@ -77,6 +77,16 @@ type attemptRun struct {
 	// outcome of decideRetryResume, or the fallback reason when a decision to
 	// resume could not be carried out. Empty when no retry decision was made.
 	ResumeReason string
+	// WorkerProfile names the worker profile the launch applied; empty when
+	// the attempt ran with no profile.
+	WorkerProfile string
+	// WorkerRole names the role of the attempt's worker session.
+	WorkerRole string
+	// LaunchContext is the starting context generated for the worker at
+	// launch, when one was generated; empty for a launch without a
+	// starting context. The attempt record estimates its token size from it
+	// and records the estimated source.
+	LaunchContext string
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -198,10 +208,16 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		BackendReason:   backendReason,
 		Resumed:         run.Resumed,
 		ResumeReason:    run.ResumeReason,
+		WorkerProfile:   run.WorkerProfile,
+		WorkerRole:      run.WorkerRole,
+		StartupTokens:   EstimateTokens(run.LaunchContext),
 		SessionID:       sessionID,
 		TmuxSession:     tmux,
 		EndReason:       deriveAttemptEndReason(f, adopted),
 		EndDetail:       f.EndDetail,
+	}
+	if run.LaunchContext != "" {
+		rec.StartupTokenSource = StartupTokenSourceEstimated
 	}
 	m.store.WithLock(func() {
 		if ev := t.RunnerEvidence; ev != nil {

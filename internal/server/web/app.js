@@ -18920,6 +18920,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.tags.direct_counts_visible', label: 'Show the direct count as a tooltip beside the subtree count', labelKey: 'settings_tags_direct_counts_visible', type: 'toggle' },
     { key: 'autonomous.tags.registry_keeper', label: 'Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)', labelKey: 'settings_tags_registry_keeper', type: 'text', placeholder: '' },
     { key: 'autonomous.tags.registry_sync_seconds', label: 'Tag registry sync interval (seconds, minimum 5, default 30)', labelKey: 'settings_tags_registry_sync_seconds', type: 'number', placeholder: '30', min: 5, step: 1, default: '30' },
+    // Worker session profiles — the named profiles that size a worker
+    // session's context and tools, the daemon-wide default profile, and the
+    // per-role / per-task-kind defaults. Every field's ? entry opens the
+    // worker-session-profiles howto. worker_profile's options are the
+    // built-in names plus the user profiles (see workerProfileNames).
+    { label: 'Worker session profiles', labelKey: 'settings_worker_profiles_group', type: 'group', hintKey: 'settings_worker_profiles_group_help' },
+    { key: 'autonomous.worker_profile', label: 'Daemon-wide worker profile', labelKey: 'settings_worker_profile_label', helpKey: 'settings_worker_profile_help', helpDocs: 'howto/worker-session-profiles.md', type: 'select', optionsFrom: 'worker_profiles' },
+    { key: 'autonomous.worker_profile_defaults', label: 'Default profile per role and task kind', labelKey: 'settings_worker_profile_defaults_label', helpKey: 'settings_worker_profile_defaults_help', helpDocs: 'howto/worker-session-profiles.md', type: 'worker_profile_defaults' },
+    { key: 'autonomous.worker_profiles', label: 'Worker profiles (JSON object keyed by name)', labelKey: 'settings_worker_profiles_label', helpKey: 'settings_worker_profiles_help', helpDocs: 'howto/worker-session-profiles.md', type: 'worker_profiles_json', placeholder: '{"my-profile": {}}' },
     // Automatic tags — the tags datawatch gives every Automaton for its
     // Automation, stage and kind. The templates may use {automation},
     // {stage} and {kind}; kind_labels is a "kind:label" comma list.
@@ -19864,17 +19873,56 @@ function loadGeneralConfig() {
                 ${checkboxes}
               </div>
             </div>`;
+          } else if (f.type === 'worker_profile_defaults') {
+            // autonomous.worker_profile_defaults: one select per role and per
+            // task kind. Empty = the built-in default for that key.
+            const _wpd = (val && typeof val === 'object') ? val : {};
+            const _wpdNames = workerProfileNames(cfg);
+            const _wpdSelect = (group, key) => {
+              const cur = (_wpd[group] && _wpd[group][key]) || '';
+              const opts = [''].concat(_wpdNames).map(n =>
+                `<option value="${escHtml(n)}" ${cur === n ? 'selected' : ''}>${escHtml(n || '—')}</option>`).join('');
+              return `<label style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--text2);">
+                <span>${escHtml(key)}</span>
+                <select class="form-select general-cfg-input" data-wpd-group="${group}" data-wpd-key="${key}"
+                  onchange="saveWorkerProfileDefaults(this.closest('.wpd-grid'))">${opts}</select>
+              </label>`;
+            };
+            const _wpdRoles = WORKER_PROFILE_ROLES.map(k => _wpdSelect('role', k)).join('');
+            const _wpdKinds = WORKER_PROFILE_KINDS.map(k => _wpdSelect('kind', k)).join('');
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">role</div>${_wpdRoles}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">kind</div>${_wpdKinds}</div>
+              </div>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
+          } else if (f.type === 'worker_profiles_json') {
+            // autonomous.worker_profiles: the user profiles as one JSON object.
+            // Saved on change; the PUT is refused with the daemon's message on
+            // a bad profile, so the toast carries the reason back.
+            const _wpText = (val && typeof val === 'object' && Object.keys(val).length)
+              ? JSON.stringify(val, null, 2) : '';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <textarea class="form-input general-cfg-input" rows="6" spellcheck="false"
+                style="font-family:monospace;font-size:11px;min-width:0;max-width:100%;"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                onchange="saveWorkerProfilesJSON(this)">${escHtml(_wpText)}</textarea>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
           } else if (f.type === 'select') {
             const selVal = String(val);
-            const opts = (f.options || []).map(o =>
-              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(_selectOptionLabel(f, o))}</option>`
+            const _selOpts = f.optionsFrom === 'worker_profiles' ? workerProfileNames(cfg, true) : (f.options || []);            const opts = _selOpts.map(o =>
+              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(_selectOptionLabel(f, o) || '—')}</option>`
             ).join('');
             // f.onchange lets a field supply its own save handler (the gate
             // scope select, for example, saves an empty selection as '').
             const selOnchange = f.onchange || `saveGeneralField('${f.key}', this.value)`;
             const _selHint = _fieldHintHTML(f);
-            html += `<div class="settings-row" style="justify-content:space-between;${_selHint ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
+            html += `<div class="settings-row" style="justify-content:space-between;${(_selHint || f.helpDocs) ? 'flex-wrap:wrap;' : ''}">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <select class="form-select general-cfg-input" onchange="${selOnchange}">${opts}</select>
               ${_selHint}
             </div>`;
@@ -21156,6 +21204,53 @@ function saveTracingBackendsSetting(key, el) {
   saveGeneralConfigPut(key, obj);
 }
 window.saveTracingBackendsSetting = saveTracingBackendsSetting;
+
+// Worker session profiles (autonomous.worker_profile*). The built-in profile
+// names and the role and kind keys mirror the daemon's validator
+// (internal/config ValidateWorkerProfileConfig); the daemon owns every rule
+// and its refusal arrives as the error toast.
+const WORKER_PROFILE_BUILTINS = ['minimal', 'digest', 'datawatch-tools', 'full'];
+const WORKER_PROFILE_ROLES = ['planner', 'worker', 'verifier', 'judge'];
+const WORKER_PROFILE_KINDS = ['implementation', 'docs', 'note', 'final_gate'];
+
+// workerProfileNames lists the built-in profile names followed by the user
+// profiles from autonomous.worker_profiles, each name once. withBlank puts an
+// empty entry first (the "no profile" choice for a select).
+function workerProfileNames(cfg, withBlank) {
+  const user = (cfg && cfg.autonomous && cfg.autonomous.worker_profiles) || {};
+  const names = WORKER_PROFILE_BUILTINS.slice();
+  Object.keys(user).forEach(n => { if (!names.includes(n)) names.push(n); });
+  return withBlank ? [''].concat(names) : names;
+}
+
+// saveWorkerProfileDefaults reads every role and kind select in the grid and
+// PUTs autonomous.worker_profile_defaults as one object. An empty select is
+// left out, so it falls back to the built-in default.
+function saveWorkerProfileDefaults(grid) {
+  if (!grid) return;
+  const out = { role: {}, kind: {} };
+  grid.querySelectorAll('select[data-wpd-group]').forEach(sel => {
+    const group = sel.getAttribute('data-wpd-group');
+    const key = sel.getAttribute('data-wpd-key');
+    if (sel.value) out[group][key] = sel.value;
+  });
+  saveGeneralConfigPut('autonomous.worker_profile_defaults', out);
+}
+
+// saveWorkerProfilesJSON parses the worker profiles textarea. It must hold a
+// JSON object (or be empty, which clears the user profiles). Anything else is
+// refused here with a toast and nothing is sent.
+function saveWorkerProfilesJSON(el) {
+  const text = String(el && el.value ? el.value : '').trim();
+  if (text === '') { saveGeneralConfigPut('autonomous.worker_profiles', {}); return; }
+  let obj = null;
+  try { obj = JSON.parse(text); } catch (e) { obj = null; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    showToast(t('settings_worker_profiles_invalid') || 'Worker profiles must be a JSON object keyed by profile name', 'error');
+    return;
+  }
+  saveGeneralConfigPut('autonomous.worker_profiles', obj);
+}
 
 function saveJSONMapSetting(key, el) {
   const text = String(el && el.value ? el.value : '').trim();

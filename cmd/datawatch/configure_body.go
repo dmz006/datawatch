@@ -32,6 +32,18 @@ func configureRequestBody(key, value string) string {
 		if json.Unmarshal([]byte(value), &m) == nil {
 			val = m
 		}
+	} else if key == "autonomous.worker_profiles" || key == "autonomous.worker_profile_defaults" {
+		// The worker profile tables are JSON objects. Text that is one goes
+		// out as an object; anything else goes out as a string, which the
+		// daemon refuses with its own message (the same validation as PUT
+		// /api/config), so nothing is written.
+		var m map[string]any
+		if json.Unmarshal([]byte(value), &m) == nil && m != nil {
+			val = m
+		}
+	} else if key == "autonomous.worker_profile" {
+		// A profile name is always a string, even when it looks like a number.
+		val = value
 	} else if value == "true" || value == "false" {
 		val = json.RawMessage(value)
 	} else {
