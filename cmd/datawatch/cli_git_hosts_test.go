@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 const gitHostsSample = `{"hosts":[
@@ -97,6 +99,83 @@ func TestGitHostsCLI(t *testing.T) {
 		for _, want := range []string{"gh (github) credential_source=vault vault_secret=gh-token", "gl (gitlab)", "ready: no", "problem: not logged in", "fix: glab auth login"} {
 			if !strings.Contains(s, want) {
 				t.Errorf("output missing %q:\n%s", want, s)
+			}
+		}
+	})
+
+	t.Run("config set command prints readiness after a credential source set", func(t *testing.T) {
+		var puts []string
+		srv := gitHostsTestServer(t, http.StatusOK, &puts)
+		defer srv.Close()
+		old := serverURL
+		serverURL = srv.URL
+		t.Cleanup(func() { serverURL = old })
+
+		// runConfigSet is the body of `datawatch config set`; for a git host
+		// key it must dispatch to the dedicated helper, send the value as the
+		// field's type, and print the readiness result after the daemon
+		// accepts it.
+		var err error
+		s := captureStdout(t, func() {
+			err = runConfigSet(&config.Config{}, "git.hosts.gh.credential_source", "vault")
+		})
+		if err != nil {
+			t.Fatalf("config set: %v", err)
+		}
+		for _, want := range []string{"Set git.hosts.gh.credential_source = vault", "gh (github)", "ready: yes (octo)"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("config set output missing %q:\n%s", want, s)
+			}
+		}
+		// sign_tags goes over the wire as a JSON boolean, and a non-credential
+		// set prints no readiness.
+		s = captureStdout(t, func() {
+			err = runConfigSet(&config.Config{}, "git.hosts.gh.sign_tags", "true")
+		})
+		if err != nil {
+			t.Fatalf("config set sign_tags: %v", err)
+		}
+		if strings.Contains(s, "ready:") {
+			t.Errorf("sign_tags set must not print readiness:\n%s", s)
+		}
+		if !strings.Contains(puts[len(puts)-1], `"git.hosts.gh.sign_tags":true`) {
+			t.Errorf("sign_tags must be sent as a JSON boolean, PUT body %q", puts[len(puts)-1])
+		}
+		// A daemon refusal is an error and no success line is printed.
+		srv.Close()
+		srv2 := gitHostsTestServer(t, http.StatusBadRequest, &puts)
+		defer srv2.Close()
+		serverURL = srv2.URL
+		s = captureStdout(t, func() {
+			err = runConfigSet(&config.Config{}, "git.hosts.gh.credential_source", "bogus")
+		})
+		if err == nil {
+			t.Fatal("daemon refusal must be an error")
+		}
+		if strings.Contains(s, "Set ") {
+			t.Errorf("no success line on refusal:\n%s", s)
+		}
+	})
+
+	t.Run("git-hosts list command", func(t *testing.T) {
+		var puts []string
+		srv := gitHostsTestServer(t, http.StatusOK, &puts)
+		defer srv.Close()
+		old := serverURL
+		serverURL = srv.URL
+		t.Cleanup(func() { serverURL = old })
+
+		// runGitHostsListCmd is the body of `datawatch git-hosts`.
+		var err error
+		s := captureStdout(t, func() {
+			err = runGitHostsListCmd(&config.Config{})
+		})
+		if err != nil {
+			t.Fatalf("git-hosts: %v", err)
+		}
+		for _, want := range []string{"gh (github) credential_source=vault vault_secret=gh-token", "gl (gitlab)", "ready: no", "fix: glab auth login"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("git-hosts output missing %q:\n%s", want, s)
 			}
 		}
 	})

@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/spf13/cobra"
 )
 
 // CLI side of git.hosts. `datawatch config set git.hosts.<name>.<field> <value>`
@@ -153,6 +155,35 @@ func fetchGitHosts(baseURL, token string) ([]gitHostRow, error) {
 		return nil, fmt.Errorf("decode git hosts: %w", err)
 	}
 	return doc.Hosts, nil
+}
+
+// newGitHostsListCmd is `datawatch git-hosts`: the operator-facing list of
+// every configured git host with its readiness, read from the daemon's
+// GET /api/git/hosts (the daemon is the source of truth for the applied
+// config; readiness is computed there and never carries a token).
+func newGitHostsListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "git-hosts",
+		Short: "List configured git hosts with their readiness",
+		Long: "Reads GET /api/git/hosts from the running daemon and prints every git host\n" +
+			"with its credential source and readiness result (ready account, or the\n" +
+			"problem and the fix command). Set one with `datawatch config set\n" +
+			"git.hosts.<name>.<field> <value>`, which prints the readiness after a\n" +
+			"change to the credential source.",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runGitHostsListCmd(cfg)
+		},
+	}
+}
+
+// runGitHostsListCmd is the `datawatch git-hosts` body against one daemon:
+// it lists every configured host with its readiness on out (os.Stdout).
+func runGitHostsListCmd(cfg *config.Config) error {
+	return runGitHostsList(os.Stdout, loopbackBaseURL(cfg), cfg.Server.Token)
 }
 
 // printGitHostRow writes one host and its readiness in plain language.

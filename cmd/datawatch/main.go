@@ -347,6 +347,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAlertsCmd(),
 		newLinkCmd(),
 		newConfigCmd(),
+		newGitHostsListCmd(),
 		newProfileCmd(),
 		newAgentCmd(),
 		newSetupCmd(),
@@ -11984,6 +11985,12 @@ func newConfigGetCmd() *cobra.Command {
 
 func runConfigSet(cfg *config.Config, key, value string) error {
 	url := loopbackBaseURL(cfg) + "/api/config"
+	// git.hosts.<name>.<field> keys take the dedicated helper: it builds the
+	// body with the field's real type, and a set of the credential source
+	// prints the host's readiness result after the daemon accepts it.
+	if isGitHostKey(key) {
+		return runGitHostsConfigSet(os.Stdout, loopbackBaseURL(cfg), cfg.Server.Token, key, value)
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and
