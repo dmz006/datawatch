@@ -88,3 +88,128 @@ func TestWriteTaskFileErrors(t *testing.T) {
 		t.Error("expected error when .datawatch is a file")
 	}
 }
+
+func TestSweepStaleTaskFiles(t *testing.T) {
+	a := t.TempDir()
+	b := t.TempDir()
+	none := t.TempDir() // no .datawatch folder at all
+	folderA := filepath.Join(a, ".datawatch")
+	folderB := filepath.Join(b, ".datawatch")
+	for _, d := range []string{folderA, folderB} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite := func(p string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite(filepath.Join(folderA, "shell-task-one.txt"))
+	mustWrite(filepath.Join(folderA, "shell-task-two.txt"))
+	mustWrite(filepath.Join(folderA, "keep.txt"))
+	mustWrite(filepath.Join(folderA, "shell-task-three.log"))
+	mustWrite(filepath.Join(a, "shell-task-outside.txt")) // not in .datawatch
+	mustWrite(filepath.Join(folderB, "shell-task-b.txt"))
+	if err := os.MkdirAll(filepath.Join(folderA, "shell-task-dir.txt"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(filepath.Join(folderA, "shell-task-dir.txt", "nested.txt")) // dir match must survive
+
+	n, err := SweepStaleTaskFiles([]string{a, b, none, ""})
+	if err != nil {
+		t.Fatalf("SweepStaleTaskFiles: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("removed = %d, want 3", n)
+	}
+	for _, gone := range []string{
+		filepath.Join(folderA, "shell-task-one.txt"),
+		filepath.Join(folderA, "shell-task-two.txt"),
+		filepath.Join(folderB, "shell-task-b.txt"),
+	} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Errorf("%s still exists (err=%v)", gone, err)
+		}
+	}
+	for _, kept := range []string{
+		filepath.Join(folderA, "keep.txt"),
+		filepath.Join(folderA, "shell-task-three.log"),
+		filepath.Join(a, "shell-task-outside.txt"),
+		filepath.Join(folderA, "shell-task-dir.txt", "nested.txt"),
+	} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s should survive: %v", kept, err)
+		}
+	}
+}
+
+func TestSweepStaleTaskFilesCollectsErrorsAndContinues(t *testing.T) {
+	bad := t.TempDir()
+	good := t.TempDir()
+	folderGood := filepath.Join(good, ".datawatch")
+	if err := os.MkdirAll(folderGood, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folderGood, "shell-task-g.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Make the bad folder read-only so removing its match fails; the sweep
+	// must record that error and still reach the good directory.
+	folderBad := filepath.Join(bad, ".datawatch")
+	if err := os.MkdirAll(folderBad, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(folderBad, "shell-task-locked.txt")
+	if err := os.WriteFile(victim, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(folderBad, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(folderBad, 0o700)
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+
+	n, err := SweepStaleTaskFiles([]string{bad, good})
+	if err == nil {
+		t.Fatal("expected a joined error for the locked directory")
+	}
+	if n != 1 {
+		t.Errorf("removed = %d, want 1 (the good directory's file)", n)
+	}
+	if _, serr := os.Stat(filepath.Join(folderGood, "shell-task-g.txt")); !os.IsNotExist(serr) {
+		t.Errorf("good directory file not removed: %v", serr)
+	}
+}
+
+func TestSweepStaleTaskFilesLiteralDirName(t *testing.T) {
+	root := t.TempDir()
+	// The directory name holds glob metacharacters; a sibling must not be swept.
+	weird := filepath.Join(root, "proj[1]")
+	sibling := filepath.Join(root, "proj1")
+	for _, d := range []string{weird, sibling} {
+		if err := os.MkdirAll(filepath.Join(d, ".datawatch"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, ".datawatch", "shell-task-x.txt"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := SweepStaleTaskFiles([]string{weird})
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v, want 1, nil", n, err)
+	}
+	if _, err := os.Stat(filepath.Join(sibling, ".datawatch", "shell-task-x.txt")); err != nil {
+		t.Errorf("sibling file was removed: %v", err)
+	}
+}
+
+func TestSweepStaleTaskFilesNoDirs(t *testing.T) {
+	n, err := SweepStaleTaskFiles(nil)
+	if n != 0 || err != nil {
+		t.Errorf("n=%d err=%v, want 0, nil", n, err)
+	}
+}

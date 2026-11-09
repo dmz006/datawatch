@@ -1,9 +1,11 @@
 package shell
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // taskFileDirName is the per-project folder that holds shell task files.
@@ -62,4 +64,69 @@ func writeTaskFile(projectDir, session, task string) (string, error) {
 		return "", fmt.Errorf("task file: resolve %s: %w", path, err)
 	}
 	return abs, nil
+}
+
+// SweepStaleTaskFiles removes shell task files left in the given project
+// directories, for example by a daemon that crashed before the command line
+// could remove its own file. It is called at daemon start.
+//
+// In each directory it removes only the regular files that match
+// .datawatch/shell-task-*.txt. It never walks into other folders, never
+// removes anything else, and skips entries that are directories. A directory
+// with no .datawatch folder is not an error, and an empty entry in
+// projectDirs is skipped, so the sweep never runs against the working
+// directory by accident. A file that is already gone is not counted.
+//
+// It returns the number of files removed. Errors from one directory do not
+// stop the sweep: every error is collected with errors.Join and returned
+// together with the count.
+func SweepStaleTaskFiles(projectDirs []string) (int, error) {
+	removed := 0
+	var errs []error
+	for _, dir := range projectDirs {
+		if dir == "" {
+			continue
+		}
+		pattern := filepath.Join(escapeGlob(dir), taskFileDirName, "shell-task-*.txt")
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("task file sweep: glob %s: %w", dir, err))
+			continue
+		}
+		for _, path := range matches {
+			fi, err := os.Lstat(path)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("task file sweep: stat %s: %w", path, err))
+				}
+				continue
+			}
+			if fi.IsDir() {
+				continue
+			}
+			if err := os.Remove(path); err != nil {
+				if !os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("task file sweep: remove %s: %w", path, err))
+				}
+				continue
+			}
+			removed++
+		}
+	}
+	return removed, errors.Join(errs...)
+}
+
+// escapeGlob escapes the glob metacharacters in s so that filepath.Glob
+// matches s literally. A project directory whose name contains '[', '*' or
+// '?' would otherwise match other folders.
+func escapeGlob(s string) string {
+	var b strings.Builder
+	for _, c := range s {
+		switch c {
+		case '*', '?', '[', ']', '\\':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
