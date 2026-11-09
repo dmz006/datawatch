@@ -18,6 +18,16 @@ import (
 // the decision record store wired.
 type ReleaseModeRecorder func(rec DecisionRecord) (string, error)
 
+// SetReleaseApprovalMode forwards a release approval mode change to the Manager.
+// The REST layer holds the API wrapper rather than the Manager, so the wrapper
+// carries this method too; see Manager.SetReleaseApprovalMode for the contract.
+func (a *API) SetReleaseApprovalMode(change ReleaseModeChange, evidence ReleaseReadiness, apply func(mode string) error, record ReleaseModeRecorder) (string, error) {
+	if a == nil || a.M == nil {
+		return "", fmt.Errorf("release approval mode: no autonomous manager")
+	}
+	return a.M.SetReleaseApprovalMode(change, evidence, apply, record)
+}
+
 // SetReleaseApprovalMode applies one release approval mode change for
 // change.Size and emits exactly one audit.ActionReleaseModeChanged event for it.
 //

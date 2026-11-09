@@ -172,5 +172,7 @@ func checkAllocationEntry(tier, val string) (float64, error) {
 // putPlanTierAllocation writes the allocation entries through the config
 // endpoint, the only REST route that carries this table.
 func (s *Server) putPlanTierAllocation(entries map[string]any) ([]byte, error) {
-	return s.proxyJSON(http.MethodPut, "/api/config", entries)
+	// surface=mcp names this write for the release approval mode records; the
+	// daemon ignores it for every other key.
+	return s.proxyJSON(http.MethodPut, "/api/config?surface=mcp", entries)
 }
