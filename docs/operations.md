@@ -3993,7 +3993,18 @@ the backend, lane and project it records. A start with launch facts
 carries the recorded launch role, kind and stage and the Automaton (and
 its Automation) it names; an unknown role or kind is refused with 400
 before the session starts. Tagging is best-effort: a failure is logged
-and the session stays usable without its tags. An **existing session
+and the session stays usable without its tags. The daemon's start hook
+applies the same stamp on its own start paths — scheduled starts and
+comm-channel starts — so no start path is left with a partial set. A
+session that belongs to no Automaton carries no `automaton:` or
+`automation:` tag: the operator's supervisor session, started with
+`launch_role: supervisor`, keeps `role:supervisor` plus compute, backend,
+lane and project and nothing on the automaton axis. A restart re-runs
+the same stamp: `RestartSession` and the restart path that reuses a
+completed or failed session's ID now re-derive the tags from the
+session's record, so a restarted session keeps the role, kind, stage and
+automaton axes its record holds without a sweep; a restart that fails
+changes no tags. An **existing session
 with no recorded launch facts keeps exactly the tags it had before**:
 the sweep's session pass falls back to the derivation it always used
 (role and kind from the session name, no node fallback), so a pass over
@@ -4013,6 +4024,10 @@ for the axis list.
   tagged `compute:local` — on a new start and on a session that records
   launch facts. Confirm that naming is what you expect to see in
   filters, counts and the Sessions Tags menu.
+- **The restart re-stamp.** Covered by unit tests, not yet seen on a
+  live daemon: after restarting a session that records launch facts,
+  confirm its tags match the record (role, kind, stage, automaton) and
+  that a restart which fails leaves its tags untouched.
 - **Roll-forward, never hand-edited.** If a session later gains launch
   facts, run `datawatch autonomous tags sweep --dry-run` first to see
   exactly which sessions would change, then the sweep without `--dry-run`
