@@ -22,13 +22,13 @@ exec_steps:
       id: "{{params.prd_id}}"
     read_only: true
   - tool: autonomous_decompose_lint_config_set
-    description: Change mode and retry budget; each supplied block fully replaces the current one, blocks left out are left untouched
+    description: Change mode and retry budget; the decompose_lint block you send replaces the current one whole
     args:
       decompose_lint:
         mode: "{{params.mode}}"
         max_retries: "{{params.max_retries}}"
     read_only: false
----
+------
 
 # How-to: the decompose-lint quality check and task templates
 
@@ -235,20 +235,94 @@ detected, and nothing is added twice. Slots `{{feature}}`, `{{files}}` and
 story's task files; a template's `depends_on` lists *template* ids it must
 run after, and the resulting task also depends on the story's other tasks.
 
-The **built-in pack** is the floor — five templates, written to hold three
+The **built-in pack** is the floor — six templates, written to hold three
 hard properties for every feature name a story can carry: no blocking
 decompose-lint finding, no hosting-CLI side effects, and no verification
 script that is not genuinely a script file (the read-only ones verify
 through their report instead) — so a decomposed Automaton's closing tasks
 reach the verifier and pass it, instead of being rejected at pre-start.
 
-| Template id | What it adds |
+| Template id | Default mode | What it adds |
+|---|---|---|
+| `changelog_entry` | `daemon` | a changelog entry for the feature (`CHANGELOG.md`) |
+| `parity_issue_draft` | `daemon` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
+| `docs_set` | `llm` | the feature's docs into shape, over the story's own files |
+| `final_gate` | `llm` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
+| `version_bump_left_to_merge` | `daemon` | a plain *note* that the release version is the next patch above main, resolved at merge — never an edit of the tree; in daemon mode the daemon records the note as the decision and completes the task, no session |
+| `bounded_load_step` | `daemon` | a posture *note* — the task's spec is the bounded-load-step rule text so it can be found in search and the audit; writes no files |
+
+### Template mode: who runs the task
+
+Each built-in template has a **default mode** (column above). The mode
+decides *who* runs the task when it is appended to a story:
+
+| Mode | Meaning |
 |---|---|
-| `changelog_entry` | a changelog entry for the feature (`CHANGELOG.md`) |
-| `parity_issue_draft` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
-| `docs_set` | the feature's docs into shape, over the story's own files |
-| `final_gate` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
-| `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit, and no verification script: the verifier reads it rather than runs it |
+| `llm` | a worker session runs the task as a normal LLM task (no change from before the modes were introduced) |
+| `daemon` | the daemon performs the task itself — no model session, no worker — and records it as done |
+| `off` | the template is **not appended** to the story at all (the task does not appear) |
+
+The mode is set per-template with `autonomous.task_templates.mode` (a
+map of template id → mode string):
+
+```yaml
+autonomous:
+  task_templates:
+    enabled: true
+    mode:
+      # The four daemon-mode templates below run without a model session.
+      changelog_entry: daemon
+      parity_issue_draft: daemon
+      version_bump_left_to_merge: daemon
+      bounded_load_step: daemon
+      # The two LLM-mode templates spawn a worker session.
+      docs_set: llm
+      final_gate: llm
+```
+
+**How to change a mode without wiping the block.** Every config surface
+that writes `task_templates` (the MCP `…_config_set` tool, the REST `PUT`,
+the PWA panel) replaces the **whole block**: a write that carries only
+`mode` resets `enabled` to false and drops your `templates` and `projects`.
+So to change one template's mode, read the live config first (`datawatch
+autonomous lint config` or the panel), change the `mode` map in the
+task-templates block you read back, and write that whole block back.
+
+**What a daemon-mode task does differently:**
+
+- **No model session, no verifier, no auto-retry loop.** The executor
+  performs the task itself — before it would ever spawn, verify or retry —
+  then marks it completed (or failed, if the handler cannot) through the
+  same status, save and lifecycle path a worker task takes, so the story
+  roll-up counts it. There is no worker session entry in the session list
+  for it.
+- **The structural checks skip it.** The decompose lint and the
+  plan-structure checks (per-task verification script, file tokens,
+  read-only rules) skip daemon-mode tasks — a handler performs them, a
+  judge does not, so they need no exemption to stand.
+- **`changelog_entry` and `parity_issue_draft` write the generated
+  artefact.** The daemon merges the change records of the story's
+  completed tasks and writes the same tracked file, from the same
+  template, under the same edit-protection rules the generated-artefacts
+  feature uses (see [generated-artefacts.md](generated-artefacts.md)):
+
+  - **An empty merge still renders** — if the story has no completed task
+    yet, the draft file is still written, with a minimal placeholder
+    entry (for example "0 files in 0 packages").
+  - **A file you edited is left alone** — the write is skipped, and the
+    task still completes with the skip reason in its decision note.
+  - **A kind switched off in the generated-artefact settings writes
+    nothing** — the task still completes, with the switch-off noted
+    instead of a path in its decision note.
+  - **No project directory means nowhere to write** — the task is marked
+    failed with the reason, and nothing is written.
+- **`bounded_load_step` and `version_bump_left_to_merge` write nothing.**
+  The spec text is itself the note: the task completes with a decision
+  note carrying the spec text, and that is the record an operator reads
+  back on the story. Both templates also carry `kind: note` and a
+  `verification_script_reason` exemption (a note task changes no files),
+  which is what carries them if one is switched back to `llm` mode and
+  runs as a session.
 
 Templates are applied in **shadow and enforce** (off applies nothing), and
 `autonomous.task_templates.enabled` (default **true**) gates them globally.
@@ -303,9 +377,9 @@ autonomous:
 ### Per-project overrides
 
 `autonomous.task_templates.projects` maps a **project directory or alias**
-to an `{enabled: …}` override. The override wins for that project; an
-absent flag means *follow the global*. A new project you have not
-configured follows the global `enabled`.
+to an `enabled` override. The override wins for that project; an absent
+flag means *follow the global enabled*. There is no per-project mode —
+the `mode` map is global, per template id.
 
 ```yaml
   projects:
