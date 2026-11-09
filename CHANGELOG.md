@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **The release readiness of a size is readable over REST: `GET /api/autonomous/release-readiness?size=patch|minor|major`.** With optional `project`, it judges a release from the stored shadow-merge comparisons: how many of the plans held up against the landed state, how many of those merges would have had conflicts, how many of them touched the PWA, and whether any comparison found a defect that blocks the release — against the default bar (10 records, 2 conflicts, 2 PWA changes). A size with no comparisons is not hidden: the answer is the full shape with zero counts and a sentence for each short condition. A missing or unknown `size` is refused with a 400 that names the size it got; the gate is the same as the other autonomous reads, and the endpoint is documented in the OpenAPI spec.
+  - **How it shows up:** the readiness page and any operator can ask "is the patch ready?" without recomputing by hand; the same answer is ready for a future PWA card.
+  - **Migration:** none.
+
 ## v9.115.2 — The CodeQL gate stops waiting when a rate limit cannot reset in time
 
 ### Fixed

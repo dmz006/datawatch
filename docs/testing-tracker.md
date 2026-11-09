@@ -9,6 +9,22 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Release readiness read — one size against the stored shadow-merge comparisons — next patch above main
+
+The operator asks, for one size, whether the release is ready, from the stored shadow-merge comparisons: how many of the plans held up against the landed state, how many of those merges would have had conflicts, how many of them touched the PWA, and whether any comparison found a defect that blocks the release. A size with no comparisons is not hidden: the same full shape, zero counts, a sentence for each short condition. All rows are Tested by Go tests run on 2026-11-08 (Go, linux/amd64) against a temp data dir seeded in the shadow-merge stores' layout; **Validated is No on every row — the live check (a daemon with real stored comparisons) is still owed.**
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| 400: missing size, unknown size, wrong method | `TestReleaseReadinessRefusesMissingAndBadSize` | `go test ./internal/server/ -count=1 -run 'ReleaseReadiness'` — passed | A request without `size` gets a JSON 400 (`invalid_size`) naming the size it got; `mega`, `Patch-`, blank and a non-GET get the same refusal with `Allow: GET`. | Unit (httptest) | **Yes** (`internal/server/release_readiness_test.go`) | Pass | **No** — live check pending | |
+| 200: empty store answers the full shape with zeros | `TestReleaseReadinessEmptyStoreStillAnswersFull` | same harness, empty data dir | Every count present and zero, `ready=false`, one sentence per short bar, the required bar the default (10/2/2), `bar` in the body, `size`/`project` echoed. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| 200: counts from the stored comparisons, project filter, size filter | `TestReleaseReadinessCountsFromStoredComparisons` | same harness, seeded `merge-comparisons/*.json` + `merge-plans/*.json`, one corrupt file | 11 records for `patch` (the `minor` one and, under `project=demo`, the other project's record drop out), conflicts and PWA changes counted from the stored plans, a major difference counted as a blocking defect that keeps the release not ready with a sentence naming it, the corrupt file skipped. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| 200: ready when the bar is met | `TestReleaseReadinessReadyWhenBarMet` | same harness, ten holding-up comparisons | `ready=true`, `missing` empty, 10/2/2 counts. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| 500 unreadable store, 503 unconfigured | `TestReleaseReadinessStoreErrors` | a file where the store directory must be; a bare `Server` | The store that exists but cannot be read is a 500 naming the directory; with no config the gate answers 503 before the stores are touched. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| Federation guard: the autonomous read capability | `TestReleaseReadinessFederationGuard` | session capabilities injected into the request context | A credential without `autonomous:read` gets 403 naming the capability; with it, 200. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| Comparison → record mapping | `TestReleaseReadinessRecordsFromComparisonsMapsFields` | `go test ./internal/autonomous/ -count=1 -run 'ReleaseReadiness'` — passed | Plan-equal-or-better from `different==0`, blocking defect from a major difference (case-insensitive), conflicts and PWA facts from the plan, the project filter, and a nil plans map. | Unit | **Yes** (`internal/autonomous/release_readiness_source_test.go`) | Pass | **No** — live check pending | |
+
+---
+
 ## Per-plugin token usage listing — the secrets a plugin references and the service's minted token names — next patch above main
 
 The operator lists, per service plugin, the secrets its manifest references and the manifest fields that carry them, whether each exists in the store, and the names and creation times of the service tokens minted for that service. Operator token only; the response never carries a secret value or a token value.
