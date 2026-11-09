@@ -5,6 +5,10 @@
 package autonomous
 
 import (
+	"fmt"
+	"log"
+	"time"
+
 	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
@@ -56,5 +60,61 @@ func (m *Manager) workerLaunchInput() workerprofile.LaunchInput {
 			p, ok := users[name]
 			return p, ok
 		},
+	}
+}
+
+// recordWorkerProfileDecision resolves the worker profile this launch
+// starts with and records the fallback: when the profile name the launch
+// requested was not found, the decision text
+// "requested=<name> layer=<layer> applied=<name or none> reason=<reason>"
+// lands on the task (overwritten by every attempt) and as a
+// worker_profile_fallback entry in the PRD decision log. A launch whose
+// requested name resolves carries no fallback and writes nothing.
+func (m *Manager) recordWorkerProfileDecision(prd *PRD, t *Task) {
+	in := m.workerLaunchInput()
+	in.Role = "worker"
+	in.Kind = t.Kind
+	in.TaskName = t.WorkerProfile
+	in.AutomatonName = prd.WorkerProfile
+	_, _, d := workerprofile.ResolveForLaunch(in)
+	// No requested name, or the requested name resolved: not a fallback.
+	if d.Requested == "" || d.Requested == d.Applied {
+		return
+	}
+	applied := d.Applied
+	if applied == "" {
+		applied = "none"
+	}
+	text := fmt.Sprintf("requested=%s layer=%s applied=%s reason=%s", d.Requested, d.Layer, applied, d.Reason)
+	m.store.WithLock(func() {
+		t.WorkerProfileDecision = text
+	})
+	if err := m.store.SaveTask(t); err != nil {
+		log.Printf("[autonomous] task=%s save worker_profile_decision: %v", t.ID, err)
+	}
+	m.recordWorkerProfileFallbackDecision(prd.ID, t.ID, text)
+}
+
+// recordWorkerProfileFallbackDecision appends the worker_profile_fallback
+// entry naming the task and the decision text to the PRD decision log and
+// saves the PRD. It re-fetches the PRD from the store, because the in-flight
+// snapshot may predate the task's last save and a stale one would overwrite
+// it; this function mutates no task state at all — the caller already
+// recorded the decision on the task itself.
+func (m *Manager) recordWorkerProfileFallbackDecision(prdID, taskID, note string) {
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	m.store.WithLock(func() {
+		p.Decisions = append(p.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "worker_profile_fallback",
+			Actor: "autonomous",
+			Note:  fmt.Sprintf("task %s: %s", taskID, note),
+		})
+	})
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s save worker_profile_fallback decision: %v", prdID, err)
 	}
 }
