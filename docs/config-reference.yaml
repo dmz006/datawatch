@@ -3997,14 +3997,18 @@ autonomous:
     # (per-project overrides below can still force a project on/off).
     enabled: true
     # Operator template definitions (empty = the built-in pack,
-    # unmodified). {id, title, spec, files, kind, read_only, depends_on,
-    # applies_when, verification_script_reason}. verification_script_reason
-    # is the explicit reason a task from the template has no verification
-    # script (note templates carry one); it is copied onto that task.
-    # verification_script must be one repo-relative script
+    # unmodified). {id, title, spec, files, kind, read_only, report_path,
+    # depends_on, applies_when, verification_script_reason}.
+    # verification_script_reason is the explicit reason a task from the
+    # template has no verification script (note templates carry one); it
+    # is copied onto that task. verification_script must be one repo-relative script
     # file (for example scripts/verify.sh), never a command string such as
     # "go build ./... && go test ./...": the PUT that carries it is refused,
     # and a template that still carries one is never applied.
+    # verification_script_reason is optional: a note-kind template that
+    # changes nothing carries its B124 exemption here — the stated reason
+    # it has no verification script to run (the built-in note templates
+    # carry one).
     templates: []
     # Per-project overrides, keyed by project directory or alias. An absent
     # flag means follow the global; a new project inherits the global
