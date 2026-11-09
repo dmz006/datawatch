@@ -198,3 +198,5 @@ Pack question 4 of 4 (community packs in the first release). Options: A built-in
 
 Pack question 5 (distribution of the first packs). Options: A a default registry source plus a pinned copy for offline (recommended), B the default source only. Operator answered: "Datawatch has a community register, i like the idea of pinned but then it's 2 cos to maintain, if they can download datawatch they can download community, if we need offline support we need a script to copy into an archive but I'm not worried about offline users right now, they can come repo if they need, community repo, so b". Recorded: B. The first packs are published in the dmz006/datawatch-community registry, already pre-seeded on every install, with no pinned copy; offline support is later and out of scope now.
 
+Pack question 6 (first acceptance of the pre-seeded community registry). Options: A accept the source once when packs are turned on (recommended), B trust it automatically. Operator answered: "A". Recorded in the draft spec. All design questions for the pack Automaton are decided; decompose after the standard task rename Automaton merges.
+
