@@ -12,23 +12,39 @@ This page covers the planning setting. For running tasks, see
 ## Current status
 
 The setting is stored, validated and reported by `GET /api/config`, and the
-daemon's boot path reads it. With `reattach` (the default), a planning Automaton
-whose planner session is still alive stays in planning: the daemon attaches a
-reader to that session and its output file, and when the planner writes its plan
-the decompose completes as if the restart had not happened. If the planner
-ended while the daemon was down and left a complete plan, that plan is ingested
-at boot. Otherwise the Automaton goes back to draft, as before. The `restart`
-value is not yet run at boot: it also goes back to draft, so the operator
-requests planning. Confirm on the build in use that a restarted daemon keeps a
-mid-decompose PRD in planning before relying on `reattach`.
+daemon's boot path reads it. At boot the daemon decides for each planning
+Automaton from the setting, the planner session it recorded when it spawned the
+planner, and what that session left behind:
+
+- the planner session is still alive → a reader is attached to it and its
+  output file, and when the planner writes its plan the decompose completes as
+  if the restart had not happened;
+- the planner ended while the daemon was down and left a complete plan → that
+  plan is ingested at boot and the Automaton moves on without a new planner
+  run;
+- nothing usable survives → planning is restarted once, with a decision
+  recording it; a further restart with nothing usable left sends the Automaton
+  back to draft.
+
+That is the `reattach` (default) value. `restart` skips straight to the one
+automatic planning restart at boot, and `draft` resets the Automaton to draft,
+as before the setting existed. Every outcome is recorded in the Automaton's
+decisions and the boot-resume report, and live planner sessions that no reader
+owns are ended.
+
+The boot path is in this tree, but the `planning` row of the restart matrix
+and its release-smoke run are still open, and no live deploy-restart has
+confirmed it: confirm on the build in use that a restarted daemon behaves as
+above before relying on `reattach` (the *Still to review (operator)* notes in
+[operations.md](../operations.md)).
 
 ## The three values
 
-| Value | What the daemon does on restart, once the setting is read |
+| Value | What the daemon does on restart |
 |-------|-----------------------------------------------------------|
 | `reattach` (default) | Keeps planning running. The decompose is re-attached to the restarted daemon. |
 | `restart` | Restarts planning once after the restart and records a decision saying so. |
-| `draft` | Resets the Automaton to draft, as the daemon does today. |
+| `draft` | Resets the Automaton to draft, as the daemon did before the setting existed. |
 
 An unset or unrecognised value reads as `reattach`. The write paths (REST, CLI,
 MCP, comm channel and the PWA Settings select) refuse any value other than the
@@ -45,8 +61,8 @@ three above, and name the valid values in the refusal.
 | **MCP** | `autonomous_config_set` with `planning_restart_policy` set to `reattach`, `restart` or `draft`. |
 | **Comm channel** | `configure autonomous.planning_restart_policy=restart` |
 
-The value is saved at once. A restart reads it only in the way described under
-[Current status](#current-status).
+The value is saved at once; the boot path reads it at the next restart, as
+described under [Current status](#current-status).
 
 ## Choosing a value
 
