@@ -1620,12 +1620,15 @@ inherited `inherited_tags` and the placement `system_tags` (see
 — which is what lets the PWA draw the placement chips on the session cards
 at first load of the Sessions page, without a fetch of each full record.
 The placement chip paints from the tag name, so it shows even before the
-tag registry has loaded. The server leaves `system_tags` out of a row when
-the session has no placement tags (the field is `omitempty`), so an empty
-list is never sent. A row, `session_state` push or full record that omits
-the key keeps the placement chips the page already holds for that session;
-a chip drawn once clears only when the page is reloaded or a row carries a
-non-empty list. Example query:
+tag registry has loaded. The hold rule is per key: a row, `session_state`
+push or full record that omits `system_tags` keeps the placement chips the
+page already holds for that session — and a summary row omits the key
+whenever the session has no placement tags, because the field is
+`omitempty` on that row shape, so a summary row never carries an empty
+list. A row that carries the key wins even when it is empty, and full
+records always send the field, so a session that loses its last placement
+tag drops its chips on that update; a page reload always agrees with the
+server. Example query:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
@@ -1641,13 +1644,13 @@ and the PWA drawing discipline
 issue on the app tracker when ready. Nothing else is owed on this daemon:
 no setting, no migration.
 
-**Operator decision still owed (not made here):** the summary row drops an
-empty `system_tags` (`omitempty`), so a placement chip cannot be cleared by a
-live update, only by a page reload. Clearing it live would mean sending an
-empty array, which changes the wire contract and is a code change, so this
-docs change does not make it. The two parity drafts above also still say an
-explicit empty array removes the chip; they need the same correction before
-they are filed.
+**What the operator still owes (review, not code):** the removal half of
+this behavior — a tile that loses its last placement tag drops its chips
+once a row for that session carries an explicit empty `system_tags` (full
+records always do), while a row that omits the key keeps them — is pinned
+on the PWA by `internal/server/web/app-session-tile-last-placement-tag.test.js`
+and tracked for the app by the third draft in the same folder,
+[plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md](plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md). All three drafts stay unfiled until the operator opens them on the app tracker. Nothing on this daemon is open: the hold rule and the removal rule are implemented and pinned, no wire change is owed, and the CHANGELOG (`v9.112.8`) already records the removal behavior.
 
 ### Allowed project roots
 
