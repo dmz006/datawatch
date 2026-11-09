@@ -33,7 +33,10 @@ cost totals, and the parent id — and the session's tag chips: its own
 `tags`, the `inherited_tags` from the Automaton that started it, and the
 placement `system_tags` (see [automata-tags](automata-tags.md#placement-tags-the-system-tags)).
 Because the chips arrive with the first page, the PWA draws them on the
-cards at first load instead of waiting for the full record. No task text,
+cards at first load instead of waiting for the full record. Every summary
+row carries the `system_tags` key: an empty array when the session holds no
+placement tag, which removes the placement chip from the card; a row that
+omits the key keeps the chip (older servers). No task text,
 no prompts, no transcripts.
 
 By default the response holds every non-terminal session plus the 50 most
