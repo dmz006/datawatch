@@ -225,6 +225,92 @@ test('saving after changing only the lint mode keeps the template mode map, temp
   assert.deepEqual(body.task_templates, loadedTemplates);
 });
 
+test('turning the template enable checkbox off sends the loaded block with only enabled changed', async () => {
+  const pid = 'dlc-templateoff';
+  const els = {};
+  for (const suffix of ['', '-mode', '-maxretries', '-tasktemplates', '-guidance', '-rules', '-feedback']) {
+    els[pid + suffix] = makeValueElement();
+  }
+  const loadedTemplates = {
+    enabled: true,
+    templates: [{ id: 'custom_note', title: 'Custom note', spec: 'Write a short operator note.', files: ['notes.md'] }],
+    mode: { changelog_entry: 'llm', docs_set: 'off' },
+    projects: { 'project-a': { enabled: false } },
+  };
+  const sandbox = freshEnvironment({
+    byId: els,
+    fetchImpl: (url) => {
+      if (url === '/api/autonomous/decompose-lint/config') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({
+          decompose_lint: {
+            mode: 'shadow', max_retries: 2,
+            rules: [{ id: 'task-testable', type: 'testable', severity: 'block', value: 2 }],
+          },
+          decompose_guidance: 'Break it into verifiable slices.',
+          task_templates: loadedTemplates,
+        }) });
+      }
+      return Promise.resolve({ ok: false, status: 404, text: async () => '' });
+    },
+  });
+
+  run(sandbox, 'settingsDecomposeLintLoad("' + pid + '")');
+  await flushAsync();
+
+  // Uncheck the loaded-enabled checkbox; nothing else changes.
+  assert.equal(els[pid + '-tasktemplates'].checked, true);
+  els[pid + '-tasktemplates'].checked = false;
+
+  let put = null;
+  sandbox.fetch = function (url, opts) {
+    put = { url, opts: opts || {} };
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+  };
+  run(sandbox, 'settingsDecomposeLintSave("' + pid + '")');
+  await flushAsync();
+
+  assert.ok(put, 'save should issue a fetch');
+  assert.equal(put.url, '/api/autonomous/decompose-lint/config');
+  assert.equal(put.opts.method, 'PUT');
+  const body = JSON.parse(put.opts.body);
+  assert.deepEqual(body.task_templates, {
+    enabled: false,
+    templates: [{ id: 'custom_note', title: 'Custom note', spec: 'Write a short operator note.', files: ['notes.md'] }],
+    mode: { changelog_entry: 'llm', docs_set: 'off' },
+    projects: { 'project-a': { enabled: false } },
+  });
+});
+
+test('a save before the card has loaded omits task_templates from the request', async () => {
+  const pid = 'dlc-notloaded';
+  const els = {};
+  for (const suffix of ['', '-mode', '-maxretries', '-tasktemplates', '-guidance', '-rules', '-feedback']) {
+    els[pid + suffix] = makeValueElement();
+  }
+  const sandbox = freshEnvironment({
+    byId: els,
+    fetchImpl: () => Promise.resolve({ ok: false, status: 404, text: async () => '' }),
+  });
+
+  // No settingsDecomposeLintLoad: the card starts at field defaults; set the
+  // max-retries number so the save passes validation.
+  els[pid + '-maxretries'].value = '2';
+
+  let put = null;
+  sandbox.fetch = function (url, opts) {
+    put = { url, opts: opts || {} };
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+  };
+  run(sandbox, 'settingsDecomposeLintSave("' + pid + '")');
+  await flushAsync();
+
+  assert.ok(put, 'save should issue a fetch');
+  assert.equal(put.url, '/api/autonomous/decompose-lint/config');
+  assert.equal(put.opts.method, 'PUT');
+  const body = JSON.parse(put.opts.body);
+  assert.equal('task_templates' in body, false, 'task_templates must be absent when no block was loaded');
+});
+
 test('settingsDecomposeLintSave rejects an invalid rules editor value before touching the network', async () => {
   const { sandbox, els, pid } = cardEnvironment();
   els[pid + '-rules'].value = '{ this is not valid json ';
