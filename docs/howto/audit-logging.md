@@ -27,12 +27,21 @@ Two JSON-lines files under `data_dir` (`~/.datawatch` by default):
 - **`audit.log`** — the *operator action* log. One entry per
   state-changing action: session start/kill/delete/rollback/
   send_input, Automata/PRD lifecycle (create, approve, reject,
-  cancel, every `set_*` config change, ...), alert-rule and
+  cancel, every `set_*` config change, ...), the git-host
+  operations — opening a change request (`mr`), filing an issue,
+  creating a release, creating a tag — each one logged as
+  `host_git_operation` with the host name and kind, the repository,
+  the ref or title and the credential source (names only; a token
+  never appears, and a failed audit write never fails the operation
+  it describes — see [howto/git-hosts](git-hosts.md) and
+  [howto/post-ship-hooks](post-ship-hooks.md) for what
+  produces them), alert-rule and
   federation-peer changes, device registration, schedules,
   orchestrator graphs, and raising an alert via `create_alert`. Each
   entry names the action, the resource, and the real caller identity
   (`admin`, `session:<id>`, or `peer:<name>` — never a hardcoded
-  "operator" string, and never the bearer token).
+  "operator" string, and never the bearer token; the host operation
+  entries are logged under the actor `daemon`).
 - **`access.log`** — every HTTP request, auth failure, and WebSocket
   connect/disconnect, from **all three** of CLI, REST, and MCP. They
   all end up as HTTP clients against the same `/api/*` surface behind
@@ -93,6 +102,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
   "$BASE/api/audit?action=rollback"
 curl -sk -H "Authorization: Bearer $TOKEN" \
   "$BASE/api/audit?actor=peer:daemon-a"
+
+# The git-host operations (change request, issue, release, tag).
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/audit?action=host_git_operation&limit=50"
 
 # Access log — every successful request + auth failure.
 curl -sk -H "Authorization: Bearer $TOKEN" \

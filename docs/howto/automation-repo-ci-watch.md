@@ -43,8 +43,7 @@ agree over several episodes.
 - The repository present at an absolute local path, added to
   `autonomous.automation.repo_ci_watch.repos`, and the watch mode set to
   `shadow` or `on`.
-- CI (GitHub Actions) running in that repository, with a `main` branch and,
-  if you want tag coverage, release tags.
+- CI running in that repository, with a `main` branch and, if you want tag coverage, release tags. For a repository on `github.com` the watch lists runs with `gh run list` under your `gh` login; for a repository on a `gitlab` host of yours (the repository's origin resolves to a `git.hosts` entry) the watch lists them through the host — same watch, same states, same alert — see [the configured-host path](#configured-githubgitlab-hosts).
 - The Automation coordinator running — it is the loop the watch pass hangs
   off. No separate service.
 
@@ -72,6 +71,15 @@ are recorded in [the trigger-narrowing plan](../plans/2026-11-07-codeql-gate-tri
 | The newest release tags | the newest `tag_count` tags in the repository, each of the shape `v\u003cmajor\u003e.\u003cminor\u003e.\u003cpatch\u003e` (`v2` does not count as a release tag) | 5 (0 = no tags) |
 
 For every one of those refs the pass lists the runs on that ref's head commit — every workflow that ran on that SHA — not a fixed workflow name. So a poll covers the head of `main` plus the newest `tag_count` release tags, each across every workflow that ran there. A run belongs to the (repository, ref, workflow) triple it ran on, and each one gets at most one watch record.
+
+### Configured GitHub/GitLab hosts
+
+A watched repository whose origin belongs to a `git.hosts` entry of kind `github` or `gitlab` lists its runs through that host instead of `gh run list`: `gh run list --repo <owner/name> --branch <ref>` for a github host and `glab api projects/<owner%2Fname>/pipelines?ref=<ref>` for a gitlab host, under the host's credential source and the same 15-second bound. A repository on any other kind of host — `gitea`, `bitbucket`, a plain `git` remote, or an origin that is not one of your configured hosts — is simply not listed through a host; the pass has no run data for it and records none (plain git has no CI API to read). What changes, what does not, and what this means for the actions:
+
+- The watch is **strictly read-only on the host path.** No action phase runs for a host-listed repository: no rerun is posted, no cancel sent, no deletion issued — the record and its state are the whole surface. An `infra` or `hung` classification on a host run is information for you, not an action the pass takes, and shadow mode changes nothing observable there.
+- **Run names stand in for workflow names.** A listed run carries its pipeline/job name where the watch's model says "workflow"; the (repository, ref, workflow) record identity still holds, with the run name in the workflow slot.
+- **There is no start time on the host listing**, so a `pending` run cannot be aged: the `hung` state and the hung-cancel action do not exist on the host path (a `pending` record stays `pending` and is only ever alerted, if the alert is on). Hung detection is a github.com capability, not a host capability.
+- The alert, the record states you can read, and everything in the [read surfaces](#reading-the-state-on-every-surface) below work exactly the same; reading a host-listed record does not touch the host again.
 
 ## The record states
 
@@ -261,7 +269,12 @@ deletion. It never issues a deletion in `shadow`, in `off`, or in
 re-judges a run that already carries a verdict, and it never re-alerts an
 episode that already alerted. It never spends retry budget it does not have —
 a rerun that comes from a zero budget is not a rerun, it is the operator
-deciding. And in `shadow` it never writes anything at all: the record and the
+deciding. **For a watch on a host (a repository whose origin resolves to a**
+**`git.hosts` entry) it is read-only by construction:** the listed runs never
+receive a rerun, a cancel or a deletion — the record, the state and the alert
+are the whole surface — and a `pending` run there never becomes `hung`,
+because the host listing has no start time to age it with. And in `shadow` it
+never writes anything at all: the record and the
 would-do text are the entire surface — no action, no alert.
 
 ## Operations
