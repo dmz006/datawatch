@@ -582,3 +582,80 @@ func TestLaunchResume_WorkerProfileApplied(t *testing.T) {
 		}
 	}
 }
+
+func launchOf(t *testing.T, name string) WorkerProfileLaunch {
+	t.Helper()
+	p, ok := workerprofile.Builtin(name)
+	if !ok {
+		t.Fatalf("builtin worker profile %q not available", name)
+	}
+	return WorkerProfileLaunch{
+		Profile: p,
+		MCPServers: map[string]channel.MCPServerSpec{
+			channel.ProjectMCPEntryName: {Command: "datawatch", Args: []string{"mcp"}},
+		},
+		Starting: autonomous.StartingContextInput{Role: "worker", TaskSpec: "task for " + name},
+	}
+}
+
+// TestLaunchWithProfile_PerCallIsolation: two launches on ONE shared backend
+// with different profiles each carry their own arguments, and the backend
+// keeps no profile afterwards.
+func TestLaunchWithProfile_PerCallIsolation(t *testing.T) {
+	b := backendOf()
+
+	dMin := t.TempDir()
+	argvMin := startFakeTmux(t, false)
+	if err := b.LaunchWithProfile(context.Background(), launchOf(t, "minimal"), "", "cs-percall-a", dMin, "/nonexistent/log"); err != nil {
+		t.Fatalf("minimal launch: %v", err)
+	}
+	cmdMin := recordedCmd(t, argvMin)
+
+	dFull := t.TempDir()
+	argvFull := startFakeTmux(t, false)
+	if err := b.LaunchWithProfile(context.Background(), launchOf(t, "full"), "", "cs-percall-b", dFull, "/nonexistent/log"); err != nil {
+		t.Fatalf("full launch: %v", err)
+	}
+	cmdFull := recordedCmd(t, argvFull)
+
+	if !strings.Contains(cmdMin, "--allowedTools 'Read,Edit,Write,Bash,Glob,Grep'") || !strings.Contains(cmdMin, `--settings '{"skills":false}'`) {
+		t.Errorf("minimal launch lost its own arguments:\n%s", cmdMin)
+	}
+	if strings.Contains(cmdFull, "--allowedTools") || strings.Contains(cmdFull, "--settings") {
+		t.Errorf("full launch picked up the minimal profile's arguments:\n%s", cmdFull)
+	}
+	if !strings.Contains(cmdMin, filepath.Join(dMin, WorkerStartingContextFileName)) || !strings.Contains(cmdFull, filepath.Join(dFull, WorkerStartingContextFileName)) {
+		t.Errorf("each launch must reference its own starting context file:\nmin: %s\nfull: %s", cmdMin, cmdFull)
+	}
+	if got := b.WorkerProfileName(); got != "" {
+		t.Errorf("per-call launch must not store a profile on the shared backend, got %q", got)
+	}
+}
+
+// TestLaunchWithProfile_ZeroValueMatchesLaunch: a zero WorkerProfileLaunch
+// builds exactly the command line the plain Launch builds.
+func TestLaunchWithProfile_ZeroValueMatchesLaunch(t *testing.T) {
+	d := t.TempDir()
+	b := backendOf()
+
+	argvA := startFakeTmux(t, false)
+	if err := b.Launch(context.Background(), "do it", "cs-zero", d, "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	want := recordedCmd(t, argvA)
+
+	argvB := startFakeTmux(t, false)
+	if err := b.LaunchWithProfile(context.Background(), WorkerProfileLaunch{}, "do it", "cs-zero", d, "/nonexistent/log"); err != nil {
+		t.Fatalf("LaunchWithProfile zero: %v", err)
+	}
+	got := recordedCmd(t, argvB)
+
+	// The task scratch file path is random per call; mask it before comparing.
+	re := regexp.MustCompile(`datawatch-claudecode-task-[^']*\.txt`)
+	if re.ReplaceAllString(got, "TASK") != re.ReplaceAllString(want, "TASK") {
+		t.Errorf("zero-value launch differs from Launch:\nwant: %s\ngot:  %s", want, got)
+	}
+	if strings.Contains(got, "--strict-mcp-config") || strings.Contains(got, "--settings") {
+		t.Errorf("zero-value launch carries profile flags: %s", got)
+	}
+}
