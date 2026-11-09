@@ -3,15 +3,15 @@ package mergeshadow
 import (
 	"regexp"
 	"strings"
-
-	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 // ChangelogTaskKind is the Task.Kind marker that identifies an Automaton's own
 // changelog entry task. autonomous marks that task with this kind when it
 // builds the shared tasks of a batch, so the reader matches the marker and
-// never the task title.
-const ChangelogTaskKind = autonomous.DefectTaskKindChangelog
+// never the task title. The value must equal autonomous.DefectTaskKindChangelog;
+// this package cannot import autonomous (autonomous imports it), so the
+// equality is checked by a test in the autonomous package.
+const ChangelogTaskKind = "defect_changelog"
 
 // ChangelogTask is the part of one Automaton task the changelog reader needs.
 // Output is the text the task produced; the reader takes the changelog text
