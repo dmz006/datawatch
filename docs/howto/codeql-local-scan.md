@@ -155,11 +155,14 @@ The step log is the check that tells the two red outcomes apart:
   is still inside its budget. The gate is waiting for the reset and will retry
   on its own; nothing is needed from you unless the run then ends red.
 - **`Rate limited`, as an error line that names a core reset epoch, on the
-  alerts step (`open-alerts`)**, means the gate waited on the alerts read until
-  the budget was spent and the API kept limiting it. The gate does not stop at
-  once on an out-of-reach reset on this step; it waits up to the remaining
-  budget first. Wait until the reset time it names, then start the check again
-  yourself.
+  alerts step (`open-alerts`)**, means the gate could not read the alerts
+  inside its wait budget. Either the reset is later than the budget that was
+  left, so the gate stopped at once instead of waiting, or the budget was spent
+  while the API kept limiting it. Both cases are not a finding: the alerts were
+  not read, so the zero-alert result never appears. The line names the reset
+  epoch when the gate learned one; in the spent-budget case with no reset
+  reported it reads `core reset epoch: unknown`.
+  Wait until the reset time it names, then start the check again yourself.
 - **`No analysis for`** is the real missing-analysis timeout: the API answered,
   but the analyses never appeared within the budget. That one is worth
   investigating.
@@ -168,9 +171,9 @@ The gate's exit codes are unchanged by the rate-limit handling: both steps
 still exit 0 when clean and 2 on a usage error. On `wait-analyses`, a rate
 limit that the gate cannot ride out — a reset later than the remaining budget,
 or a spent budget with no reset time — exits 1 with the `Rate limited` line. On
-`open-alerts`, a spent rate-limit budget exits 1 with the `Rate limited` line.
-Either way it is reported as a rate limit, never as a missing analysis or as a
-zero-alert read.
+`open-alerts`, a reset later than the remaining budget, or a spent budget, also
+exits 1 with the `Rate limited` line; the first case exits at once. Either way it
+is reported as a rate limit, never as a missing analysis or as a zero-alert read.
 
 ## Optional: run it before every push
 
