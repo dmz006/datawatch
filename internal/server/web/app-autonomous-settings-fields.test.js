@@ -576,6 +576,30 @@ test('settings_descendant_stall_seconds label key is a non-empty English string 
   }
 });
 
+test('autonomous settings expose planning_restart_policy as a select with the label key and reattach/restart/draft options', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)",
+    sandbox));
+  const field = fields.find(f => f.key === 'autonomous.planning_restart_policy');
+  assert.ok(field, 'autonomous.planning_restart_policy missing from autonomous card fields');
+  assert.equal(field.type, 'select');
+  assert.equal(field.labelKey, 'settings_planning_restart_policy');
+  assert.deepEqual(field.options, ['reattach', 'restart', 'draft']);
+});
+
+test('settings_planning_restart_policy label + help keys are non-empty strings in all five locale bundles', () => {
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const key of ['settings_planning_restart_policy', 'settings_planning_restart_policy_help']) {
+      assert.ok(typeof bundle[key] === 'string' && bundle[key].length > 0,
+        key + ' missing or empty in ' + locale + ' locale');
+    }
+  }
+});
+
 test('settings_session_start_confirm label + help keys are non-empty strings in all five locale bundles', () => {
   for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
     const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
