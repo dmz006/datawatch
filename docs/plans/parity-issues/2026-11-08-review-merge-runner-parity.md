@@ -1,32 +1,132 @@
-# [sync] Part of finishing review and merge by the daemon (Phase 4 of the autonomy handover plan)
+# Parity issue draft — the merge read: held lock, last validator result, and run history (Part of finishing review and merge by the daemon)
 
-The work built the engine: the merge pipeline Runner and its built-in default pipeline. The gaps below are the operator-facing policy it does not yet carry.
+Parent work: "Part of finishing review and merge by the daemon (Phase 4 of the
+autonomy handover plan). Operator, 2026-11-07, quoted:".
+
+This draft is a file only. It captures the parity gaps this work leaves open for the
+merge-pipeline read model — the read side of review and merge by the daemon: the
+per-repository merge lock, the release-bump validator result, and the merge pipeline run
+history, as every surface reports them. No hosting CLI is run from it, nothing is filed on
+any tracker, and nothing is created on any host.
 
 ## Affected area
 
-- `internal/mergepipeline/` — `run.go` (the Runner: per-repository lock, run and step tracking, main-moved redos, post-ship hooks, the `ShipRunner` wiring), `definition.go` (pipeline steps, kinds, built-in actions, validation), `default.go` (the built-in 12-step pipeline), and their tests.
-- Downstream of it: the daemon merge-run API (`POST /api/autonomous/merge/run`, `GET /api/autonomous/merge`), `internal/git` (git host layer), the release CI job.
+The affected area is the read path for the daemon's merge pipeline. A single read model is
+served by the daemon and every surface renders that same body:
+
+- `internal/autonomous/merge_status.go` and `internal/autonomous/merge_validator_result.go`
+  — the `MergeStatus` body of `GET /api/autonomous/merge` (`mode`, `alert_minutes`,
+  `automata`, `shadow_decisions`, `pipeline_runs`, `merge_lock`, `last_validator`), the
+  `heldMergeLock` and `latestMergeValidator` selectors, and the read-only
+  safe-to-delete report `MergeSafeToDelete`.
+- `internal/autonomous/merge_text.go` — the shared text renderers (`RenderMergeState`,
+  `RenderSafeToDelete`) that the CLI, the MCP tool result and the comm channel all use, so
+  none of those surfaces can show different wording. The validator line is rendered as
+  "Last release-bump validation: passed (version …) / failed", with one indented line per
+  failing check, and the lock as "Merge lock held: run … for Automaton … (branches …) since
+  …".
+- `internal/server/merge_test.go` and `internal/autonomous/merge_validator_status_test.go`
+  — the surface and selector tests, including the newest-run-wins rule for `last_validator`
+  and the rule that a lock entry naming no run and no Automaton holds nothing.
+- `internal/mcp/merge_tools.go` and `internal/mcp/merge_tools_test.go` — the two
+  read-only tools `autonomous_merge` and `autonomous_safe_to_delete`, which proxy the REST
+  bodies; the tool description names `merge_lock` and `last_validator` for the caller.
+- `internal/router/merge_comm_test.go` — the comm-channel `autonomous merge` verb reading
+  the same body.
+- `cmd/datawatch/cli_merge_test.go` — the `datawatch autonomous merge` CLI command reading
+  the same body.
+- `internal/server/web/app.js`, `internal/server/web/app-merge-pipeline.test.js`
+  and the `merge_*` strings in `internal/server/web/locales/{en,de,es,fr,ja}.json` —
+  the PWA Merge pipeline card, which shows the pipeline source, one line per step, the
+  "Merge lock held: …" line, the "Last release check passed/failed: version …" line with
+  the failing checks under it, and a help link to the howto section for the release-bump
+  validator.
+- `docs/howto/merge-pipeline.md` and `docs/datawatch-definitions.md` — the manual section
+  (lock semantics, the release-bump validator and its five checks, running a merge twice)
+  and the definitions, including the surface list that shows where the lock and the last
+  validator result can be read.
+
+Downstream of the read model, the merge pipeline itself — `internal/mergepipeline/`
+(`run.go`, `definition.go`, `default.go`, `release_validator.go`), the run records in
+`internal/autonomous/merge_pipeline_run.go`, the lock store in
+`internal/autonomous/merge_lock.go`, and the run start at
+`POST /api/autonomous/merge/run` — is what the read model reports on.
 
 ## Current behavior
 
-The Runner runs a merge end to end, in-process in the daemon, against a single project checked out on its main branch with a clean tree. It takes the repository lock, rebases the branches onto main (throwaway worktrees, conflicts leave the branch untouched), runs the project's version check, merges the branches in order, then, when something new was merged, sets the next version (a fixed size for the run), writes the changelog heading and the README release line, commits the bump, tags it, validates the release bump before anything leaves the machine, pushes main and the tag, and restarts the local deployment. It never rewrites the remote: if the remote's main moved, it undoes only what the run itself made (its own commits, its own tag, its own bump), starts over from the rebase step, bounded redos, and fails when main keeps moving. A run that merged nothing is released as nothing new, and everything is written as it happens to the run record with its steps.
+The read is one object, served read-only, and every human surface renders it from the same
+source. `GET /api/autonomous/merge` reports the mode in effect (off, shadow or on), the
+alert threshold, one entry per finished Automaton with a work branch and its cached
+comparison state, the shadow decisions when the mode is shadow, and — filled whatever the
+mode is — the merge pipeline runs, newest first, each with its pipeline source and one
+entry per step (start, end, result); the held merge lock, absent when nothing is held or
+when the lock store is unreadable or no base repository is configured; and
+`last_validator`, the release-bump validator result of the newest run that reached the
+validate step, absent when no run has one. No read runs git: the Automaton entries come
+from the coordinator's in-memory comparison cache, and the safe-to-delete report behind
+`GET /api/autonomous/safe-to-delete` comes from a short-lived per-repository cache.
+
+The surfaces show the same body. The CLI `datawatch autonomous merge`, the comm
+`autonomous merge` verb and the MCP `autonomous_merge` tool all read
+`GET /api/autonomous/merge` and render it through `merge_text.go`; the MCP tools are
+annotated read-only and their descriptions point a caller at `POST /api/autonomous/merge/run`
+for starting a run. The PWA Merge pipeline card shows the same lock and validator lines,
+localized in English, German, Spanish, French and Japanese, with a link to the howto
+section for the release-bump validator. The howto lists exactly this surface set — PWA,
+REST, MCP, comm, CLI — and states that `last_validator` is the result of the newest run
+that reached the validate step and that a run that stopped before that step, or whose
+release steps were all skipped, has no validator field.
+
+The gaps this work leaves open are policy and reach, not accuracy of the read. The merge
+read is read-only on every surface; nothing outside REST can start a run. The run records
+are bounded to the last 200, so a long-lived daemon eventually reports on older runs
+without them. `last_validator` is a single newest-with-one result, not a trend:
+a run that passed validation and then failed at a later step is indistinguishable at a
+glance from a run that has shipped, and the read does not say whether the passing
+validation was followed by a push. The lock is reported per base repository but nothing
+else in the read names which repository the runs belong to beyond what the run record
+itself carries. The Phase 4 decisions that surround this engine — the release approval
+mode per release size (automatic, ask, manual) with per-project overrides, the
+prepare-only mode, the direct-push versus pull-request release path, the shadow
+comparison against the supervisor's manual merge, the first-N model-resolved-conflict
+confirmation rule, git hosts beyond GitHub with audited credential sources, the enforced
+pre-push secret scan, and the fallback rule that moves a release size back to ask on a
+failed validator or a red release CI — are none of them modeled in this read or in the
+pipeline: the reader can see that a run happened and whether its validation passed, but
+cannot see, for example, an ask-mode hold, an unreleased prepared bump, or the fallback
+moving a size back to ask. Android and iPhone have not been checked against this surface;
+the parity question for the mobile apps is open.
 
 ## Expected behavior
 
-- **Release approval policy is not modeled at all.** Phase 4 decided a setting with a mode per release size — for each of patch, minor and major, one of automatic, ask, or manual — overridable per project, with the modes moving over time as the daemon earns trust. The Runner has a single `ReleaseSize` field (fixed per run) and no approval gate: it computes the size, does the release, and only the daemon decides what to do before or after. The ask and manual modes have nothing to hang on inside the pipeline.
-- **Release size is decided by the caller, not the work.** Today the size is whatever the caller passes; nothing looks at what actually merged (a feature is a minor, a bug gives a patch) or at project-level intent for a major. That decision is part of the policy the setting carries, and it is not in these files.
-- **There is no prepare-only mode.** Phase 4 made who pushes and tags a setting, per project, with push and tag on or prepare-only. `ShipRunner.Push` and the `push-release` and `tag-release` steps always push; the tag-release step always writes the tag. A project that wants the daemon to prepare the release but not send it out has no way to say so.
-- **Push is always direct to main.** The release path decision — direct push, or open a pull request and merge when checks pass for a protected branch — is not in the Runner or the default pipeline. `ExecShipRunner.Push` pushes branch and tag to the remote and nothing else; there is no pull-request path in the step vocabulary.
-- **Shadow comparison is not reachable from here.** Phase 4 runs the daemon's merge in shadow beside the supervisor's manual merge, comparing each plan with what the supervisor did and recording every difference, before the modes move toward automatic. The Runner ships what it does the same way in shadow and on; the daemon issue carries that gap, but the pipeline would need an observable run plan the supervisor can diff against the manual merge, which the run record does not yet expose as a plan.
-- **Model-resolved conflicts have no confirmation counter.** Phase 4's conflict decision: mechanical files always resolved automatically, code and documents resolved by the model in a throwaway worktree with build, lint and full tests passing, and the first N model-resolved code conflicts after the switch to on need the operator's confirmation (default 5, 0 turns it off). The Runner's `Questions` wiring can raise a question and a `conflict_policy` and `conflict_model` setting exist, but nothing counts, thresholds or auto-approves the first N resolutions the way the decision needs.
-- **Git hosts beyond GitHub are not here, and credentials are not audited through this path.** `internal/git`'s GitLab is a stub, the default is the host's own `gh` login with an optional vault token passed as an environment variable, and every push and tag is to be audit-logged with the credential source and never the token. The Runner's ship path is `gh`-shaped (its `FileIssue` hook runs `gh issue create`) and records no credential source; the GitLab tooling is missing entirely.
-- **Pre-push secret scan is not enforced from the run.** It exists and defaults to shadow; Phase 4 requires it in enforce mode before the daemon pushes main on its own, and no step in the default pipeline or any `Step` action references it.
-- **The release CI feedback loop is not wired.** Phase 4's fallback rule — after a switch, a failed validator, a red release CI within the window, or a merge that needed a manual fix moves that release size back to ask, raises an alert and files a defect — has no hook into the Runner's finish path, where only the run result and the post-ship hooks exist.
+Each surface that reports the merge pipeline reports the same held lock, the same last
+validator result and the same run list as `GET /api/autonomous/merge`, in the same meaning
+— a held lock with no run and no Automaton is nothing at all, `last_validator` is always
+from the newest run that has one, and a run that never reached the validate step shows no
+validator line anywhere. A surface that cannot start a run, or that cannot show the lock
+or the validator line at all, is an explicit and reason-logged exclusion rather than a
+silent gap; today MCP, CLI, comm and PWA are all read-only by design with the start action
+REST-only, and the issue should carry that as a stated, operator-decided scope rather
+than let it drift. When the read model carries a hold state — an ask or manual release
+approval, a prepare-only bump that was never pushed, or the fallback rule moving a release
+size back to ask with its alert — every surface reports it the same way the lock and the
+validator are reported now, and the PWA card shows it with the same wording as the shared
+text, in every locale it is provided. When a run's push is still outstanding after a
+passed validation, the read distinguishes it from a shipped run instead of leaving the
+operator to tell the two apart from the step list.
 
 ## Suggested next step
 
-1. Model the release approval policy as a setting (mode per release size, per-project override, and the rule that decides the size from the work actually merged), and give the Runner a gate before `tag-release` and `push-release` where ask and manual modes hold the run with the prepared release instead of shipping it.
-2. Add the prepare-only mode (the release is committed and tagged locally, push and tag held) and the pull-request release path for protected branches, as step behavior the pipeline can express per project.
-3. Build the shadow comparison the supervisor diffs: a run plan the record exposes before shipping, and the first-N model-resolution confirmation counter with its default of 5.
-4. Finish the git host story (GitLab through its own command line, the vault-token fallback, the audit of credential source on every push and tag, the Git hosts card) and enforce the pre-push secret scan from the run when it is in enforce mode.
-5. Wire the fallback rule — the size moves back to ask on the named events, with the alert and the defect — into the run's finish path.
+File the datawatch-app parity issue from this draft, in this order. First, the run state
+wording: extend the read model (or the run record it reads) so a run that passed
+validation but has not finished pushing is distinguishable from one that has shipped, and
+give that distinction the same treatment as `merge_lock` and `last_validator` — one field,
+rendered by `merge_text.go`, shown on the PWA card and localized in the five locales that
+the card strings already exist in. Second, the hold states: when release approval modes,
+prepare-only and the fallback rule are modeled, add their read to `MergeStatus` and to the
+same five-surface list in the howto, with the PWA card updated first. Third, the mobile
+rows: confirm the datawatch-app state of this read on Android and iPhone and add both rows
+to the howto surface list, each included or excluded with a reason. Until then the issue
+should record the read side as complete within its stated scope — same body on every read
+surface, read-only, start REST-only — and the open items as the hold states and the
+mobile rows.
