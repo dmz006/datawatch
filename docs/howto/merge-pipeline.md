@@ -303,7 +303,11 @@ that would leave the machine, in the order they would run.
 Answer it with **yes (ship it)** to let the run ship the release, or **no (do not
 ship)** to hold it. "No" is the default, so an unanswered decision never ships.
 Answer it where questions are answered: the question list in the web UI, the chat
-channel, or the `question_answer` MCP tool. A later answer replaces an earlier one,
+channel, or the `question_answer` MCP tool. In the question list it is a decision
+raised by the daemon's release approval for the project, not a question another
+person asked, and it has no route of its own — the ordinary question answer is the
+only answer path, so nothing release-specific has to be called. A later answer
+replaces an earlier one,
 and only the current answer counts. A run that is re-run for the same release
 finds the decision already raised rather than raising a second one.
 
