@@ -1,5 +1,7 @@
 # Parity issue draft — the merge read: held lock, last validator result, and run history (Part of finishing review and merge by the daemon)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#421, one consolidated issue for the merge lock, validator and merge run drafts** (shipped in v9.118.0).
+
 Parent work: "Part of finishing review and merge by the daemon (Phase 4 of the
 autonomy handover plan). Operator, 2026-11-07, quoted:".
 

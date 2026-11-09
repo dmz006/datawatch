@@ -1,5 +1,7 @@
 # [sync] fix(merge): release size and approval modes not reachable from any config surface (Part of finishing review and merge by the daemon)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#421, one consolidated issue for the merge lock, validator and merge run drafts** (shipped in v9.118.0).
+
 Parent work: "Part of finishing review and merge by the daemon (Phase 4 of the
 autonomy handover plan). Operator, 2026-11-07, quoted:". This draft captures the
 parity work that is left open, or closed, by the release-version step of the daemon

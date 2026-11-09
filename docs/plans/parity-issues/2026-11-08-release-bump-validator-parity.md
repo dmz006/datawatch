@@ -1,5 +1,7 @@
 # [sync] feat(merge): release-bump validator and its run record (Part of finishing review and merge by the daemon)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#421, one consolidated issue for the merge lock, validator and merge run drafts** (shipped in v9.118.0).
+
 Parent work: "Part of finishing review and merge by the daemon (Phase 4 of the autonomy
 handover plan)", operator-approved 2026-11-07. This draft is a planning note for the
 datawatch-app parity issue. It is a file only: nothing has been filed on any tracker, and
