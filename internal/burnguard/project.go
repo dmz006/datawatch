@@ -78,6 +78,13 @@ type Projection struct {
 	// AdviceVerdict is usagecalc's verdict on the readings alone (the recent burn between
 	// readings), for comparison with the token-based projection.
 	AdviceVerdict string `json:"advice_verdict"`
+
+	// CalibrationRatio scales the token estimate to the readings (1 when not calibrated).
+	// ReadingPointsPerHour and TokenPointsPerHour are the two rates PointsPerHour blends; zero
+	// when that part could not be measured.
+	CalibrationRatio     float64 `json:"calibration_ratio"`
+	ReadingPointsPerHour float64 `json:"reading_points_per_hour"`
+	TokenPointsPerHour   float64 `json:"token_points_per_hour"`
 }
 
 // Project projects the points used to the weekly reset and compares them with the pace line.
@@ -117,8 +124,16 @@ func Project(in ProjectInput) Projection {
 	}
 	p.Target = p.Ceiling - margin
 
+	cal := ComputeCalibratedBurn(in.Buckets, in.Readings, readAt, in.Now, through, in.Coef)
+	p.CalibrationRatio = cal.Ratio
+	if cal.HasReadingRate {
+		p.ReadingPointsPerHour = cal.ReadingRate
+	}
+	if cal.HasTokenRate {
+		p.TokenPointsPerHour = cal.TokenRate
+	}
 	since := tokensBetween(in.Buckets, readAt, in.Now, through)
-	p.PointsSinceReading = since.cw/1e6*in.Coef.CacheWritePerM + since.cr/1e6*in.Coef.CacheReadPerM
+	p.PointsSinceReading = (since.cw/1e6*in.Coef.CacheWritePerM + since.cr/1e6*in.Coef.CacheReadPerM) * cal.Ratio
 	p.EstimatedNow = p.PercentAtReading + p.PointsSinceReading
 
 	last, _ := in.Reset.LastReset(in.Now)
@@ -131,6 +146,9 @@ func Project(in ProjectInput) Projection {
 	w, o := splitPoints(in.Buckets, in.Now.Add(-window), in.Now, through, in.Coef)
 	p.WorkerPointsPerHour, p.OtherPointsPerHour = w/win, o/win
 	p.PointsPerHour = p.WorkerPointsPerHour + p.OtherPointsPerHour
+	if cal.Available {
+		p.PointsPerHour = cal.Rate
+	}
 
 	p.HoursLeft = next.Sub(in.Now).Hours()
 	p.Projected = p.EstimatedNow + p.PointsPerHour*p.HoursLeft
