@@ -385,6 +385,41 @@ in-force block whenever the object is saved, so they stay in step with the
 settings. The tags **you** assign to an object and the tags its sessions
 inherit are separate fields that none of this reads or rewrites.
 
+### Which sessions carry which axes
+
+Every kind of session the daemon starts carries the run axes its record
+supports. In the table, **✓** means the session carries the axis, **—** means
+it never does (it records no such fact), and **if set** means it carries the
+axis when its start named one (a launch role, kind, stage or Automaton). The
+`peer` axis is written only when the work ran on another daemon, so it is
+listed as **federated** for every kind that can be sent to a peer.
+
+| Session kind | compute | peer | backend | lane | role | project | automaton | automation | stage | kind |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Task worker | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| Planner | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| Verifier | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| Judge | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| One-shot | ✓ | federated | ✓ | ✓ | if set | ✓ | if set | if set | if set | if set |
+| Scheduled | ✓ | federated | ✓ | ✓ | if set | ✓ | if set | if set | if set | if set |
+| Supervisor | ✓ | federated | ✓ | ✓ | ✓ | ✓ | — | — | — | if set |
+| Other operator-started | ✓ | federated | ✓ | ✓ | if set | ✓ | if set | if set | if set | if set |
+| Restarted | keeps the full set its record holds | | | | | | | | | |
+| Council | ✓ | federated | ✓ | ✓ | if set | ✓ | — | — | — | if set |
+| Eval | ✓ | federated | ✓ | ✓ | if set | ✓ | — | — | — | if set |
+
+- **Local sessions carry the local node name.** A session on the local host
+  carries the local node name in its `compute:` tag (`compute:local` when
+  the record stored no node), so no session is left without a compute tag.
+- **No Automaton, no `automaton:` tag.** A session with no Automaton carries
+  no `automaton:` tag (and no `automation:` tag), whatever role it runs as.
+  That is not an error.
+- **Restarted sessions keep the full set.** A restart re-runs the placement
+  stamp from the session's record, so a restarted session carries the same
+  axes it carried before, including role, kind, stage and Automaton.
+- An axis you have turned off (see [The ten axes](#the-ten-axes)) is left out
+  of every row.
+
 ### Filtering by a tag or an axis
 
 Every axis can be used as a filter on every surface:
