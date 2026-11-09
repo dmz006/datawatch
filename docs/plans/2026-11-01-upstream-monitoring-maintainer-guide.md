@@ -37,6 +37,21 @@ section at the end for the explicit exclusion.
 | Base-image rebuild, Trivy rescan of shipped images, stale-suppression detection | existing job — left as is | `.github/workflows/image-refresh.yaml` (daily 05:30 UTC) |
 | Accepted-risk registry, daily watch report, dismissed-alert check | existing tooling — left as is | `security/accepted-risks.yml`, `scripts/accepted_risks_daily_watch.py`, `scripts/dismissed_alerts_watch.py` |
 
+**Trivy install step (updated 2026-11-09):** the installer row above
+describes the workflows as they were written — an inline
+`curl … /trivy/main/contrib/install.sh | sh` fetch from the moving `main`
+branch that can fail silently and leave the worker with no scanner. The
+repo now carries a hardened installer, `scripts/ci-install-trivy.sh
+<tag> <dir>`, which pulls the install script **for the pinned version
+tag** (not `main`), into a temp file (no pipe-to-shell), with retries and
+a loud failure on a persistent download error. Once the "Install Trivy"
+steps in `release.yaml`, `containers.yaml` and `image-refresh.yaml` are
+migrated to it — still pending review as of this note — the installer is
+no longer fetched from `main` by the workflows, the standing-note row
+above reports no workflow lines, and the drift-vs-`main` finding loses its
+workflow-side target. The watcher itself is unchanged and will keep
+reporting exactly as the row describes until then.
+
 Rule of thumb: Dependabot opens pull requests for the three ecosystems it can
 see; the upstream-watch job reports (it never opens a PR, pushes, or edits a
 file) what Dependabot cannot see, because the edits for those pins are coupled
