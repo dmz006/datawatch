@@ -72,13 +72,16 @@ names as well (names, not registry IDs — that is what lets the PWA draw
 the placement chips on the Sessions page at first load, before the tag
 registry has loaded; see
 [automata-tags](../howto/automata-tags.md#placement-tags-the-system-tags)).
-The field is `omitempty` on that row: a session with no placement tags has
-no `system_tags` key in its summary row, so a summary row never carries an
-empty array — full records, by contrast, always carry the key and use an
-empty array for "no placement tags now". A client must treat a missing key
-as "no update" (the PWA holds the chips it already has), not as "no tags";
-an explicit empty array means the placement is gone, and the PWA drops the
-chip on that row.
+The field is always present in every session payload that carries it —
+the summary row, the full list record, the session detail and the tag
+update response: a session with no placement tags is sent as
+`"system_tags": []`, never as a missing key and never as null (pinned for
+the summary row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). An empty
+array means "no placement tags now", and the PWA drops the placement chip
+on that row; a row that omits the key entirely (a shape the server does
+not send) is treated as "no update" and keeps the chips the page already
+holds.
 No existing field changed. Deleting a tag is refused with 409
 while an Automaton or a session still carries it; the `count` in the 409
 body covers both.
