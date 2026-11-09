@@ -2138,6 +2138,13 @@ Response:
 - **Default:** `SessionStartConfirmDefaultSeconds = 120` and `NormalizeSessionStartConfirmSeconds` in `internal/config/session_start_confirm.go`. Zero or negative values normalize to the default.
 - **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence, and the same 20 lines are stored on the task as `start_failure_tail`. The session end reason reads `session start detector: <state> without assistant output for <n>s since its last evidence of work (or first silent tick), limit <n>s`. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.
 
+## Script gate timeout (autonomous.script_gate_timeout_seconds)
+
+- **Config key:** `autonomous.script_gate_timeout_seconds` (`int`, no `omitempty`, in `config.AutonomousConfig` in `internal/config/config.go`). Default `900` (`config.DefaultScriptGateTimeoutSeconds`, set in `DefaultConfig`).
+- **Meaning:** caps how long a script gate may run before it is stopped. `0` means no cap. A negative value is refused at load time by `validateScriptGateTimeout` (`internal/config/script_gate.go`), with an error that names the key and says 0 means no cap.
+- **Helper:** `(*AutonomousConfig).EffectiveScriptGateTimeout()` returns the cap as a `time.Duration`; `0` returns `0` (no cap).
+- **Tests:** `internal/config/script_gate_timeout_test.go` (`TestScriptGateTimeoutSetting*`).
+
 ## Lane fill (autonomous.lane_fill and the per-Automaton lane preference)
 
 - **Config block:** `autonomous.lane_fill` (`config.AutonomousLaneFillConfig` in `internal/config/config.go`, bridged by `LaneFillConfigFromYAML` in `internal/autonomous/lane_fill_config.go`). Keys: `mode` (`off`, `shadow`, `on`; empty means shadow), `gpu_lanes` (default 2), `claude_lanes` (default 3), `idle_alert_minutes` (default 30, 0 = off), `decompose_ahead_min` (default 2), `poll_seconds` (default 60, minimum 5), `gpu_backend` (default `pi-prompt`), `gpu_model` (empty), `claude_backend` (default `claude-code`), `count_verifier_wait` (default true). The `Effective*` helpers apply the defaults; validation is in `validate()` and `ValidateLaneFillMode`.

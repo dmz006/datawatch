@@ -3639,6 +3639,13 @@ type AutonomousConfig struct {
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
 	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`
 
+	// ScriptGateTimeoutSeconds caps how long a script gate may run before
+	// it is stopped. Default DefaultScriptGateTimeoutSeconds (900). 0 means
+	// no cap; a negative value is refused at load time. No omitempty, so an
+	// explicit 0 survives a round trip. See EffectiveScriptGateTimeout in
+	// script_gate.go.
+	ScriptGateTimeoutSeconds int `yaml:"script_gate_timeout_seconds" json:"script_gate_timeout_seconds"`
+
 	// Progress — parameters of the progress metrics engine (lane count,
 	// inactive-window gap, backlog file, start date, snapshot retention).
 	// See AutonomousProgressConfig.
@@ -7197,6 +7204,7 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
+			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
 			AutoFixRetries:                           1,
 			MaxConcurrentTasks:                       1,
 			UsageBackoff:                             UsageBackoffPauseBackend,
@@ -7868,6 +7876,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {
+		return err
+	}
+	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.Questions.validate(); err != nil {
