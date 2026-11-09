@@ -48,6 +48,7 @@ if anything would move) first and **aborts the release** if the folder
 needs tidying — run `scripts/tidy-plans.sh` (no flags) to do the moves and
 the registry hygiene, then commit before re-running smoke. `--dry-run`
 reports counts without changing anything.
+See [`docs/howto/plans-folder-tidy.md`](../howto/plans-folder-tidy.md) for the folder rules, the daily Automation and every setting.
 
 **PRD authoring checklist — local-environment leaks:** a PRD's specs,
 test fixtures and docs must carry no operator-machine identifiers
