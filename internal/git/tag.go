@@ -94,6 +94,9 @@ func CreateTagForHost(ctx context.Context, dir, tag, message string, host GitHos
 		return err
 	}
 	_, err := Run(ctx, dir, TagCreateArgsForHost(tag, message, host)...)
+	if err == nil {
+		recordHostOperation(ctx, host, HostAuditTag, "", tag)
+	}
 	return err
 }
 
