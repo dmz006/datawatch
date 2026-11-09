@@ -34,9 +34,9 @@ planner, and what that session left behind:
 
 That is the `reattach` (default) value. `restart` skips straight to the one
 automatic planning restart at boot, and `draft` resets the Automaton to draft,
-as before the setting existed. Every outcome is recorded in the Automaton's
-decisions and the boot-resume report, and live planner sessions that no reader
-owns are ended.
+as before the setting existed. Every outcome lands in the boot-resume report
+(see [Reading the recorded decision](#reading-the-recorded-decision)) and in
+the daemon log, and live planner sessions that no reader owns are ended.
 
 The planning boot path, the verifier/judge re-attach and the detached
 verification-script pickup (below) are all in this tree, and the force-flag
@@ -81,9 +81,49 @@ described under [Current status](#current-status).
 - Use `reattach` when planning is healthy and you expect the restart to be quick.
   The intent is that nothing is lost and no planning work is repeated.
 - Use `restart` when you suspect the planning run in the old process is stuck. The
-  intent is that planning starts again once, and the Automaton's decisions show it.
+  intent is that planning starts again once, and the boot-resume report shows it
+  (see [Reading the recorded decision](#reading-the-recorded-decision)).
 - Use `draft` when you want to review the Automaton before any planning runs again.
   The Automaton returns to draft and you request planning yourself.
+
+## Reading the recorded decision
+
+Every planning outcome the daemon takes at boot — the automatic planning
+restart included — is one entry in the loop status' `boot_resume` array, in
+the order the boot-resume scan took them:
+
+- `prd_id` — the Automaton's id;
+- `outcome` — `planning_restarted` for the automatic restart,
+  `planning_ingested` for a plan recovered from the planner's output file,
+  `planning_reset_to_draft` for the reset;
+- `reason` — the policy in force, what the planner session left behind,
+  whether the one automatic restart was already used, and how many live
+  planner sessions with no reader were ended;
+- `at` — when the daemon took it.
+
+The array is empty until the daemon has restarted with a planning Automaton
+in flight, and it lives for the life of the daemon process that booted; the
+durable copy is the daemon log line
+(`[autonomous] boot-resume: prd=<id> was planning on restart: <reason>
+(action=<action>)`).
+
+| Method | How |
+|--------|-----|
+| **REST API** | `GET /api/autonomous/status` — the `boot_resume` array in the body. |
+| **MCP** | `autonomous_loop_status` — the `boot_resume` array. |
+| **CLI** | `datawatch autonomous status` — JSON, the `boot_resume` array. |
+
+An entry for the automatic restart looks like:
+
+```json
+{
+  "prd_id": "a1b2c3d4",
+  "outcome": "planning_restarted",
+  "age_seconds": 0,
+  "reason": "reattach: the planner session ended and left no usable output (partial); planning is restarted once automatically; policy=reattach; planning is started again once and planning_restarted_once is now set, so a further restart falls back to draft. No live planner session was left without a reader.",
+  "at": "2026-11-09T06:12:41Z"
+}
+```
 
 ## Verifying, judging, and verification scripts
 
