@@ -180,14 +180,14 @@ Subcommands:
   scan-config-set <k=v,...>       Update scan config fields (BL221 Phase 3)
   types-list                      List automaton type registry (BL221 Phase 4)
   type-register                   Register or update an automaton type (BL221 Phase 4)
-  template-list                   List template store (BL221 Phase 2)
+  template-list                   List Automaton templates
   standard-tasks                  List the standard tasks the decomposer adds to each story
-  template-create                 Create a template (BL221 Phase 2)
-  template-get <id>               Fetch one template (BL221 Phase 2)
-  template-update <id>            Update a template (BL221 Phase 2)
-  template-delete <id>            Delete a template (BL221 Phase 2)
-  template-instantiate <id>       Create PRD from template (BL221 Phase 2)
-  template-clone <prd-id>         Clone PRD to template (BL221 Phase 2)
+  template-create                 Create a template
+  template-get <id>               Fetch one template
+  template-update <id>            Update a template
+  template-delete <id>            Delete a template
+  template-instantiate <id>       Create PRD from template
+  template-clone <prd-id>         Clone PRD to template
   prd-instantiate <tmpl-id>       Instantiate legacy YAML template (BL191)
   learnings                       List extracted post-task learnings
   subscriptions [--owner X]       List persisted lifecycle event subscriptions (BL427)
