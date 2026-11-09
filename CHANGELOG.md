@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`git.hosts`: a configured list of git hosts.** Each entry names a host (GitHub, GitLab, Gitea, Bitbucket or a plain git remote), how its token is obtained (`host_login` by default, `vault`, or `broker`; a vault entry is named, never stored by value), and whether tags for it are signed (`sign_tags`, optional `signing_key`). Defaults apply at config load and `ValidateGitHosts` reports every problem in one pass. Dotted keys `git.hosts.<name>.<field>` can be read and set through `GetGitHostField` / `SetGitHostField` (`internal/config/git_hosts.go`). This is the config model only; no push path uses it yet.
+
 ## v9.112.9 — Switch the page to the chosen federated host from the server picker
 
 ### Fixed
