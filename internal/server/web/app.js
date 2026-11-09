@@ -18346,6 +18346,20 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.failure_escalation.enabled', label: 'Failure escalation enabled', labelKey: 'settings_failure_escalation_enabled', type: 'toggle' },
     { key: 'autonomous.failure_escalation.max_failures', label: 'Failed attempts before the task is held for review (minimum 1, default 3)', labelKey: 'settings_failure_escalation_max_failures', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
     { key: 'autonomous.failure_escalation.steps', label: 'Escalation steps (backend:model@attempts, comma separated)', labelKey: 'settings_failure_escalation_steps', type: 'failure_escalation_steps', placeholder: 'ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5', hintKey: 'settings_failure_escalation_steps_hint' },
+    // Attempt cost — the cheap first-attempt worker per task kind, how many
+    // failures before the strong worker takes over, and the cap on resumed
+    // retry context. Every field saves on change through saveAttemptCostField
+    // or saveAttemptCostNumber, which shows the daemon's refusal inline.
+    { key: 'autonomous.first_attempt.implementation.backend', label: 'First attempt backend: implementation tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_implementation_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.implementation.backend', this)" },
+    { key: 'autonomous.first_attempt.implementation.model', label: 'First attempt model: implementation tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_implementation_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.implementation.model', this)" },
+    { key: 'autonomous.first_attempt.docs.backend', label: 'First attempt backend: docs tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_docs_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.docs.backend', this)" },
+    { key: 'autonomous.first_attempt.docs.model', label: 'First attempt model: docs tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_docs_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.docs.model', this)" },
+    { key: 'autonomous.first_attempt.note.backend', label: 'First attempt backend: note tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_note_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.note.backend', this)" },
+    { key: 'autonomous.first_attempt.note.model', label: 'First attempt model: note tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_note_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.note.model', this)" },
+    { key: 'autonomous.first_attempt.final_gate.backend', label: 'First attempt backend: final gate tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_final_gate_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.final_gate.backend', this)" },
+    { key: 'autonomous.first_attempt.final_gate.model', label: 'First attempt model: final gate tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_final_gate_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.final_gate.model', this)" },
+    { key: 'autonomous.first_attempt_escalate_after_failures', label: 'Failed attempts before the strong worker takes over (0 to 20, default 1)', labelKey: 'settings_attempt_cost_escalate_after', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'number', min: 0, max: 20, step: 1, placeholder: '1', onchange: "saveAttemptCostNumber('autonomous.first_attempt_escalate_after_failures', this, 0, 20)" },
+    { key: 'autonomous.retry_resume_max_context_tokens', label: 'Resume context limit for retries, in tokens (0 to 2000000, default 150000; 0 = always start fresh)', labelKey: 'settings_attempt_cost_resume_limit', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'number', min: 0, max: 2000000, step: 1, placeholder: '150000', onchange: "saveAttemptCostNumber('autonomous.retry_resume_max_context_tokens', this, 0, 2000000)" },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
     // Plan-coverage gate — how strictly decompose must cover the spec's
@@ -20565,6 +20579,7 @@ function _taskAttemptsHTML(task) {
         <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
       <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
       ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${_attemptWhyHTML(a)}
       ${a.memory_killed ? `<div class="prd-task-attempt-memory" style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('memory_attempt_over_limit', [String(a.ceiling_mb || 0), a.killed_process || t('memory_attempt_unknown_process'), String(a.peak_memory_mb || 0)]))}</div>` : ''}
       ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
       ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
@@ -20642,6 +20657,109 @@ function _cfgTextareaText(val) {
 
 function saveGeneralField(key, value) {
   saveGeneralConfigPut(key, value);
+}
+
+// Attempt-cost settings. A write the daemon refuses shows its message inline,
+// in a line under the field that was edited, and the field keeps the text the
+// operator typed so it can be corrected. A saved write clears that line.
+function _attemptCostErrorEl(el, create) {
+  const row = (el && el.closest && el.closest('.settings-row')) || (el && el.parentElement);
+  if (!row) return null;
+  let err = row.querySelector('.attempt-cost-error');
+  if (!err && create) {
+    err = document.createElement('div');
+    err.className = 'attempt-cost-error';
+    err.setAttribute('role', 'alert');
+    err.style.cssText = 'flex-basis:100%;font-size:11px;color:#ef4444;margin-top:4px;';
+    row.appendChild(err);
+  }
+  return err;
+}
+
+function _showAttemptCostError(el, message) {
+  const err = _attemptCostErrorEl(el, true);
+  if (err) {
+    err.textContent = message;
+    err.style.display = '';
+  } else {
+    showToast(message, 'error');
+  }
+}
+
+function _clearAttemptCostError(el) {
+  const err = _attemptCostErrorEl(el, false);
+  if (err) {
+    err.textContent = '';
+    err.style.display = 'none';
+  }
+}
+
+// _attemptCostRefusalText reads the daemon's refusal: a JSON body carries its
+// message under error or message; any other body is shown as sent. An empty
+// body falls back to the generic refusal line.
+function _attemptCostRefusalText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return t('settings_attempt_cost_error_refused');
+  try {
+    const body = JSON.parse(raw);
+    const msg = body && (body.error || body.message);
+    if (msg) return String(msg);
+  } catch (_) { /* not JSON: show the body as sent */ }
+  return raw;
+}
+
+function _saveAttemptCost(key, value, el) {
+  // Proxy-aware like the other general-settings writes.
+  return fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => {
+      if (r.ok) {
+        _clearAttemptCostError(el);
+        showToast('Saved', 'success', 1500);
+        return null;
+      }
+      return r.text().then(text => _showAttemptCostError(el, _attemptCostRefusalText(text)));
+    })
+    .catch(() => _showAttemptCostError(el, t('settings_attempt_cost_error_network')));
+}
+
+// saveAttemptCostField saves a first-attempt backend or model. An empty box
+// clears the entry (the normal choice applies); the daemon checks the value.
+function saveAttemptCostField(key, el) {
+  return _saveAttemptCost(key, String(el && el.value != null ? el.value : '').trim(), el);
+}
+
+// saveAttemptCostNumber saves a whole-number attempt-cost setting once it
+// falls inside the range the daemon enforces. An empty, non-whole or
+// out-of-range entry is reported inline and nothing is sent.
+function saveAttemptCostNumber(key, el, min, max) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isInteger(n) || n < min || n > max) {
+    _showAttemptCostError(el, t('settings_attempt_cost_error_range', [String(min), String(max)]));
+    return null;
+  }
+  return _saveAttemptCost(key, n, el);
+}
+
+// _attemptWhyHTML draws the attempt's backend reason, whether it resumed the
+// previous session or started fresh (with the retry decision's reason), and
+// the no-retry reason when the failure held the task without another attempt.
+function _attemptWhyHTML(a) {
+  const parts = [];
+  if (a.backend_reason) {
+    parts.push(`<div style="font-size:11px;">${escHtml(t('review_attempt_why'))}: ${escHtml(a.backend_reason)}</div>`);
+  }
+  const mode = a.resumed ? t('review_attempt_resumed') : t('review_attempt_fresh');
+  const why = a.resume_reason ? ` · ${escHtml(t('review_attempt_resume_reason'))}: ${escHtml(a.resume_reason)}` : '';
+  parts.push(`<div style="font-size:11px;">${escHtml(mode)}${why}</div>`);
+  if (a.no_retry_reason) {
+    parts.push(`<div style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('review_attempt_no_retry'))}: ${escHtml(a.no_retry_reason)}</div>`);
+  }
+  return parts.join('');
 }
 
 // settingsHelpLink: the ? help entry on a field with helpDocs. It opens the
