@@ -1083,6 +1083,17 @@ Read-only views of the agent trace the daemon records (tool calls, results, mode
 
 The `tracing.*` settings are changed with `config_set` and read with `get_config`.
 
+### `git_hosts_status`, `git_hosts_test`
+
+Check the git hosts set under `git.hosts`. Neither tool returns a token; a vault credential shows its secret name only.
+
+| Tool | Parameters | Returns |
+|------|-----------|---------|
+| `git_hosts_status` | none | Every configured host with its kind, credential source and readiness (logged in, account, token scopes, fix command, problem); same data as `GET /api/git/hosts` |
+| `git_hosts_test` | `name` (required) — a configured host name | `ok`, `account`, a plain-language `message` and a `fix_command` when the test fails; same data as `POST /api/git/hosts/{name}/test`. An unknown name returns a tool error |
+
+Example: `git_hosts_test` with `{"name": "github"}` returns `{"host":"github","ok":true,"message":"..."}`.
+
 ### `cost_report`
 
 Cost report over the daemon's recorded session spend: the `internal/costreport` engine, the same engine call `GET /api/cost/report` makes, with the daemon's `cost_report` config block as the source of every default. Grouped by automaton, automation, backend or week (the `group_by=release` grouping is REST/CLI-only — it needs shipped-unit state this tool does not expose, and is rejected with a clear message); token totals always, USD estimates when rates are configured, and — where the owning provider has a `usage.billing` profile — the billing label (a bundled plan reads “bundled plan — API-equivalent, not billed”) with the point figures. Read-only.

@@ -126,6 +126,8 @@ Selected core tools:
 | `send_input` | Send a reply to a session waiting for input |
 | `kill_session` | Terminate a session |
 | `session_children` | List child sessions spawned by a parent session (v8.10.0) |
+| `git_hosts_status` | List configured git hosts with their readiness |
+| `git_hosts_test` | Run the test connection for one git host by name |
 | `reply_to_parent` | Send a message back to the spawning parent session (v8.10.0) |
 | `session_tag_list` | List the tags in use across live and archived sessions: each entry has the tag, its `axis` and `value` from the `axis:value` form (`axis` empty for a plain tag) and the count of sessions carrying it — a session counts once per tag and its own, system and inherited tags all count; sorted by axis (tags without an axis last), count (descending), then tag; read-only |
 | `cost_report` | Cost report over the daemon's recorded session spend (the `internal/costreport` engine, same engine call as `GET /api/cost/report`): grouped by automaton, automation, backend or week (the `group_by=release` grouping is REST/CLI-only — it needs shipped-unit state this tool does not expose); token totals always, USD estimates when rates are configured, and the billing label from the owning provider's `usage.billing` profile — a bundled plan reads “bundled plan — API-equivalent, not billed” with the API-equivalent figure, usage points and share of the monthly price; optional `group_by`, `since`, `until` — the grouping and window defaults come from the `cost_report` config section; read-only |
