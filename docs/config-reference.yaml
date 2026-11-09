@@ -2061,6 +2061,20 @@ autonomous:
   #   or changes a registry entry.
   # version_files: project files, relative to the project, that carry the
   #   `var Version = "X.Y.Z"` line the release-version step sets. Default none.
+  # release_size_map: how much a merge steps the version, per Automaton kind.
+  #   Built-in (always present): feature=minor, bug=patch. A global or
+  #   project entry adds to or overrides the built-in. A value must be
+  #   patch, minor, major or none; a major entry is stored but never used -
+  #   a major is only ever an explicit release_size: major or a completed
+  #   milestone Automation. Unset reads the built-in map.
+  # major_trigger: manual | milestone | never. Default manual. manual: the
+  #   explicit major is the only route besides a breaking change; milestone:
+  #   a completed Automation marked `milestone` also steps major; never: a
+  #   milestone never steps a major.
+  # release_cadence: per_merge. Default per_merge. batch and manual are
+  #   named values refused as not available yet; any other name is invalid.
+  # version_scheme: semver. Default semver. Any other name is refused as not
+  #   available yet.
   # merge_pipeline:
   #   file_name: .datawatch/merge-pipeline.yaml
   #   source_order: [file, record]
@@ -2068,6 +2082,10 @@ autonomous:
   #   conflict_policy: mechanical_and_model
   #   conflict_model: claude-opus-5-5
   #   version_files: []
+  #   release_size_map: {feature: minor, bug: patch}
+  #   major_trigger: manual
+  #   release_cadence: per_merge
+  #   version_scheme: semver
   #   projects: {}
 
   # Post-ship hooks (autonomous.merge_pipeline.post_ship): the small steps a

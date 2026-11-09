@@ -69,3 +69,19 @@ func formatLivenessOverrides(m map[string]int) string {
 	}
 	return strings.Join(parts, ",")
 }
+
+// isMergePipelineReleaseKey reports whether key is one of the four release
+// settings of the merge pipeline block, global or for one project. A refusal of
+// a valid JSON value for one of them keeps the daemon's message, as the
+// liveness keys do, rather than being replaced by a quoted retry.
+func isMergePipelineReleaseKey(key string) bool {
+	if !strings.HasPrefix(key, "autonomous.merge_pipeline.") {
+		return false
+	}
+	for _, f := range []string{"release_size_map", "major_trigger", "release_cadence", "version_scheme"} {
+		if strings.HasSuffix(key, "."+f) {
+			return true
+		}
+	}
+	return false
+}

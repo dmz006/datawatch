@@ -11933,6 +11933,9 @@ func newConfigSetCmd() *cobra.Command {
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
 			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
+			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
+			"autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet). Each also takes the form autonomous.merge_pipeline.projects.<project>.<key> for one project.\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
@@ -11997,7 +12000,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
 		// A liveness value that is valid JSON and was refused keeps the daemon's
 		// message; quoting it again would replace it with a bad-JSON error.
-		if isLivenessConfigKey(key) && json.Valid([]byte(value)) {
+		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)

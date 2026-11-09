@@ -9735,6 +9735,14 @@ const DOCS_POST_SHIP_LINKS = [
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
 const DOCS_MERGE_PIPELINE_LINKS = [
+  // Release settings: the release size map, major trigger, release cadence
+  // and version scheme open the Release size entry of the definitions.
+  [['autonomous.merge_pipeline.release_size_map', 'autonomous.merge_pipeline.major_trigger',
+    'autonomous.merge_pipeline.release_cadence', 'autonomous.merge_pipeline.version_scheme',
+    'settings_merge_pipeline_release_size_map', 'settings_merge_pipeline_major_trigger',
+    'settings_merge_pipeline_release_cadence', 'settings_merge_pipeline_version_scheme',
+    'merge_pipeline_release_size_', 'merge_pipeline_major_', 'merge_pipeline_cadence_', 'merge_pipeline_scheme_'],
+    DOCS_DEFINITIONS + '#release-size'],
   [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
@@ -14745,6 +14753,164 @@ window.shippedChipLabel = shippedChipLabel;
 // shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
 // the release + merge metadata in the tooltip and the shipped_chip docs
 // link. Returns '' for non-shipped records.
+// Release size of an Automaton (Phase 4). The list row and the detail header
+// show the resolved size with the layer that decided it, and a breaking-change
+// badge when the flag is set. A none or unresolved size with the flag off
+// shows nothing. An explicit release_size is layer 1 and is already resolved;
+// the other layers arrive as the server's read-only release_size_resolved and
+// release_size_source.
+const AUTOMATON_RELEASE_SIZES = ['patch', 'minor', 'major'];
+const AUTOMATON_RELEASE_SOURCE_KEYS = {
+  explicit: 'automaton_release_source_explicit',
+  automation_milestone: 'automation_release_source_milestone',
+  project_map: 'automaton_release_source_project',
+  built_in_default: 'automaton_release_source_default',
+};
+function automatonReleaseInfo(rec) {
+  const explicit = String((rec && rec.release_size) || '').trim().toLowerCase();
+  let size = '';
+  let source = '';
+  if (explicit === 'none' || AUTOMATON_RELEASE_SIZES.includes(explicit)) {
+    size = explicit;
+    source = 'explicit';
+  } else {
+    const resolved = String((rec && rec.release_size_resolved) || '').trim().toLowerCase();
+    if (AUTOMATON_RELEASE_SIZES.includes(resolved)) {
+      size = resolved;
+      source = String((rec && rec.release_size_source) || '').trim().toLowerCase();
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(AUTOMATON_RELEASE_SOURCE_KEYS, source)) source = '';
+  const breaking = !!(rec && rec.breaking_change);
+  return {
+    size,
+    source,
+    showSize: AUTOMATON_RELEASE_SIZES.includes(size),
+    showBreaking: breaking,
+  };
+}
+function automatonReleaseSizeLabel(size) {
+  if (size === 'patch') return t('automaton_release_size_patch');
+  if (size === 'minor') return t('automaton_release_size_minor');
+  if (size === 'major') return t('automaton_release_size_major');
+  return t('automaton_release_size_none');
+}
+// automatonReleaseBadgesHtml renders the release-size chip and the breaking
+// badge for an Automaton row or header. It returns '' when there is nothing to
+// show, so an empty status leaves the markup unchanged.
+function automatonReleaseBadgesHtml(rec) {
+  const info = automatonReleaseInfo(rec);
+  if (!info.showSize && !info.showBreaking) return '';
+  const base = 'font-size:10px;padding:2px 7px;border-radius:8px;margin-left:6px;font-weight:600;white-space:nowrap;display:inline-block;vertical-align:middle;';
+  let html = '';
+  if (info.showSize) {
+    const label = t('automaton_release_size_label');
+    const sizeText = automatonReleaseSizeLabel(info.size);
+    const sourceText = info.source ? t(AUTOMATON_RELEASE_SOURCE_KEYS[info.source]) : '';
+    const text = sourceText ? sizeText + ' · ' + sourceText : sizeText;
+    html += `<span class="automaton-release-chip" data-release-size="${escHtml(info.size)}" data-release-source="${escHtml(info.source)}" style="${base}border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);" title="${escHtml(label + ': ' + text)}">${escHtml(label)}: ${escHtml(text)}</span>`;
+  }
+  if (info.showBreaking) {
+    html += `<span class="automaton-breaking-badge" style="${base}border:1px solid #ef4444;color:#fff;background:#ef4444;" title="${escHtml(t('automaton_release_breaking_hint'))}">${escHtml(t('automaton_release_breaking_label'))}</span>`;
+  }
+  return html;
+}
+window.automatonReleaseBadgesHtml = automatonReleaseBadgesHtml;
+
+// Milestone marker. An Automation with milestone set shows a badge on its list
+// row and in its detail header; an ordinary arc shows nothing. The detail header
+// carries the toggle that marks or unmarks it through the Automation update
+// path (PUT /api/automations/{id}).
+function automationIsMilestone(a) {
+  return !!(a && a.milestone === true);
+}
+// automationMilestoneBadgeHtml is the badge for a milestone, or '' otherwise.
+function automationMilestoneBadgeHtml(a) {
+  if (!automationIsMilestone(a)) return '';
+  const style = 'font-size:10px;padding:2px 7px;border-radius:8px;margin-left:6px;font-weight:600;white-space:nowrap;display:inline-block;vertical-align:middle;border:1px solid var(--accent);color:var(--accent);background:rgba(245,158,11,0.12);';
+  return `<span class="automation-milestone-badge" data-milestone="true" style="${style}" title="${escHtml(t('automation_milestone_hint'))}">${escHtml(t('automation_milestone_badge'))}</span>`;
+}
+window.automationMilestoneBadgeHtml = automationMilestoneBadgeHtml;
+
+// automationMilestoneToggleHtml is the detail-header button that marks or
+// unmarks the milestone. Its aria-pressed state mirrors the current value.
+function automationMilestoneToggleHtml(a) {
+  const on = automationIsMilestone(a);
+  const label = t(on ? 'automation_milestone_unmark' : 'automation_milestone_mark');
+  return `<button type="button" class="btn-secondary automation-milestone-toggle" data-milestone="${on ? 'true' : 'false'}" aria-pressed="${on ? 'true' : 'false'}" onclick="automationToggleMilestone('${escJsAttr(a.id)}')">${escHtml(label)}</button>`;
+}
+
+// automationMilestoneBody is the full update body for a milestone change. The
+// update path overwrites the Automation's own settings from the body and keeps
+// only the members, decision assistant, auto tags and milestone when they are
+// absent, so the body echoes every loaded setting back unchanged.
+function automationMilestoneBody(a, milestone) {
+  return {
+    name: a.name || '',
+    description: a.description || '',
+    entry_member_id: a.entry_member_id || '',
+    budget_policy: a.budget_policy || null,
+    project_dir: a.project_dir || '',
+    backend: a.backend || '',
+    model: a.model || '',
+    effort: a.effort || '',
+    verification_backend: a.verification_backend || '',
+    verification_model: a.verification_model || '',
+    verification_effort: a.verification_effort || '',
+    milestone: !!milestone,
+    expected_version: Number(a.version) || 0,
+    actor: 'operator',
+  };
+}
+
+// automationSetMilestone marks or unmarks the open Automation through PUT. The
+// update does not carry the planning LLM pair, so when the Automation had one it
+// is put back through set_llm straight after. A 409 opens the stale prompt; any
+// other failure is a toast. Resolves the updated Automation, or null on failure.
+function automationSetMilestone(id, milestone) {
+  const st = _automationState;
+  const a = st.detail;
+  if (!a || a.id !== id) return Promise.resolve(null);
+  const planningBackend = String(a.planning_backend || '');
+  const planningModel = String(a.planning_model || '');
+  const base = '/api/automations/' + encodeURIComponent(id);
+  return automationRequest('PUT', base, automationMilestoneBody(a, milestone))
+    .then(data => {
+      if (!data || typeof data !== 'object') return data;
+      if (!planningBackend && !planningModel) return data;
+      return automationRequest('POST', base + '/set_llm', {
+        planning_backend: planningBackend,
+        planning_model: planningModel,
+        expected_version: Number(data.version) || 0,
+        actor: 'operator',
+      }).then(restored => (restored && typeof restored === 'object' ? restored : data), restoreErr => {
+        showToast(String((restoreErr && restoreErr.message) || restoreErr || ''), 'error');
+        return data;
+      });
+    })
+    .then(data => {
+      if (data && typeof data === 'object' && st.detailId === id) {
+        st.detail = data;
+        _automationDrawDetail(data);
+      }
+      return data;
+    }, err => {
+      const message = String((err && err.message) || err || '');
+      if (err && err.status === 409) automationShowStalePrompt(message);
+      else showToast(message, 'error');
+      return null;
+    });
+}
+window.automationSetMilestone = automationSetMilestone;
+
+// automationToggleMilestone flips the open Automation's milestone flag.
+function automationToggleMilestone(id) {
+  const a = _automationState.detail;
+  if (!a || a.id !== id) return Promise.resolve(null);
+  return automationSetMilestone(id, !automationIsMilestone(a));
+}
+window.automationToggleMilestone = automationToggleMilestone;
+
 function shippedChipHtml(rec) {
   if (!_shippedState.enabled || !_shippedState.show_chip) return '';
   if (!shippedCarriesState(rec)) return '';
@@ -15126,7 +15292,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -17480,6 +17646,8 @@ function openPRDSettingsModal(prdID) {
       const cur = {
         type:                 prd.type || '',
         kind:                 prd.kind || '',
+        release_size:         prd.release_size || '',
+        breaking_change:      !!prd.breaking_change,
         lane_preference:      prd.lane_preference || 'any',
         backend:              prd.backend || '',
         effort:               prd.effort || '',
@@ -17597,6 +17765,23 @@ function openPRDSettingsModal(prdID) {
               <label class="wizard-label">${escHtml(t('prd_settings_priority_label')||'Capacity queue priority (higher runs first)')}</label>
               <input type="number" id="prdSettingsPriority" class="form-input" min="-100" max="100" value="${cur.priority}" placeholder="0" style="width:80px;" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_priority_hint')||'Used when tasks wait for free capacity.')}</div>
+            </div>
+            <div class="wizard-grid-mobile" style="margin-top:2px;">
+              <div class="wizard-field">
+                <label class="wizard-label" for="prdSettingsReleaseSize">${escHtml(t('automaton_release_size_label'))}</label>
+                <select id="prdSettingsReleaseSize" class="form-select">
+                  <option value="" ${!cur.release_size?'selected':''}>${escHtml(t('automaton_release_size_resolve'))}</option>
+                  ${['patch','minor','major','none'].map(v => `<option value="${v}" ${cur.release_size===v?'selected':''}>${escHtml(automatonReleaseSizeLabel(v))}</option>`).join('')}
+                </select>
+                <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('automaton_release_size_hint'))}</div>
+              </div>
+              <div class="wizard-field">
+                <label class="wizard-label" style="display:flex;gap:6px;align-items:center;">
+                  <input type="checkbox" id="prdSettingsBreakingChange" ${cur.breaking_change?'checked':''} />
+                  ${escHtml(t('automaton_release_breaking_label'))}
+                </label>
+                <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('automaton_release_breaking_hint'))}</div>
+              </div>
             </div>
             <div class="wizard-field" style="margin-top:2px;">
               <label class="wizard-label">${escHtml(t('prd_settings_write_dirs_label')||'Writable directories (comma-separated, absolute; empty = project dir)')}</label>
@@ -17764,6 +17949,22 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_kind', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ kind: newKind }),
+            }));
+          }
+          // Release size and breaking flag (Phase 4). An empty release_size
+          // resolves the size again from the layers below it.
+          const newReleaseSize = document.getElementById('prdSettingsReleaseSize')?.value || '';
+          if (newReleaseSize !== cur.release_size) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_release_size', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ release_size: newReleaseSize }),
+            }));
+          }
+          const newBreakingChange = !!document.getElementById('prdSettingsBreakingChange')?.checked;
+          if (newBreakingChange !== cur.breaking_change) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_breaking_change', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ breaking_change: newBreakingChange }),
             }));
           }
           const newLanePreference = document.getElementById('prdSettingsLanePreference')?.value || 'any';
@@ -18585,6 +18786,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
+    { key: 'autonomous.merge_pipeline.release_size_map', label: 'Release size by kind (the step each Automaton kind adds to the version)', labelKey: 'settings_merge_pipeline_release_size_map', helpKey: 'settings_merge_pipeline_release_size_map_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'release_size_map' },
+    { key: 'autonomous.merge_pipeline.major_trigger', label: 'Major release trigger (manual, milestone or never; default manual)', labelKey: 'settings_merge_pipeline_major_trigger', helpKey: 'settings_merge_pipeline_major_trigger_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['manual', 'milestone', 'never'], optionLabelKeys: { manual: 'merge_pipeline_major_manual', milestone: 'merge_pipeline_major_milestone', never: 'merge_pipeline_major_never' }, default: 'manual', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.major_trigger', this)" },
+    { key: 'autonomous.merge_pipeline.release_cadence', label: 'Release cadence (per_merge, batch or manual; default per_merge)', labelKey: 'settings_merge_pipeline_release_cadence', helpKey: 'settings_merge_pipeline_release_cadence_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['per_merge', 'batch', 'manual'], optionLabelKeys: { per_merge: 'merge_pipeline_cadence_per_merge', batch: 'merge_pipeline_cadence_batch', manual: 'merge_pipeline_cadence_manual' }, default: 'per_merge', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.release_cadence', this)" },
+    { key: 'autonomous.merge_pipeline.version_scheme', label: 'Version scheme (semver; default semver)', labelKey: 'settings_merge_pipeline_version_scheme', helpKey: 'settings_merge_pipeline_version_scheme_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['semver'], optionLabelKeys: { semver: 'merge_pipeline_scheme_semver' }, default: 'semver', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.version_scheme', this)" },
     // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
     // every hook is disabled until you switch it on. The four builtins are
     // registry_row, parity_issue, tag and notify; the registry, companion
@@ -19844,6 +20049,20 @@ function loadGeneralConfig() {
                   });
               };
             }, 0);
+          } else if (f.type === 'release_size_map') {
+            // Kind-to-size rows: one row per Automaton kind with its release
+            // size. Save PUTs the whole map as a JSON object.
+            const _rsMap = (val && typeof val === 'object') ? val : {};
+            const _rsRows = Object.keys(_rsMap).sort().map(k => _releaseSizeMapRowHTML(k, _rsMap[k])).join('');
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <div id="release_size_map_rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">${_rsRows}</div>
+              <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn-secondary" style="font-size:11px;" onclick="addReleaseSizeMapRow()">${escHtml(t('settings_merge_pipeline_release_size_map_add'))}</button>
+                <button class="btn-secondary" style="font-size:11px;" onclick="saveReleaseSizeMap()">${escHtml(t('settings_merge_pipeline_release_size_map_save'))}</button>
+              </div>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
           } else if (f.type === 'post_ship_hooks') {
             // Seed the editable copy from the config GET (the daemon returns
             // the array) and render the initial rows straight into the html.
@@ -20645,6 +20864,84 @@ function _cfgTextareaText(val) {
     return Object.keys(val).length ? JSON.stringify(val) : '';
   }
   return String(val || '');
+}
+
+// Release settings on the Merge pipeline card. The sizes a kind may take.
+const RELEASE_SIZE_CHOICES = ['patch', 'minor', 'major', 'none'];
+const RELEASE_SIZE_LABEL_KEYS = {
+  patch: 'merge_pipeline_release_size_patch',
+  minor: 'merge_pipeline_release_size_minor',
+  major: 'merge_pipeline_release_size_major',
+  none: 'merge_pipeline_release_size_none',
+};
+
+// _releaseSizeMapRowHTML: one kind row of the release size map, a kind text
+// box, a size select and a remove button.
+function _releaseSizeMapRowHTML(kind, size) {
+  const opts = RELEASE_SIZE_CHOICES.map(s =>
+    `<option value="${s}" ${s === String(size) ? 'selected' : ''}>${escHtml(t(RELEASE_SIZE_LABEL_KEYS[s]))}</option>`
+  ).join('');
+  return `<div class="release-size-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <input type="text" class="form-input" data-release-kind value="${escHtml(kind)}" placeholder="${escHtml(t('settings_merge_pipeline_release_size_map_kind'))}" aria-label="${escHtml(t('settings_merge_pipeline_release_size_map_kind'))}" style="flex:1;min-width:120px;" />
+    <select class="form-select" data-release-size aria-label="${escHtml(t('settings_merge_pipeline_release_size_map_size'))}" style="width:auto;">${opts}</select>
+    <button class="btn-secondary" style="font-size:11px;" onclick="this.closest('.release-size-row').remove()">${escHtml(t('settings_merge_pipeline_release_size_map_remove'))}</button>
+  </div>`;
+}
+
+// addReleaseSizeMapRow appends an empty kind row, sized minor by default.
+function addReleaseSizeMapRow() {
+  const list = document.getElementById('release_size_map_rows');
+  if (!list) return;
+  list.insertAdjacentHTML('beforeend', _releaseSizeMapRowHTML('', 'minor'));
+}
+
+// saveReleaseSizeMap reads the kind rows and PUTs them as one object. A blank
+// or repeated kind is refused in the browser before anything is sent.
+function saveReleaseSizeMap() {
+  const list = document.getElementById('release_size_map_rows');
+  if (!list) return;
+  const map = {};
+  let err = '';
+  list.querySelectorAll('.release-size-row').forEach(row => {
+    const kind = (row.querySelector('[data-release-kind]').value || '').trim();
+    const size = row.querySelector('[data-release-size]').value;
+    if (!kind) {
+      err = err || t('settings_merge_pipeline_release_size_map_empty_kind');
+    } else if (Object.prototype.hasOwnProperty.call(map, kind)) {
+      err = err || t('settings_merge_pipeline_release_size_map_duplicate', [kind]);
+    } else {
+      map[kind] = size;
+    }
+  });
+  if (err) { showToast(err, 'error'); return; }
+  putMergePipelineSetting('autonomous.merge_pipeline.release_size_map', map, null);
+}
+
+// saveMergePipelineReleaseField saves a release select (major trigger, release
+// cadence, version scheme) when it changes.
+function saveMergePipelineReleaseField(key, el) {
+  putMergePipelineSetting(key, el.value, el);
+}
+
+// putMergePipelineSetting PUTs one merge pipeline value to /api/config. A
+// refused value (the daemon answers 400 with the reason) is shown in full and
+// the select goes back to the value in effect, so the control never shows a
+// value the daemon did not keep.
+function putMergePipelineSetting(key, value, el) {
+  fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => r.text().then(body => {
+      if (r.ok) { showToast('Saved', 'success', 1500); return; }
+      if (el && el.tagName === 'SELECT') {
+        const saved = Array.from(el.options).find(o => o.defaultSelected);
+        if (saved) el.value = saved.value;
+      }
+      showToast(t('merge_pipeline_save_failed', [(body || '').trim() || ('HTTP ' + r.status)]), 'error');
+    }))
+    .catch(() => showToast('Save failed', 'error'));
 }
 
 function saveGeneralField(key, value) {
@@ -26865,7 +27162,7 @@ function _renderDetailContent(prd) {
 
   // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
   const tab = _automataDetailTab || 'overview';
-  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd), tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
+  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd) + automatonReleaseBadgesHtml(prd),tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
@@ -36081,7 +36378,7 @@ function buildAutomationCardHTML(automation, ctx) {
     onOpen: open,
     statusClass,
     statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
-    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)),
+    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a),
     title: a.name,
     titleClass: 'automation-card-title',
     progress: { done, total },
@@ -36781,6 +37078,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
+      ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}
     </div>${desc}${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
