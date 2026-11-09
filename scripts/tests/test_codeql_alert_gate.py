@@ -41,15 +41,23 @@ Covered (wait-analyses unless stated):
      contains "Rate limited", does not contain "No analysis for", and
      the recorded sleeps are exactly 60, 120, 240, 80 (the last wait
      clamped to the remaining budget).
-  5. open-alerts: three rate-limit responses then no rows exits 0 with
+  5. A reset beyond the budget (WAIT_MAX_SECONDS=500, reset 10**6 seconds
+     away): exit 1, output contains "Rate limited" and "not a code problem",
+     does not contain "No analysis for", no sleep is called, and the
+     analyses endpoint is called once.
+  6. A reset inside the budget (WAIT_MAX_SECONDS=500, reset 90 seconds
+     away, one analyses failure): exit 0, exactly one sleep of about 90
+     seconds (within 5s), the success message is printed, and the
+     analyses endpoint is called twice.
+  7. open-alerts: three rate-limit responses then no rows exits 0 with
      the clean no-alerts message.
-  6. open-alerts: one high row exits 1 and the output contains
+  8. open-alerts: one high row exits 1 and the output contains
      "0 critical and 1 high".
-  7. open-alerts: a failed read
+  9. open-alerts: a failed read
      ("Resource not accessible by integration (HTTP 403)") exits 1 and
      the clean message is never printed.
-  8. An unknown subcommand exits 2.
-  9. .github/workflows/codeql.yaml checks out the repository (actions/checkout)
+ 10. An unknown subcommand exits 2.
+ 11. .github/workflows/codeql.yaml checks out the repository (actions/checkout)
      before it invokes bash scripts/codeql-alert-gate.sh (a missing checkout
      made every CI run fail with the script absent from the runner).
 """
@@ -253,7 +261,49 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         self.assertNotIn("No analysis for", out)
         self.assertEqual(self.recorded_sleeps(), [60, 120, 240, 80])
 
-    # 5. open-alerts: rate-limit retries, then a clean no-alerts result.
+    # 5. A reset far beyond the budget stops at once, without sleeping.
+    def test_wait_analyses_reset_beyond_budget_stops_at_once(self):
+        proc = self.run_gate(
+            "wait-analyses",
+            WAIT_MAX_SECONDS="500",
+            STUB_ANALYSES_FAIL_COUNT=str(10 ** 9),
+            STUB_RATE_LIMIT_FAIL="0",
+            STUB_RATE_LIMIT_RESET_OFFSET=str(10 ** 6),
+        )
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn("Rate limited", out)
+        self.assertIn("not a code problem", out)
+        self.assertNotIn("No analysis for", out)
+        self.assertEqual(self.recorded_sleeps(), [],
+                         "sleep must not be called when the reset is beyond the budget")
+        with open(self.count_file) as fh:
+            self.assertEqual(int(fh.read().strip()), 1,
+                             "the analyses endpoint should be called exactly once")
+
+    # 6. A reset inside the budget sleeps once, then the retry succeeds.
+    def test_wait_analyses_reset_inside_budget_sleeps_once_then_succeeds(self):
+        proc = self.run_gate(
+            "wait-analyses",
+            WAIT_MAX_SECONDS="500",
+            STUB_ANALYSES_FAIL_COUNT="1",
+            STUB_RATE_LIMIT_FAIL="0",
+            STUB_RATE_LIMIT_RESET_OFFSET="90",
+        )
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, out)
+        sleeps = self.recorded_sleeps()
+        self.assertEqual(len(sleeps), 1,
+                         "expected exactly one sleep: {!r}".format(sleeps))
+        self.assertAlmostEqual(
+            sleeps[0], 90, delta=5,
+            msg="the sleep should be about the 90s reset: {!r}".format(sleeps))
+        self.assertIn("All default setup analyses are present", proc.stdout)
+        with open(self.count_file) as fh:
+            self.assertEqual(int(fh.read().strip()), 2,
+                             "the analyses endpoint should be called twice")
+
+    # 7. open-alerts: rate-limit retries, then a clean no-alerts result.
     def test_open_alerts_retries_then_no_rows(self):
         proc = self.run_gate(
             "open-alerts",
@@ -264,7 +314,7 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         self.assertIn(
             "No open high or critical code-scanning alerts", proc.stdout)
 
-    # 6. open-alerts: one high alert fails with its count.
+    # 8. open-alerts: one high alert fails with its count.
     def test_open_alerts_one_high_row(self):
         rows = os.path.join(self.tmp.name, "alerts-ok.txt")
         with open(rows, "w") as fh:
@@ -278,7 +328,7 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         self.assertIn("0 critical and 1 high", proc.stdout)
         self.assertIn("high\t1234\tjs/useless-assignment\t/app/src/lib.js", proc.stdout)
 
-    # 7. open-alerts: a read failure is never reported as zero alerts.
+    # 9. open-alerts: a read failure is never reported as zero alerts.
     def test_open_alerts_read_failure_never_zero(self):
         proc = self.run_gate(
             "open-alerts",
@@ -293,7 +343,7 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         self.assertIn("Resource not accessible by integration (HTTP 403)",
                       proc.stdout + proc.stderr)
 
-    # 8. Unknown subcommand is a usage error.
+    # 10. Unknown subcommand is a usage error.
     def test_unknown_subcommand_exits_2(self):
         proc = self.run_gate("frobnicate")
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
