@@ -23,17 +23,21 @@ import "time"
 //     both version-carrying files.
 //  6. insert-changelog-heading: add the release heading under the unreleased
 //     heading of the changelog, unless it is already there.
-//  7. commit-release-bump: stage only the two version files and the changelog
-//     and commit once, if anything is staged.
-//  8. tag-release: tag the bump commit with the new version.
-//  9. validate-release-bump: before anything leaves the machine, check the
+//  7. set-readme-release-line: rewrite the version and date on the README's
+//     Current release: line to the release version and today's date. A line
+//     that already names the version is left alone. A README with no such
+//     line stops the pipeline.
+//  8. commit-release-bump: stage only the two version files, the changelog
+//     and the README, and commit once, if anything is staged.
+//  9. tag-release: tag the bump commit with the new version.
+//  10. validate-release-bump: before anything leaves the machine, check the
 //     release bump (version files, changelog heading, one step above the
 //     newest tag, tag free on the remote, README line). Any failing check
 //     stops the pipeline, so push-release never runs.
 //
-// 10. push-release: push main and the tag.
+// 11. push-release: push main and the tag.
 //
-// 11. deploy-latest: restart the local daemon on the new build.
+// 12. deploy-latest: restart the local daemon on the new build.
 //
 // Steps 4 to 6 are one script run today; they are separate steps so a project
 // can replace any of them.
@@ -49,6 +53,7 @@ func DefaultDefinition() Definition {
 		{Name: "merge-branches", Kind: KindShip, Action: ActionMergeBranches, OnFailure: OnFailureStop, Timeout: 5 * time.Minute},
 		{Name: "set-release-version", Kind: KindVersionBump, Action: ActionSetReleaseVersion, OnFailure: OnFailureStop, Timeout: time.Minute},
 		{Name: "insert-changelog-heading", Kind: KindChangelog, Action: ActionInsertChangelog, OnFailure: OnFailureStop, Timeout: time.Minute},
+		{Name: "set-readme-release-line", Kind: KindVersionBump, Action: ActionSetReadmeReleaseLine, OnFailure: OnFailureStop, Timeout: time.Minute},
 		{Name: "commit-release-bump", Kind: KindShip, Action: ActionCommitReleaseBump, OnFailure: OnFailureStop, Timeout: time.Minute},
 		{Name: "tag-release", Kind: KindTag, Action: ActionTagRelease, OnFailure: OnFailureStop, Timeout: time.Minute},
 		{Name: "validate-release-bump", Kind: KindCustom, Action: ActionValidateReleaseBump, OnFailure: OnFailureStop, Timeout: time.Minute},

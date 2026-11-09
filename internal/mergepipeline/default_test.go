@@ -14,7 +14,7 @@ func TestDefaultIsValid(t *testing.T) {
 
 func TestDefaultOrder(t *testing.T) {
 	want := []string{"rebase-onto-main", "check-branch-versions", "check-internal-refs", "merge-branches",
-		"set-release-version", "insert-changelog-heading", "commit-release-bump",
+		"set-release-version", "insert-changelog-heading", "set-readme-release-line", "commit-release-bump",
 		"tag-release", "validate-release-bump", "push-release", "deploy-latest"}
 	var got []string
 	for _, s := range DefaultDefinition().Steps {

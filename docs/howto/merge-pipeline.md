@@ -56,7 +56,7 @@ steps:
 | `name` | A label for the step, shown in the run record. |
 | `kind` | `test`, `lint`, `version_bump`, `changelog`, `ship`, `tag`, `deploy`, `post_ship_hook` or `custom`. |
 | `command` | A shell command line. Give this or `action`, never both. |
-| `action` | A built-in: `rebase_onto_main`, `check_branch_versions`, `merge_branches`, `set_release_version`, `insert_changelog_heading`, `commit_release_bump`, `tag_release`, `validate_release_bump`, `push_release` or `deploy_latest`. |
+| `action` | A built-in: `rebase_onto_main`, `check_branch_versions`, `merge_branches`, `set_release_version`, `insert_changelog_heading`, `set_readme_release_line`, `commit_release_bump`, `tag_release`, `validate_release_bump`, `push_release` or `deploy_latest`. |
 | `dir` | A folder inside the project to run in. Empty means the project root. |
 | `on_failure` | `stop` (the default) ends the run at this step; `continue` records the failure and runs the next step. |
 | `requires_make_target` | Run the step only if the project's Makefile defines that target. |
@@ -219,11 +219,12 @@ In order:
 4. `merge-branches` (`merge_branches`) — merge each branch in order.
 5. `set-release-version` (`set_release_version`) — set the release version in every version file, after the merge.
 6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version.
-7. `commit-release-bump` (`commit_release_bump`) — one commit of the version files and the changelog.
-8. `tag-release` (`tag_release`) — tag that commit with the new version.
-9. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator over the bump the earlier steps made (see [The release-bump validator](#the-release-bump-validator) below). A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
-10. `push-release` (`push_release`) — push main and the tag; fast-forward only.
-11. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
+7. `set-readme-release-line` (`set_readme_release_line`) — rewrite the version and date on the README's `Current release:` line to this release and today's date (UTC). The rest of the line and file is left alone. A line that already names the version is left alone too. A README with no such line stops the run and names the file.
+8. `commit-release-bump` (`commit_release_bump`) — one commit of the version files, the changelog and the README.
+9. `tag-release` (`tag_release`) — tag that commit with the new version.
+10. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator over the bump the earlier steps made (see [The release-bump validator](#the-release-bump-validator) below). A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
+11. `push-release` (`push_release`) — push main and the tag; fast-forward only.
+12. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
 
 ### The release-bump validator
 
