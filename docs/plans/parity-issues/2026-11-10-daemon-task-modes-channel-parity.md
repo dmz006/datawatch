@@ -1,5 +1,7 @@
 # The daemon task-mode settings reach every channel on paper, but comm's help, the test corpus and the MCP examples teach a mode vocabulary and a template id that do not exist, and the per-project gate override has no live channel at all
 
+**Filed 2026-11-09 as dmz006/datawatch-app#420, one consolidated issue for the three daemon task mode drafts** (shipped in v9.117.0).
+
 ## Affected area
 
 The settings side of the "daemon does it itself" work, as it lands on the

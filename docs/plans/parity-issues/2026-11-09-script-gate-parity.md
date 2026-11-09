@@ -1,5 +1,7 @@
 # The daemon-run final gate leaves its two settings on YAML only, and its report contract is written "append" in two docs that do not append
 
+**Filed 2026-11-09 as dmz006/datawatch-app#420, one consolidated issue for the three daemon task mode drafts** (shipped in v9.117.0).
+
 ## Affected area
 
 The daemon's script gate — the part of the "daemon does it itself" work that

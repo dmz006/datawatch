@@ -1,5 +1,7 @@
 # The template-mode setting and the daemon run of the four daemon-capable templates leave a destructive Web-UI save, a CLI write gap, and a missing config-reference entry
 
+**Filed 2026-11-09 as dmz006/datawatch-app#420, one consolidated issue for the three daemon task mode drafts** (shipped in v9.117.0).
+
 ## Affected area
 
 The config side of the autonomous engine's task templates, in internal/config:
