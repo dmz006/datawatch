@@ -419,6 +419,7 @@ const overlapResolved = `{"resolutions":[{"file":"cfg.txt","hunk":1,"text":"x=4\
 
 func TestModelProposalThatPassesTestsIsCommitted(t *testing.T) {
 	dir := conflictRepo(t, "cfg.txt", "x=1\n", "x=2\n", "x=3\n")
+	commitBuildTarget(t, dir)
 	fm := &fakeModel{reply: "```json\n" + overlapResolved + "\n```"}
 	o, err := merger(dir, PolicyMechanicalAndModel, fm, newQuestions(t), `grep -qx 'x=4' cfg.txt`).MergeBranch(context.Background(), MergeRequest{Branch: "feature"})
 	if err != nil {
@@ -466,6 +467,7 @@ func TestModelOnlyGetsWhatMechanicalCouldNotSettle(t *testing.T) {
 	writeFile(t, dir, "list.txt", "a\nm\n")
 	writeFile(t, dir, "cfg.txt", "x=2\n")
 	gitIn(t, dir, "commit", "-q", "-am", "main")
+	commitBuildTarget(t, dir)
 
 	fm := &fakeModel{reply: overlapResolved}
 	o, err := merger(dir, PolicyMechanicalAndModel, fm, newQuestions(t), "true").MergeBranch(context.Background(), MergeRequest{Branch: "feature"})
@@ -482,6 +484,7 @@ func TestModelOnlyGetsWhatMechanicalCouldNotSettle(t *testing.T) {
 
 func TestModelProposalThatFailsTestsIsDiscarded(t *testing.T) {
 	dir := conflictRepo(t, "cfg.txt", "x=1\n", "x=2\n", "x=3\n")
+	commitBuildTarget(t, dir)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
 	qs := newQuestions(t)
 	o, err := merger(dir, PolicyMechanicalAndModel, &fakeModel{reply: overlapResolved}, qs, `echo "boom: wanted x=5"; grep -qx 'x=5' cfg.txt`).
@@ -574,6 +577,7 @@ func TestSlowModelTimesOut(t *testing.T) {
 
 func TestProposalWithNoRunnableTestStepIsNeverCommitted(t *testing.T) {
 	dir := conflictRepo(t, "cfg.txt", "x=1\n", "x=2\n", "x=3\n")
+	commitBuildTarget(t, dir)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
 	m := merger(dir, PolicyMechanicalAndModel, &fakeModel{reply: overlapResolved}, newQuestions(t), "true")
 	m.Pipeline = Definition{Steps: []Step{{Name: "lint", Kind: KindLint, Command: "true"}}}
@@ -581,7 +585,7 @@ func TestProposalWithNoRunnableTestStepIsNeverCommitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o.Status != StatusAsked || o.Attempt == nil || o.Attempt.Result != AttemptNoTestStep {
+	if o.Status != StatusAsked || o.Attempt == nil || o.Attempt.Result != AttemptTestsFailed || !strings.Contains(o.Attempt.TestOutput, "no test step") {
 		t.Fatalf("outcome = %+v attempt = %+v", o, o.Attempt)
 	}
 	assertAborted(t, dir, head, "cfg.txt", "x=2\n")

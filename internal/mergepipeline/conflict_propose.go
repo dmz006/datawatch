@@ -157,7 +157,7 @@ func (m *Merger) callModel(ctx context.Context, set ConflictSettings, prompt str
 // proposeWithModel settles a conflict with the model. The project's tree is
 // never touched until a proposal has passed the test step: the merge is redone
 // in a scratch worktree, additive hunks are resolved mechanically, the model's
-// proposal is applied to the rest, the pipeline's test step is run there, and
+// proposal is applied to the rest, the conflict gate (build, lint and test) is run there, and
 // only then is the merge committed and the project fast-forwarded to it. On any
 // failure the scratch worktree is thrown away and the project is unchanged.
 func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req MergeRequest, files []string) ModelAttempt {
@@ -250,13 +250,9 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 		return fail(AttemptApplyFailed, serr.Error(), len(want))
 	}
 
-	passed, noStep, output := m.runTestSteps(ctx, scratch, set)
+	passed, output := m.runConflictGate(ctx, scratch, set)
 	if !passed {
-		res := AttemptTestsFailed
-		if noStep {
-			res = AttemptNoTestStep
-		}
-		a := fail(res, "the proposal was not committed", len(want))
+		a := fail(AttemptTestsFailed, "the proposal was not committed", len(want))
 		a.TestOutput = output
 		return a
 	}
