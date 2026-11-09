@@ -202,3 +202,5 @@ Pack question 6 (first acceptance of the pre-seeded community registry). Options
 
 2026-11-09 protected path approval for the Trivy install Automaton. Supervisor read the diff for the task that replaces the two Install Trivy steps in the containers workflow (curl piped to a shell becomes the pinned, retrying install script) and asked whether to approve it and the matching edits in the release and image-refresh workflows, reading each diff first. Operator answered: "Approved". Answered on the held question as the operator; each later workflow diff is still read before its hold is answered.
 
+2026-11-09 planner backend question. Options: A keep planning on Claude for now (recommended), B route planning to pi while the burn guard is at route_pi_prompt. Operator answered: "Keep using Cloud to plan after 10.0 when we do our matrix test and we look at other models. We might be able to change things then. For now, keep it as Cloud." (the operator wrote Cloud for Claude). Recorded: planning stays on Claude; revisit after 10.0.0 with the model matrix test. No config change.
+
