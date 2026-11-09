@@ -6957,6 +6957,20 @@ type ProjectConfigEntry struct {
 	// Nil (key absent) = a plain project with no per-project overrides
 	// (see ProjectPolicy and ResolveProjectPolicy).
 	Policy *ProjectPolicy `yaml:"policy,omitempty" json:"policy,omitempty"`
+
+	// Project record fields (additive, all optional). Every field is
+	// omitempty and pointer/slice-typed where zero is a meaningful value, so
+	// an entry that sets none of them loads and saves unchanged. See
+	// project_record.go for the types and Validate rules.
+	Owner               string               `yaml:"owner,omitempty" json:"owner,omitempty"`
+	Repository          string               `yaml:"repository,omitempty" json:"repository,omitempty"`
+	DefaultBranch       string               `yaml:"default_branch,omitempty" json:"default_branch,omitempty"`
+	Arcs                []ProjectArc         `yaml:"arcs,omitempty" json:"arcs,omitempty"`
+	Target              *ProjectTarget       `yaml:"target,omitempty" json:"target,omitempty"`
+	LaneDefaults        *ProjectLaneDefaults `yaml:"lane_defaults,omitempty" json:"lane_defaults,omitempty"`
+	WeeklyShare         *int                 `yaml:"weekly_share,omitempty" json:"weekly_share,omitempty"`
+	BranchRetentionDays *int                 `yaml:"branch_retention_days,omitempty" json:"branch_retention_days,omitempty"`
+	MajorTrigger        string               `yaml:"major_trigger,omitempty" json:"major_trigger,omitempty"`
 }
 
 // SessionTemplateEntry (BL5) — reusable bundle of session start params.
