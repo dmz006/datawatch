@@ -130,6 +130,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"merge_pipeline_no_project_body",
 		"merge_pipeline_no_project_choose",
 		"merge_pipeline_no_project_set_base",
+		// Git hosts (settings block title, card title, Test connection and readiness labels).
+		"git_hosts_title",
+		"git_hosts_row_title",
+		"git_hosts_test",
+		"git_hosts_state_ready",
+		"git_hosts_state_not_logged_in",
+		"git_hosts_state_unknown",
 		"stats_burn_guard",
 		"settings_usage_burn_guard_enabled",
 		"status_card_activity",
