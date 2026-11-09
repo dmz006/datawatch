@@ -4514,6 +4514,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PlanningRouting:                  acfgIn.PlanningRouting,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
+			FirstAttempt:                     autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
 			PlanningModel:                    acfgIn.PlanningModel,
 			VerificationModel:                acfgIn.VerificationModel,
 			GuardrailModel:                   acfgIn.GuardrailModel,
@@ -4562,6 +4563,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// of the Automation this installation takes kind-bug filings on;
 			// empty by default — filings are then recorded not_configured.
 			DefectIntakeAutomation: acfgIn.DefectIntakeAutomation,
+			// autonomous.first_attempt_escalate_after_failures: failed attempts
+			// before a task leaves the first-attempt pair (0 reads as 1).
+			FirstAttemptEscalateAfterFailures: acfgIn.FirstAttemptEscalateAfterFailures,
+			// autonomous.retry_resume_max_context_tokens: a retry after a failed
+			// verification resumes the previous session only at or under this size.
+			// 0 is meaningful (every retry starts fresh).
+			RetryResumeMaxContextTokens: acfgIn.RetryResumeMaxContextTokens,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -7447,6 +7455,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Make the task->session link durable before the task text is delivered.
 			mgr.SetOnSessionCreated(func(s *session.Session) {
 				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
+			})
+			// Retry resume reads the previous session's context size. TokensIn is the
+			// session's running input total: it overstates the live context, so the
+			// limit errs toward a fresh session rather than an oversized resume.
+			amgr.SetSessionContextTokensFn(func(sessionID string) int {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return 0
+				}
+				return s.TokensIn
 			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
@@ -11996,11 +12014,23 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		fmt.Printf("Set %s = %s\n", key, value)
 		return nil
 	}
+	if isAttemptCostDottedKey(key) {
+		// A per-kind backend or model is a string, so it is sent as one even
+		// when it looks like a number (a model named "3"); the daemon refuses
+		// a bad kind or a backend that needs a model with its own message.
+		b, _ := json.Marshal(map[string]any{key: value})
+		if err := putConfig(url, cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
-		// A liveness value that is valid JSON and was refused keeps the daemon's
-		// message; quoting it again would replace it with a bad-JSON error.
-		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key)) && json.Valid([]byte(value)) {
+		// A liveness, merge-pipeline release or attempt-cost value that is valid
+		// JSON and was refused keeps the daemon's message; quoting it again would
+		// replace it with a bad-JSON error.
+		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)

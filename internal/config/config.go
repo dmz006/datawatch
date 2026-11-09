@@ -2890,6 +2890,21 @@ type AutonomousConfig struct {
 	// DefaultConfig() so an absent key keeps 3600 while an explicit 0 or
 	// -1 survives. No omitempty so 0 round-trips through Save/Load.
 	ResumeMaxAgeSeconds int `yaml:"resume_max_age_seconds" json:"resume_max_age_seconds"`
+	// FirstAttempt maps a task kind (implementation, docs, note,
+	// final_gate) to the backend and model its first attempt runs on.
+	// An absent or empty entry keeps today's choice. Validated by
+	// ValidateAttemptCostSettings.
+	FirstAttempt map[string]FirstAttemptChoice `yaml:"first_attempt,omitempty" json:"first_attempt,omitempty"`
+	// FirstAttemptEscalateAfterFailures is how many failed attempts move
+	// the next attempt to the stronger choice. Default 1: the first
+	// failure escalates. Range 0..20. No omitempty so an explicit 0
+	// round-trips through Save/Load.
+	FirstAttemptEscalateAfterFailures int `yaml:"first_attempt_escalate_after_failures" json:"first_attempt_escalate_after_failures"`
+	// RetryResumeMaxContextTokens caps the prior-context size (in tokens)
+	// a retry may resume with. Default 150000. 0 is meaningful: every
+	// retry starts a fresh session. Range 0..2000000. No omitempty so 0
+	// round-trips through Save/Load.
+	RetryResumeMaxContextTokens int `yaml:"retry_resume_max_context_tokens" json:"retry_resume_max_context_tokens"`
 	// MaxEnginesPerNode is how many engine sessions one compute node
 	// may run at once. 1 = one engine per node (default). Values below
 	// 1 are clamped to 1 at load time.
@@ -7203,6 +7218,8 @@ func DefaultConfig() *Config {
 			BackoffMaxWaitMinutes:                    BackoffMaxWaitDefaultMinutes,
 			RoleScanIntervalSeconds:                  RoleScanIntervalDefaultSeconds,
 			ResumeMaxAgeSeconds:                      3600,
+			FirstAttemptEscalateAfterFailures:        DefaultFirstAttemptEscalateAfterFailures,
+			RetryResumeMaxContextTokens:              DefaultRetryResumeMaxContextTokens,
 			MaxEnginesPerNode:                        1,
 			JudgeSizeThresholdLines:                  JudgeSizeThresholdDefaultLines,
 			JudgePromptFileThresholdLines:            JudgePromptFileThresholdDefaultLines,
@@ -8014,6 +8031,9 @@ func Load(path string) (*Config, error) {
 	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
 		return nil, err
 	}
+	if err := ValidateAttemptCostSettings(cfg.Autonomous); err != nil {
+		return nil, err
+	}
 	if err := validateFailureEscalationYAML(data); err != nil {
 		return nil, err
 	}
@@ -8067,6 +8087,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
+		return nil, err
+	}
+	if err := ValidateAttemptCostSettings(cfg.Autonomous); err != nil {
 		return nil, err
 	}
 	if err := validateFailureEscalationYAML(data); err != nil {

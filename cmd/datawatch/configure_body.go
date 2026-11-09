@@ -52,6 +52,25 @@ func isLivenessConfigKey(key string) bool {
 	return key == "session.liveness_window_seconds" || key == "session.liveness_idle_timeout_overrides"
 }
 
+// isAttemptCostDottedKey reports whether key names one field of one kind's
+// first-attempt entry: autonomous.first_attempt.<kind>.backend or .model. Both
+// values are strings, so the CLI always sends them as JSON strings.
+func isAttemptCostDottedKey(key string) bool {
+	rest, ok := strings.CutPrefix(key, "autonomous.first_attempt.")
+	if !ok {
+		return false
+	}
+	return strings.HasSuffix(rest, ".backend") || strings.HasSuffix(rest, ".model")
+}
+
+// isAttemptCostScalarKey reports whether key is one of the two whole-number
+// attempt-cost settings. A value that is valid JSON and refused by the daemon
+// keeps the daemon's message instead of being quoted and retried.
+func isAttemptCostScalarKey(key string) bool {
+	return key == "autonomous.first_attempt_escalate_after_failures" ||
+		key == "autonomous.retry_resume_max_context_tokens"
+}
+
 // formatLivenessOverrides renders the overrides map for `config show`:
 // "(none)" when empty, else sorted backend=seconds pairs.
 func formatLivenessOverrides(m map[string]int) string {

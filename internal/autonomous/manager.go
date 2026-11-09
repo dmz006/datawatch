@@ -150,6 +150,19 @@ type Config struct {
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
 	ExecutionBackend string `json:"execution_backend,omitempty"`
+	// FirstAttempt maps a task kind (implementation, docs, note, final_gate)
+	// to the backend and model its first attempt runs on. An absent entry
+	// keeps the normally resolved worker. Mirrors autonomous.first_attempt.
+	FirstAttempt map[string]config.FirstAttemptChoice `json:"first_attempt,omitempty"`
+	// FirstAttemptEscalateAfterFailures is how many failed attempts of a
+	// task move its next attempt off the first-attempt pair. Mirrors
+	// autonomous.first_attempt_escalate_after_failures. 0 and 1 both mean
+	// the first failure escalates (see firstAttemptEscalated).
+	FirstAttemptEscalateAfterFailures int `json:"first_attempt_escalate_after_failures,omitempty"`
+	// RetryResumeMaxContextTokens mirrors autonomous.retry_resume_max_context_tokens.
+	// A retry after a verifier failure resumes the previous session only while
+	// its context is at or under this limit. 0 means every retry starts fresh.
+	RetryResumeMaxContextTokens int `json:"retry_resume_max_context_tokens"`
 	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
 	PlanningEffort     string `json:"planning_effort,omitempty"`
 	VerificationEffort string `json:"verification_effort,omitempty"`
@@ -1536,6 +1549,10 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionContextTokensFn — when set, a retry after a verifier failure reads
+	// the previous session's context size through it to decide resume (see
+	// retry_resume_flow.go). Nil = size unknown.
+	sessionContextTokensFn func(sessionID string) int
 	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
 	// belonging to a task with an empty or dead session link before resetting it.
 	sessionListerFn func() []SessionInfo

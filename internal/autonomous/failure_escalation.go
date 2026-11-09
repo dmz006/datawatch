@@ -84,9 +84,15 @@ type TaskAttempt struct {
 	// DurationSeconds is the wall-clock length of the attempt.
 	DurationSeconds int `json:"duration_seconds,omitempty"`
 	// Outcome is "failed", "stalled" or "cancelled".
-	Outcome         string   `json:"outcome,omitempty"`
-	FailureCategory string   `json:"failure_category,omitempty"`
-	FailureSummary  string   `json:"failure_summary,omitempty"`
+	Outcome         string `json:"outcome,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
+	FailureSummary  string `json:"failure_summary,omitempty"`
+	// NoRetryReason is set on a failed attempt that ends the task in
+	// operator review WITHOUT another attempt being started (a no-retry
+	// failure). It carries the operator-readable reason the retry was
+	// skipped, shown in the Automaton status view, the review question and
+	// the alert. Empty for an ordinary failed attempt that is retried.
+	NoRetryReason   string   `json:"no_retry_reason,omitempty"`
 	VerifierSummary string   `json:"verifier_summary,omitempty"`
 	VerifierIssues  []string `json:"verifier_issues,omitempty"`
 	ChangedFiles    []string `json:"changed_files,omitempty"`
@@ -105,6 +111,19 @@ type TaskAttempt struct {
 	// Escalated is true when this attempt ran on an escalation step rather
 	// than the task's normally resolved worker.
 	Escalated bool `json:"escalated,omitempty"`
+	// BackendReason says why this attempt ran on its backend and model: "first
+	// attempt for <kind> tasks", "escalated after <n> failures", "operator
+	// pinned" or "default choice" (see describeAttemptBackendReason). Attempts
+	// stored before it existed leave it empty.
+	BackendReason string `json:"backend_reason,omitempty"`
+	// Resumed is true when this attempt continued the previous session with the
+	// failure summary instead of starting a fresh session. Attempts stored
+	// before it existed read as false.
+	Resumed bool `json:"resumed,omitempty"`
+	// ResumeReason says why the retry resumed or did not resume: the retry
+	// decision's reason (see decideRetryResume). Empty when no retry decision
+	// was made, including on a record stored before the field existed.
+	ResumeReason string `json:"resume_reason,omitempty"`
 	// RunnerExitStatus is pi's exit status when the pane showed it; nil when
 	// no pi exit status was seen.
 	RunnerExitStatus *int `json:"runner_exit_status,omitempty"`
