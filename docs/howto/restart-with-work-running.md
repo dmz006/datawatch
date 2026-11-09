@@ -39,11 +39,14 @@ decisions and the boot-resume report, and live planner sessions that no reader
 owns are ended.
 
 The planning boot path, the verifier/judge re-attach and the detached
-verification-script pickup (below) are all in this tree, but the affected
+verification-script pickup (below) are all in this tree, and the force-flag
+guard that refuses a non-forced restart while any of that work is in flight is
+unit-tested against fakes on every surface. But the affected
 restart-matrix `planning` row and its release-smoke run are still open, and
 no live deploy-restart has confirmed any of it: confirm on the build in use
 that a restarted daemon behaves as above before relying on `reattach` or on a
-verifying task, a judgment or a script surviving a restart
+verifying task, a judgment or a script surviving a restart, and that each
+surface refuses a non-forced restart as above
 (the *Still to review (operator)* notes in
 [operations.md](../operations.md)).
 
@@ -134,6 +137,8 @@ list still names those five states and their old skips), so re-run the matrix
 and review before relying on them (the *Still to review (operator)* notes in
 [operations.md](../operations.md)).
 
+The read-only report is `GET /api/autonomous/restart-interruptions` (also the `restart_interruptions` MCP tool, `datawatch autonomous restart-interruptions`, and the chat verb `autonomous restart-interruptions`): the same lists it names in the refusal, plus `needs_force`, which is set while any of them is in flight. A non-forced restart is refused while `needs_force` is set, and every refusal below reuses the report as is.
+
 ## Forcing a restart past running work
 
 A restart that would interrupt running Automata work is refused unless it is
@@ -147,6 +152,7 @@ sessions, with their ids and the restart policy in force. Nothing is stopped.
 | REST | `POST /api/restart` answers 409 with the report | `POST /api/restart?force=true` or `{"force": true}` |
 | MCP | `restart_daemon` returns an error result carrying the report | `restart_daemon` with `force=true` |
 | Messaging channels | `restart` replies with the report | `restart force` |
+| Web UI | The Restart button (Settings → About) sends `POST /api/restart` without force, so it reports the refusal as a failed restart | No force option; restart from a surface that can force instead |
 
 When nothing that would be interrupted is running, every surface restarts as it
 did before, with no force needed. The restart policy (`autonomous.restart_policy`)
