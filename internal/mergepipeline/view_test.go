@@ -1,6 +1,9 @@
 package mergepipeline
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -256,3 +259,86 @@ func TestRenderViewText_ReleaseApprovalFromJSON(t *testing.T) {
 		t.Errorf("JSON mode in effect not rendered:\n%s", RenderViewText(v))
 	}
 }
+
+// TestMergePipelineConflictCounter checks the conflict_confirmation block: the
+// values in effect, the count from the Counter, remaining never below zero
+// (zero when N is 0), enabled only for mode on with N above 0, and a counter
+// that cannot be read reported in Error with null counts, never as zero.
+func TestMergePipelineConflictCounter(t *testing.T) {
+	dir := t.TempDir()
+	c, err := NewConflictCounter(dir)
+	if err != nil {
+		t.Fatalf("NewConflictCounter: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := c.Increment("demo"); err != nil {
+			t.Fatalf("Increment: %v", err)
+		}
+	}
+
+	intp := func(n int) *int { return &n }
+	cases := []struct {
+		name      string
+		mode      string
+		n         int
+		counter   ConflictCounterStore
+		openErr   error
+		counted   *int
+		remaining *int
+		enabled   bool
+		wantErr   bool
+	}{
+		{name: "on with room left", mode: ConflictModeOn, n: 5, counter: c, counted: intp(2), remaining: intp(3), enabled: true},
+		{name: "shadow is never enabled", mode: ConflictModeShadow, n: 5, counter: c, counted: intp(2), remaining: intp(3)},
+		{name: "on with N zero is off", mode: ConflictModeOn, n: 0, counter: c, counted: intp(2), remaining: intp(0)},
+		{name: "count past N floors at zero", mode: ConflictModeOn, n: 1, counter: c, counted: intp(2), remaining: intp(0), enabled: true},
+		{name: "counter read failure is an error, not zero", mode: ConflictModeOn, n: 5, counter: failingCounter{}, enabled: true, wantErr: true},
+		{name: "open failure is an error, not zero", mode: ConflictModeOn, n: 5, openErr: errors.New("corrupt"), enabled: true, wantErr: true},
+		{name: "no counter is an error", mode: ConflictModeOn, n: 5, enabled: true, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := BuildConflictConfirmation("demo", tc.mode, tc.n, tc.counter, tc.openErr)
+			if v.Mode != tc.mode || v.ConfirmFirstN != tc.n {
+				t.Errorf("mode/n = %q/%d, want %q/%d", v.Mode, v.ConfirmFirstN, tc.mode, tc.n)
+			}
+			if v.Enabled != tc.enabled {
+				t.Errorf("enabled = %v, want %v", v.Enabled, tc.enabled)
+			}
+			if tc.wantErr {
+				if v.Error == "" || v.Counted != nil || v.Remaining != nil {
+					t.Errorf("want error with null counts, got %+v", v)
+				}
+				return
+			}
+			if v.Error != "" {
+				t.Errorf("unexpected error %q", v.Error)
+			}
+			if v.Counted == nil || *v.Counted != *tc.counted {
+				t.Errorf("counted = %v, want %d", v.Counted, *tc.counted)
+			}
+			if v.Remaining == nil || *v.Remaining != *tc.remaining {
+				t.Errorf("remaining = %v, want %d", v.Remaining, *tc.remaining)
+			}
+		})
+	}
+
+	// A corrupt counter file is reported by NewConflictCounter, which the
+	// server turns into the error field.
+	bad := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(bad, "merge-pipeline"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, "merge-pipeline", "conflict-counter.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewConflictCounter(bad); err == nil {
+		t.Fatal("corrupt counter file: want an error from NewConflictCounter")
+	}
+}
+
+// failingCounter is a ConflictCounterStore whose reads fail.
+type failingCounter struct{}
+
+func (failingCounter) Count(string) (int, error)     { return 0, errors.New("disk gone") }
+func (failingCounter) Increment(string) (int, error) { return 0, errors.New("disk gone") }
