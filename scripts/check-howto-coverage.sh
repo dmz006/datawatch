@@ -30,6 +30,7 @@ LLM_ONLY=(
     automata-tab-loading  # PWA-only view; nothing callable from MCP (like automation-tab) — reference/conceptual doc
     navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
     codeql-local-scan  # shell-script workflow (scripts/codeql-local.sh); no MCP-callable steps
+    restart-with-work-running  # conceptual reference for the planning restart values; the setting is set through config-set / configure, which take the value directly, so no exec_steps are needed
 )
 
 ERRORS=0
