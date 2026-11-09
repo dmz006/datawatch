@@ -206,3 +206,43 @@ func TestLaunch_ScriptFormLongTaskByFile(t *testing.T) {
 		t.Errorf("command must not contain the task text")
 	}
 }
+
+// TestLaunch_InteractiveOversizeTaskRefused pins the interactive-shell branch
+// for an oversize task: the task is echoed inline into the command, so a
+// 20000-byte task pushes the command past llm.MaxSendKeysCommand. Launch must
+// reject it with the shared guard's error before any exec, so the fake tmux on
+// PATH (which drops a marker file in its own folder) is never invoked and no
+// .datawatch folder is created in the project directory.
+func TestLaunch_InteractiveOversizeTaskRefused(t *testing.T) {
+	binDir := t.TempDir()
+	projectDir := t.TempDir()
+	marker := filepath.Join(binDir, "tmux-invoked")
+	fakeTmux := filepath.Join(binDir, "tmux")
+	script := "#!/bin/sh\ntouch \"$(dirname \"$0\")/tmux-invoked\"\nexit 0\n"
+	if err := os.WriteFile(fakeTmux, []byte(script), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Repeated text with newlines, trimmed to exactly 20000 bytes.
+	const unit = "oversize interactive task line of repeated text\n"
+	task := strings.Repeat(unit, 20000/len(unit)+1)[:20000]
+
+	b := &Backend{scriptPath: ""}
+	err := b.Launch(context.Background(), task, "cs-oversize-interactive", projectDir, "")
+	if err == nil {
+		t.Fatal("expected Launch to refuse an oversize interactive task")
+	}
+	if !strings.Contains(err.Error(), "command too long") {
+		t.Errorf("error must contain %q, got: %v", "command too long", err)
+	}
+	if !strings.Contains(err.Error(), strconv.Itoa(llm.MaxSendKeysCommand)) {
+		t.Errorf("error must name the %d-byte limit, got: %v", llm.MaxSendKeysCommand, err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Errorf("fake tmux must never be invoked for a refused command, marker stat err: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(projectDir, ".datawatch")); !os.IsNotExist(statErr) {
+		t.Errorf("no .datawatch folder may be created in the project directory, stat err: %v", statErr)
+	}
+}
