@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.117.1 — Close the discussion folder path scanner alert
+
+### Fixed
+
+- **The high code scanning alert for the discussion folder path is closed by checking the cleaned path at the point of use.** Every discussion route that builds a folder from a discussion id now goes through one helper, `discussionFolderForID`, which validates the id, joins it to the discussions folder, cleans the result and refuses it unless it stays inside that folder. The discussions how-to has one added line saying so. There is no setting change and no behaviour change for valid ids; ids that were refused before are still refused.
+
 ## v9.117.0 — Template tasks and script gates run in the daemon
 
 ### Added
