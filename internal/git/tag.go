@@ -86,6 +86,31 @@ func CreateAnnotatedTag(ctx context.Context, dir, tag, message string) error {
 	return err
 }
 
+// CreateTagForHost creates a tag at HEAD using the host's signing policy.
+// Without SignTags it is an annotated tag (as CreateAnnotatedTag). With
+// SignTags it is a signed tag (git tag -s), using SigningKey when set.
+func CreateTagForHost(ctx context.Context, dir, tag, message string, host GitHostConfig) error {
+	if err := checkRefName(tag); err != nil {
+		return err
+	}
+	_, err := Run(ctx, dir, TagCreateArgsForHost(tag, message, host)...)
+	return err
+}
+
+// TagCreateArgsForHost returns the argument slice (after "git") that
+// CreateTagForHost runs. Kept separate so the signing arguments can be
+// checked without a GPG key.
+func TagCreateArgsForHost(tag, message string, host GitHostConfig) []string {
+	if !host.SignTags {
+		return TagCreateArgs(tag, message)
+	}
+	args := []string{"tag", "-s"}
+	if host.SigningKey != "" {
+		args = append(args, "-u", host.SigningKey)
+	}
+	return append(args, tag, "-m", message)
+}
+
 // PushBranchRef pushes branch to remote (fast-forward only; never forced).
 func PushBranchRef(ctx context.Context, dir, remote, branch string) error {
 	if err := checkRefName(branch); err != nil {
