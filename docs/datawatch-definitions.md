@@ -68,6 +68,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge lock](#merge-lock)
   - [Release-bump validator](#release-bump-validator)
+  - [Release validator](#release-validator)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
   - [Onboarding report](#onboarding-report)
@@ -2113,6 +2114,10 @@ The merge pipeline is the ordered list of steps that takes finished branches to 
 
 **Release-bump validator** — the read-only check the merge pipeline runs in its `validate-release-bump` step, after the release bump commit and tag and before the push. It runs five named checks: `version_variables_equal`, `changelog_heading_matches`, `one_step_above_last_tag`, `tag_not_taken` and `readme_line_matches`. A failing check fails the step, names every check that failed and stops the push; the result is kept on the run record as `validator`. The same checks can be run by hand with `scripts/verify-release-bump.sh`. See [howto/merge-pipeline.md](howto/merge-pipeline.md#the-release-bump-validator).
 
+### Release validator
+
+**Release validator** — the name for the merge pipeline's read-only check of a release bump, the same check defined by the [Release-bump validator](#release-bump-validator) entry above. It is the `validate-release-bump` step, run after the bump commit and tag and before the push, and it is the function `ValidateReleaseBump`. Its result is kept on the run record as `validator` and shown as the last validator line in the merge status. Operator guide: [howto/merge-pipeline.md](howto/merge-pipeline.md#the-release-bump-validator).
+
 **Merge pipeline file** (`autonomous.merge_pipeline.file_name`, default `.datawatch/merge-pipeline.yaml`) — the file looked for in each project, relative to the project. An absolute path or one that leaves the project is refused. It is for the operator who keeps the pipeline in the repository under another name.
 
 **Merge pipeline version files** (`autonomous.merge_pipeline.version_files`, none by default) — the project files, relative to the project, that carry the `var Version = "X.Y.Z"` line the release-version step sets. The step runs after the merge and sets the next patch above main as of that moment — it never takes the version from the branches a run merged — and a file that already carries the run's version is left alone. With none, a pipeline that bumps the version fails that step until the files are named.
@@ -2135,7 +2140,7 @@ Where a project's pipeline comes from, and what happens when that source is bad.
 
 ### Merge lock
 
-**Merge lock** — the lock a merge run holds on its base repository for as long as it runs, so that two merge runs never ship into the same repository at once. A run that finds the repository locked is refused, and its record names the run that holds the lock. The lock is released when the run ends, and it is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a restart. A resumed run takes its own lock back. The lock is shown in the merge status as `Merge lock held: …` and in the `merge_lock` field of `GET /api/autonomous/merge`. Operator guide: [howto/merge-pipeline.md](howto/merge-pipeline.md#one-merge-at-a-time-the-merge-lock).
+**Merge lock** — the lock a merge run holds on its base repository for as long as it runs, so that two merge runs never ship into the same repository at once. A run that finds the repository locked is refused, and its record names the run that holds the lock. The lock is released when the run ends, and it is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a restart. After a restart the same Automaton takes its lock back when it starts the merge again for the same branches; a different Automaton, or other branches, is refused. The lock is held for the whole run and released when the run ends. The lock is shown in the merge status as `Merge lock held: …` and in the `merge_lock` field of `GET /api/autonomous/merge`. Operator guide: [howto/merge-pipeline.md](howto/merge-pipeline.md#one-merge-at-a-time-the-merge-lock).
 
 **When the project file is bad** (`autonomous.merge_pipeline.fallback_on_bad_file`, `record` by default) — what is used when the file exists but cannot be used (unreadable, too large, not valid or failing validation). `record` uses the daemon record, `default` uses the built-in pipeline, `none` uses nothing and the merge run does not start. The problem is always reported whichever you choose.
 

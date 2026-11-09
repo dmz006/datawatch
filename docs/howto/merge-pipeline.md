@@ -183,11 +183,12 @@ daemon:
    it. On any failure, timeout, oversized prompt or unreadable reply, the scratch
    tree is thrown away, the project is unchanged and you are asked.
 
-## One merge at a time: the merge lock
+## The merge lock: one merge per repository
 
 Two merge runs must never ship into the same base repository at once. Before a
-run starts, it takes a lock on its repository path; the lock is released when
-the run ends, whatever the result.
+run starts, it takes a lock on its repository path; the lock is held for the
+whole run, including the deploy step, and is released when the run ends,
+whatever the result. The glossary entry is [Merge lock](../datawatch-definitions.md#merge-lock).
 
 - **A second run is refused.** Its run record is marked failed, and its reason
   names the run that holds the lock, for example `another merge holds this
@@ -198,14 +199,94 @@ the run ends, whatever the result.
   The same information is in the `merge_lock` field of `GET /api/autonomous/merge`
   (absent when nothing is held).
 - **The lock survives a restart.** It is kept in `merge-locks.json` in the daemon
-  store directory. After a daemon restart the lock still shows as held. A run
-  that is resumed takes its own lock back, so it is not refused by its own
-  earlier lock.
+  store directory. After a daemon restart the lock still shows as held, with
+  the same run, Automaton and branches it had before.
+- **After a restart the same Automaton takes its lock back.** When the Automaton
+  that held the lock starts its merge again for the same branches (the case
+  after a daemon restart), the lock is handed back to it and the run is not
+  refused by its own earlier lock. A different Automaton, or the same one with
+  different branches, is refused like any other second run.
 - **A broken lock file refuses merges; it never lets them run unlocked.** If
   `merge-locks.json` is unreadable or corrupt, every merge run is refused with a
   message that the lock store is unavailable. Repair the file or restore it from
   a backup in the daemon store directory, then start the run again. Deleting the
   file clears all locks, so only do that when you are sure no merge is running.
+
+### Reading the lock
+
+The lock is one of three things, and the surfaces show which:
+
+| State | What it means | Where you see it |
+|---|---|---|
+| Held | A run is merging into the repository now. | `Merge lock held: run <id> for Automaton <id> (branches …) since <time>` on the merge status; `merge_lock` on `GET /api/autonomous/merge`. |
+| Refused run | A run was started while the lock was held. Its record is `failed` and its reason names the holder. | The run's entry in `pipeline_runs` on the merge status. |
+| Not held | No run holds the repository; the `merge_lock` field is absent. | Absence of the field and of the held line. |
+
+The surfaces that show the lock and the last validator result are listed in
+[Where to read the lock and the last result](#where-to-read-the-lock-and-the-last-result).
+
+## The order inside the lock
+
+Once a run holds the lock, it works through these steps in order. The
+step names are the built-in ones in the table above.
+
+1. **Rebase onto the latest main.** Main is fetched first when the project has
+   a remote, and each branch is rebased onto it. A branch that conflicts stops
+   the run with that branch untouched.
+2. **Check and merge the branches.** `check-branch-versions` must pass for every
+   branch before anything merges; then `merge-branches` merges them in order.
+3. **Compute the release version after the merge.** The version is main's
+   version as it stands after the merge, plus the release size. The release
+   size is patch today, and there is no setting for another size, so the next
+   patch above main is used. The version is then fixed for the run.
+4. **Make the release bump.** The version files, the changelog heading, the
+   README line and one bump commit, then the release tag on that commit.
+5. **Validate the bump.** The [release validator](#the-release-bump-validator)
+   runs read-only before anything leaves the machine. A failing check stops the
+   run here, so nothing is pushed.
+6. **Push, fast-forward only.** The push refuses unless the remote's main is an
+   ancestor of the local head. It never forces.
+7. **Deploy.** A failure here does not fail the run.
+
+The lock is released after the last step, whatever the result.
+
+### Redo when main moved
+
+If the push is refused because the remote's main moved while the run worked,
+the run redoes itself rather than failing:
+
+- its own merge commits and release bump are undone, and the run's local tag is
+  deleted;
+- local main is fast-forwarded to the remote's main (a diverged local main stops
+  the redo and fails the run);
+- the steps run again from the rebase step, so the release version is computed
+  again from the moved main.
+
+A run redoes at most **three times**. A fourth refusal fails the run with the
+reason `main kept moving`. Each redo appears in the run record as a step named
+`main-moved-redo-<n>`.
+
+## Where to read the lock and the last result
+
+Both the lock and the last release-validator result are on the merge status.
+Read it on whichever surface you have:
+
+| Surface | How to read it | Lock | Last validator result |
+|---|---|---|---|
+| PWA | The Merge pipeline card | The `Merge lock held: …` line | The validator line: pass or fail, the version, when it ran, and each failing check under it |
+| REST | `GET /api/autonomous/merge` | `merge_lock` (absent when nothing is held) | `last_validator` (absent when no run has one) |
+| MCP | `autonomous_merge` tool (read-only) | `merge_lock` | `last_validator` |
+| Comm channel | `autonomous merge` | The `Merge lock held` line | The validator line |
+| CLI | `datawatch autonomous merge` | The `Merge lock held` line | The validator line |
+
+`last_validator` is the result of the newest run that reached the validate step,
+with `pass`, `version`, `checked_at` and one entry per check (`name`, `pass`,
+`detail`). A run that stopped before that step, or whose release steps were all
+skipped, has none and is passed over, so the field shows the newest run that
+has one, or is absent when no run has one.
+
+Reading the status never changes anything: it merges nothing, deletes nothing
+and pushes nothing.
 
 ## The built-in pipeline
 
@@ -226,13 +307,20 @@ In order:
 11. `push-release` (`push_release`) — push main and the tag; fast-forward only.
 12. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
 
-**A step run twice changes nothing.** The release steps are safe to run twice: a step that finds its work already done — the version files already carry the version, the changelog already has the heading, the README line already names it, nothing is staged, the tag is already on that commit — succeeds as a no-op and leaves the files, the commit history and the tag list exactly as the earlier run left them. The one exception is a release tag someone moved to another commit: the tag step then fails and names both commits, and it is the operator who resolves the tag and re-runs.
+### Why every merge step is safe to run twice
+
+**A step run twice changes nothing.** Each merge step checks what is already
+done before it writes, so a second run never adds a second version bump, a
+second changelog heading or a second commit. The release steps are safe to run twice: a step that finds its work already done — the version files already carry the version, the changelog already has the heading, the README line already names it, nothing is staged, the tag is already on that commit — succeeds as a no-op and leaves the files, the commit history and the tag list exactly as the earlier run left them. The one exception is a release tag someone moved to another commit: the tag step then fails and names both commits, and it is the operator who resolves the tag and re-runs.
 
 ### The release-bump validator
 
 The `validate-release-bump` step runs after the bump commit and the release
-tag exist, and before the push. It only reads: it never writes a file, a tag
-or a remote. Every check runs, even after one fails, so the result names each
+tag exist, and before the push. The step calls `ValidateReleaseBump` in
+[internal/mergepipeline/release_validator.go](../../internal/mergepipeline/release_validator.go),
+which runs the five checks below and returns the result the run record keeps.
+It only reads: it never writes a file, a tag or a remote. The glossary entry is
+[Release validator](../datawatch-definitions.md#release-validator). Every check runs, even after one fails, so the result names each
 check that failed. The five checks, in the order they run:
 
 | Check name | What it requires |
@@ -252,6 +340,18 @@ The same checks can be run by hand, read-only, from a repository checkout with
 check, in the order above, and exits 0 only when all five pass. Set
 `VERIFY_RELEASE_REMOTE` to query a remote other than `origin`; if that remote is
 not configured, only local tags are checked and the tag line says so.
+
+Reading the script's output:
+
+- Each line starts with `PASS` or `FAIL`, then the check name, a colon and a
+  detail, for example `PASS one_step_above_last_tag: v… is one step above the
+  newest tag v…`. A `FAIL` line's detail says what to change.
+- The five lines come in the table's order, and every check runs even after one
+  fails, so a single run shows all the problems.
+- The exit status is `0` only when all five lines are `PASS`; `1` means at least
+  one check failed. Use the status in a script; read the lines for the reason.
+- The check names are the same as the run record's `validator` checks, so a
+  `FAIL` line here matches a failed entry in the run record.
 
 The script does not read `version_files`. It always checks `cmd/datawatch/main.go`
 and `internal/server/api.go`, so on a project whose version lives elsewhere it
