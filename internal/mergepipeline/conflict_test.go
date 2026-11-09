@@ -118,11 +118,17 @@ func testPipeline(command string) Definition {
 	return Definition{Steps: []Step{{Name: "tests", Kind: KindTest, Command: command, Timeout: time.Minute}}}
 }
 
+// merger returns a merger whose model proposals are applied (mode on), so the
+// commit path is what the test exercises.
 func merger(dir string, policy ConflictPolicy, model ConflictModel, qs QuestionRaiser, command string) *Merger {
+	return mergerInMode(dir, policy, ConflictModeOn, model, qs, command)
+}
+
+func mergerInMode(dir string, policy ConflictPolicy, mode string, model ConflictModel, qs QuestionRaiser, command string) *Merger {
 	return &Merger{
 		Dir:       dir,
 		Pipeline:  testPipeline(command),
-		Settings:  func() ConflictSettings { return ConflictSettings{Policy: policy} },
+		Settings:  func() ConflictSettings { return ConflictSettings{Policy: policy, Mode: mode} },
 		Model:     model,
 		Questions: qs,
 	}
@@ -628,4 +634,92 @@ func TestRefusesAnUnsafeBranchName(t *testing.T) {
 			t.Fatalf("branch %q must be refused", b)
 		}
 	}
+}
+
+// TestConflictShadow covers the two modes of a passing model proposal: shadow
+// records it and leaves the project alone; on applies it.
+func TestConflictShadow(t *testing.T) {
+	t.Run("shadow records the proposal and leaves HEAD at its pre-merge SHA", func(t *testing.T) {
+		dir := conflictRepo(t, "cfg.txt", "x=1\n", "x=2\n", "x=3\n")
+		commitBuildTarget(t, dir)
+		head := gitIn(t, dir, "rev-parse", "HEAD")
+		qs := newQuestions(t)
+		fm := &fakeModel{reply: overlapResolved}
+		o, err := mergerInMode(dir, PolicyMechanicalAndModel, "", fm, qs, `grep -qx 'x=4' cfg.txt`).
+			MergeBranch(context.Background(), MergeRequest{Branch: "feature"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Status != StatusAsked || o.Attempt == nil || o.Attempt.Result != AttemptShadowComputed {
+			t.Fatalf("outcome = %+v attempt = %+v", o, o.Attempt)
+		}
+		if o.Attempt.Mode != ConflictModeShadow {
+			t.Fatalf("attempt mode = %q, want shadow", o.Attempt.Mode)
+		}
+		if got := o.Attempt.Proposal["cfg.txt"]; got != "x=4\n" {
+			t.Fatalf("recorded proposal = %v, want cfg.txt x=4", o.Attempt.Proposal)
+		}
+		assertAborted(t, dir, head, "cfg.txt", "x=2\n")
+		if len(openConflictQuestions(qs)) != 1 {
+			t.Fatal("in shadow mode the operator must still be asked")
+		}
+	})
+
+	t.Run("on applies the proposal", func(t *testing.T) {
+		dir := conflictRepo(t, "cfg.txt", "x=1\n", "x=2\n", "x=3\n")
+		commitBuildTarget(t, dir)
+		head := gitIn(t, dir, "rev-parse", "HEAD")
+		o, err := mergerInMode(dir, PolicyMechanicalAndModel, ConflictModeOn, &fakeModel{reply: overlapResolved},
+			newQuestions(t), `grep -qx 'x=4' cfg.txt`).MergeBranch(context.Background(), MergeRequest{Branch: "feature"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Status != StatusResolvedByModel || o.Attempt == nil || o.Attempt.Result != AttemptAccepted {
+			t.Fatalf("outcome = %+v attempt = %+v", o, o.Attempt)
+		}
+		if o.Attempt.Proposal != nil {
+			t.Fatalf("on mode must not record a shadow proposal: %v", o.Attempt.Proposal)
+		}
+		if gitIn(t, dir, "rev-parse", "HEAD") == head {
+			t.Fatal("on mode must move HEAD onto the proposal")
+		}
+		if got := readFile(t, dir, "cfg.txt"); got != "x=4\n" {
+			t.Fatalf("cfg.txt = %q", got)
+		}
+	})
+}
+
+func TestConflictModeValidation(t *testing.T) {
+	for mode, wantErr := range map[string]bool{"": false, ConflictModeShadow: false, ConflictModeOn: false, "maybe": true, "ON": true} {
+		s := ConflictSettings{Policy: PolicyMechanicalAndModel, Mode: mode}
+		if err := s.Validate(); (err != nil) != wantErr {
+			t.Fatalf("mode %q: Validate() = %v, want error %v", mode, err, wantErr)
+		}
+	}
+	if got := (ConflictSettings{}).withDefaults().Mode; got != ConflictModeShadow {
+		t.Fatalf("default mode = %q, want shadow", got)
+	}
+}
+
+// TestModelProposalFailingTestsIsDiscarded is a fixture: the model's resolution
+// (x=5) breaks the project's test step (which needs x=4). The project must be
+// left exactly as it was and the attempt must say tests_failed.
+func TestModelProposalFailingTestsIsDiscarded(t *testing.T) {
+	dir := conflictRepo(t, "cfg.txt", "x=1\n", "x=2\n", "x=3\n")
+	commitBuildTarget(t, dir)
+	head := gitIn(t, dir, "rev-parse", "HEAD")
+	breaking := `{"resolutions":[{"file":"cfg.txt","hunk":1,"text":"x=5\n"}]}`
+	qs := newQuestions(t)
+	o, err := mergerInMode(dir, PolicyMechanicalAndModel, ConflictModeOn, &fakeModel{reply: breaking}, qs,
+		`grep -qx 'x=4' cfg.txt`).MergeBranch(context.Background(), MergeRequest{Branch: "feature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Status != StatusAsked || o.Attempt == nil || o.Attempt.Result != AttemptTestsFailed {
+		t.Fatalf("outcome = %+v attempt = %+v", o, o.Attempt)
+	}
+	if o.Attempt.Proposal != nil {
+		t.Fatalf("a failing proposal must not be recorded: %v", o.Attempt.Proposal)
+	}
+	assertAborted(t, dir, head, "cfg.txt", "x=2\n")
 }

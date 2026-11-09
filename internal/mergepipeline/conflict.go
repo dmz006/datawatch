@@ -62,7 +62,20 @@ type ConflictSettings struct {
 	// ScratchDir is where the scratch worktree for a proposal is made,
 	// relative to the project directory.
 	ScratchDir string
+	// Mode says what a model proposal that passes the gate does. Empty or
+	// ConflictModeShadow records it and leaves the project alone; ConflictModeOn
+	// applies it. Any other value fails Validate.
+	Mode string
 }
+
+// Modes of a model proposal.
+const (
+	// ConflictModeShadow computes and records a passing proposal without
+	// committing it; the project's HEAD does not move.
+	ConflictModeShadow = "shadow"
+	// ConflictModeOn commits a passing proposal and fast-forwards the project.
+	ConflictModeOn = "on"
+)
 
 // DefaultConflictSettings returns the operator's answers: stop and ask, a five
 // minute model call, a 64 KiB prompt, a ten minute test step.
@@ -73,6 +86,7 @@ func DefaultConflictSettings() ConflictSettings {
 		MaxPromptBytes: DefaultConflictPromptBytes,
 		TestTimeout:    DefaultConflictTestTimeout,
 		ScratchDir:     DefaultConflictScratchDir,
+		Mode:           ConflictModeShadow,
 	}
 }
 
@@ -94,6 +108,9 @@ func (s ConflictSettings) withDefaults() ConflictSettings {
 	if s.ScratchDir == "" {
 		s.ScratchDir = d.ScratchDir
 	}
+	if s.Mode == "" {
+		s.Mode = d.Mode
+	}
 	return s
 }
 
@@ -108,6 +125,9 @@ func (s ConflictSettings) Validate() error {
 	}
 	if !ok {
 		return fmt.Errorf("unknown conflict policy %q", s.Policy)
+	}
+	if s.Mode != ConflictModeShadow && s.Mode != ConflictModeOn {
+		return fmt.Errorf("unknown conflict mode %q", s.Mode)
 	}
 	return checkDir(s.ScratchDir)
 }
@@ -161,6 +181,9 @@ const (
 	AttemptInfrastructure  = "scratch_failed"
 	AttemptCommitFailed    = "commit_failed"
 	AttemptFastForwardFail = "fast_forward_failed"
+	// AttemptShadowComputed means a proposal passed the gate in shadow mode and
+	// was recorded; nothing was committed.
+	AttemptShadowComputed = "shadow_computed"
 )
 
 // ModelAttempt summarises what the model step did.
@@ -169,6 +192,11 @@ type ModelAttempt struct {
 	Detail     string `json:"detail,omitempty"`
 	TestOutput string `json:"test_output,omitempty"`
 	Hunks      int    `json:"hunks"`
+	// Mode is the conflict mode the attempt ran under.
+	Mode string `json:"mode,omitempty"`
+	// Proposal maps each conflicted file to its resolved text. It is set only
+	// for a shadow_computed attempt.
+	Proposal map[string]string `json:"proposal,omitempty"`
 }
 
 // Outcome is the result of one merge attempt.
@@ -414,7 +442,18 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	}
 
 	if set.Policy == PolicyMechanicalAndModel {
-		att := m.proposeWithModel(ctx, set, req, out.Files)
+		att, prop := m.proposeWithModel(ctx, set, req, out.Files)
+		att.Mode = set.Mode
+		if prop != nil {
+			if set.Mode == ConflictModeShadow {
+				// Recorded only: the project keeps its pre-merge HEAD.
+				att.Result = AttemptShadowComputed
+				att.Proposal = prop.Texts
+			} else {
+				att = m.fastForwardTo(ctx, prop)
+				att.Mode = set.Mode
+			}
+		}
 		out.Attempt = &att
 		if att.Result == AttemptAccepted {
 			out.Status = StatusResolvedByModel
