@@ -182,7 +182,26 @@ type runState struct {
 	tagMade string
 	// redos counts the redos this run has made.
 	redos int
+	// nothingNew is set when the merge step found every branch already in
+	// main. The release steps after it are then skipped: nothing new is
+	// released.
+	nothingNew bool
 }
+
+// releaseSteps are the actions a run with nothing new to merge skips. They
+// release, or leave the machine with, a version nobody asked for. The
+// deploy step is not listed: it is a daemon restart, not a release.
+var releaseSteps = map[string]bool{
+	ActionSetReleaseVersion:   true,
+	ActionInsertChangelog:     true,
+	ActionCommitReleaseBump:   true,
+	ActionTagRelease:          true,
+	ActionValidateReleaseBump: true,
+	ActionPushRelease:         true,
+}
+
+// nothingNewNote is the detail recorded on a release step a run skipped.
+const nothingNewNote = "nothing new was released: every branch was already merged into main"
 
 func newRunID() string {
 	b := make([]byte, 6)
@@ -262,6 +281,13 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	failures := 0
 	for i := 0; i < len(steps); {
 		step := steps[i]
+		if st.nothingNew && releaseSteps[step.Action] {
+			_, _, _ = st.recordStep(ctx, st.source, step, DefaultStepTimeout, func(context.Context) (string, string, error) {
+				return autonomous.MergeStepSkipped, nothingNewNote, nil
+			})
+			i++
+			continue
+		}
 		ok, err := st.runStep(ctx, step)
 		if oerr := st.observeMain(ctx); oerr != nil {
 			st.run.Reason = redact(oerr.Error())
@@ -702,8 +728,17 @@ func (s *runState) checkBranchVersions(ctx context.Context) (string, error) {
 // mergeBranches merges each branch in order. A branch the conflict policy
 // could not settle stops the step; branches already merged stay in place.
 func (s *runState) mergeBranches(ctx context.Context) (string, error) {
-	var merged []string
+	var merged, already []string
+	s.nothingNew = false
 	for _, b := range s.req.Branches {
+		in, err := s.branchInMain(ctx, b)
+		if err != nil {
+			return "", err
+		}
+		if in {
+			already = append(already, b)
+			continue
+		}
 		out, err := s.m.MergeBranch(ctx, MergeRequest{Branch: b, AutomatonID: s.req.AutomatonID})
 		if err != nil {
 			return s.mergeStopNote(merged, b, err.Error()), fmt.Errorf("merge of %q failed: %w", b, err)
@@ -719,7 +754,32 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 			return s.mergeStopNote(merged, b, note), fmt.Errorf("merge of %q hit a conflict that was not settled", b)
 		}
 	}
-	return "merged: " + strings.Join(merged, ", "), nil
+	if len(merged) == 0 && len(already) > 0 {
+		s.nothingNew = true
+		return "nothing new: already merged into " + s.r.mainBranch() + ": " + strings.Join(already, ", "), nil
+	}
+	note := "merged: " + strings.Join(merged, ", ")
+	if len(already) > 0 {
+		note += "\nalready merged into " + s.r.mainBranch() + ": " + strings.Join(already, ", ")
+	}
+	return note, nil
+}
+
+// branchInMain reports whether branch is already contained in the checked-out
+// main: the merge would add nothing.
+func (s *runState) branchInMain(ctx context.Context, branch string) (bool, error) {
+	res, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", "refs/heads/"+branch, "HEAD")
+	if err != nil {
+		return false, fmt.Errorf("checking whether %q is on %s failed: %w", branch, s.r.mainBranch(), err)
+	}
+	switch res.Code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("checking whether %q is on %s failed (exit %d)", branch, s.r.mainBranch(), res.Code)
+	}
 }
 
 func (s *runState) mergeStopNote(merged []string, failed, why string) string {
@@ -1016,6 +1076,15 @@ func (r *Runner) currentVersion() (string, error) {
 // and the later steps read it from there.
 func (s *runState) setReleaseVersion() (string, error) {
 	if s.run.ReleaseVersion != "" {
+		// Already computed for this run: when the files carry it, there is
+		// nothing to write, and the bytes stay as they are.
+		ok, err := s.r.versionFilesCarry(s.run.ReleaseVersion)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return "already at " + s.run.ReleaseVersion + "; version files not written", nil
+		}
 		return "", fmt.Errorf("the release version was already set to %s for this run", s.run.ReleaseVersion)
 	}
 	cur, err := s.r.currentVersion()
@@ -1041,6 +1110,29 @@ func (s *runState) releaseVersionOf() (string, error) {
 		return s.run.ReleaseVersion, nil
 	}
 	return s.r.currentVersion()
+}
+
+// versionFilesCarry reports whether every version file carries v on its
+// version line. A file that cannot be read or has no version line is an
+// error, not a miss.
+func (r *Runner) versionFilesCarry(v string) (bool, error) {
+	if len(r.versionFiles()) == 0 {
+		return false, errNoVersionFiles
+	}
+	for _, f := range r.versionFiles() {
+		_, data, err := r.readInside(f)
+		if err != nil {
+			return false, err
+		}
+		m := versionLine.FindSubmatch(data)
+		if m == nil {
+			return false, fmt.Errorf("no `var Version = \"...\"` line in %s", f)
+		}
+		if string(m[1]) != v {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // writeVersion sets the version line in every version file, writing none of
