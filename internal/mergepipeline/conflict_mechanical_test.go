@@ -47,3 +47,25 @@ func TestMechanicalLineRules(t *testing.T) {
 		}
 	})
 }
+
+func TestMechanicalLocaleRule(t *testing.T) {
+	ours := `{"a":"A","ours_new":"O","shared":"ours"}`
+	theirs := `{"a":"A","theirs_new":"T","shared":"theirs"}`
+	got, settled, notes, err := ResolveMechanicalFile(ClassLocale, "en.json", "", ours, theirs)
+	if err != nil || !settled {
+		t.Fatalf("settled=%v err=%v", settled, err)
+	}
+	want := "{\n  \"a\": \"A\",\n  \"ours_new\": \"O\",\n  \"shared\": \"ours\",\n  \"theirs_new\": \"T\"\n}\n"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], `"shared"`) {
+		t.Fatalf("notes %v", notes)
+	}
+	for _, bad := range [][2]string{{"{", "{}"}, {`{"a":{"b":"c"}}`, "{}"}, {"{}", `{"a":1}`}} {
+		_, settled, notes, err := ResolveMechanicalFile(ClassLocale, "en.json", "", bad[0], bad[1])
+		if err == nil || settled || len(notes) == 0 {
+			t.Fatalf("bad input %v: settled=%v err=%v notes=%v", bad, settled, err, notes)
+		}
+	}
+}

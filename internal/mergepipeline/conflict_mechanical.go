@@ -1,8 +1,11 @@
 package mergepipeline
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -69,6 +72,69 @@ func ResolveMechanicalFile(class FileClass, rel string, conflicted string, ours 
 			b.WriteString(renderHunk(h))
 		}
 		return b.String(), settled, notes, nil
+	case ClassLocale:
+		return resolveLocale(rel, conflicted, ours, theirs)
 	}
 	return conflicted, false, []string{fmt.Sprintf("%s: class %q has no mechanical rule", rel, class)}, nil
+}
+
+// parseFlatLocale parses a flat JSON object whose values are all strings.
+func parseFlatLocale(side, text string) (map[string]string, error) {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(text), &raw); err != nil {
+		return nil, fmt.Errorf("%s side is not a JSON object: %w", side, err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("%s side is not a JSON object", side)
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		sv, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s side key %q has a non-string value", side, k)
+		}
+		out[k] = sv
+	}
+	return out, nil
+}
+
+// resolveLocale merges two flat locale files by key union. Keys changed on
+// both sides to different values keep ours and get a note. Output is two-space
+// indented JSON with sorted keys and a trailing newline.
+func resolveLocale(rel, conflicted, ours, theirs string) (string, bool, []string, error) {
+	o, err := parseFlatLocale("ours", ours)
+	if err != nil {
+		return conflicted, false, []string{fmt.Sprintf("%s: %v", rel, err)}, err
+	}
+	t, err := parseFlatLocale("theirs", theirs)
+	if err != nil {
+		return conflicted, false, []string{fmt.Sprintf("%s: %v", rel, err)}, err
+	}
+	var notes []string
+	merged := make(map[string]string, len(o)+len(t))
+	for k, v := range o {
+		merged[k] = v
+	}
+	var theirKeys []string
+	for k := range t {
+		theirKeys = append(theirKeys, k)
+	}
+	sort.Strings(theirKeys)
+	for _, k := range theirKeys {
+		if ov, ok := o[k]; ok {
+			if ov != t[k] {
+				notes = append(notes, fmt.Sprintf("%s: key %q changed on both sides; kept ours", rel, k))
+			}
+			continue
+		}
+		merged[k] = t[k]
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(merged); err != nil {
+		return conflicted, false, []string{fmt.Sprintf("%s: %v", rel, err)}, err
+	}
+	return buf.String(), true, notes, nil
 }
