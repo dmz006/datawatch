@@ -41,26 +41,29 @@ const mergePipelineProjectsPrefix = mergePipelineKeyPrefix + "projects."
 
 // The keys of the block, global and per project.
 const (
-	mergePipelineFieldFileName             = "file_name"
-	mergePipelineFieldSourceOrder          = "source_order"
-	mergePipelineFieldFallbackOnBadFile    = "fallback_on_bad_file"
-	mergePipelineFieldConflictPolicy       = "conflict_policy"
-	mergePipelineFieldConflictModel        = "conflict_model"
-	mergePipelineFieldVersionFiles         = "version_files"
-	mergePipelineFieldReleaseSizeMap       = "release_size_map"
-	mergePipelineFieldMajorTrigger         = "major_trigger"
-	mergePipelineFieldReleaseCadence       = "release_cadence"
-	mergePipelineFieldVersionScheme        = "version_scheme"
-	mergePipelineFieldReleaseApprovalPatch = "release_approval.patch"
-	mergePipelineFieldReleaseApprovalMinor = "release_approval.minor"
-	mergePipelineFieldReleaseApprovalMajor = "release_approval.major"
+	mergePipelineFieldFileName              = "file_name"
+	mergePipelineFieldSourceOrder           = "source_order"
+	mergePipelineFieldFallbackOnBadFile     = "fallback_on_bad_file"
+	mergePipelineFieldConflictPolicy        = "conflict_policy"
+	mergePipelineFieldConflictModel         = "conflict_model"
+	mergePipelineFieldConflictMode          = "conflict_mode"
+	mergePipelineFieldConflictConfirmFirstN = "conflict_confirm_first_n"
+	mergePipelineFieldVersionFiles          = "version_files"
+	mergePipelineFieldReleaseSizeMap        = "release_size_map"
+	mergePipelineFieldMajorTrigger          = "major_trigger"
+	mergePipelineFieldReleaseCadence        = "release_cadence"
+	mergePipelineFieldVersionScheme         = "version_scheme"
+	mergePipelineFieldReleaseApprovalPatch  = "release_approval.patch"
+	mergePipelineFieldReleaseApprovalMinor  = "release_approval.minor"
+	mergePipelineFieldReleaseApprovalMajor  = "release_approval.major"
 )
 
 // mergePipelineFields lists the keys in a fixed order, so the first bad value
 // reported does not depend on map order.
 var mergePipelineFields = []string{
 	mergePipelineFieldFileName, mergePipelineFieldSourceOrder, mergePipelineFieldFallbackOnBadFile,
-	mergePipelineFieldConflictPolicy, mergePipelineFieldConflictModel, mergePipelineFieldVersionFiles,
+	mergePipelineFieldConflictPolicy, mergePipelineFieldConflictModel, mergePipelineFieldConflictMode,
+	mergePipelineFieldConflictConfirmFirstN, mergePipelineFieldVersionFiles,
 	mergePipelineFieldReleaseSizeMap, mergePipelineFieldMajorTrigger, mergePipelineFieldReleaseCadence,
 	mergePipelineFieldVersionScheme,
 	mergePipelineFieldReleaseApprovalPatch, mergePipelineFieldReleaseApprovalMinor,
@@ -148,6 +151,9 @@ type mergePipelineView struct {
 	// size for the requested project: the project's override, else the global
 	// value, else the default.
 	ReleaseApprovalInEffect mergepipeline.ReleaseApprovalInEffect `json:"release_approval_in_effect"`
+	// ConflictConfirmation is the count of model-resolved conflicts against the
+	// number the project must confirm first, and whether that gate is on.
+	ConflictConfirmation mergepipeline.ConflictConfirmationView `json:"conflict_confirmation"`
 }
 
 // mergePipelineSettingsView is the resolution and version settings in effect.
@@ -360,6 +366,10 @@ func (s *Server) handleMergePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 	view.ConflictPolicyInEffect, view.ConflictModelInEffect, view.ConflictDegradedReason =
 		cfg.ResolveConflictPolicy(project, lookup)
+	counter, counterErr := mergepipeline.NewConflictCounter(s.statePath())
+	view.ConflictConfirmation = mergepipeline.BuildConflictConfirmation(project,
+		cfg.EffectiveConflictMode(project), cfg.EffectiveConflictConfirmFirstN(project),
+		counter, counterErr)
 	if res.Source == mergepipeline.SourceRecord {
 		if rec, err := records.Get(project); err == nil {
 			view.RecordUpdatedAt = rec.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -577,17 +587,19 @@ func mergePipelineConfigSurface(c config.MergePipelineConfig) map[string]any {
 		projects = map[string]config.MergePipelineOverride{}
 	}
 	return map[string]any{
-		mergePipelineFieldFileName:          c.EffectiveFileName(""),
-		mergePipelineFieldSourceOrder:       c.EffectiveSourceOrder(""),
-		mergePipelineFieldFallbackOnBadFile: c.EffectiveFallbackOnBadFile(""),
-		mergePipelineFieldConflictPolicy:    c.EffectiveConflictPolicy(""),
-		mergePipelineFieldConflictModel:     c.EffectiveConflictModel(""),
-		mergePipelineFieldVersionFiles:      files,
-		mergePipelineFieldReleaseSizeMap:    c.EffectiveReleaseSizeMap(""),
-		mergePipelineFieldMajorTrigger:      c.EffectiveMajorTrigger(""),
-		mergePipelineFieldReleaseCadence:    c.EffectiveReleaseCadence(""),
-		mergePipelineFieldVersionScheme:     c.EffectiveVersionScheme(""),
-		"release_approval":                  c.EffectiveReleaseApprovalModes(""),
+		mergePipelineFieldFileName:              c.EffectiveFileName(""),
+		mergePipelineFieldSourceOrder:           c.EffectiveSourceOrder(""),
+		mergePipelineFieldFallbackOnBadFile:     c.EffectiveFallbackOnBadFile(""),
+		mergePipelineFieldConflictPolicy:        c.EffectiveConflictPolicy(""),
+		mergePipelineFieldConflictModel:         c.EffectiveConflictModel(""),
+		mergePipelineFieldConflictMode:          c.EffectiveConflictMode(""),
+		mergePipelineFieldConflictConfirmFirstN: c.EffectiveConflictConfirmFirstN(""),
+		mergePipelineFieldVersionFiles:          files,
+		mergePipelineFieldReleaseSizeMap:        c.EffectiveReleaseSizeMap(""),
+		mergePipelineFieldMajorTrigger:          c.EffectiveMajorTrigger(""),
+		mergePipelineFieldReleaseCadence:        c.EffectiveReleaseCadence(""),
+		mergePipelineFieldVersionScheme:         c.EffectiveVersionScheme(""),
+		"release_approval":                      c.EffectiveReleaseApprovalModes(""),
 		"post_ship": map[string]any{
 			"enabled":              c.PostShip.Enabled,
 			"hooks":                c.PostShip.Hooks,
@@ -717,6 +729,7 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 		o = config.MergePipelineOverride{
 			FileName: c.FileName, SourceOrder: c.SourceOrder, FallbackOnBadFile: c.FallbackOnBadFile,
 			ConflictPolicy: c.ConflictPolicy, ConflictModel: c.ConflictModel, VersionFiles: c.VersionFiles,
+			ConflictMode: c.ConflictMode, ConflictConfirmFirstN: c.ConflictConfirmFirstN,
 			ReleaseSizeMap: c.ReleaseSizeMap, MajorTrigger: c.MajorTrigger,
 			ReleaseCadence: c.ReleaseCadence, VersionScheme: c.VersionScheme,
 			ReleaseApproval: c.ReleaseApproval,
@@ -730,6 +743,7 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 	if pk.project == "" {
 		c.FileName, c.SourceOrder, c.FallbackOnBadFile = o.FileName, o.SourceOrder, o.FallbackOnBadFile
 		c.ConflictPolicy, c.ConflictModel, c.VersionFiles = o.ConflictPolicy, o.ConflictModel, o.VersionFiles
+		c.ConflictMode, c.ConflictConfirmFirstN = o.ConflictMode, o.ConflictConfirmFirstN
 		c.ReleaseSizeMap, c.MajorTrigger = o.ReleaseSizeMap, o.MajorTrigger
 		c.ReleaseCadence, c.VersionScheme = o.ReleaseCadence, o.VersionScheme
 		c.ReleaseApproval = o.ReleaseApproval
@@ -739,7 +753,8 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 		c.Projects = map[string]config.MergePipelineOverride{}
 	}
 	if o.FileName == "" && o.SourceOrder == nil && o.FallbackOnBadFile == "" && o.ConflictPolicy == "" &&
-		o.ConflictModel == nil && o.VersionFiles == nil && o.ReleaseSizeMap == nil && o.MajorTrigger == "" &&
+		o.ConflictModel == nil && o.ConflictMode == "" && o.ConflictConfirmFirstN == nil &&
+		o.VersionFiles == nil && o.ReleaseSizeMap == nil && o.MajorTrigger == "" &&
 		o.ReleaseCadence == "" && o.VersionScheme == "" && o.ReleaseApproval == (config.ReleaseApprovalModes{}) {
 		delete(c.Projects, pk.project)
 		return true, nil
@@ -778,6 +793,21 @@ func setMergePipelineField(o *config.MergePipelineOverride, key, field string, v
 		default:
 			o.ConflictPolicy = str
 		}
+	case mergePipelineFieldConflictMode:
+		mode, err := mergePipelineText(key, v)
+		if err != nil {
+			return err
+		}
+		if mode != "" && mode != config.ConflictModeShadow && mode != config.ConflictModeOn {
+			return fmt.Errorf("%s: %q is invalid; use %q or %q", key, mode, config.ConflictModeShadow, config.ConflictModeOn)
+		}
+		o.ConflictMode = mode
+	case mergePipelineFieldConflictConfirmFirstN:
+		n, err := mergePipelineCount(key, v)
+		if err != nil {
+			return err
+		}
+		o.ConflictConfirmFirstN = n
 	case mergePipelineFieldConflictModel:
 		switch x := v.(type) {
 		case nil:
@@ -973,6 +1003,30 @@ func mergePipelineText(key string, v any) (string, error) {
 		return strings.TrimSpace(x), nil
 	}
 	return "", fmt.Errorf("%s: %v is invalid; use text", key, v)
+}
+
+// mergePipelineCount reads a whole-number value. null clears the key back to
+// unset (nil); 0 is an explicit zero, which turns confirmation off. A negative
+// or fractional number is refused with the key named.
+func mergePipelineCount(key string, v any) (*int, error) {
+	var n int
+	switch x := v.(type) {
+	case nil:
+		return nil, nil
+	case float64:
+		if x != float64(int(x)) {
+			return nil, fmt.Errorf("%s: %v is invalid; use a whole number", key, v)
+		}
+		n = int(x)
+	case int:
+		n = x
+	default:
+		return nil, fmt.Errorf("%s: %v is invalid; use a whole number", key, v)
+	}
+	if n < 0 {
+		return nil, fmt.Errorf("%s: %d is invalid; use 0 or more (0 turns confirmation off)", key, n)
+	}
+	return &n, nil
 }
 
 // mergePipelineList reads a list value: a JSON array of text or a comma list.
