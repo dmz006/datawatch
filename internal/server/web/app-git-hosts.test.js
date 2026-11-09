@@ -80,17 +80,17 @@ test('ready host row carries name, kind, account and scope status', () => {
   assert.equal(result.fixCommand, '');
   assert.equal(result.fixLabel, '');
   const keys = seen.map((s) => s.key);
-  assert.ok(keys.includes('git_hosts.kind.github'));
-  assert.ok(keys.includes('git_hosts.state.ready'));
-  assert.ok(keys.includes('git_hosts.scopes.ok'));
+  assert.ok(keys.includes('git_hosts_kind_github'));
+  assert.ok(keys.includes('git_hosts_state_ready'));
+  assert.ok(keys.includes('git_hosts_scopes_ok'));
 });
 
 test('labels are looked up by key through t() with their variables', () => {
   const { result, seen } = withT(() => renderHostRow(HOST, [READY]));
-  const account = seen.find((s) => s.key === 'git_hosts.account');
+  const account = seen.find((s) => s.key === 'git_hosts_account');
   assert.deepEqual(account.vars, { account: 'octocat' });
-  assert.equal(result.accountLabel, '<git_hosts.account>');
-  assert.equal(result.titleLabel, '<git_hosts.row_title>');
+  assert.equal(result.accountLabel, '<git_hosts_account>');
+  assert.equal(result.titleLabel, '<git_hosts_row_title>');
 });
 
 test('without t() the key is returned, so the module still runs under node', () => {
@@ -98,8 +98,8 @@ test('without t() the key is returned, so the module still runs under node', () 
   delete globalThis.t;
   try {
     const row = renderHostRow(HOST, [READY]);
-    assert.equal(row.stateLabel, 'git_hosts.state.ready');
-    assert.equal(row.kindLabel, 'git_hosts.kind.github');
+    assert.equal(row.stateLabel, 'git_hosts_state_ready');
+    assert.equal(row.kindLabel, 'git_hosts_kind_github');
   } finally {
     if (prev !== undefined) globalThis.t = prev;
   }
@@ -114,7 +114,7 @@ test('not-logged-in host shows the fix command and its label', () => {
   const { result } = withT(() => renderHostRow(HOST, [row]));
   assert.equal(result.state, 'not_logged_in');
   assert.equal(result.fixCommand, 'gh auth login --hostname github.com');
-  assert.equal(result.fixLabel, '<git_hosts.fix_label>');
+  assert.equal(result.fixLabel, '<git_hosts_fix_label>');
   assert.equal(result.problem, 'not logged in');
 });
 
@@ -130,7 +130,7 @@ test('scope status is missing when scope data exists but repo scope is absent', 
   const row = { host: 'github.com', logged_in: true, account: 'octocat', scopes: ['gist'] };
   const { result } = withT(() => renderHostRow(HOST, [row]));
   assert.equal(result.scopes, 'missing');
-  assert.equal(result.scopesLabel, '<git_hosts.scopes.missing>');
+  assert.equal(result.scopesLabel, '<git_hosts_scopes_missing>');
 });
 
 test('row matches by hostname of the base URL when the name differs', () => {
