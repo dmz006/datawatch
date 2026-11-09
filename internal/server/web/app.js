@@ -18402,6 +18402,7 @@ const GENERAL_CONFIG_FIELDS = [
       maxRetriesLabelKey: 'settings_decompose_lint_max_retries',
       taskTemplatesDefault: false,
       taskTemplatesLabelKey: 'settings_decompose_lint_task_templates',
+      taskTemplatesHelpKey: 'settings_decompose_lint_task_templates_help',
       guidanceLabelKey: 'settings_decompose_lint_guidance',
       rulesLabelKey: 'settings_decompose_lint_rules',
       rulesHelpKey: 'settings_decompose_lint_rules_help',
@@ -19930,7 +19931,7 @@ function loadGeneralConfig() {
                   <input id="${pid}-maxretries" type="number" min="${dlMin}" max="${dlMax}" step="1" class="form-input" style="width:80px;margin-top:0;" />
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                  <span style="${dlLbl}" title="Enables the daemon task decomposition templates">${escHtml(t(f.taskTemplatesLabelKey) || 'Task templates')}</span>
+                  <span style="${dlLbl}" title="${escHtml(t(f.taskTemplatesHelpKey) || 'Configures the standard tasks the decomposer adds to each story.')}">${escHtml(t(f.taskTemplatesLabelKey) || 'Task templates')}</span>
                   <label class="toggle-switch" style="margin:0;flex-shrink:0;">
                     <input type="checkbox" id="${pid}-tasktemplates" />
                     <span class="toggle-slider"></span>
