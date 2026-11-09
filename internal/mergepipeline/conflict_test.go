@@ -51,6 +51,9 @@ func conflictRepo(t *testing.T, file, base, mainText, featText string) string {
 	gitIn(t, dir, "config", "user.email", "test@example.com")
 	gitIn(t, dir, "config", "user.name", "Test")
 	gitIn(t, dir, "config", "commit.gpgsign", "false")
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, dir, file, base)
 	gitIn(t, dir, "add", ".")
 	gitIn(t, dir, "commit", "-q", "-m", "base")
@@ -155,6 +158,131 @@ func TestMergeWithoutConflictJustMerges(t *testing.T) {
 	}
 	if n := gitIn(t, dir, "rev-list", "--parents", "-n", "1", "HEAD"); len(strings.Fields(n)) != 3 {
 		t.Fatalf("expected a --no-ff merge commit, got %q", n)
+	}
+}
+
+// TestMechanicalClassRoutes gives each mechanically settled class its own
+// fixture repository and checks the merge comes out resolved_mechanical with
+// the expected content; a code file with an overlapping edit must stay asked.
+func TestMechanicalClassRoutes(t *testing.T) {
+	// makefileWith commits a Makefile on main, after the conflict fixture, so
+	// the feature branch never touches it.
+	makefileWith := func(recipe string) func(t *testing.T, dir string) {
+		return func(t *testing.T, dir string) {
+			writeFile(t, dir, "Makefile", "docs-index:\n\t"+recipe+"\n")
+			gitIn(t, dir, "add", "Makefile")
+			gitIn(t, dir, "commit", "-q", "-m", "makefile")
+		}
+	}
+	cases := []struct {
+		name       string
+		file       string
+		base       string
+		mainText   string
+		featText   string
+		setup      func(t *testing.T, dir string)
+		wantStatus Status
+		wantText   string
+	}{
+		{
+			name:       "changelog",
+			file:       "CHANGELOG.md",
+			base:       "# Changes\n",
+			mainText:   "# Changes\n- m\n",
+			featText:   "# Changes\n- f\n",
+			wantStatus: StatusResolvedMechanical,
+			wantText:   "# Changes\n- m\n- f\n",
+		},
+		{
+			name:       "version line",
+			file:       "internal/server/api.go",
+			base:       "var Version = \"1.2.3\"\n",
+			mainText:   "var Version = \"1.2.4\"\n",
+			featText:   "var Version = \"1.3.0\"\n",
+			wantStatus: StatusResolvedMechanical,
+			wantText:   "var Version = \"1.2.4\"\n",
+		},
+		{
+			name:       "readme line",
+			file:       "README.md",
+			base:       "# X\nLatest release: v2.0.0\n",
+			mainText:   "# X\nLatest release: v2.0.1\n",
+			featText:   "# X\nLatest release: v2.1.0\n",
+			wantStatus: StatusResolvedMechanical,
+			wantText:   "# X\nLatest release: v2.0.1\n",
+		},
+		{
+			name:       "locale",
+			file:       "internal/server/web/locales/en.json",
+			base:       "{\"a\":\"A\"}\n",
+			mainText:   "{\"a\":\"A\",\"m\":\"M\"}\n",
+			featText:   "{\"a\":\"A\",\"f\":\"F\"}\n",
+			wantStatus: StatusResolvedMechanical,
+			wantText:   "{\n  \"a\": \"A\",\n  \"f\": \"F\",\n  \"m\": \"M\"\n}\n",
+		},
+		{
+			name:       "generated index rebuilt by docs-index",
+			file:       "internal/docsindex/assets/index.json",
+			base:       "base index\n",
+			mainText:   "main index\n",
+			featText:   "feature index\n",
+			setup:      makefileWith("printf 'regenerated\\n' > internal/docsindex/assets/index.json"),
+			wantStatus: StatusResolvedMechanical,
+			wantText:   "regenerated\n",
+		},
+		{
+			name:       "generated index whose docs-index fails stays asked",
+			file:       "internal/docsindex/assets/index.json",
+			base:       "base index\n",
+			mainText:   "main index\n",
+			featText:   "feature index\n",
+			setup:      makefileWith("exit 1"),
+			wantStatus: StatusAsked,
+			wantText:   "main index\n",
+		},
+		{
+			name:       "code overlapping edit stays asked",
+			file:       "cfg.txt",
+			base:       "x=1\n",
+			mainText:   "x=2\n",
+			featText:   "x=3\n",
+			wantStatus: StatusAsked,
+			wantText:   "x=2\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := conflictRepo(t, c.file, c.base, c.mainText, c.featText)
+			if c.setup != nil {
+				c.setup(t, dir)
+			}
+			head := gitIn(t, dir, "rev-parse", "HEAD")
+			m := merger(dir, PolicyMechanical, nil, newQuestions(t), "true")
+			m.VersionFiles = []string{"internal/server/api.go"}
+			o, err := m.MergeBranch(context.Background(), MergeRequest{Branch: "feature"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if o.Status != c.wantStatus {
+				t.Fatalf("status = %q, want %q; outcome %+v", o.Status, c.wantStatus, o)
+			}
+			if c.wantStatus == StatusResolvedMechanical {
+				if len(o.Remaining) != 0 {
+					t.Fatalf("remaining = %v", o.Remaining)
+				}
+				if got := readFile(t, dir, c.file); got != c.wantText {
+					t.Fatalf("%s = %q, want %q", c.file, got, c.wantText)
+				}
+				if _, err := os.Stat(filepath.Join(dir, ".git", "MERGE_HEAD")); err == nil {
+					t.Fatal("a merge is still in progress")
+				}
+				if st := gitIn(t, dir, "status", "--porcelain"); st != "" {
+					t.Fatalf("tree not clean after the merge commit:\n%s", st)
+				}
+				return
+			}
+			assertAborted(t, dir, head, c.file, c.wantText)
+		})
 	}
 }
 
