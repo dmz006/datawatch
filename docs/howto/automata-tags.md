@@ -478,9 +478,24 @@ tree:
 ### Stamping, re-stamping and the startup backfill
 
 - **Every session the machine starts is stamped at placement** with the
-  tags of its placement record: node, backend, lane, role, project
-  (and the peer, when the placement names one). The tags live in the
+  tags of its placement record: node (`compute:`), backend, lane, role,
+  project and, for an Automaton's work, its Automaton, Automation, stage and
+  kind (and the peer, when the placement names one). The tags live in the
   session's `system_tags`, which the machine owns.
+- **Every session that can carry a placement tag carries every axis that
+  applies to it.** The rule is the same for every kind of session, so a
+  session never carries a partial set just because of the job it does:
+  - a **worker** session carries the full set its facts support;
+  - a **planner** (decompose) session carries its `automaton:`, `kind:decompose`,
+    `lane:` and `role:planner` tags **and** `compute:<node>` for the node it
+    runs on;
+  - a **supervisor** session carries the axes its own facts support, with
+    `role:supervisor` and `compute:<node>` for the node it runs on, plus
+    `backend:` and `lane:` when it runs in one.
+
+  An axis with no fact behind it still writes no tag (the rule is in
+  [The ten axes](#the-ten-axes) above). Turn an axis off and its tag is no
+  longer written on any session.
 - **A retry on another node re-stamps the same session.** The whole
   `system_tags` list is replaced, so the old node's `compute:` tag and any
   old `peer:` tag are gone and the new placement's tags are the ones you
