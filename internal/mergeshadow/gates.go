@@ -40,12 +40,15 @@ type GateResult struct {
 	Duration time.Duration
 	// Output is the last lines of the gate's combined stdout and stderr.
 	Output string
-	// Detail is extra context: why a gate was skipped, or the golangci-lint
-	// version used by the lint gate.
+	// Detail is extra context: why a gate was skipped, or, for the lint gate,
+	// the local golangci-lint version and the version CI pins.
 	Detail string
 	// Finding is the first lines of the failing output of the first run. It
 	// is set only when Status is GateLoadSensitive.
 	Finding string
+	// Findings are gate-level findings, such as lint_version_mismatch from
+	// the lint gate. They are empty when the gate has none.
+	Findings []Finding
 }
 
 // gateNames are the gates run by RunGates, in order. Each is a make target of
@@ -133,7 +136,8 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, extra
 	}
 
 	if name == "lint" {
-		res.Detail = joinDetail(res.Detail, golangciLintVersion(ctx))
+		localLine, localVersion := golangciLintVersion(ctx)
+		res = applyLintVersionPin(res, dir, localLine, localVersion)
 	}
 	return res
 }
@@ -159,19 +163,21 @@ func makefileHasGateTarget(dir, target string) bool {
 }
 
 // golangciLintVersion returns a one-line description of the golangci-lint
-// binary on PATH, or why it could not be determined.
-func golangciLintVersion(ctx context.Context) string {
+// binary on PATH, or why it could not be determined, and the normalized
+// version it reports ("" when none could be read).
+func golangciLintVersion(ctx context.Context) (line, version string) {
 	bin, err := exec.LookPath("golangci-lint")
 	if err != nil {
-		return "golangci-lint not found on PATH"
+		return "golangci-lint not found on PATH", ""
 	}
 	vctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(vctx, bin, "version").CombinedOutput()
 	if err != nil {
-		return "golangci-lint version unavailable: " + err.Error()
+		return "golangci-lint version unavailable: " + err.Error(), ""
 	}
-	return "golangci-lint: " + strings.TrimSpace(firstLine(string(out)))
+	first := strings.TrimSpace(firstLine(string(out)))
+	return "golangci-lint: " + first, NormalizeLintVersion(first)
 }
 
 // tailLines returns the last n lines of s with trailing blank lines removed.
