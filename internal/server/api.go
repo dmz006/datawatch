@@ -7807,6 +7807,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// and leaves every stored value untouched — the whole PUT is refused
 	// and nothing is written. Keys the patch does not send keep their
 	// stored values (the PUT's normal patch semantics).
+	if err := expandAttemptCostDottedKeys(patch, s.cfg.Autonomous.FirstAttempt); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if attemptCostPatchTouched(patch) {
 		next := s.cfg.Autonomous
 		next.FirstAttempt = cloneAttemptChoices(next.FirstAttempt)
