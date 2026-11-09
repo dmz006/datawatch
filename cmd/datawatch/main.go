@@ -9150,8 +9150,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 		// autonomous.restart_policy runs before the restart; the ACME renewal
 		// path keeps the plain function, because it restarts to reload a cert.
-		guardedRestartFn := guardRestart(daemonRestartFn, liveRestartManager, liveRestartSettings)
-		httpServer.SetRestartFunc(guardedRestartFn)
+		guardedRestartFn := guardRestartForce(func(bool) { daemonRestartFn() }, liveRestartManager, liveRestartSettings)
+		httpServer.SetRestartFuncForce(guardedRestartFn)
 
 		// BL397 — native ACME subsystem. Disabled by default (acme.enabled
 		// is false unless the operator opts in); failure to start it never
