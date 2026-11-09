@@ -2145,6 +2145,14 @@ Response:
 - **Helper:** `(*AutonomousConfig).EffectiveScriptGateTimeout()` returns the cap as a `time.Duration`; `0` returns `0` (no cap).
 - **Tests:** `internal/config/script_gate_timeout_test.go` (`TestScriptGateTimeoutSetting*`).
 
+## Project gate command (autonomous.project_gate_command)
+
+- **Config key:** `autonomous.project_gate_command` (`string`, `omitempty`, in `config.AutonomousConfig` in `internal/config/config.go`). Default empty, meaning unset. It names the project's own build-and-test command, so the gate is not tied to any language.
+- **Per-project override:** `project_gate_command` on a project's policy block (`config.ProjectPolicy`, `*string`). Nil inherits the daemon value. An explicit empty string unsets it for that project. `ResolveProjectPolicy` reports the value as `EffectivePolicy.ProjectGateCommand` with its source tier.
+- **Validation:** `ValidateProjectGateCommand` in `internal/config/script_gate.go`. The value is trimmed, at most `ProjectGateCommandMaxBytes` (1024) bytes, and must hold no NUL and no newline or carriage return. A refusal names the setting path plus `.project_gate_command`. It runs from `validateLoaded` for the daemon key and from `ValidateProjectPolicy` for project blocks.
+- **Helper:** `(*AutonomousConfig).EffectiveProjectGateCommand(policy *ProjectPolicy)` returns the trimmed effective command for one project: the policy value when set, otherwise the daemon value. A nil receiver or policy is allowed.
+- **Tests:** `internal/config/project_gate_command_test.go` (`TestProjectGateCommand*`).
+
 ## Lane fill (autonomous.lane_fill and the per-Automaton lane preference)
 
 - **Config block:** `autonomous.lane_fill` (`config.AutonomousLaneFillConfig` in `internal/config/config.go`, bridged by `LaneFillConfigFromYAML` in `internal/autonomous/lane_fill_config.go`). Keys: `mode` (`off`, `shadow`, `on`; empty means shadow), `gpu_lanes` (default 2), `claude_lanes` (default 3), `idle_alert_minutes` (default 30, 0 = off), `decompose_ahead_min` (default 2), `poll_seconds` (default 60, minimum 5), `gpu_backend` (default `pi-prompt`), `gpu_model` (empty), `claude_backend` (default `claude-code`), `count_verifier_wait` (default true). The `Effective*` helpers apply the defaults; validation is in `validate()` and `ValidateLaneFillMode`.

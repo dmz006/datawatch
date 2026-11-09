@@ -3646,6 +3646,13 @@ type AutonomousConfig struct {
 	// script_gate.go.
 	ScriptGateTimeoutSeconds int `yaml:"script_gate_timeout_seconds" json:"script_gate_timeout_seconds"`
 
+	// ProjectGateCommand is the project's own build-and-test command the
+	// gate runs (autonomous.project_gate_command). Empty means unset. It is
+	// not tied to any language. Trimmed, at most 1024 bytes, no NUL or
+	// newline. A project's policy block may override it. See
+	// EffectiveProjectGateCommand in script_gate.go.
+	ProjectGateCommand string `yaml:"project_gate_command,omitempty" json:"project_gate_command,omitempty"`
+
 	// Progress — parameters of the progress metrics engine (lane count,
 	// inactive-window gap, backlog file, start date, snapshot retention).
 	// See AutonomousProgressConfig.
@@ -7879,6 +7886,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {
+		return err
+	}
+	if err := ValidateProjectGateCommand("autonomous", cfg.Autonomous.ProjectGateCommand); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.Questions.validate(); err != nil {
