@@ -56,8 +56,17 @@ Covered (wait-analyses unless stated):
   9. open-alerts: a failed read
      ("Resource not accessible by integration (HTTP 403)") exits 1 and
      the clean message is never printed.
- 10. An unknown subcommand exits 2.
- 11. .github/workflows/codeql.yaml checks out the repository (actions/checkout)
+ 10. open-alerts: a rate-limit reset beyond the budget (WAIT_MAX_SECONDS=500,
+     reset 10**6 seconds away) stops at once: exit 1, output contains
+     "Rate limited" and "not a code problem", does not contain the clean
+     no-alerts message, no sleep is called, and the alerts endpoint is
+     called exactly once.
+ 11. open-alerts: a rate-limit reset inside the budget (WAIT_MAX_SECONDS=500,
+     reset 90 seconds away, one alerts failure): exit 0, exactly one sleep of
+     about 90 seconds (within 5s), the clean no-alerts message is printed, and
+     the alerts endpoint is called twice.
+ 12. An unknown subcommand exits 2.
+ 13. .github/workflows/codeql.yaml checks out the repository (actions/checkout)
      before it invokes bash scripts/codeql-alert-gate.sh (a missing checkout
      made every CI run fail with the script absent from the runner).
 """
@@ -313,6 +322,48 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn(
             "No open high or critical code-scanning alerts", proc.stdout)
+
+    # Open-alerts reset beyond the budget: stop at once, no sleep.
+    def test_open_alerts_reset_beyond_budget_stops_at_once(self):
+        proc = self.run_gate(
+            "open-alerts",
+            WAIT_MAX_SECONDS="500",
+            STUB_ALERTS_FAIL_COUNT=str(10 ** 9),
+            STUB_RATE_LIMIT_FAIL="0",
+            STUB_RATE_LIMIT_RESET_OFFSET=str(10 ** 6),
+        )
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn("Rate limited", out)
+        self.assertIn("not a code problem", out)
+        self.assertNotIn("No open high or critical code-scanning alerts", out)
+        self.assertEqual(self.recorded_sleeps(), [],
+                         "sleep must not be called when the reset is beyond the budget")
+        with open(self.count_file) as fh:
+            self.assertEqual(int(fh.read().strip()), 1,
+                             "the alerts endpoint should be called exactly once")
+
+    # Open-alerts reset inside the budget: one sleep, then the read succeeds.
+    def test_open_alerts_reset_inside_budget_sleeps_once_then_reads(self):
+        proc = self.run_gate(
+            "open-alerts",
+            WAIT_MAX_SECONDS="500",
+            STUB_ALERTS_FAIL_COUNT="1",
+            STUB_RATE_LIMIT_FAIL="0",
+            STUB_RATE_LIMIT_RESET_OFFSET="90",
+        )
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, out)
+        sleeps = self.recorded_sleeps()
+        self.assertEqual(len(sleeps), 1,
+                         "expected exactly one sleep: {!r}".format(sleeps))
+        self.assertAlmostEqual(
+            sleeps[0], 90, delta=5,
+            msg="the sleep should be about the 90s reset: {!r}".format(sleeps))
+        self.assertIn("No open high or critical code-scanning alerts", proc.stdout)
+        with open(self.count_file) as fh:
+            self.assertEqual(int(fh.read().strip()), 2,
+                             "the alerts endpoint should be called twice")
 
     # 8. open-alerts: one high alert fails with its count.
     def test_open_alerts_one_high_row(self):
