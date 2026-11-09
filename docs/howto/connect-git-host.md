@@ -59,7 +59,7 @@ git:
 
 | Key | Required | Rules |
 |---|---|---|
-| `name` | yes | Unique lowercase slug (`a-z`, `0-9`, single hyphens). It cannot be changed once the host exists. |
+| `name` | yes | Unique lowercase slug (`a-z`, `0-9`, single hyphens). It is the key in `git.hosts.<name>.<field>`, so a field write can never rename it — renaming (like creating or removing) is a whole-list write. |
 | `kind` | yes | `github`, `gitlab`, `gitea`, `bitbucket` or `git`. |
 | `base_url` | by kind | Required for `gitea`, `bitbucket` and `git`. For `gitlab` and `github`, empty means the public host (gitlab.com, github.com); set it for a self-hosted instance. |
 | `credential_source` | no | `host_login` (default), `vault` or `broker`. Empty reads as `host_login`. |
@@ -76,7 +76,7 @@ datawatch config set git.hosts.work-gitea.base_url https://git2.example.test
 datawatch config set git.hosts.work-gitea.vault_secret gitea-token
 ```
 
-A field write names a host that already exists. Creating, renaming or removing a host is a whole-list write: edit the `hosts:` block, or use the Settings card described below.
+A field write names a host that already exists — it can change the host's fields but not its name. Creating, renaming or removing a host is a whole-list write: edit the `hosts:` block, or use the Settings card described below.
 
 ### 2. Log in on the host (`host_login`)
 
@@ -208,7 +208,7 @@ When a host uses `credential_source: vault`, the daemon can put the token into t
 
 The variable is set only in that command's environment. It is never written to the daemon's own environment, the config, an error message or a response. An error names the host and the vault entry, never the value. A `broker` host gets no variable from datawatch, and a `host_login` host gets none either.
 
-**Current build.** The variable is defined and used by the code that builds host command environments, but the git push and clone callers do not yet pass in the vault lookup. A `vault` host's push or clone therefore fails with "no secret resolver for vault secret ..." until that lookup is wired in. Use `host_login` for hosts you push to until then.
+**Current build — review before relying on `vault`.** The variable is defined and used by the code that builds host command environments, but the git push and clone callers do not yet pass in the vault lookup. A `vault` host's push or clone therefore fails with "no secret resolver for vault secret ..." until that lookup is wired in. Use `host_login` for hosts you push to until then. Readiness and Test connection are unaffected: they check the machine's login either way.
 
 ## The Git hosts card in Settings
 
