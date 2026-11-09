@@ -211,10 +211,12 @@ responses and check the recorded waits; honour a reported core reset epoch;
 time out a missing analyses category under the wait budget; run a rate limit
 with no reset time out against the budget; on the analyses step, stop at once
 when the reset is beyond the remaining budget (no sleep is recorded) and wait
-once when the reset falls inside the budget; read a clean and a
-non-clean open-alerts set through the rate-limit retry; fail a non-rate-limit
-read so it is never reported as zero alerts; and reject an unknown
-subcommand. Run it once directly:
+once when the reset falls inside the budget; on the open-alerts step, stop at
+once in the same out-of-reach case and wait once when the reset falls inside
+the budget; read a clean and a non-clean open-alerts set through the rate-limit
+retry; fail a non-rate-limit read so it is never reported as zero alerts; check
+that the workflow checks out before it invokes the gate script; and reject an
+unknown subcommand. Run it once directly:
 
 ```
 python3 -I scripts/tests/test_codeql_alert_gate.py
@@ -228,18 +230,18 @@ python3 scripts/tests/test_codeql_alert_gate.py
 
 (`make test`).
 
-**Expected:** exit 0, eleven cases pass.
+**Expected:** exit 0, thirteen cases pass.
 
 **Actual:** PASS. The run exits 0; every case prints `... ok` and the summary
 is
 
 ```
-Ran 11 tests in 0.300s
+Ran 13 tests in 0.381s
 OK
 ```
 
 (The run's elapsed seconds are a wall-clock figure and shift by a few
-hundredths of a second between runs; `Ran 11 tests` and `OK` are the stable
+hundredths of a second between runs; `Ran 13 tests` and `OK` are the stable
 parts, and the exit code is 0 either way.)
 
 ## Test daemon cleanup rules
