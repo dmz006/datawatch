@@ -65,6 +65,9 @@ type Runner struct {
 
 // Run performs the shadow merge steps in order and stores the result:
 //
+//  0. list the Automaton's task branches and block the plan on any that holds
+//     commits the work branch does not (CheckUnmergedTaskBranches); when one
+//     does, steps 1 to 3 are not run;
 //  1. build the trial merge of the work branch into the base ref, in a
 //     throwaway worktree (TrialMergeWith);
 //  2. classify each conflicted path by file class;
@@ -106,26 +109,40 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 		Applied:     false,
 	}
 
+	// Step 0: a task branch of the Automaton with commits the Automaton branch
+	// lacks would be dropped by the merge, so it blocks the plan. The trial
+	// merge and the gates are not run against such a branch.
+	taskFindings, err := CheckUnmergedTaskBranches(ctx, in.RepoPath, in.Branch)
+	if err != nil {
+		return nil, err
+	}
+
 	// Steps 1 to 3: the trial merge, its conflicts and the gates on it.
 	var conflicts []Conflict
 	var gateList []Gate
-	_, trialErr := TrialMergeWith(ctx, in.RepoPath, base, in.Branch,
-		filepath.Join(in.DataDir, scratchDirName),
-		func(wt string, paths []string) error {
-			conflicts = classifyConflicts(cls, paths)
-			if len(paths) > 0 {
-				gateList = skippedGates("not run: the trial merge has conflicts")
-				return nil
-			}
-			gateList = toGates(gates(ctx, wt, timeout))
-			return nil
-		})
-	if cerr := ctx.Err(); cerr != nil {
-		return nil, cerr
-	}
-	if trialErr != nil {
+	var trialErr error
+	if len(taskFindings) > 0 {
 		conflicts = []Conflict{}
-		gateList = skippedGates("not run: the trial merge did not complete")
+		gateList = skippedGates("not run: an Automaton task branch has unmerged commits")
+	} else {
+		_, trialErr = TrialMergeWith(ctx, in.RepoPath, base, in.Branch,
+			filepath.Join(in.DataDir, scratchDirName),
+			func(wt string, paths []string) error {
+				conflicts = classifyConflicts(cls, paths)
+				if len(paths) > 0 {
+					gateList = skippedGates("not run: the trial merge has conflicts")
+					return nil
+				}
+				gateList = toGates(gates(ctx, wt, timeout))
+				return nil
+			})
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
+		if trialErr != nil {
+			conflicts = []Conflict{}
+			gateList = skippedGates("not run: the trial merge did not complete")
+		}
 	}
 
 	// Step 4: the changelog entry.
@@ -163,7 +180,7 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	// Step 6: the record itself.
 	plan.Conflicts = conflicts
 	plan.Gates = gateList
-	plan.Findings = findingsFor(trialErr, conflicts, gateList, entry.Source)
+	plan.Findings = append(taskFindings, findingsFor(trialErr, conflicts, gateList, entry.Source)...)
 	if err := Save(in.DataDir, in.AutomatonID, plan); err != nil {
 		return nil, err
 	}
