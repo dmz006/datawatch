@@ -201,6 +201,7 @@ var MCPToolCap = map[string]string{
 	"automation_model_pull_consent_get":    CapAutonomousRead,
 	"automation_model_pull_consent_set":    CapConfigWrite,
 	"autonomous_decisions":                 CapAutonomousRead,
+	"autonomous_release_readiness":         CapAutonomousRead,
 	"autonomous_repo_ci_watch":             CapAutonomousRead,
 	"question_stats":                       CapAutonomousRead,
 	"question_quality":                     CapAutonomousRead,
