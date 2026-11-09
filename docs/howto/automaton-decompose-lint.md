@@ -425,8 +425,9 @@ The same five verbs, one operator-facing wording everywhere (the CLI and
 the comm channel share the finding-line renderer): `autonomous lint
 config`, `lint config-set mode=enforce max_retries=2 disabled_rules=a,b`,
 `lint dry-run <id>`, `lint findings <id>`. The standard-task list is the
-word `standard tasks` (or `autonomous standard-tasks`): the global switch,
-then one line per standard task — `id | title | on|off | mode`.
+word `standard tasks` (or `autonomous standard-tasks`): one line per
+standard task — `id | title | on|off | mode`; an empty list replies "no
+standard tasks are defined."
 
 ## 8. What it will never do
 
