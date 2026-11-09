@@ -300,7 +300,7 @@ In order:
 4. `merge-branches` (`merge_branches`) — merge each branch in order. A branch already contained in main is left in place and named as such in the step note. When every branch is already in main, the run has nothing new to release: the release steps 5 through 11 are each recorded as `skipped` (note `nothing new was released: every branch was already merged into main`), nothing is pushed, and the deploy step still runs.
 5. `set-release-version` (`set_release_version`) — set the release version in every version file, after the merge. A file that already carries the run's version is left alone.
 6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version. A changelog that already has a heading for it is left alone.
-7. `set-readme-release-line` (`set_readme_release_line`) — rewrite the version and date on the README's `Current release:` line to this release and today's date (UTC). The rest of the line and file is left alone. A line that already names the version is left alone too. A README with no such line stops the run and names the file.
+7. `set-readme-release-line` (`set_readme_release_line`) — rewrite the version and date on the README's `Current release:` line to this release and today's date (UTC). The line must carry the shape `vX.Y.Z (YYYY-MM-DD)` — a line like `**Current release: v1.2.3 (2026-11-08).**` — or the step has nothing to rewrite and the run stops, naming the file and the missing shape. The rest of the line and file is left alone. A line that already names the version is left alone too. A README with no such line stops the run and names the file.
 8. `commit-release-bump` (`commit_release_bump`) — one commit of the version files, the changelog and the README; with nothing staged no commit is made.
 9. `tag-release` (`tag_release`) — tag that commit with the new version. A tag already on that commit is left alone. A tag of that name pointing at another commit fails the step, naming the tag and both commits — the daemon never moves a release tag, so resolving it is an operator call.
 10. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator over the bump the earlier steps made (see [The release-bump validator](#the-release-bump-validator) below). A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
@@ -329,7 +329,7 @@ check that failed. The five checks, in the order they run:
 | `changelog_heading_matches` | The first `## vX.Y.Z` heading in `CHANGELOG.md` is that version. |
 | `one_step_above_last_tag` | The version is exactly one patch, minor or major step above the newest local `vX.Y.Z` tag. The run's own release tag is not counted as the previous release. |
 | `tag_not_taken` | The tag `vX.Y.Z` is not on `origin`, and any local tag of that name points at HEAD. If `origin` cannot be queried, the check fails. |
-| `readme_line_matches` | The first `Current release:` line in `README.md` names that version. |
+| `readme_line_matches` | The first `Current release:` line in `README.md` names that version. The check looks at the version only, not the date: a line that names the right version without the `(YYYY-MM-DD)` date still passes here — it is the `set-readme-release-line` step, not this validator, that requires the shape. |
 
 The run record keeps the whole result under `validator`: `pass`, `version`,
 `checked_at`, and one entry per check with its `name`, `pass` and `detail`.
@@ -363,6 +363,14 @@ empty, so a fresh project that runs the built-in pipeline fails at
 `set-release-version` until its version files are named. Whether the built-in
 default should name files, and whether the script should read the setting, are
 open decisions.
+
+**For operator review too:** the `set-readme-release-line` step needs the
+`Current release:` line to already carry the `vX.Y.Z (YYYY-MM-DD)` shape —
+for example `**Current release: v1.2.3 (2026-11-08).**`. If the project's
+README line has no date, the step stops the run until the line is fixed; a
+line that only names a version still passes the `readme_line_matches`
+validator, so the two surfaces do not agree. Review the README line before the
+first run of the built-in pipeline.
 
 A run whose release tag has been moved to another commit fails the `tag-release` step (the daemon never moves a release tag); resolving the tag — or re-running after it is dealt with — is an operator call.
 
