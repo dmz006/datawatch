@@ -310,6 +310,9 @@ codeql-local:
 test-plans-registry-archive:
 	bash tests/test-plans-registry-archive.sh
 
+test-plans-tidy-daily:
+	bash tests/test-plans-tidy-daily.sh
+
 test:
 	go test ./...
 	bash tests/test-check-no-local-leaks.sh
@@ -319,6 +322,7 @@ test:
 	bash tests/test-codeql-trigger-listing.sh
 	bash tests/test-tidy-plans.sh
 	bash tests/test-plans-registry-archive.sh
+	bash tests/test-plans-tidy-daily.sh
 	python3 scripts/tests/test_dismissed_alerts_watch.py
 	python3 scripts/tests/test_codeql_alert_gate.py
 
