@@ -8944,6 +8944,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// BL367 — autonomous quality gate stats in WS broadcast.
 		if autonomousMgrRef != nil {
 			amgrRef := autonomousMgrRef
+			// Worker startup averages per profile and role (worker_startup block).
+			statsCollector.SetWorkerStartupStatsFunc(func(s *statspkg.SystemStats) {
+				s.WorkerStartup = statspkg.BuildWorkerStartupStats(workerStartupAttempts(amgrRef))
+			})
 			statsCollector.SetAutonomousStatsFunc(func(s *statspkg.SystemStats) {
 				st := amgrRef.Status()
 				s.QualityGateRuns = st.QualityGateRuns
@@ -11324,6 +11328,14 @@ func newStatsCmd() *cobra.Command {
 					fmt.Printf("  %s %-20s %-14s %8s  %s\n", sid, name, state, fmtB(rss), uptime)
 				}
 			}
+
+			// Worker startup averages per profile and role (worker_startup block).
+			var workerStartup statspkg.WorkerStartupStats
+			if raw, err := json.Marshal(s["worker_startup"]); err == nil {
+				_ = json.Unmarshal(raw, &workerStartup)
+			}
+			fmt.Println()
+			fmt.Println(statspkg.WorkerStartupText(workerStartup))
 
 			if cs, ok := s["comm_stats"].([]interface{}); ok && len(cs) > 0 {
 				fmt.Println()

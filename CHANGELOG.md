@@ -13,6 +13,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **How it shows up:** a session you start yourself is exactly as before — this covers worker, verifier and judge sessions only — and what a task finishes is unchanged. Worker, verifier and judge launches still start with the full harness until the sessions' start work lands; when it has, what a worker begins with is smaller: instead of the full operator harness, its starting context and tool set are the ones its profile names, and that is a setting you can read and change per profile, role, task kind or individual task.
   - **Migration:** none. Everything is new and unset: leaving it all unset keeps the built-in defaults (the small start), and the profiles take effect at worker launches from the point the sessions' start work ships. Guides and reference: [docs/howto/worker-session-profiles.md](docs/howto/worker-session-profiles.md), [docs/config-reference.yaml](docs/config-reference.yaml), [docs/implementation.md](docs/implementation.md).
 
+- **Stats now report the average startup size per worker profile and per role.** The stats snapshot (`GET /api/stats`, the `get_stats` MCP tool and `datawatch stats`) carries a `worker_startup` block with `average_startup_tokens_by_profile` and `average_startup_tokens_by_role` maps. The averages come from the same aggregation the cost report uses, so the two always agree; an attempt with no recorded size counts toward nothing, and a key with no sized attempt is left out rather than shown as zero. The block is always present, with empty maps when no attempt has a size yet. The text output of `datawatch stats` prints the same block.
+
 ## v9.112.6 — Show each system tag once in the Sessions tag menu
 
 ### Fixed
