@@ -172,8 +172,11 @@ the broker's `MaxTTL` (default 1h) and revoked on session end +
 periodic sweep — see [agents.md → Git provider + token broker](agents.md).
 
 For GitLab, set `git.provider: gitlab` on the Project Profile;
-schema is accepted but the implementation is currently a stub
-returning `ErrNotImplemented` (BL164 / Sprint 5 prereq).
+the provider is implemented — it opens merge requests (`glab mr create`),
+issues (`glab issue create`) and releases (`glab release create`), and
+clone/push ride the `glab` host login. Only token *minting* remains a stub
+returning `ErrNotImplemented` (BL164 / Sprint 5 prereq), so the broker's
+per-spawn mint flow is GitHub-only.
 
 ---
 

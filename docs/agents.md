@@ -173,7 +173,7 @@ that get revoked on session end.
 
 **Provider interface** (`internal/git/provider.go`):
 ```
-Kind()                                            // "github" | "gitlab"
+Kind()                                            // "github" | "gitlab" | "git" | "gitea" | "bitbucket"
 MintToken(ctx, repo, ttl)  → MintedToken          // short-lived
 RevokeToken(ctx, token)                            // best-effort
 OpenPR(ctx, PROptions)     → URL                  // pr/mr create
@@ -183,9 +183,17 @@ OpenPR(ctx, PROptions)     → URL                  // pr/mr create
 - `GitHub` — shells out to `gh` CLI. v1 uses the operator's existing
   PAT (`gh auth token`); fine-grained per-spawn tokens via
   `gh api …/installations/.../access_tokens` is a follow-up.
-- `GitLab` — stub returning `ErrNotImplemented` until a GitLab repo
-  enters the rotation. Schema-level acceptance is already in
+- `GitLab` — shells out to `glab` CLI: `glab mr create` (merge request URL),
+  `glab issue create`, `glab release create <tag>`; clone/push over HTTPS
+  use `glab auth git-credential` as the repository's local git credential
+  helper (SSH unchanged). `MintToken`/`RevokeToken` still return
+  `ErrNotImplemented` — the broker's mint flow is GitHub-only.
+  Schema-level acceptance is already in
   `ProjectProfile.Git.Provider`.
+- `GenericGit` — plain `git` for the self-hosted kinds (`git`, `gitea`,
+  `bitbucket`): `git clone` / `git push` work; `OpenPR`, `CreateIssue` and
+  `CreateRelease` return `ErrNoForgeAPI` ("open the change in the host's
+  web interface") rather than a silent failure.
 
 **Token broker** (`internal/auth/token_broker.go`):
 
