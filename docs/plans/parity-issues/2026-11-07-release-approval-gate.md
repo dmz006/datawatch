@@ -1,5 +1,7 @@
 # [sync] Release approval: the daemon's merge path now honours the mode, and `ask` is a yes-only gate on the operator's decision (Phase 4 of the autonomy handover plan)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#419, one consolidated issue for all the release approval drafts** (shipped in v9.116.0).
+
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened when
 the operator files it. Filing the issue does not change a line of this repo.
 This draft is a file write only: it never runs any hosting CLI and creates

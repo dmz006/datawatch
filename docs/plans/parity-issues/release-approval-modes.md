@@ -1,5 +1,7 @@
 Issue: pending, filed at the merge
 
+**Filed 2026-11-09 as dmz006/datawatch-app#419, one consolidated issue for all the release approval drafts** (shipped in v9.116.0).
+
 # [sync] Release approval modes: autonomous.merge_pipeline.release_approval settings (patch, minor, major), release_approval_in_effect on the merge pipeline card, and the ask decision in the questions list
 
 ## Body of the issue
