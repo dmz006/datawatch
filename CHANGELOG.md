@@ -11,6 +11,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **How it shows up:** the new axes appear under “Placement tags (system)” in the Sessions Tags menu and in tag filters. The operator's supervisor session is started with `launch_role=supervisor` (MCP `start_session`, the `--launch-role` flag on `datawatch session new`, or the REST field), so it carries the supervisor role tag with no automaton tag. Omitting the fields keeps a plain session as before, plus its placement tags.
   - **Migration:** none is required to keep existing sessions as they are. To bring sessions started before this change up to the full set, run the tag sweep: `datawatch autonomous tag-sweep --dry-run` previews the tally without writing any tag, then `datawatch autonomous tag-sweep` applies it (MCP `autonomous_tag_sweep` with `dry_run=true` to preview; REST `POST /api/autonomous/tags/sweep?dry_run=true`).
 
+### Fixed
+
+- **A restarted session gets its placement (system) tags re-derived from its record.** Restarting a session (`RestartSession`, and the restart path that reuses a completed or failed session's ID) now runs the same placement start hook a fresh start runs, so a restarted session keeps the role, kind, stage and automaton tags its record holds. A restart that fails does not run the hook.
+  - **How it shows up:** a restarted session's tags match its record without a tag sweep.
+  - **Migration:** none.
+
 ## v9.112.7 — Update dependencies and workflow action pins to the newest majors
 
 ### Changed

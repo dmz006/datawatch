@@ -4714,6 +4714,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.onStateChange(sess, oldState)
 	}
 	m.notifySessionStart(sess)
+	// Re-derive the relaunched session's placement (system) tags from its
+	// record, the same as Start. Only reached on a successful relaunch: every
+	// error return above leaves the hook uncalled. RestartSession delegates
+	// here, so it is covered too.
+	m.runPlacementStartHook(sess)
 
 	return sess, nil
 }
