@@ -41,8 +41,7 @@ func (s *Server) discussionParticipantsPath(id string) (string, error) {
 	if err := validateDiscussionID(id); err != nil {
 		return "", err
 	}
-	base := s.statePath("discussions")
-	dir, err := discussionFolderPath(base, id)
+	dir, err := s.discussionFolderForID(id)
 	if err != nil {
 		return "", err
 	}
