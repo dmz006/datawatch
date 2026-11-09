@@ -1311,6 +1311,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	if handled, err := m.runDaemonTemplateTask(ctx, prd, t); handled {
 		return err
 	}
+	// A final gate whose checks the daemon can run is run by the daemon too.
+	if handled, err := m.runScriptGateTask(ctx, prd, t); handled {
+		return err
+	}
 	// A restart drain holds a task that has not started until the drain ends.
 	if err := m.waitLaunchDrain(ctx); err != nil {
 		return err
