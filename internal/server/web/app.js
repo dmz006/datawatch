@@ -9744,6 +9744,10 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     'merge_pipeline_release_size_', 'merge_pipeline_major_', 'merge_pipeline_cadence_', 'merge_pipeline_scheme_'],
     DOCS_DEFINITIONS + '#release-size'],
   [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
+  // The release approval fields, their card rows and the card label link to the
+  // Release approval modes section of the how-to. Before the generic prefixes.
+  [['autonomous.merge_pipeline.release_approval.', 'settings_merge_pipeline_release_approval_',
+    'merge_pipeline_release_approval_'], 'howto/merge-pipeline.md#release-approval-modes'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
     'merge_pipeline_source'], DOCS_DEFINITIONS + '#merge-pipeline-source'],
@@ -18799,6 +18803,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.fallback_on_bad_file', label: 'Merge pipeline when the project file is bad (record, default or none; default record)', labelKey: 'settings_merge_pipeline_fallback_on_bad_file', hintKey: 'settings_merge_pipeline_fallback_on_bad_file_hint', docsKey: 'autonomous.merge_pipeline.fallback_on_bad_file', type: 'select', options: ['record', 'default', 'none'], optionLabelKeys: { record: 'settings_merge_pipeline_fallback_record', default: 'settings_merge_pipeline_fallback_default', none: 'settings_merge_pipeline_fallback_none' }, default: 'record' },
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
+    { key: 'autonomous.merge_pipeline.release_approval.patch', label: 'Release approval for patch releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_patch', hintKey: 'settings_merge_pipeline_release_approval_patch_hint', docsKey: 'autonomous.merge_pipeline.release_approval.patch', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
+    { key: 'autonomous.merge_pipeline.release_approval.minor', label: 'Release approval for minor releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_minor', hintKey: 'settings_merge_pipeline_release_approval_minor_hint', docsKey: 'autonomous.merge_pipeline.release_approval.minor', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
+    { key: 'autonomous.merge_pipeline.release_approval.major', label: 'Release approval for major releases (auto, ask or manual; default ask)', labelKey: 'settings_merge_pipeline_release_approval_major', hintKey: 'settings_merge_pipeline_release_approval_major_hint', docsKey: 'autonomous.merge_pipeline.release_approval.major', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'ask' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
     { key: 'autonomous.merge_pipeline.release_size_map', label: 'Release size by kind (the step each Automaton kind adds to the version)', labelKey: 'settings_merge_pipeline_release_size_map', helpKey: 'settings_merge_pipeline_release_size_map_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'release_size_map' },
     { key: 'autonomous.merge_pipeline.major_trigger', label: 'Major release trigger (manual, milestone or never; default manual)', labelKey: 'settings_merge_pipeline_major_trigger', helpKey: 'settings_merge_pipeline_major_trigger_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['manual', 'milestone', 'never'], optionLabelKeys: { manual: 'merge_pipeline_major_manual', milestone: 'merge_pipeline_major_milestone', never: 'merge_pipeline_major_never' }, default: 'manual', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.major_trigger', this)" },
@@ -29585,8 +29592,10 @@ function _infraRetryLoadMax(prd) {
 // /api/autonomous/merge-pipeline body into the Automation Setup card for one
 // project: where the pipeline in effect comes from (file, record or default)
 // with the reason, the steps in order, the conflict policy and the conflict
-// model. The operator can edit the record the daemon keeps, choose the policy
-// and choose the model from the registry list (opts.models, names). A missing
+// model, and the release approval mode in effect for each release size. The
+// operator can edit the record the daemon keeps, choose the policy, choose the
+// model from the registry list (opts.models, names) and choose a release
+// approval mode per size. A missing
 // view renders the placeholder; the loader owns the failed state. Every value
 // is escaped. The key maps hold literal locale keys, so the key-coverage guard
 // can see them.
@@ -29612,6 +29621,19 @@ function _mergePipelineSelect(id, onchange, options, selected) {
   const opts = options.map(([v, label]) => `<option value="${escHtml(v)}"${v === selected ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
   return `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="${onchange}(this.value)">${opts}</select>`;
 }
+// The release approval rows: one per release size, each with the three modes.
+// The row shows the mode in effect (release_approval_in_effect); a change is
+// saved as that project's override, like the card's policy and model.
+const MERGE_PIPELINE_RELEASE_SIZES = [
+  ['patch', 'merge_pipeline_release_approval_patch'],
+  ['minor', 'merge_pipeline_release_approval_minor'],
+  ['major', 'merge_pipeline_release_approval_major'],
+];
+const MERGE_PIPELINE_RELEASE_MODES = [
+  ['auto', 'merge_pipeline_release_approval_mode_auto'],
+  ['ask', 'merge_pipeline_release_approval_mode_ask'],
+  ['manual', 'merge_pipeline_release_approval_mode_manual'],
+];
 window.mergePipelineCardHtml = function(view, opts) {
   opts = opts || {};
   const head = `<div class="cap-title">${escHtml(t('merge_pipeline_card_title'))}${defsLink('merge_pipeline_card_title')}</div>`;
@@ -29671,6 +29693,21 @@ window.mergePipelineCardHtml = function(view, opts) {
   const model = `<div class="merge-pipeline-model" style="margin-top:8px;min-width:0;">` +
     `<label for="mergePipelineConflictModel" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_conflict_model_label'))}${defsLink('merge_pipeline_conflict_model_label')}</label> ` +
     _mergePipelineSelect('mergePipelineConflictModel', 'window.mergePipelineSetModel', modelOptions, current) + `</div>`;
+  // The mode in effect per size. The daemon always sends all three, so every
+  // row has a mode to show.
+  const inEffect = view.release_approval_in_effect && typeof view.release_approval_in_effect === 'object' ? view.release_approval_in_effect : {};
+  const releaseModeOptions = MERGE_PIPELINE_RELEASE_MODES.map(([v, k]) => [v, t(k)]);
+  const releaseRows = MERGE_PIPELINE_RELEASE_SIZES.map(([size, labelKey]) => {
+    const id = 'mergePipelineReleaseApproval-' + size;
+    return `<div class="merge-pipeline-release-approval-row" data-size="${size}" style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:4px;min-width:0;">` +
+      `<label for="${id}" style="font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}${defsLink(labelKey)}</label>` +
+      `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="window.mergePipelineSetReleaseApproval('${size}', this.value)">` +
+      releaseModeOptions.map(([v, label]) => `<option value="${escHtml(v)}"${v === inEffect[size] ? ' selected' : ''}>${escHtml(label)}</option>`).join('') +
+      `</select></div>`;
+  }).join('');
+  const releaseApproval = `<div class="merge-pipeline-release-approval" style="margin-top:8px;min-width:0;">` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_release_approval_label'))}${defsLink('merge_pipeline_release_approval_label')}</div>` +
+    releaseRows + `</div>`;
   const recordText = view.source === 'record' && view.definition ? JSON.stringify(view.definition, null, 2) : '';
   const editor = `<details class="merge-pipeline-editor" style="margin-top:8px;min-width:0;"><summary style="cursor:pointer;font-size:12px;">${escHtml(t('merge_pipeline_edit_record'))}</summary>` +
     `<div style="font-size:11px;color:var(--text2);margin:4px 0;">${escHtml(t('merge_pipeline_record_hint'))}</div>` +
@@ -29679,7 +29716,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<button type="button" class="btn-primary merge-pipeline-save" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineSaveRecord()">${escHtml(t('merge_pipeline_save_record'))}</button>` +
     `<button type="button" class="btn-secondary merge-pipeline-clear" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineClearRecord()">${escHtml(t('merge_pipeline_clear_record'))}</button></div>` +
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
-  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${editor}</div>`;
+  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${releaseApproval}${editor}</div>`;
 };
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the
@@ -29722,6 +29759,13 @@ function _mergePipelineSetting(field, value) {
 }
 window.mergePipelineSetPolicy = function(value) { return _mergePipelineSetting('conflict_policy', value); };
 window.mergePipelineSetModel = function(value) { return _mergePipelineSetting('conflict_model', value); };
+// mergePipelineSetReleaseApproval saves one size's mode as the shown project's
+// override. The size and mode are checked here before anything is sent.
+window.mergePipelineSetReleaseApproval = function(size, value) {
+  if (!MERGE_PIPELINE_RELEASE_SIZES.some(([s]) => s === size)) return Promise.resolve();
+  if (!MERGE_PIPELINE_RELEASE_MODES.some(([v]) => v === value)) return Promise.resolve();
+  return _mergePipelineSetting('release_approval.' + size, value);
+};
 window.mergePipelineSaveRecord = function() {
   const ta = document.getElementById('mergePipelineRecord');
   if (!ta) return Promise.resolve();

@@ -2075,6 +2075,21 @@ autonomous:
   #   named values refused as not available yet; any other name is invalid.
   # version_scheme: semver. Default semver. Any other name is refused as not
   #   available yet.
+  # release_approval: one mode per size of release - release_approval.patch,
+  #   .minor and .major - each auto | ask | manual (anything else is refused
+  #   with the key named). Defaults: patch auto, minor auto, major ask; a
+  #   release whose size cannot be read resolves to ask, never to shipping.
+  #   An unset size inherits the project's
+  #   autonomous.merge_pipeline.projects.<project>.release_approval, then the
+  #   global value, then that default. The merge run honours these modes:
+  #   auto ships a release whose checks pass and reports afterwards; ask raises
+  #   one "Ship this release?" decision and ships only on a yes; manual prepares
+  #   and reports, and a person ships. A failed check holds the release in every
+  #   mode. Example, one project ships minor releases by hand:
+  #     projects:
+  #       myproject:
+  #         release_approval:
+  #           minor: manual
   # merge_pipeline:
   #   file_name: .datawatch/merge-pipeline.yaml
   #   source_order: [file, record]
@@ -2086,6 +2101,10 @@ autonomous:
   #   major_trigger: manual
   #   release_cadence: per_merge
   #   version_scheme: semver
+  #   release_approval:
+  #     patch: auto
+  #     minor: auto
+  #     major: ask
   #   projects: {}
 
   # Post-ship hooks (autonomous.merge_pipeline.post_ship): the small steps a

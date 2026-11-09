@@ -486,3 +486,247 @@ func TestMergePipelineConfig_CloneIsDeep(t *testing.T) {
 		t.Fatal("clone of zero must stay unset")
 	}
 }
+
+// releaseApprovalModes builds a ReleaseApprovalModes for the table tests.
+func releaseApprovalModes(patch, minor, major string) ReleaseApprovalModes {
+	return ReleaseApprovalModes{Patch: patch, Minor: minor, Major: major}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalDefaults(t *testing.T) {
+	var c MergePipelineConfig
+	cases := []struct {
+		size, want string
+	}{
+		{ReleaseSizePatch, ReleaseApprovalAuto},
+		{ReleaseSizeMinor, ReleaseApprovalAuto},
+		{ReleaseSizeMajor, ReleaseApprovalAsk},
+	}
+	for _, tc := range cases {
+		if got := c.EffectiveReleaseApproval("p", tc.size); got != tc.want {
+			t.Fatalf("default %s = %q, want %q", tc.size, got, tc.want)
+		}
+	}
+	if got := c.EffectiveReleaseApprovalModes("p"); got != releaseApprovalModes(ReleaseApprovalAuto, ReleaseApprovalAuto, ReleaseApprovalAsk) {
+		t.Fatalf("default modes = %+v", got)
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalGlobalOverridesDefault(t *testing.T) {
+	modes := []string{ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual}
+	sizes := []string{ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor}
+	for _, sz := range sizes {
+		for _, m := range modes {
+			var c MergePipelineConfig
+			switch sz {
+			case ReleaseSizePatch:
+				c.ReleaseApproval.Patch = m
+			case ReleaseSizeMinor:
+				c.ReleaseApproval.Minor = m
+			case ReleaseSizeMajor:
+				c.ReleaseApproval.Major = m
+			}
+			if got := c.EffectiveReleaseApproval("p", sz); got != m {
+				t.Fatalf("global %s=%s resolved %q", sz, m, got)
+			}
+			// Other sizes stay on their defaults.
+			for _, other := range sizes {
+				if other == sz {
+					continue
+				}
+				want := DefaultReleaseApprovalPatch
+				if other == ReleaseSizeMajor {
+					want = DefaultReleaseApprovalMajor
+				} else if other == ReleaseSizeMinor {
+					want = DefaultReleaseApprovalMinor
+				}
+				if got := c.EffectiveReleaseApproval("p", other); got != want {
+					t.Fatalf("global %s=%s leaked into %s: %q, want %q", sz, m, other, got, want)
+				}
+			}
+		}
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalProjectOverridePrecedence(t *testing.T) {
+	modes := []string{ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual}
+	sizes := []string{ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor}
+	for _, sz := range sizes {
+		for _, proj := range modes {
+			for _, glob := range modes {
+				var c MergePipelineConfig
+				c.ReleaseApproval = releaseApprovalModes(glob, glob, glob)
+				o := MergePipelineOverride{}
+				switch sz {
+				case ReleaseSizePatch:
+					o.ReleaseApproval.Patch = proj
+				case ReleaseSizeMinor:
+					o.ReleaseApproval.Minor = proj
+				case ReleaseSizeMajor:
+					o.ReleaseApproval.Major = proj
+				}
+				c.Projects = map[string]MergePipelineOverride{"a": o}
+				if got := c.EffectiveReleaseApproval("a", sz); got != proj {
+					t.Fatalf("project %s=%s over global %s resolved %q", sz, proj, glob, got)
+				}
+				// Another project still sees the global value.
+				if got := c.EffectiveReleaseApproval("b", sz); got != glob {
+					t.Fatalf("project b %s resolved %q, want global %q", sz, got, glob)
+				}
+			}
+		}
+	}
+	// Project override beats the built-in default when there is no global.
+	c := MergePipelineConfig{Projects: map[string]MergePipelineOverride{
+		"a": {ReleaseApproval: releaseApprovalModes(ReleaseApprovalManual, ReleaseApprovalAsk, ReleaseApprovalAuto)},
+	}}
+	if got := c.EffectiveReleaseApprovalModes("a"); got != releaseApprovalModes(ReleaseApprovalManual, ReleaseApprovalAsk, ReleaseApprovalAuto) {
+		t.Fatalf("project over default = %+v", got)
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalPartialOverrideFallsThrough(t *testing.T) {
+	c := MergePipelineConfig{
+		ReleaseApproval: releaseApprovalModes("", ReleaseApprovalManual, ""),
+		Projects: map[string]MergePipelineOverride{
+			"a": {ReleaseApproval: releaseApprovalModes(ReleaseApprovalAsk, "", "")},
+		},
+	}
+	want := releaseApprovalModes(ReleaseApprovalAsk, ReleaseApprovalManual, DefaultReleaseApprovalMajor)
+	if got := c.EffectiveReleaseApprovalModes("a"); got != want {
+		t.Fatalf("partial override = %+v, want %+v", got, want)
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalUnknownSizeIsAsk(t *testing.T) {
+	c := MergePipelineConfig{
+		ReleaseApproval: releaseApprovalModes(ReleaseApprovalAuto, ReleaseApprovalAuto, ReleaseApprovalAuto),
+		Projects: map[string]MergePipelineOverride{
+			"a": {ReleaseApproval: releaseApprovalModes(ReleaseApprovalAuto, ReleaseApprovalAuto, ReleaseApprovalAuto)},
+		},
+	}
+	for _, sz := range []string{"", "huge", "PATCH", " minor"} {
+		if got := c.EffectiveReleaseApproval("a", sz); got != ReleaseApprovalAsk {
+			t.Fatalf("size %q resolved %q, want ask", sz, got)
+		}
+		if got := c.EffectiveReleaseApproval("", sz); got != ReleaseApprovalAsk {
+			t.Fatalf("size %q with no project resolved %q, want ask", sz, got)
+		}
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalNoOverrideFallsThroughToGlobal(t *testing.T) {
+	c := MergePipelineConfig{
+		ReleaseApproval: releaseApprovalModes(ReleaseApprovalManual, ReleaseApprovalAsk, ReleaseApprovalAuto),
+		Projects: map[string]MergePipelineOverride{
+			"other": {ReleaseApproval: releaseApprovalModes(ReleaseApprovalAuto, ReleaseApprovalAuto, ReleaseApprovalAuto)},
+		},
+	}
+	want := releaseApprovalModes(ReleaseApprovalManual, ReleaseApprovalAsk, ReleaseApprovalAuto)
+	for _, proj := range []string{"", "unlisted", "other-thing"} {
+		if got := c.EffectiveReleaseApprovalModes(proj); got != want {
+			t.Fatalf("project %q = %+v, want global %+v", proj, got, want)
+		}
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalCloneIsDeep(t *testing.T) {
+	in := MergePipelineConfig{
+		ReleaseApproval: releaseApprovalModes(ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual),
+		Projects: map[string]MergePipelineOverride{
+			"a": {ReleaseApproval: releaseApprovalModes(ReleaseApprovalManual, "", "")},
+		},
+	}
+	out := in.Clone()
+	out.ReleaseApproval.Patch = ReleaseApprovalManual
+	o := out.Projects["a"]
+	o.ReleaseApproval.Patch = ReleaseApprovalAsk
+	out.Projects["a"] = o
+	out.Projects["b"] = MergePipelineOverride{ReleaseApproval: releaseApprovalModes(ReleaseApprovalAsk, "", "")}
+
+	if in.ReleaseApproval != releaseApprovalModes(ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual) {
+		t.Fatalf("global block aliased: %+v", in.ReleaseApproval)
+	}
+	if in.Projects["a"].ReleaseApproval.Patch != ReleaseApprovalManual {
+		t.Fatalf("project override aliased: %+v", in.Projects["a"].ReleaseApproval)
+	}
+	if _, ok := in.Projects["b"]; ok {
+		t.Fatal("project map aliased")
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalValidateRejectsInvalidGlobal(t *testing.T) {
+	for _, sz := range []string{ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor} {
+		var c MergePipelineConfig
+		key := "autonomous.merge_pipeline.release_approval." + sz
+		switch sz {
+		case ReleaseSizePatch:
+			c.ReleaseApproval.Patch = "yolo"
+		case ReleaseSizeMinor:
+			c.ReleaseApproval.Minor = "yolo"
+		case ReleaseSizeMajor:
+			c.ReleaseApproval.Major = "yolo"
+		}
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Fatalf("%s: error = %v, want it to name %q", sz, err, key)
+		}
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalValidateRejectsInvalidProjectOverride(t *testing.T) {
+	for _, sz := range []string{ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor} {
+		var o MergePipelineOverride
+		switch sz {
+		case ReleaseSizePatch:
+			o.ReleaseApproval.Patch = "yolo"
+		case ReleaseSizeMinor:
+			o.ReleaseApproval.Minor = "yolo"
+		case ReleaseSizeMajor:
+			o.ReleaseApproval.Major = "yolo"
+		}
+		c := MergePipelineConfig{Projects: map[string]MergePipelineOverride{"proj": o}}
+		key := "autonomous.merge_pipeline.projects.proj.release_approval." + sz
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Fatalf("%s: error = %v, want it to name %q", sz, err, key)
+		}
+	}
+}
+
+func TestMergePipelineConfig_ReleaseApprovalValidateAcceptsValidModes(t *testing.T) {
+	for _, m := range []string{ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual, ""} {
+		global := MergePipelineConfig{ReleaseApproval: releaseApprovalModes(m, m, m)}
+		if err := global.Validate(); err != nil {
+			t.Fatalf("global mode %q rejected: %v", m, err)
+		}
+		proj := MergePipelineConfig{Projects: map[string]MergePipelineOverride{
+			"p": {ReleaseApproval: releaseApprovalModes(m, m, m)},
+		}}
+		if err := proj.Validate(); err != nil {
+			t.Fatalf("project mode %q rejected: %v", m, err)
+		}
+	}
+	// An unset block validates and is zero.
+	var unset MergePipelineConfig
+	if err := unset.Validate(); err != nil || !unset.IsZero() {
+		t.Fatalf("unset release_approval: err=%v zero=%v", err, unset.IsZero())
+	}
+}
+
+// TestMergePipelineReleaseApprovalValidateLoaded checks that a bad release
+// approval mode in config.yaml is refused on load, not only on PUT.
+func TestMergePipelineReleaseApprovalValidateLoaded(t *testing.T) {
+	cfg := DefaultConfig()
+	applyDefaults(cfg)
+	if err := validateLoaded(cfg); err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	cfg.Autonomous.MergePipeline.ReleaseApproval.Major = "sometimes"
+	err := validateLoaded(cfg)
+	if err == nil {
+		t.Fatal("validateLoaded with a bad global release_approval.major: want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "release_approval.major") {
+		t.Errorf("error %q does not name the key", err)
+	}
+}

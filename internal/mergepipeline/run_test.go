@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // ---- helpers ----
@@ -682,5 +683,324 @@ func TestRunWithoutVersionFilesFailsTheBumpStep(t *testing.T) {
 	_, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || !strings.Contains(err.Error(), "version_files") {
 		t.Fatalf("want a version_files error, got %v", err)
+	}
+}
+
+// ---- release gate and release approval, run end to end with fakes ----
+//
+// Each test runs a real pipeline (one check, then tag and push) through a fake
+// ShipRunner and a fake question store. The mode for each size comes from
+// config.MergePipelineConfig.EffectiveReleaseApproval, as the daemon wires it.
+
+// releaseRunFor builds a run for project and size whose approval mode is the
+// one cfg resolves for them, with the fake question store wired both ways.
+func releaseRunFor(t *testing.T, cfg config.MergePipelineConfig, project, size string, qs *fakeReleaseQuestions, ship *fakeShip) *Runner {
+	t.Helper()
+	r := newGateRun(t, newMergeRepo(t), gatePipeline(false, false), ship)
+	r.Resolver = resolverForProjects(t, gatePipeline(false, false), project)
+	r.Project = project
+	r.ReleaseSize = size
+	r.ReleaseApproval = cfg.EffectiveReleaseApproval(project, size)
+	r.Questions = qs
+	r.ReleaseAnswers = qs
+	return r
+}
+
+// resolverForProjects is resolverWithRecord for any number of project names,
+// so each project runs the same gate pipeline rather than the built-in default.
+func resolverForProjects(t *testing.T, def Definition, projects ...string) *Resolver {
+	t.Helper()
+	rs, err := NewRecordStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range projects {
+		if _, err := rs.Set(p, def); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &Resolver{Records: rs, ProjectDir: func(string) (string, bool) { return "", false }}
+}
+
+func releaseRunOnce(t *testing.T, r *Runner) autonomous.MergePipelineRun {
+	t.Helper()
+	res, err := r.Run(context.Background(), RunRequest{Title: "release", Branches: []string{"feature"}})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	return res.Run
+}
+
+// auto ships when the checks pass, with no question.
+func TestReleaseGateAutoShipsWhenChecksPass(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	run := releaseRunOnce(t, releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizePatch, qs, ship))
+	if stepOutcome(run, "tests") != autonomous.MergeStepOK {
+		t.Fatalf("tests = %q; want ok", stepOutcome(run, "tests"))
+	}
+	if stepOutcome(run, "tag") != autonomous.MergeStepOK || stepOutcome(run, "push") != autonomous.MergeStepOK {
+		t.Fatalf("tag/push = %q/%q; want both ok", stepOutcome(run, "tag"), stepOutcome(run, "push"))
+	}
+	if calls := shipCalls(ship); len(calls) != 2 {
+		t.Fatalf("ship calls = %q; want tag and push", calls)
+	}
+	if qs.raisedCount() != 0 {
+		t.Fatalf("auto must not raise a question; raised %d", qs.raisedCount())
+	}
+}
+
+// auto does not ship when a check fails: the leaving steps are held and
+// nothing reaches the ShipRunner.
+func TestReleaseGateAutoDoesNotShipWhenACheckFails(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizePatch, qs, ship)
+	r.Resolver = resolverWithRecord(t, gatePipeline(true, true))
+	run := releaseRunOnce(t, r)
+	if stepOutcome(run, "tests") != autonomous.MergeStepFailed {
+		t.Fatalf("tests = %q; want failed", stepOutcome(run, "tests"))
+	}
+	for _, step := range []string{"tag", "push"} {
+		if got := stepOutcome(run, step); got != autonomous.MergeStepSkipped {
+			t.Fatalf("%s = %q; want skipped", step, got)
+		}
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("ship calls = %q; want none", calls)
+	}
+	if qs.raisedCount() != 0 {
+		t.Fatalf("a failed check must not raise a question; raised %d", qs.raisedCount())
+	}
+}
+
+// manual runs every preparing step, ships nothing, and the record says a
+// person ships the release.
+func TestReleaseApprovalManualPreparesAndShipsNothing(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	cfg := config.MergePipelineConfig{ReleaseApproval: config.ReleaseApprovalModes{Minor: config.ReleaseApprovalManual}}
+	run := releaseRunOnce(t, releaseRunFor(t, cfg, "p", config.ReleaseSizeMinor, qs, ship))
+	if stepOutcome(run, "tests") != autonomous.MergeStepOK {
+		t.Fatalf("preparing step tests = %q; want ok", stepOutcome(run, "tests"))
+	}
+	for _, step := range []string{"tag", "push"} {
+		if got := stepOutcome(run, step); got != autonomous.MergeStepSkipped {
+			t.Fatalf("%s = %q; want skipped", step, got)
+		}
+		if d := stepDetail(run, step); !strings.Contains(d, "prepared; a person ships this release") {
+			t.Fatalf("%s detail = %q; want the person-ships wording", step, d)
+		}
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("ship calls = %q; want none", calls)
+	}
+	if qs.raisedCount() != 0 {
+		t.Fatalf("manual must not ask; raised %d", qs.raisedCount())
+	}
+}
+
+// ask raises exactly one question that carries the merge plan, and ships
+// nothing while the question is unanswered.
+func TestReleaseApprovalAskRaisesOneQuestionWithThePlan(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizeMajor, qs, ship)
+	run := releaseRunOnce(t, r)
+	if qs.raisedCount() != 1 {
+		t.Fatalf("raised %d questions; want exactly one", qs.raisedCount())
+	}
+	_, q := qs.open(t)
+	for _, want := range []string{"Release plan for p", "Size: major", "- tests: passed"} {
+		if !strings.Contains(q.Text, want) {
+			t.Fatalf("question text = %q; want it to contain %q", q.Text, want)
+		}
+	}
+	if q.AskedBy != ReleaseQuestionAsker {
+		t.Fatalf("asked_by = %q; want %q", q.AskedBy, ReleaseQuestionAsker)
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("unanswered ask shipped: %q", calls)
+	}
+	for _, step := range []string{"tag", "push"} {
+		if got := stepOutcome(run, step); got != autonomous.MergeStepSkipped {
+			t.Fatalf("%s = %q; want skipped while unanswered", step, got)
+		}
+	}
+}
+
+// A second run while the question is open finds it: no second question, and
+// still no ship.
+func TestReleaseApprovalAskSecondRunFindsOpenQuestion(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizeMajor, qs, ship)
+	releaseRunOnce(t, r)
+	releaseRunOnce(t, r)
+	if qs.raisedCount() != 1 {
+		t.Fatalf("raised %d questions over two runs; want exactly one", qs.raisedCount())
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("ship calls = %q; want none", calls)
+	}
+}
+
+// ask ships after the operator says yes. The fake finds the answered question
+// on the re-run, which is what the gate needs from a store.
+//
+// Known gap, not covered here: the real autonomous question store dedupes only
+// open questions (questions_store.go, raise: have.State == QuestionOpen). A
+// re-run after a yes therefore raises a new question and holds instead of
+// shipping. Fixing that is a store change, outside these tests.
+func TestReleaseApprovalAskShipsAfterYes(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestionsDedupingAnswered()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizeMajor, qs, ship)
+	releaseRunOnce(t, r)
+	qid := qs.answer(t, releaseOptionShip)
+	run := releaseRunOnce(t, r)
+	if stepOutcome(run, "tag") != autonomous.MergeStepOK || stepOutcome(run, "push") != autonomous.MergeStepOK {
+		t.Fatalf("tag/push = %q/%q; want both ok after yes", stepOutcome(run, "tag"), stepOutcome(run, "push"))
+	}
+	if !strings.HasPrefix(stepDetail(run, "tag"), "approved by the operator (operator question "+qid+")") {
+		t.Fatalf("tag detail = %q; want the approval note with question %s", stepDetail(run, "tag"), qid)
+	}
+	if calls := shipCalls(ship); len(calls) != 2 {
+		t.Fatalf("ship calls = %q; want tag and push", calls)
+	}
+}
+
+// ask does not ship after the operator says no; the record names the question.
+func TestReleaseApprovalAskDoesNotShipAfterNo(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizeMajor, qs, ship)
+	releaseRunOnce(t, r)
+	qs.answer(t, releaseOptionHold)
+	run := releaseRunOnce(t, r)
+	for _, step := range []string{"tag", "push"} {
+		if got := stepOutcome(run, step); got != autonomous.MergeStepSkipped {
+			t.Fatalf("%s = %q; want skipped after no", step, got)
+		}
+		if !strings.Contains(stepDetail(run, step), "(operator question ") {
+			t.Fatalf("%s detail = %q; want it to name the operator question", step, stepDetail(run, step))
+		}
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("ship calls = %q; want none after no", calls)
+	}
+}
+
+// ask does not ship after the question is withdrawn.
+func TestReleaseApprovalAskDoesNotShipAfterWithdraw(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizeMajor, qs, ship)
+	releaseRunOnce(t, r)
+	qs.withdraw(t)
+	run := releaseRunOnce(t, r)
+	if stepOutcome(run, "tag") != autonomous.MergeStepSkipped {
+		t.Fatalf("tag = %q; want skipped after withdraw", stepOutcome(run, "tag"))
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("ship calls = %q; want none after withdraw", calls)
+	}
+}
+
+// An unknown mode behaves as ask: one question, nothing ships, and the record
+// reports the mode as ask.
+func TestReleaseApprovalUnknownModeBehavesAsAsk(t *testing.T) {
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	r := releaseRunFor(t, config.MergePipelineConfig{}, "p", config.ReleaseSizePatch, qs, ship)
+	r.ReleaseApproval = "yolo"
+	run := releaseRunOnce(t, r)
+	if qs.raisedCount() != 1 {
+		t.Fatalf("unknown mode raised %d questions; want one, as ask does", qs.raisedCount())
+	}
+	if d := stepDetail(run, "tag"); !strings.Contains(d, "release gate (mode ask, size patch)") {
+		t.Fatalf("tag detail = %q; want it reported as ask", d)
+	}
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("unknown mode shipped: %q", calls)
+	}
+}
+
+// The default per size, through config: patch and minor ship with no question,
+// major asks and holds.
+func TestReleaseApprovalDefaultsPerSizeInARun(t *testing.T) {
+	var cfg config.MergePipelineConfig
+	for _, size := range []string{config.ReleaseSizePatch, config.ReleaseSizeMinor} {
+		ship := &fakeShip{}
+		qs := newFakeReleaseQuestions()
+		releaseRunOnce(t, releaseRunFor(t, cfg, "p", size, qs, ship))
+		if calls := shipCalls(ship); len(calls) != 2 {
+			t.Fatalf("default %s ship calls = %q; want tag and push", size, calls)
+		}
+		if qs.raisedCount() != 0 {
+			t.Fatalf("default %s asked; raised %d", size, qs.raisedCount())
+		}
+	}
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	releaseRunOnce(t, releaseRunFor(t, cfg, "p", config.ReleaseSizeMajor, qs, ship))
+	if calls := shipCalls(ship); len(calls) != 0 {
+		t.Fatalf("default major shipped without a yes: %q", calls)
+	}
+	if qs.raisedCount() != 1 {
+		t.Fatalf("default major raised %d questions; want one", qs.raisedCount())
+	}
+}
+
+// A project override changes one size only: project p sets major to auto, so
+// its major ships, while the global major stays ask for project q.
+func TestReleaseApprovalProjectOverrideChangesOneSize(t *testing.T) {
+	cfg := config.MergePipelineConfig{
+		Projects: map[string]config.MergePipelineOverride{
+			"p": {ReleaseApproval: config.ReleaseApprovalModes{Major: config.ReleaseApprovalAuto}},
+		},
+	}
+	ship := &fakeShip{}
+	qs := newFakeReleaseQuestions()
+	releaseRunOnce(t, releaseRunFor(t, cfg, "p", config.ReleaseSizeMajor, qs, ship))
+	if calls := shipCalls(ship); len(calls) != 2 {
+		t.Fatalf("project p major ship calls = %q; want tag and push", calls)
+	}
+	if qs.raisedCount() != 0 {
+		t.Fatalf("project p major is auto; raised %d", qs.raisedCount())
+	}
+
+	otherShip := &fakeShip{}
+	otherQs := newFakeReleaseQuestions()
+	releaseRunOnce(t, releaseRunFor(t, cfg, "q", config.ReleaseSizeMajor, otherQs, otherShip))
+	if calls := shipCalls(otherShip); len(calls) != 0 {
+		t.Fatalf("project q major shipped without a yes: %q", calls)
+	}
+	if otherQs.raisedCount() != 1 {
+		t.Fatalf("project q major is the global ask; raised %d", otherQs.raisedCount())
+	}
+}
+
+// A project override of minor to manual holds that project's minor, while
+// another project's minor still ships.
+func TestReleaseApprovalProjectManualMinorHoldsWhileOtherProjectShips(t *testing.T) {
+	cfg := config.MergePipelineConfig{
+		Projects: map[string]config.MergePipelineOverride{
+			"p": {ReleaseApproval: config.ReleaseApprovalModes{Minor: config.ReleaseApprovalManual}},
+		},
+	}
+	held := &fakeShip{}
+	heldRun := releaseRunOnce(t, releaseRunFor(t, cfg, "p", config.ReleaseSizeMinor, newFakeReleaseQuestions(), held))
+	if calls := shipCalls(held); len(calls) != 0 {
+		t.Fatalf("project p minor is manual; ship calls = %q", calls)
+	}
+	if stepOutcome(heldRun, "tag") != autonomous.MergeStepSkipped {
+		t.Fatalf("project p tag = %q; want skipped", stepOutcome(heldRun, "tag"))
+	}
+
+	shipped := &fakeShip{}
+	releaseRunOnce(t, releaseRunFor(t, cfg, "q", config.ReleaseSizeMinor, newFakeReleaseQuestions(), shipped))
+	if calls := shipCalls(shipped); len(calls) != 2 {
+		t.Fatalf("project q minor (global auto) ship calls = %q; want tag and push", calls)
 	}
 }

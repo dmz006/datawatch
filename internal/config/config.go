@@ -7974,6 +7974,13 @@ func validateLoaded(cfg *Config) error {
 	if err := ValidateWorkerProfileConfig(cfg); err != nil {
 		return err
 	}
+	// The merge pipeline block (conflict policy, release approval modes and
+	// the rest) is checked on load too, so a bad value in config.yaml is
+	// refused the same way a bad PUT /api/config value is. Its messages
+	// already name the full autonomous.merge_pipeline.* key.
+	if err := cfg.Autonomous.MergePipeline.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
