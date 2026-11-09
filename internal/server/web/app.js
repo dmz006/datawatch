@@ -16662,11 +16662,11 @@ function openPRDCreateModal() {
   // /api/profiles/{projects,clusters} alongside the backend lists.
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
-    : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
+    : fetch(_apiPath('/api/llms'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
   const ensureModels = ensureLLMModelLists;
   const ensureProfiles = Promise.all([
-    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/profiles/projects'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/profiles/clusters'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([projs, clusters]) => {
     const projectsArr = Array.isArray(projs) ? projs : (projs && projs.projects) || (projs && projs.profiles) || [];
     const clustersArr = Array.isArray(clusters) ? clusters : (clusters && clusters.clusters) || (clusters && clusters.profiles) || [];
@@ -22333,7 +22333,30 @@ function selectServer(name) {
       }
       showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Connected to ${_localHostname || 'this server'}`), 'info');
     }
+    // Re-render the view the operator is on so its picker bar re-injects
+    // with the new active chip highlighted (it used to redraw only Sessions).
+    _rerenderActiveViewForServerSwitch();
   }
+}
+
+// Re-renders the view currently shown after a real picker switch. The view is
+// read from state.activeView (the field navigate() sets). Views that show no
+// picker bar are skipped (no route). Settings and Observer inject the bar with
+// hideAll, so the "All" selection is skipped there and they keep their present
+// behaviour.
+function _rerenderActiveViewForServerSwitch() {
+  const routes = {
+    sessions:   { render: () => renderSessionsView(),   hidesAll: false },
+    autonomous: { render: () => renderAutonomousView(), hidesAll: false },
+    alerts:     { render: () => renderAlertsView(),     hidesAll: false },
+    dashboard:  { render: () => renderDashboardView(),  hidesAll: false },
+    settings:   { render: () => renderSettingsView(),   hidesAll: true },
+    observer:   { render: () => renderObserverView(),   hidesAll: true },
+  };
+  const route = routes[state.activeView];
+  if (!route) return;
+  if (route.hidesAll && state.activeServer === 'all') return;
+  route.render();
 }
 
 // BL312 S4 — fetch sessions from /api/sessions/aggregated and merge into state.
@@ -26066,10 +26089,10 @@ function openLaunchAutomatonWizard() {
   // Pre-fetch backends + profiles (same as openPRDCreateModal)
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
-    : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
+    : fetch(_apiPath('/api/llms'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
   const ensureProfiles = Promise.all([
-    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/profiles/projects'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/profiles/clusters'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([projs, clusters]) => {
     const toArr = (d, keys) => { for (const k of keys) { if (d && Array.isArray(d[k])) return d[k].map(p => p && (p.name || p)).filter(Boolean); } return Array.isArray(d) ? d.map(p => p && (p.name || p)).filter(Boolean) : []; };
     state._prdProjectProfiles = toArr(projs, ['projects','profiles']);
@@ -38747,7 +38770,7 @@ function parseAlertDeepLinkId(raw) {
 // the exact nesting -- keeps working if the Alerts view's structure changes.
 function openAlertDeepLink(alertId) {
   if (!alertId) return;
-  fetch('/api/alerts', { headers: tokenHeader() })
+  fetch(_apiPath('/api/alerts'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       const list = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : []);
@@ -41696,7 +41719,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load initial unread alert count. unread=1 returns only the unread alerts
   // (plus unread_count), which is all the badge and the watched-only seed read.
-  fetch('/api/alerts?unread=1', { headers: tokenHeader() })
+  fetch(_apiPath('/api/alerts?unread=1'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
@@ -41728,7 +41751,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // when /api/autonomous/config returns enabled:true. If the request
   // fails (auth issue, daemon down) we leave it hidden — better to
   // be invisible than to show a tab that 503s on click.
-  fetch('/api/autonomous/config', { headers: tokenHeader() })
+  fetch(_apiPath('/api/autonomous/config'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {
       const btn = document.getElementById('navBtnAutonomous');
@@ -42461,7 +42484,7 @@ function _dashLoop(ts) {
   const smokeInterval = hasActiveSmoke ? 75 : 900;
   if ((_dash._frameCount === 1 || _dash._frameCount % smokeInterval === 0) && !_dash._smokeFetching) {
     _dash._smokeFetching = true;
-    fetch('/api/smoke/progress').then(r => {
+    fetch(_apiPath('/api/smoke/progress')).then(r => {
       if (!r.ok) throw new Error('smoke ' + r.status);
       return r.json();
     }).then(d => {
@@ -42485,7 +42508,7 @@ function _dashLoop(ts) {
     // If an envelope is expanded, also refresh its section detail
     if (_dash._smokeExpandedId && !_dash._smokeDetailFetching) {
       _dash._smokeDetailFetching = true;
-      fetch('/api/smoke/progress/' + encodeURIComponent(_dash._smokeExpandedId)).then(r => {
+      fetch(_apiPath('/api/smoke/progress/' + encodeURIComponent(_dash._smokeExpandedId))).then(r => {
         if (r.status === 404) {
           _dash._smokeExpandedId = null;
           _dash._smokeExpandedData = null;
@@ -44123,7 +44146,7 @@ function _smokeSelectRun(id) {
     _dash._smokeExpandedId = id;
     _dash._smokeExpandedData = null;
     // Fetch detail immediately
-    fetch('/api/smoke/progress/' + encodeURIComponent(id)).then(r => r.ok ? r.json() : null)
+    fetch(_apiPath('/api/smoke/progress/' + encodeURIComponent(id))).then(r => r.ok ? r.json() : null)
       .then(d => { if (d) { _dash._smokeExpandedData = d; _dashRenderSmoke(); } }).catch(() => {});
   }
   _dashRenderSmoke();
@@ -44440,7 +44463,7 @@ function renderDashboardView() {
 // BL313 — unhide dashboard nav button; only shown when autonomous.enabled.
 // Called when dashboard view activates (ensures nav is visible after navigate()).
 function _dashCheckEnabled() {
-  fetch('/api/autonomous/config', { headers: tokenHeader() })
+  fetch(_apiPath('/api/autonomous/config'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {
       const navBtn = document.getElementById('navBtnDashboard');

@@ -907,10 +907,11 @@ Manage the list of remote datawatch instances this PWA can connect to. Adding a 
 
 Individual caps follow `surface:action` — e.g. `sessions:list`, `sessions:write`, `sessions:kill`, `config:write`, `federation:list`. Custom groups can also be referenced by name. See [Federated Access Controls](#federated-access-controls) for the full surface-action reference and how to create custom groups.
 
-**Per-tab picker** — once servers are registered, every main view (Sessions, Alerts, Automata, Observer, Dashboard) shows a chip bar at the top:
-- **All** — aggregated fetch from every server; returns items tagged with their `server` origin.
-- **Local** — only this daemon's data (default).
+**Per-tab picker** — once servers are registered, every main view (Sessions, Alerts, Automata, Observer, Settings, Dashboard) shows a chip bar at the top:
+- **All** — aggregated fetch from every server; returns items tagged with their `server` origin. Observer and Settings show no **All** chip at all.
+- **Local** (labelled with this daemon's hostname, never the word "Local") — only this daemon's data (default).
 - **\<name\>** — proxy mode; REST and WebSocket calls route through `/api/proxy/{name}/...` on the local daemon.
+- **Selecting a chip switches the page you're on, in place** (new — confirm it live before relying on it; see the [operations.md](operations.md) "Still to review (operator)" checklist) — picking a federated host (or the local chip, or **All**) re-renders the tab you're currently looking at against that server: the **Showing: \<name\>** line above the view updates to the active host and the list becomes that host's data, with no need to leave the view and re-open it. Re-selecting the already-active chip is a no-op. A genuine switch clears that view's previous server's data first (the old session list does not survive it), and sub-pages with no chip bar (session detail, the New session form) are left untouched by a switch; while a remote is active there are also one-tap "back to local" controls — a clickable **🌐 \<name\>** indicator on the Sessions toolbar (the `.server-indicator` chip in `renderSessionsView`, pinned in `app-select-server-controls.test.js`) and a **Back to \<hostname\>** button on the server's row in Settings → Comms → Remote Servers. Found 2026-11-08 and recorded under [Unreleased] → Fixed in [CHANGELOG.md](../CHANGELOG.md); that entry records that no live verification had been run when it was recorded, but the fix is implemented in this tree's `app.js` (`selectServer` re-renders the tab you're on, Automata sub-tabs included) with PWA tests — so on this source tree the old behaviour of a tab keeping the previous server's data until you navigated away and back is gone. On the **Dashboard** the switch is per panel: each panel re-fetches for the active host, and only the **Automata** and **Cost** panels aggregate under **All** (`/api/autonomous/prds/aggregated`, `/api/cost/aggregated`); the other panels have no aggregated variant. The operator checklist is in [operations.md](operations.md#proxy-mode-multi-machine-management).
 
 **Aggregated endpoints** used by the All chip:
 - `GET /api/sessions/aggregated` — sessions from all servers
@@ -2336,7 +2337,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
 | Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
-| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints |
+| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints; picking a server chip re-renders the current view in place |
 | MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | v7.1.0 | MCP protocol spec |
 | MCP Resources | [`howto/mcp-resources.md`](howto/mcp-resources.md) | v7.1.0 | MCP protocol spec |
 | MCP Sampling | [`howto/mcp-sampling.md`](howto/mcp-sampling.md) | v7.1.0 | MCP protocol spec |
@@ -2429,7 +2430,7 @@ Infrastructure:
 - [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
 - [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password + Vault backends
 - [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
-- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker, all-servers aggregation
+- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker (selecting a host re-renders the current view in place), all-servers aggregation
 - [`howto/compute-nodes.md`](howto/compute-nodes.md) — GPU/CPU node registry, kind taxonomy, observer peer binding
 - [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) — migrate deprecated compute node kinds to ollama/openai-compat
 - [`howto/llm-registry.md`](howto/llm-registry.md) — named LLM registry, per-node model lists, failover routing
