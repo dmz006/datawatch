@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.118.2 — Fix a release push test that needed a git identity
+
+### Fixed
+
+- **The release build's Go test step passes on a clean runner.** Two push guard tests in the merge pipeline ran the real tag step, which needs a git author and committer identity. They passed on a machine with an identity configured and failed on a CI runner with none. The test now sets an identity for its own process. No behaviour change in the daemon.
+
 ## v9.118.1 — Decompose lint card keeps the task template block
 
 ### Fixed

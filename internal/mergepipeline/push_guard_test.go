@@ -48,6 +48,12 @@ type pushGuardFixture struct {
 
 func newPushGuardFixture(t *testing.T) pushGuardFixture {
 	t.Helper()
+	// The production tag step runs git with whatever identity the host has;
+	// a clean CI runner has none, so give the test process one.
+	t.Setenv("GIT_AUTHOR_NAME", "test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.invalid")
+	t.Setenv("GIT_COMMITTER_NAME", "test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.invalid")
 	root := t.TempDir()
 	f := pushGuardFixture{
 		bare:  filepath.Join(root, "remote.git"),
