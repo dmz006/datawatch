@@ -1,6 +1,6 @@
-// Tests that an empty system_tags list is omitted from every session row
-// shape (never sent as null or an empty array), as the docs state, and that
-// a non-empty list is still sent in full.
+// Tests that an empty system_tags list is sent as an empty array in every
+// session row shape (never null and never absent), and that a non-empty list
+// is still sent in full.
 
 package server
 
@@ -13,15 +13,24 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 )
 
-// assertNoSystemTagsKey checks the row JSON has no system_tags key at all.
-func assertNoSystemTagsKey(t *testing.T, label string, raw []byte) {
+// assertEmptySystemTags checks the row JSON carries system_tags as an empty
+// array: key present, not null, decoding to a non-nil empty slice.
+func assertEmptySystemTags(t *testing.T, label string, raw []byte) {
 	t.Helper()
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &keys); err != nil {
 		t.Fatalf("%s: unmarshal keys: %v", label, err)
 	}
-	if v, ok := keys["system_tags"]; ok {
-		t.Errorf("%s: system_tags present (%s), want the key omitted", label, v)
+	v, ok := keys["system_tags"]
+	if !ok {
+		t.Fatalf("%s: system_tags absent, want []", label)
+	}
+	if string(v) != "[]" {
+		t.Errorf("%s: system_tags = %s, want []", label, v)
+	}
+	got := systemTagsOf(t, raw)
+	if got == nil || len(got) != 0 {
+		t.Errorf("%s: system_tags decoded to %#v, want an empty non-nil slice", label, got)
 	}
 }
 
@@ -55,13 +64,13 @@ func TestSessionSummaryRowSendsEmptySystemTags(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertNoSystemTagsKey(t, name+" sessionSummaryRow", rowRaw)
+		assertEmptySystemTags(t, name+" sessionSummaryRow", rowRaw)
 
 		hubRaw, err := json.Marshal(h.summaryRow(sess, 80))
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertNoSystemTagsKey(t, name+" Hub.summaryRow", hubRaw)
+		assertEmptySystemTags(t, name+" Hub.summaryRow", hubRaw)
 	}
 }
 
@@ -75,14 +84,14 @@ func TestSessionListRecordSendsEmptySystemTags(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertNoSystemTagsKey(t, name+" sessionListRecord", listRaw)
+		assertEmptySystemTags(t, name+" sessionListRecord", listRaw)
 
 		summarized, _ := summarizeSession(sess, 80)
 		boundedRaw, err := json.Marshal(sessionListRecord{Session: summarized})
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertNoSystemTagsKey(t, name+" bounded record", boundedRaw)
+		assertEmptySystemTags(t, name+" bounded record", boundedRaw)
 	}
 
 	// A non-empty list is still sent in full.
