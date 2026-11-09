@@ -1738,6 +1738,11 @@ type Manager struct {
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
 
+	// releaseSizeModes holds per-project release size approval overrides
+	// written by the release CI fall-back (release_ci_fallback.go), keyed
+	// by releaseSizeModeKey. Guarded by mu.
+	releaseSizeModes map[string]string
+
 	// modelHostCheck and modelRoutingSettings feed the pin-time model
 	// check (model_route.go). Guarded by mu. A nil check lets every pin
 	// through; nil settings read as the defaults.
