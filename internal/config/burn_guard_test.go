@@ -12,7 +12,7 @@ import (
 func TestBurnGuardDefaults(t *testing.T) {
 	got := DefaultConfig().Usage.BurnGuard
 	want := BurnGuardConfig{
-		Enabled: true, IntervalMinutes: 60, MarginPoints: 2.0,
+		Enabled: true, IntervalMinutes: 60, MarginPoints: 2.0, MaxProjectionGapPoints: 25,
 		Ladder:   []string{"lower_inflight", "route_pi_prompt", "hold_claude"},
 		StepBack: true, CacheWritePointsPerMillion: 0.373, CacheReadPointsPerMillion: 0.0069,
 		RefitOnReading:   true,
@@ -57,6 +57,18 @@ func TestBurnGuardNormalize(t *testing.T) {
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MarginPoints, 0) }, ""},
 		{"margin negative", func(c *BurnGuardConfig) { c.MarginPoints = -1 },
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MarginPoints, 2) }, "margin_points"},
+		{"projection gap zero is valid (never compare)", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = 0 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 0) }, ""},
+		{"projection gap negative", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = -1 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap NaN", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = nan },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap infinite", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = math.Inf(1) },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap over maximum", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = 101 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap at maximum is valid", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = 100 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 100) }, ""},
 		{"margin NaN", func(c *BurnGuardConfig) { c.MarginPoints = nan },
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MarginPoints, 2) }, "margin_points"},
 		{"margin too large", func(c *BurnGuardConfig) { c.MarginPoints = 99 },
