@@ -1635,30 +1635,42 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```
 
 **Operator review still owed:** the datawatch-app parity drafts for this
-family — the row shape at first load
-([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md)),
-the PWA drawing discipline
-([plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md)),
-the removal half
+family are tracked in this repo, and their filing states differ — the row
+shape at first load
+([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md))
+is **filed as datawatch-app issue
+#401** (https://github.com/dmz006/datawatch-app/issues/401), the PWA
+drawing discipline
+([plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md))
+is **filed as datawatch-app issue
+#402** (https://github.com/dmz006/datawatch-app/issues/402), while the
+removal half
 ([plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md](plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md))
 and the settled empty-list contract for every row shape
 ([plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md](plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md))
-— are tracked in this repo but **not filed yet**; the operator opens them
-on the app tracker when ready. Since the summary-row change that made
-`system_tags` always-present, with an empty array meaning "no placement
-tags now", their states differ: the first-load draft still describes the
-summary-row field as optional (a session without placement tags
-"serializes exactly as before", and its REST surface row still says
-`omitempty`) — correct that wording, and that surface row, before filing
-or revisiting the issue. The drawing-discipline draft already states the
-settled rule: a row that omits the key keeps the chips already held, and
-an explicit empty array removes them. The removal draft was rewritten to
-the settled rule in favour of the earlier draft that asserted the per-shape
-split (summary rows omitting the key; full records alone sending `[]`).
-And the empty-list contract draft restates the settled rule and records
-what this work leaves on the app side. Nothing on this daemon is open: no
-setting and no migration, the behavior is implemented and pinned, and the
-CHANGELOG already records it.
+remain **drafts, not filed** — the operator opens those two on the app
+tracker when ready (a new issue or a follow-up comment on #401/#402, the
+operator's call). Since the summary-row change that made `system_tags`
+always-present, with an empty array meaning "no placement tags now", one
+draft still carries the pre-change wire description: the first-load draft
+behind issue #401 still describes the summary-row field as optional (a
+session without placement tags "serializes exactly as before", and its
+REST surface row still says `omitempty`) — correct that sentence and that
+surface row to the settled rule before the operator comments on or
+revisits #401. The drawing-discipline draft (issue #402) already states
+the settled rule: a row that omits the key keeps the chips already held,
+and an explicit empty array removes them. The removal draft was rewritten
+to the settled rule in favour of the earlier draft that asserted the
+per-shape split (summary rows omitting the key; full records alone sending
+`[]`), and the empty-list contract draft restates the settled rule and
+records what this work leaves on the app side. What remains on the app
+side is one re-statement, not new functionality: the acceptance criteria
+of #401 and #402 should be re-stated against the settled rule — chips
+present at first draw, an empty `system_tags` on any row shape clears
+them, and a key-less row (older server) never adds chips — including the
+case of a tile that loses its last placement tag. Nothing on this daemon
+is open: no setting and no migration, the behavior is implemented and
+pinned, and the CHANGELOG already records it.
 
 ### Allowed project roots
 
