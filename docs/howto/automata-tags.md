@@ -484,28 +484,36 @@ tree:
   project and, for an Automaton's work, its Automaton, Automation, stage and
   kind (and the peer, when the placement names one). The tags live in the
   session's `system_tags`, which the machine owns.
-- **A session that records its launch facts carries every axis that
-  applies to it.** The launch role, kind and stage are stored on the
-  session record, and the session's placement is built from those facts
-  plus the record's own: the node it ran on — for a session that ran
-  locally and stored no node, the local node, so the tag reads
+- **Every session you start carries the axes its record supports.** A
+  start through `POST /api/sessions/start` (REST, the MCP `start_session`
+  tool or `datawatch session new`) stamps the new session with its
+  compute node — the local node, so the tag reads `compute:local`, when
+  it stored no node — its backend, its lane (when the backend names one)
+  and its project. Tagging is best-effort after the session already
+  exists: a failure is logged and the session stays usable without its
+  tags.
+- **A session started with launch facts carries every axis that applies
+  to it.** `launch_role`, `launch_kind` and `launch_stage` are stored on
+  the session record, and the session's placement is built from those
+  facts plus the record's own: the node it ran on — for a session that
+  ran locally and stored no node, the local node, so the tag reads
   `compute:local` — its role and kind (such as `role:planner` or
   `role:supervisor`) and its stage, alongside the backend, lane and
   project it records and the Automaton and Automation the work belongs
-  to. The axes present are exactly the ones the record supports (the rule
-  is in [The ten axes](#the-ten-axes) above). Turn an axis off and its
-  tag is no longer written on any session.
-- **A session with no recorded launch facts keeps the tags it already
-  has.** Records written before launch facts existed load with empty
-  values, and their sessions re-derive the way they always have: role and
-  kind from the session name, and no node fallback when the record names
-  no node. The daemon never invents an axis it cannot read from the
-  record, so a pass over such sessions leaves them unchanged.
-
-  For now, note that no production launch path records those facts yet —
-  a session gains the extra axes once its launch side starts recording
-  them, and from then on the record — not the session name — is what the
-  daemon reads.
+  to (when `launch_automaton` names one). The axes present are exactly
+  the ones the record supports (the rule is in [The ten axes](#the-ten-axes)
+  above), and a start with no launch facts carries none of the
+  role, kind, stage, automaton or automation axes because it records
+  none of those facts. Turn an axis off and its tag is no longer written
+  on any session.
+- **An existing session with no recorded launch facts keeps the tags it
+  already has.** Records written before launch facts existed load with
+  empty values, and the sweep re-derives them the way it always has: role
+  and kind from the session name, and no node fallback when the record
+  names no node. The daemon never invents an axis it cannot read from the
+  record, so a pass over such sessions leaves them unchanged. Where the
+  record does carry launch facts, the record — not the session name — is
+  what the daemon reads.
 - **A retry on another node re-stamps the same session.** The whole
   `system_tags` list is replaced, so the old node's `compute:` tag and any
   old `peer:` tag are gone and the new placement's tags are the ones you
