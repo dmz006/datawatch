@@ -189,6 +189,8 @@ rm_write_fake_backend() {
   cat >"$RM_CTRL/fake-backend.sh" <<EOF
 #!/usr/bin/env bash
 task="\${1:-}"
+# A task over the send-keys limit arrives as the path of a file that holds it.
+if [ -f "\$task" ] && [ -r "\$task" ]; then task="\$(cat "\$task")"; fi
 dir="\${2:-.}"
 ctrl="$RM_CTRL"
 num() { local v; v="\$(cat "\$ctrl/\$1" 2>/dev/null)"; printf '%s' "\${v:-\$2}"; }
