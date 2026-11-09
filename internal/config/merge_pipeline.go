@@ -786,6 +786,21 @@ func validConfirmFirstN(key string, v *int) error {
 	return fmt.Errorf("%s: %d is invalid; use 0 or more (0 turns confirmation off)", key, *v)
 }
 
+// ValidateConflictModeKey reports whether v is an accepted conflict_mode value:
+// "" (unset, reads shadow), "shadow" or "on". The error names key, so write
+// paths that carry the full config key (the chat configure verb) refuse with
+// the same check the daemon's config write runs.
+func ValidateConflictModeKey(key, v string) error {
+	return validConflictMode(key, v)
+}
+
+// ValidateConfirmFirstNKey reports whether n is an accepted
+// conflict_confirm_first_n value: 0 or more. The error names key. It is the
+// check the daemon's config write runs, for write paths that carry the key.
+func ValidateConfirmFirstNKey(key string, n int) error {
+	return validConfirmFirstN(key, &n)
+}
+
 // ValidateReleaseApprovalMode reports whether v is an accepted release approval
 // mode: "" (unset, inherits), "auto", "ask" or "manual". The error names the
 // valid values. Write paths (config route, MCP, comm, CLI) call it so the
