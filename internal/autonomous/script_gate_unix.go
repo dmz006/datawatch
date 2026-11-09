@@ -16,6 +16,7 @@ func configureGateProcessGroup(cmd *exec.Cmd) {
 		if cmd.Process == nil {
 			return nil
 		}
+		// end-reason-ok: kills a gate check's own OS process group at its deadline, not a datawatch session
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 }

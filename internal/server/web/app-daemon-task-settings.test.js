@@ -138,7 +138,7 @@ test('each field shows a ? help entry that opens the daemon task modes how-to', 
 test('the how-to that the help links open exists, with front matter and its sections', () => {
   const doc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'docs', HOWTO), 'utf8');
   assert.match(doc, /^---\n/, 'front matter missing');
-  for (const h of ['## 1. Task template modes', '## 2. Script gate time cap', '## 3. Project gate command', '## 4. What a refused write looks like']) {
+  for (const h of ['## 1. The three modes, per template', '## 4. The script gate', '## 5. The time cap', '## 6. The project gate command', '## 8. What a refused write looks like']) {
     assert.ok(doc.includes(h), 'section "' + h + '" missing from the how-to');
   }
 });
