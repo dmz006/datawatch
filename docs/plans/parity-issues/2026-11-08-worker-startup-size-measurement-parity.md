@@ -1,5 +1,7 @@
 # [parity] worker start-up size is measured and reported per profile and role (datawatch-app follow-up)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#416** (shipped in v9.115.0).
+
 **Not filed yet.** This is the tracked draft. The GitHub issue is opened on the
 `dmz006/datawatch-app` repository when the operator files it. Filing the issue does
 not change a line of this repo. Draft written 2026-11-08 against the work for "Make

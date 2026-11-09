@@ -1,5 +1,7 @@
 # [parity] worker session profiles: the docs set says all six daemon surfaces agree, and nothing on any surface — daemon or app — enforces that (datawatch-app follow-up)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#418** (shipped in v9.115.0).
+
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened on the
 `dmz006/datawatch-app` repository when the operator files it. Filing the issue
 does not change a line of this repo. Draft written 2026-11-09 against the work
