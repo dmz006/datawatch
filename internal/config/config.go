@@ -7683,6 +7683,11 @@ func applyDefaults(cfg *Config) {
 	cfg.Autonomous.BackoffMaxWaitMinutes = normalizeBackoffMaxWaitMinutes(cfg.Autonomous.BackoffMaxWaitMinutes)
 	cfg.Usage.Calculator = normalizeUsageCalculator(cfg.Usage.Calculator, usageCalculatorLogf)
 	cfg.Usage.BurnGuard = normalizeBurnGuard(cfg.Usage.BurnGuard, burnGuardLogf)
+	// An unset planning_restart_policy stays unset; an invalid one is warned
+	// about at startup and read as the default (see planning_restart_policy.go).
+	if cfg.Autonomous.PlanningRestartPolicy != "" {
+		cfg.Autonomous.PlanningRestartPolicy = normalizePlanningRestartPolicyLoaded(cfg.Autonomous.PlanningRestartPolicy, planningRestartPolicyLogf)
+	}
 	if cfg.Autonomous.RoleScanIntervalSeconds < 1 {
 		cfg.Autonomous.RoleScanIntervalSeconds = RoleScanIntervalDefaultSeconds
 	}

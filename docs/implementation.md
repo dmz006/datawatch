@@ -600,8 +600,10 @@ what an unset or unrecognised value reads as) keeps planning running across the 
 `restart` restarts planning once and records a decision; `draft` resets the Automaton to
 draft, as before the setting existed. Parsing lives in `internal/config/planning_restart_policy.go`
 (`NormalizePlanningRestartPolicy`, `ValidPlanningRestartPolicy`). The empty string reads as
-reattach on load but is reported invalid, so write paths can refuse it. The field sits
-beside `autonomous.restart_policy`; `docs/config-reference.yaml` documents it.
+reattach on load but is reported invalid, so write paths can refuse it. A `PUT /api/config`
+with an unknown value is refused with a 400 naming `reattach`, `restart` and `draft`; a
+config file holding an unknown value logs a `[warn]` line at startup and reads as `reattach`.
+The field sits beside `autonomous.restart_policy`; `docs/config-reference.yaml` documents it.
 
 ### Per-task project directory (Automata)
 

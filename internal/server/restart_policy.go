@@ -58,6 +58,11 @@ func validateRestartPolicyPatch(patch map[string]interface{}) error {
 			return errBadValue("autonomous.restart_policy", `must be "immediate", "wait_quiet" or "drain"`)
 		}
 	}
+	if v, ok := patch["autonomous.planning_restart_policy"]; ok {
+		if str, isStr := v.(string); !isStr || !config.ValidPlanningRestartPolicy(str) {
+			return errBadValue("autonomous.planning_restart_policy", `must be "reattach", "restart" or "draft"`)
+		}
+	}
 	if v, ok := patch["autonomous.restart_on_timeout"]; ok {
 		if str, isStr := v.(string); !isStr || !config.ValidRestartOnTimeout(str) {
 			return errBadValue("autonomous.restart_on_timeout", `must be "proceed" or "abort"`)
@@ -83,6 +88,10 @@ func applyRestartPolicyKey(cfg *config.Config, k string, v interface{}) {
 	case "autonomous.restart_policy":
 		if str, ok := v.(string); ok {
 			cfg.Autonomous.RestartPolicy = config.NormalizeRestartPolicy(str)
+		}
+	case "autonomous.planning_restart_policy":
+		if str, ok := v.(string); ok {
+			cfg.Autonomous.PlanningRestartPolicy = config.NormalizePlanningRestartPolicy(str)
 		}
 	case "autonomous.restart_on_timeout":
 		if str, ok := v.(string); ok {
