@@ -287,7 +287,7 @@ func ApplyTaskTemplates(stories []Story, feature, projectDir string, cfg *config
 	var applied []string
 	for i := range stories {
 		story := stories[i]
-		newStory, added := applyTemplatesToStory(story, feature, templates)
+		newStory, added := applyTemplatesToStory(story, feature, templates, cfg)
 		out = append(out, newStory)
 		for _, id := range added {
 			applied = append(applied, TaskTemplateAppliedLabel(story.ID, id))
@@ -299,7 +299,15 @@ func ApplyTaskTemplates(stories []Story, feature, projectDir string, cfg *config
 // applyTemplatesToStory appends the applicable template tasks to one
 // story, returning the story (with a fresh Tasks slice when anything
 // was added) and the applied template ids in template order.
-func applyTemplatesToStory(story Story, feature string, templates []config.TaskTemplateDef) (Story, []string) {
+//
+// Each template's mode (cfg.Autonomous.EffectiveTaskTemplateMode, shipped
+// defaults when cfg is nil) decides who does the task: off adds no task,
+// daemon adds a task with DaemonRun set, llm adds the usual task.
+func applyTemplatesToStory(story Story, feature string, templates []config.TaskTemplateDef, cfg *config.Config) (Story, []string) {
+	var auto config.AutonomousConfig
+	if cfg != nil {
+		auto = cfg.Autonomous
+	}
 	var applied []string
 	slots := taskTemplateSlotsFor(story, feature)
 	newTasks := make([]Task, 0, len(story.Tasks)+len(templates))
@@ -307,6 +315,9 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 	addedIDs := make(map[string]string, len(templates))
 	for _, def := range templates {
 		if strings.TrimSpace(def.ID) == "" {
+			continue
+		}
+		if auto.EffectiveTaskTemplateMode(strings.TrimSpace(def.ID)) == config.TaskTemplateModeOff {
 			continue
 		}
 		rendered := RenderTaskTemplateDef(def, slots)
@@ -343,7 +354,12 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 		if _, ok := addedIDs[id]; !ok || id == "" {
 			continue
 		}
-		newTasks = append(newTasks, taskForTemplate(story, RenderTaskTemplateDef(def, slots), baseDepends, addedIDs))
+		task := taskForTemplate(story, RenderTaskTemplateDef(def, slots), baseDepends, addedIDs)
+		if auto.EffectiveTaskTemplateMode(id) == config.TaskTemplateModeDaemon {
+			task.DaemonRun = true
+			task.ReadOnly = false
+		}
+		newTasks = append(newTasks, task)
 		applied = append(applied, id)
 	}
 	story.Tasks = newTasks
