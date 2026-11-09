@@ -410,6 +410,10 @@ type Options struct {
 	AdoptionTimeout time.Duration
 	// AgeOverride: waiters older than this jump ahead of model affinity.
 	AgeOverride time.Duration
+	// PlannerAgeAfter: a planner that has waited this long ranks as a worker,
+	// so priority applies between it and workers instead of workers always
+	// winning. Zero means 10 minutes; negative turns this off.
+	PlannerAgeAfter time.Duration
 	// PollInterval is how often waiters re-check cancellation and
 	// backpressure. Default 5s.
 	PollInterval time.Duration
@@ -449,6 +453,9 @@ type Ledger struct {
 func New(opt Options) *Ledger {
 	if opt.AgeOverride <= 0 {
 		opt.AgeOverride = 10 * time.Minute
+	}
+	if opt.PlannerAgeAfter == 0 {
+		opt.PlannerAgeAfter = 10 * time.Minute
 	}
 	if opt.PollInterval <= 0 {
 		opt.PollInterval = 5 * time.Second
@@ -927,10 +934,21 @@ func (p PoolStatus) shownHoldNodes() []string {
 }
 
 // orderLocked sorts waiters into grant order: role (verifier, worker,
-// planner), priority, aged waiters, model affinity, least-recently-served
+// planner; an aged planner ranks as a worker), priority, aged waiters, model affinity, least-recently-served
 // PRD, then FIFO.
 func (l *Ledger) orderLocked(now time.Time) []*waiter {
 	return l.orderListLocked(l.waiters, now)
+}
+
+// effectiveRank is the role rank used for ordering. A planner that has waited
+// at least Options.PlannerAgeAfter ranks as a worker so it cannot starve behind
+// a steady stream of workers; verifiers keep rank 0.
+func (l *Ledger) effectiveRank(w *waiter, now time.Time) int {
+	r := w.req.Role.rank()
+	if w.req.Role == RolePlanner && l.opt.PlannerAgeAfter > 0 && now.Sub(w.since) >= l.opt.PlannerAgeAfter {
+		return RoleWorker.rank()
+	}
+	return r
 }
 
 // orderListLocked is orderLocked over an arbitrary waiter list; it sorts a
@@ -954,7 +972,7 @@ func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
 	}
 	sort.SliceStable(ws, func(i, j int) bool {
 		a, b := ws[i], ws[j]
-		if ra, rb := a.req.Role.rank(), b.req.Role.rank(); ra != rb {
+		if ra, rb := l.effectiveRank(a, now), l.effectiveRank(b, now); ra != rb {
 			return ra < rb
 		}
 		if a.req.Priority != b.req.Priority {
