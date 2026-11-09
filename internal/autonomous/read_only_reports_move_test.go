@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReadOnlyReportsFolderFilesMoved(t *testing.T) {
@@ -143,4 +144,103 @@ func TestReadOnlySettleKeepsQuotedBaselineFile(t *testing.T) {
 	if err := mgr.readOnlyViolation(ctx, prd, tk, base); err != nil {
 		t.Fatalf("pre-existing file must not violate: %v", err)
 	}
+}
+
+// TestReadOnlySourceEditStillFails runs the full executor path for a
+// read-only task that changes the tree outside the reports folders. Both a
+// tracked source edit and a new source file, alongside a report file under
+// docs/plans/reports/, must fail with the read-only tree violation.
+func TestReadOnlySourceEditStillFails(t *testing.T) {
+	cases := []struct {
+		name string
+		// setup seeds the repo before the task starts; it may commit files.
+		setup func(t *testing.T, repo string)
+		// edit runs as the task's verify step and changes the tree.
+		edit func(t *testing.T, repo string)
+		// wantName is the path the violation error must name.
+		wantName string
+		// wantMoved, when set, is a report file that must be moved out of
+		// docs/plans/reports/ and into .datawatch/reports/ before the check.
+		wantMoved string
+	}{
+		{
+			name: "tracked source edit",
+			setup: func(t *testing.T, repo string) {
+				roWriteAndCommit(t, repo, "internal/a.go", "package a\n")
+			},
+			edit: func(t *testing.T, repo string) {
+				roWriteFile(t, filepath.Join(repo, "internal/a.go"), "package a // edited\n")
+			},
+			wantName: "internal/a.go",
+		},
+		{
+			name:  "report file plus new source file",
+			setup: func(t *testing.T, repo string) {},
+			edit: func(t *testing.T, repo string) {
+				roWriteFile(t, filepath.Join(repo, "docs/plans/reports/extra.md"), "report")
+				roWriteFile(t, filepath.Join(repo, "internal/new.go"), "package a\n")
+			},
+			wantName:  "internal/new.go",
+			wantMoved: ".datawatch/reports/extra.md",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fastTreeLockPolling(t)
+			repo := gitRepoWithDWSeed(t)
+			tc.setup(t, repo)
+			mgr := newRoManager(t, nil)
+			prd := makeReportPathPRD(t, mgr, repo, true, ".datawatch/reports/summary.md")
+
+			spawn := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
+				return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
+			}
+			verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+				tc.edit(t, repo)
+				return VerificationResult{OK: true, Summary: "ok"}, nil
+			}
+
+			runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			ran := make(chan error, 1)
+			go func() { ran <- mgr.Run(runCtx, prd.ID, spawn, verify) }()
+			finishRun(t, ran)
+
+			id := prd.Story[0].Tasks[0].ID
+			cur, _ := mgr.Store().GetTask(id)
+			if cur.Status != TaskFailed {
+				t.Fatalf("status = %q; want failed (source change is a read-only violation)", cur.Status)
+			}
+			if !strings.Contains(cur.Error, "read-only task changed the tree") {
+				t.Errorf("error %q should name the read-only tree violation", cur.Error)
+			}
+			if !strings.Contains(cur.Error, tc.wantName) {
+				t.Errorf("error %q should name %q", cur.Error, tc.wantName)
+			}
+			if tc.wantMoved != "" {
+				if _, err := os.Stat(filepath.Join(repo, tc.wantMoved)); err != nil {
+					t.Errorf("report file should have been moved to %s: %v", tc.wantMoved, err)
+				}
+			}
+		})
+	}
+}
+
+// roWriteFile writes body to p, creating its parent folders.
+func roWriteFile(t *testing.T, p, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", p, err)
+	}
+}
+
+// roWriteAndCommit writes rel under repo and commits it, so it is tracked.
+func roWriteAndCommit(t *testing.T, repo, rel, body string) {
+	t.Helper()
+	roWriteFile(t, filepath.Join(repo, rel), body)
+	gitRun(t, repo, "add", rel)
+	gitRun(t, repo, "commit", "-q", "-m", "seed "+rel)
 }
