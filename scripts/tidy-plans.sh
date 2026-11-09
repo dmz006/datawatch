@@ -150,7 +150,7 @@ for f in "$PLANS_DIR"/*.md; do
   [ -f "$f" ] || continue
   base=$(basename "$f")
   case "$base" in
-    README.md|HISTORY.md) continue ;;
+    README.md|HISTORY.md|roadmap-archive-*.md) continue ;;
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.md) continue ;;
     RELEASE-NOTES-v[0-9]*.[0-9]*.*) continue ;;
   esac

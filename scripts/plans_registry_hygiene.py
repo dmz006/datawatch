@@ -81,6 +81,8 @@ COUNT_NAMES = (
     "closed rows trimmed",
     "stale rows corrected",
     "closed rows archived",
+    "month lines kept or updated",
+    "links rewritten",
 )
 
 
@@ -508,6 +510,109 @@ def archive_closed_rows(lines, counts, archive_path, month, dry_run):
     return lines
 
 
+MONTH_LINE_RE = re.compile(
+    r"^- \[Closed rows archived for (\d{4}-\d{2})\]\(roadmap-archive-(\d{4}-\d{2})\.md\)")
+ARCHIVE_FILE_RE = re.compile(r"^roadmap-archive-(\d{4}-\d{2})\.md$")
+ROW_LINK_RE = re.compile(r"(?<![\w./-])((?:[\w./-]*/)?)README\.md#row-(\d+)\b")
+LINK_DIRS = ("docs", "scripts")
+
+
+def archive_rows(plans_dir):
+    """{month: [row numbers]} for every roadmap-archive-YYYY-MM.md file."""
+    out = {}
+    for f in sorted(plans_dir.glob("roadmap-archive-*.md")):
+        m = ARCHIVE_FILE_RE.match(f.name)
+        if not m:
+            continue
+        al = f.read_text(encoding="utf-8").split("\n")
+        nums = sorted({row_number(r) for t in find_tables(al) for r in t.rows
+                       if row_number(r) is not None})
+        out[m.group(1)] = nums
+    return out
+
+
+def keep_month_lines(lines, counts, months):
+    """One line per archived month under Active order; updated in place."""
+    lines = list(lines)
+    wanted = {}
+    for month, nums in months.items():
+        if nums:
+            wanted[month] = "- [Closed rows archived for %s](roadmap-archive-%s.md), rows %d to %d" % (
+                month, month, nums[0], nums[-1])
+    if not wanted:
+        return lines
+    seen = set()
+    out = []
+    last_idx = None
+    for ln in lines:
+        m = MONTH_LINE_RE.match(ln)
+        if m and m.group(2) in wanted:
+            if m.group(2) in seen:
+                continue            # never keep a duplicate
+            seen.add(m.group(2))
+            ln = wanted[m.group(2)]
+            last_idx = len(out)
+        out.append(ln)
+    lines = out
+    missing = [mo for mo in sorted(wanted) if mo not in seen]
+    if missing:
+        at = None
+        if last_idx is not None:
+            at = last_idx + 1
+        else:
+            for i, ln in enumerate(lines):
+                h = heading_of(ln)
+                if h and h[1].strip().lower() == "active order":
+                    at = i + 1
+                    while at < len(lines) and lines[at].strip() == "":
+                        at += 1
+                    lines[at:at] = [wanted[mo] for mo in missing] + [""]
+                    missing = []
+                    break
+            if missing:
+                return lines        # no Active order heading: nothing to anchor to
+        if missing:
+            lines[at:at] = [wanted[mo] for mo in missing]
+    counts["month lines kept or updated"] += len(wanted)
+    return lines
+
+
+def rewrite_row_links(root, counts, months, dry_run):
+    """Point links at archived live-registry rows to the archive anchor."""
+    row_month = {}
+    for month in sorted(months):
+        for n in months[month]:
+            row_month[n] = month
+    if not row_month:
+        return
+    root = Path(root)
+    files = [p for d in LINK_DIRS for p in (root / d).rglob("*")
+             if p.is_file() and p.suffix in (".md", ".sh", ".py")]
+    files += [p for p in root.glob("*.md")]
+    for f in files:
+        if ARCHIVE_FILE_RE.match(f.name):
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hits = [0]
+
+        def sub(m):
+            n = int(m.group(2))
+            mo = row_month.get(n)
+            if mo is None:
+                return m.group(0)
+            hits[0] += 1
+            return "%sroadmap-archive-%s.md#row-%d" % (m.group(1), mo, n)
+
+        new = ROW_LINK_RE.sub(sub, text)
+        if hits[0]:
+            counts["links rewritten"] += hits[0]
+            if not dry_run and new != text:
+                f.write_text(new, encoding="utf-8")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="registry hygiene for docs/plans/README.md (counts only output)")
@@ -548,9 +653,12 @@ def main(argv=None):
     archive_path = readme.parent / ("roadmap-archive-%s.md" % month)
     lines = new_text.split("\n")
     lines = archive_closed_rows(lines, counts, archive_path, month, args.dry_run)
+    months = archive_rows(readme.parent)
+    lines = keep_month_lines(lines, counts, months)
     final = "\n".join(lines)
     if not args.dry_run and final != new_text:
         readme.write_text(final, encoding="utf-8")
+    rewrite_row_links(args.repo_root, counts, months, args.dry_run)
 
     for name in COUNT_NAMES:
         print("hygiene %s: %d" % (name, counts[name]))
