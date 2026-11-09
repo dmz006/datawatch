@@ -19,10 +19,10 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
-	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -1269,8 +1269,14 @@ type Manager struct {
 	mu sync.Mutex
 	// Memory ceiling for verification script runs (verification_scope.go).
 	// Guarded by mu; nil limits = uncapped.
-	resourceLimits    *config.ResourceLimitsConfig
-	resourceLimitsFn  func() config.ResourceLimitsConfig
+	resourceLimits   *config.ResourceLimitsConfig
+	resourceLimitsFn func() config.ResourceLimitsConfig
+
+	// workerProfileFn returns the live worker-profile settings (daemon-wide
+	// name, role/kind defaults, user profiles). Read at every launch by
+	// workerLaunchInput, so a settings change applies without a restart.
+	// Guarded by mu; nil means nothing is configured.
+	workerProfileFn   func() WorkerProfileSettings
 	ceilingOverrideFn func(prd *PRD, t *Task) resources.Override
 	// capacityWaitSpent is the queue time each task's current admission has
 	// used against the capacity wait bound (capacity.go).
@@ -1334,9 +1340,9 @@ type Manager struct {
 	// /api/autonomous/status, returned verbatim by the autonomous_status
 	// MCP tool). Guarded by mu. Nil = the check is not wired.
 	hostLoadStatusFn func() HostLoadStatus
-	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose                  DecomposeFn
-	guardrail                  GuardrailFn
+	templates        *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose        DecomposeFn
+	guardrail        GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
 	guardrailClassify *guardrailClassify
 	// scopeBreadth is the scope-breadth classifier call site (nil = off).

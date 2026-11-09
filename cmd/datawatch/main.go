@@ -6756,6 +6756,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				func(ctx context.Context, text string) autonomouspkg.ScopeBreadthResult {
 					return runScopeBreadth(ctx, text)
 				})
+			// Worker profiles: the daemon-wide name, role/kind defaults and user
+			// profiles are read from the live config at every launch, so a
+			// settings change applies to the next launch without a restart.
+			amgr.SetWorkerProfileSettings(func() autonomouspkg.WorkerProfileSettings {
+				return autonomouspkg.WorkerProfileSettings{
+					GlobalName:   cfg.Autonomous.WorkerProfile,
+					RoleDefaults: cfg.Autonomous.WorkerProfileDefaults.Role,
+					KindDefaults: cfg.Autonomous.WorkerProfileDefaults.Kind,
+					UserProfiles: cfg.Autonomous.WorkerProfiles,
+				}
+			})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.
