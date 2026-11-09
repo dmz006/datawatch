@@ -53,6 +53,22 @@ type MergeStatus struct {
 	// MergeLock is the lock held on the merge base repository by a running
 	// merge; nil when nothing is held. It is filled whatever the mode is.
 	MergeLock *MergeLockStatus `json:"merge_lock,omitempty"`
+	// LastValidator is the release-bump validator's result from the newest
+	// run that has one; nil when no run has one, so nothing is shown.
+	LastValidator *MergeValidatorResult `json:"last_validator,omitempty"`
+}
+
+// latestMergeValidator returns a copy of the validator result of the first
+// run, in the newest-first order of runs, that has one. It returns nil when
+// no run has a validator result.
+func latestMergeValidator(runs []MergePipelineRun) *MergeValidatorResult {
+	for i := range runs {
+		if runs[i].Validator != nil {
+			v := *runs[i].Validator
+			return &v
+		}
+	}
+	return nil
 }
 
 // heldMergeLock returns the lock on the merge base repository, or nil when
@@ -107,6 +123,7 @@ func (m *Manager) MergeStatus() MergeStatus {
 		PipelineRuns:    m.MergeRuns(0),
 		MergeLock:       m.heldMergeLock(),
 	}
+	out.LastValidator = latestMergeValidator(out.PipelineRuns)
 	if mode != config.MergePendingModeShadow && mode != config.MergePendingModeOn {
 		return out
 	}
