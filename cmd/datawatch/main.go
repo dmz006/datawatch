@@ -2677,6 +2677,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	liveRestartSettings := func() restartPolicySettings { return restartSettingsFrom(cfg.Autonomous) }
 
+	// Placement tags on every started session (scheduled and comm-channel
+	// starts included): the session manager is the tag sink, the live
+	// tags.placement block is the config source, and the Automation axis
+	// reads the autonomous manager, attached later in startup, at call time.
+	mgr.SetPlacementStartHook(placementStartFunc(mgr,
+		func() config.PlacementConfig { return cfg.Autonomous.Tags.Placement },
+		placementAutomationOf(func() *autonomouspkg.Manager { return autonomousMgrRef })))
+
 	// Batch output lines per session to prevent WebSocket flood.
 	// Accumulates lines for 100ms then sends as one message.
 	outputBatches := make(map[string][]string)
