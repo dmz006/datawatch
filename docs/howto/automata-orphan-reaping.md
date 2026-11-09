@@ -272,8 +272,8 @@ ends, the step is either already dead or ended by the session-end reap.
 
 ## How the three layers protect a host
 
-1. **Prevent.** The decompose prompt and the `bounded_load_step` template
-   tell the planner to bound any CPU pinning, and the `unbounded_load_step`
+1. **Prevent.** The decompose prompt and the `bounded_load_step` standard
+   task tell the planner to bound any CPU pinning, and the `unbounded_load_step`
    lint finding warns it back when it doesn't. Most sessions never leave
    load behind.
 2. **Reap.** A session that does leave a process behind — a watcher, a dev
