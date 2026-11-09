@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.115.2 — The CodeQL gate stops waiting when a rate limit cannot reset in time
+
+### Fixed
+
+- **The CodeQL alert gate stops at once when a rate limit cannot reset inside its wait budget.** Previously `wait-analyses` and `open-alerts` could sit waiting for a reset that landed after the remaining `WAIT_MAX_SECONDS` budget, so the wait could never finish in time. Now the gate exits 1 immediately with a `::error title=Rate limited::` line.
+  - **How it shows up:** the run fails straight away and is reported as a rate limit, never as an alert or analysis result. The line names the reset epoch; if the gate learned none (spent budget), it reads `core reset epoch: unknown`. Rate limits that reset inside the budget still wait and retry as before.
+  - **Migration:** none for the workflow. Wait until the named reset time, then rerun the check yourself.
+
 ## v9.115.1 — Fix a lint failure in the cost report
 
 ### Fixed
