@@ -180,11 +180,11 @@ sure the name you give exists. If you run a model of your own, name that one.
 
 | Mode | What happens |
 |---|---|
-| `auto` | The release ships without waiting for anyone. |
-| `ask` | The operator is asked before the release ships. |
-| `manual` | The release is left for the operator to ship. |
+| `auto` | With the pipeline's checks passing, the release ships without waiting for anyone; a failed check holds it for a person to look. |
+| `ask` | The operator is asked before it ships, and it ships only on their yes. |
+| `manual` | The release is held for the operator to ship; nothing is asked. |
 
-The defaults are patch `auto`, minor `auto`, major `ask`: a major release is never shipped quietly, and a release whose size cannot be read resolves to `ask` rather than being shipped. Until the daemon's own review-and-merge step lands, a release is made exactly as before (the supervisor reviews and the operator approves a major); this setting is the first piece of that step, and it is the value the daemon's merge path will honour. A mode is only `auto`, `ask` or `manual` — anything else is refused with the key named rather than stored, wherever it is set. Over MCP, `autonomous_config_set` takes `merge_pipeline_release_approval_patch`, `merge_pipeline_release_approval_minor` and `merge_pipeline_release_approval_major` (each written as `autonomous.merge_pipeline.release_approval.<size>`), and `merge_pipeline_project` with them sets the mode for that project only; `config_set` takes the same dotted keys.
+The defaults are patch `auto`, minor `auto`, major `ask`: a major release is never shipped quietly, and a release whose size cannot be read resolves to `ask` rather than being shipped. The daemon's merge run honours this setting through the release gate ([The release gate](#the-release-gate)). A mode is only `auto`, `ask` or `manual` — anything else is refused with the key named rather than stored, wherever it is set. Over MCP, `autonomous_config_set` takes `merge_pipeline_release_approval_patch`, `merge_pipeline_release_approval_minor` and `merge_pipeline_release_approval_major` (each written as `autonomous.merge_pipeline.release_approval.<size>`), and `merge_pipeline_project` with them sets the mode for that project only; `config_set` takes the same dotted keys.
 
 You can see where the inheritance lands for a project: the read answer carries `release_approval_in_effect` with the resolved mode per size (the project's value, else the global one, else the default above), its text answers (`show` on the command line, the chat verb and the MCP tool's text) add a `Release approval: patch …, minor …, major …` line, and `GET /api/config` reads the block's effective `release_approval` back with the same per-size resolution. The PWA merge pipeline card shows the mode in effect for each size, and choosing a mode there writes that project's override, the same way the card's conflict policy and model work. The settings page (Settings > Automation, the Merge pipeline group) carries one global field per size; choosing a mode there writes the global `autonomous.merge_pipeline.release_approval.<size>`.
 
@@ -199,7 +199,24 @@ autonomous:
           minor: manual
 ```
 
-Set or read a mode with `datawatch config set autonomous.merge_pipeline.release_approval.major ask`, `PUT /api/config` with `{"autonomous.merge_pipeline.release_approval.major": "ask"}`, MCP `config_set`, or the comm channel `configure autonomous.merge_pipeline.release_approval.major=ask`; sending `null` for a size clears it back to inheriting. Moving a size toward `auto` — above all `major`, which is the operator's by default — is a decision to make deliberately and record with its evidence: once the daemon's merge runs, `auto` means it ships that size without anyone.
+Set or read a mode with `datawatch config set autonomous.merge_pipeline.release_approval.major ask`, `PUT /api/config` with `{"autonomous.merge_pipeline.release_approval.major": "ask"}`, MCP `config_set`, or the comm channel `configure autonomous.merge_pipeline.release_approval.major=ask`; sending `null` for a size clears it back to inheriting. Moving a size toward `auto` — above all `major`, which is the operator's by default — is a decision to make deliberately and record with its evidence: the daemon's merge run honours these modes, so `auto` means it ships that size on its own — with the checks passing; a failed check holds the release for a person in every mode.
+
+## The release gate
+
+When the daemon's merge run prepares a release, a release gate stands between the prepared work and anything that leaves the machine. It applies to every leaving step — the `tag_release`, `push_release` and `deploy_latest` actions and the tag, deploy and post-ship-hook steps — and decides at most once per run, before the first of them runs; the decision is cached and applies to every later leaving step, so the run cannot answer the push differently from the tag.
+
+What the gate keeps back is only the leaving steps. The preparation — merging the branches into the local main, the version bump, the changelog, the commit — lands as usual; holding the release means the tag is not made, nothing is pushed and the deploy does not run.
+
+The checks are the ground rule, and the mode decides the rest:
+
+- **A failed check never ships, in any mode, and never asks.** A "yes" against failed checks could only be honoured by shipping them, so the leaving steps are skipped and the run holds for a person to look at what failed.
+- **`auto`** — with the checks passing, the leaving steps run as before and nothing is asked.
+- **`ask`** — the gate raises one yes/no question, ending "Ship this release?", with the plan in it: the project, the Automaton, the size, the version it would get, the branches it merges, the checks and their results, and the leaving steps in the order they would run. The options are "yes (ship it)" and "no (do not ship)", and "no" is the default. The run ships only when the question is answered yes, and then its first leaving step records that it was approved by the operator, with the question id. A re-run for the same project, Automaton and size finds the question already raised rather than raising a second one, and a changed mind replaces the earlier answer — only the current one counts.
+- **`manual`** — the leaving steps are held for a person and no question is raised; the operator ships the release.
+
+The gate never guesses: if the `ask` mode cannot raise its question, the leaving step fails and the run stops short of the ship.
+
+Nothing in the run's record hides the hold. The steps the gate keeps back are still listed, skipped with the gate's note — the mode, the size (or "not read") and the reason — in the run's steps, in `pipeline_runs` of `GET /api/autonomous/merge` and the PWA's merge status view, beside the steps that did run.
 
 ## How a model proposal is tested before use
 
