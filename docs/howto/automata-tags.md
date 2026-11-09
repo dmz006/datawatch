@@ -253,8 +253,10 @@ started it.
   particular is drawn on the very first frame, before the tag registry
   even arrives — it renders from the tag name itself, not from a registry
   entry — and once it is shown it stays through later list refreshes and
-  session updates; it drops out of the tile only when the server
-  explicitly reports the session's `system_tags` as empty.
+  session updates. The server omits `system_tags` when a session has no
+  placement tags, so an empty list never arrives and a row without the key
+  keeps the chip already held. A chip that was drawn therefore stays on the
+  tile until the page is reloaded.
 - **Inherited tags are read-only.** They change when you change the
   Automaton's tags, not on the session. The session editor never sends them.
 - **Edit a session's own tags.** Open the session and choose **Tags → This
@@ -493,8 +495,9 @@ tree:
   so it paints on the first frame even before the tag registry has loaded;
   when the registry does arrive, the own and inherited operator chips join
   the tile without dropping it. A later list row or session update that
-  simply omits `system_tags` keeps the chip; only an explicit empty
-  `system_tags` removes it.
+  omits `system_tags` keeps the chip. The server never sends an empty
+  `system_tags` (the field is left out when there are no placement tags),
+  so no live update clears a held chip; a page reload does.
 
 ### Stamping, re-stamping and the startup backfill
 
