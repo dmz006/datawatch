@@ -2610,7 +2610,7 @@ The burn guard compares the projected weekly burn with the pace line and steps d
 | `burn_guard_status` | none | State, `rung`, `applied`, last projection (with `line` and `margin`), last decision, coefficients, last error, counters |
 | `burn_guard_run` | none | Evaluates now; the `decision` and the refreshed `status`. An error when the guard is not running |
 | `burn_guard_config_get` | none | The `usage.burn_guard` settings |
-| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
+| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20), `ask_on_change`, `max_projection_gap_points` (0–100; 0 never compares the guard with the usage advice; default 25) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
 
 ```
 burn_guard_status()
