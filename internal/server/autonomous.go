@@ -2672,7 +2672,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "set_worker_profile", "automaton", id, map[string]any{"worker_profile": req.WorkerProfile})
+		s.audit(r.Context(), audit.ActionAutomatonWorkerProfileSet, "automaton", id, map[string]any{"worker_profile": req.WorkerProfile})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Record the Automaton's shipped state: release, merged time, merge commit

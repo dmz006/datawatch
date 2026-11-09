@@ -65,6 +65,7 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 - Warns you about failed work and about finished work that has not been merged
 - Lines queued work up by kind (bug, maintenance, feature, other) with a visible priority source, and offers new defect filings to the Automation you name
 - Points the planner and workers at your project's rules and context files; set the file names under Settings, *Rules and context*, with `datawatch autonomous rules-context`, or with `GET`/`PUT /api/autonomous/rules-context` ([how-to](docs/howto/automata-rules-and-context.md))
+- Worker session profiles: the settings that size a worker session's starting context and tool set to its job — the four built-in profiles, your own profiles, per-role and per-kind defaults, and a per-task or per-Automaton choice; each setting is read and set on the REST config, MCP, CLI and the settings card. Worker launches start small once the launch applies the profile — until then they keep the full harness, and the Monitor tab shows the average startup size per profile and role ([how-to](docs/howto/worker-session-profiles.md))
 
 More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
 

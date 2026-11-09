@@ -19,6 +19,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **How it shows up:** reading or writing the worker profile settings through the web settings, the comm channel, the CLI or MCP — everything that goes through `GET`/`PUT /api/config` — now works instead of silently dropping the keys; a bad write answers with the offending key named and leaves the config unchanged.
   - **Migration:** none. Nothing stored changes; a config without the settings reads them as unset, exactly as the config file does.
 
+- **Setting an Automaton's worker profile is now audited.** `POST /api/autonomous/prds/{id}/set_worker_profile` writes an `autonomous_worker_profile_set` entry to the audit log (details: `worker_profile`; an empty name records a cleared override), with its CEF mapping. The release smoke gains a worker-profile section (§96) covering the settings keys, the unknown-name refusal, the route, and the startup stats.
+  - **Migration:** none.
+
 ## v9.112.6 — Show each system tag once in the Sessions tag menu
 
 ### Fixed

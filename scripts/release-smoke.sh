@@ -6377,6 +6377,100 @@ if u is not None:
 fi
 
 # ---------------------------------------------------------------------------
+# smoke-extended: worker session profile settings and the per-Automaton route.
+# §96 covers the worker profile surface that landed with the worker-profile
+# work: the three autonomous.worker_profile* keys on GET/PUT /api/config, the
+# refusal of an unknown profile name, the per-Automaton
+# POST /api/autonomous/prds/{id}/set_worker_profile route, and the worker_startup
+# block of GET /api/stats. Runs only against this script's own isolated daemon.
+#   1) GET /api/config carries the three keys in their shapes (worker_profiles
+#      object, worker_profile_defaults with role and kind maps, worker_profile
+#      string), unset on a fresh daemon
+#   2) a PUT of a built-in profile name reads back, and is restored afterwards
+#   3) a PUT naming no built-in or user profile is refused with a 4xx and the
+#      stored name does not change
+#   4) POST set_worker_profile against an unknown Automaton answers 404 (the
+#      profile name itself is valid, so the refusal comes from the lookup)
+#   5) GET /api/stats carries the worker_startup block with both average maps
+H "96. Worker session profiles — autonomous.worker_profile* config keys, unknown-profile refusal, set_worker_profile route, worker_startup stats"
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  :
+elif [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "worker profiles: external daemon may hold the operator's live profile settings; the section runs only against this script's own isolated daemon"
+else
+  _wp_val() {
+    curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c "
+import json,sys
+v=json.load(sys.stdin).get('autonomous',{}).get('$1')
+if v is None: print('')
+elif isinstance(v,str): print(v)
+else: print(json.dumps(v,sort_keys=True))
+" 2>/dev/null || echo "?"
+  }
+  _wp_put() {
+    curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000"
+  }
+
+  # -- 1) the three keys present in their shapes ------------------------------
+  if curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json,sys
+a=json.load(sys.stdin).get("autonomous",{})
+assert isinstance(a.get("worker_profiles"),dict)
+d=a.get("worker_profile_defaults")
+assert isinstance(d,dict) and isinstance(d.get("role"),dict) and isinstance(d.get("kind"),dict)
+assert isinstance(a.get("worker_profile"),str)
+' 2>/dev/null; then
+    ok "config: autonomous.worker_profiles, worker_profile_defaults (role and kind maps) and worker_profile are present in their shapes"
+  else
+    ko "config: an autonomous.worker_profile* key is missing or has the wrong shape"
+  fi
+
+  # -- 2) a built-in name written and read back, then restored ---------------
+  _WP_ORIG=$(_wp_val worker_profile)
+  _WP_CODE=$(_wp_put '{"autonomous.worker_profile": "digest"}')
+  _WP_READ=$(_wp_val worker_profile)
+  if [[ "$_WP_CODE" == "200" && "$_WP_READ" == "digest" ]]; then
+    ok "round-trip: PUT autonomous.worker_profile=digest answers 200 and reads back digest"
+  else
+    ko "round-trip: PUT autonomous.worker_profile=digest answered $_WP_CODE, read back '$_WP_READ'"
+  fi
+  _wp_put "{\"autonomous.worker_profile\": \"$_WP_ORIG\"}" >/dev/null
+
+  # -- 3) an unknown profile name is refused, nothing changes ----------------
+  _WP_BEFORE=$(_wp_val worker_profile)
+  _WP_BAD=$(_wp_put '{"autonomous.worker_profile": "no-such-profile-smoke"}')
+  _WP_AFTER=$(_wp_val worker_profile)
+  if [[ "$_WP_BAD" =~ ^4[0-9][0-9]$ && "$_WP_AFTER" == "$_WP_BEFORE" ]]; then
+    ok "refusal: an unknown profile name answers HTTP $_WP_BAD and the stored name is unchanged"
+  else
+    ko "refusal: an unknown profile name answered '$_WP_BAD' (want 4xx) or changed the stored name ('$_WP_BEFORE' -> '$_WP_AFTER')"
+  fi
+
+  # -- 4) the per-Automaton route refuses an unknown Automaton ---------------
+  _WP_ROUTE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d '{"worker_profile":"digest"}' -o /dev/null -w '%{http_code}' \
+    "$BASE/api/autonomous/prds/no-such-automaton-smoke/set_worker_profile" 2>/dev/null || echo "000")
+  if [[ "$_WP_ROUTE" == "404" ]]; then
+    ok "set_worker_profile: POST against an unknown Automaton answers HTTP 404"
+  else
+    ko "set_worker_profile: POST against an unknown Automaton answered '$_WP_ROUTE' (want 404)"
+  fi
+
+  # -- 5) the worker_startup stats block ------------------------------------
+  if curl "${curl_args[@]}" "$BASE/api/stats" 2>/dev/null | python3 -c '
+import json,sys
+w=json.load(sys.stdin).get("worker_startup")
+assert isinstance(w,dict)
+assert isinstance(w.get("average_startup_tokens_by_profile"),dict)
+assert isinstance(w.get("average_startup_tokens_by_role"),dict)
+' 2>/dev/null; then
+    ok "stats: GET /api/stats carries worker_startup with both average maps"
+  else
+    ko "stats: GET /api/stats worker_startup block is missing or malformed"
+  fi
+fi
+
 H "95. Autonomous host load alert — autonomous.host_load_alert config + status read"
 # The three keys (see config/host_load_alert.go):
 #   autonomous.host_load_alert.mode      off|alert|reap, default alert

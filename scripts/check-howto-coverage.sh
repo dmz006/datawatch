@@ -30,7 +30,7 @@ LLM_ONLY=(
     automata-tab-loading  # PWA-only view; nothing callable from MCP (like automation-tab) — reference/conceptual doc
     navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
     codeql-local-scan  # shell-script workflow (scripts/codeql-local.sh); no MCP-callable steps
-    worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
+    worker-session-profiles  # worker session profiles: the settings are read and set on REST GET/PUT /api/config, the MCP tools (config_set, get_config, worker_profile_status, autonomous_prd_set_worker_profile) and the PWA settings card; the launch-time effect is still pending the sessions' start work, and the how-to has no exec_steps yet — move to TOOL_VERIFIED once those steps are authored against the live daemon
 )
 
 ERRORS=0

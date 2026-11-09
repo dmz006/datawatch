@@ -40675,6 +40675,21 @@ function renderStatsData(el, data) {
       html += `<div class="stat-card" data-stat="supervisor-loop"><div class="stat-label">${t('stats_supervisor_loop')||'Supervisor loop'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${slLines}</div></div>`;
     }
+    // Worker startup card: the average starting-context size (estimated tokens)
+    // per worker profile and per role, from the worker_startup block. Left out
+    // until the daemon reports the block.
+    if (data.worker_startup) {
+      const wsGroup = (m) => {
+        const keys = Object.keys(m || {}).sort();
+        if (!keys.length) return `<div style="color:var(--text2);">${escHtml(t('stats_worker_startup_none') || 'No sized attempts yet')}</div>`;
+        return keys.map(k => `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(k)}</span><span style="color:var(--text);">${escHtml(Math.round(m[k]))}</span></div>`).join('');
+      };
+      html += `<div class="stat-card" data-stat="worker-startup"><div class="stat-label">${escHtml(t('stats_worker_startup') || 'Worker startup (avg tokens)')}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+          <div style="color:var(--text2);">${escHtml(t('stats_worker_startup_by_profile') || 'By profile')}</div>${wsGroup(data.worker_startup.average_startup_tokens_by_profile)}
+          <div style="color:var(--text2);margin-top:4px;">${escHtml(t('stats_worker_startup_by_role') || 'By role')}</div>${wsGroup(data.worker_startup.average_startup_tokens_by_role)}
+        </div></div>`;
+    }
     // Burn guard card: the state, the ladder level, the projection against the
     // pace line and the counters. Left out until the daemon reports a state.
     if (data.burn_guard_state) {

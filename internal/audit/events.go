@@ -350,4 +350,8 @@ const (
 	// (transport failure or a non-2xx body, value never usable). Details:
 	// widget_id, error.
 	ActionPluginWidgetPullFailed = "plugin_widget_pull_failed"
+	// ActionAutomatonWorkerProfileSet — an Automaton's own worker profile name
+	// was set (or cleared, with an empty name) through the set_worker_profile
+	// route. Details: worker_profile (the name stored; empty when cleared).
+	ActionAutomatonWorkerProfileSet = "autonomous_worker_profile_set"
 )
