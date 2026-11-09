@@ -4000,7 +4000,8 @@ autonomous:
     # unmodified). {id, title, spec, files, kind, read_only, depends_on,
     # applies_when, verification_script_reason}. verification_script_reason
     # is the explicit reason a task from the template has no verification
-    # script; it is copied onto that task. verification_script must be one repo-relative script
+    # script (note templates carry one); it is copied onto that task.
+    # verification_script must be one repo-relative script
     # file (for example scripts/verify.sh), never a command string such as
     # "go build ./... && go test ./...": the PUT that carries it is refused,
     # and a template that still carries one is never applied.
