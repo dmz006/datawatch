@@ -16662,11 +16662,11 @@ function openPRDCreateModal() {
   // /api/profiles/{projects,clusters} alongside the backend lists.
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
-    : fetch(_apiPath('/api/llms'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
+    : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
   const ensureModels = ensureLLMModelLists;
   const ensureProfiles = Promise.all([
-    fetch(_apiPath('/api/profiles/projects'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch(_apiPath('/api/profiles/clusters'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([projs, clusters]) => {
     const projectsArr = Array.isArray(projs) ? projs : (projs && projs.projects) || (projs && projs.profiles) || [];
     const clustersArr = Array.isArray(clusters) ? clusters : (clusters && clusters.clusters) || (clusters && clusters.profiles) || [];
@@ -26089,10 +26089,10 @@ function openLaunchAutomatonWizard() {
   // Pre-fetch backends + profiles (same as openPRDCreateModal)
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
-    : fetch(_apiPath('/api/llms'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
+    : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
   const ensureProfiles = Promise.all([
-    fetch(_apiPath('/api/profiles/projects'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch(_apiPath('/api/profiles/clusters'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([projs, clusters]) => {
     const toArr = (d, keys) => { for (const k of keys) { if (d && Array.isArray(d[k])) return d[k].map(p => p && (p.name || p)).filter(Boolean); } return Array.isArray(d) ? d.map(p => p && (p.name || p)).filter(Boolean) : []; };
     state._prdProjectProfiles = toArr(projs, ['projects','profiles']);
@@ -38770,7 +38770,7 @@ function parseAlertDeepLinkId(raw) {
 // the exact nesting -- keeps working if the Alerts view's structure changes.
 function openAlertDeepLink(alertId) {
   if (!alertId) return;
-  fetch(_apiPath('/api/alerts'), { headers: tokenHeader() })
+  fetch('/api/alerts', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       const list = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : []);
@@ -41719,7 +41719,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load initial unread alert count. unread=1 returns only the unread alerts
   // (plus unread_count), which is all the badge and the watched-only seed read.
-  fetch(_apiPath('/api/alerts?unread=1'), { headers: tokenHeader() })
+  fetch('/api/alerts?unread=1', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
@@ -41751,7 +41751,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // when /api/autonomous/config returns enabled:true. If the request
   // fails (auth issue, daemon down) we leave it hidden — better to
   // be invisible than to show a tab that 503s on click.
-  fetch(_apiPath('/api/autonomous/config'), { headers: tokenHeader() })
+  fetch('/api/autonomous/config', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {
       const btn = document.getElementById('navBtnAutonomous');
@@ -42484,7 +42484,7 @@ function _dashLoop(ts) {
   const smokeInterval = hasActiveSmoke ? 75 : 900;
   if ((_dash._frameCount === 1 || _dash._frameCount % smokeInterval === 0) && !_dash._smokeFetching) {
     _dash._smokeFetching = true;
-    fetch(_apiPath('/api/smoke/progress')).then(r => {
+    fetch('/api/smoke/progress').then(r => {
       if (!r.ok) throw new Error('smoke ' + r.status);
       return r.json();
     }).then(d => {
@@ -42508,7 +42508,7 @@ function _dashLoop(ts) {
     // If an envelope is expanded, also refresh its section detail
     if (_dash._smokeExpandedId && !_dash._smokeDetailFetching) {
       _dash._smokeDetailFetching = true;
-      fetch(_apiPath('/api/smoke/progress/' + encodeURIComponent(_dash._smokeExpandedId))).then(r => {
+      fetch('/api/smoke/progress/' + encodeURIComponent(_dash._smokeExpandedId)).then(r => {
         if (r.status === 404) {
           _dash._smokeExpandedId = null;
           _dash._smokeExpandedData = null;
@@ -44146,7 +44146,7 @@ function _smokeSelectRun(id) {
     _dash._smokeExpandedId = id;
     _dash._smokeExpandedData = null;
     // Fetch detail immediately
-    fetch(_apiPath('/api/smoke/progress/' + encodeURIComponent(id))).then(r => r.ok ? r.json() : null)
+    fetch('/api/smoke/progress/' + encodeURIComponent(id)).then(r => r.ok ? r.json() : null)
       .then(d => { if (d) { _dash._smokeExpandedData = d; _dashRenderSmoke(); } }).catch(() => {});
   }
   _dashRenderSmoke();
@@ -44463,7 +44463,7 @@ function renderDashboardView() {
 // BL313 — unhide dashboard nav button; only shown when autonomous.enabled.
 // Called when dashboard view activates (ensures nav is visible after navigate()).
 function _dashCheckEnabled() {
-  fetch(_apiPath('/api/autonomous/config'), { headers: tokenHeader() })
+  fetch('/api/autonomous/config', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {
       const navBtn = document.getElementById('navBtnDashboard');
