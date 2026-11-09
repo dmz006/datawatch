@@ -10,7 +10,11 @@ import (
 // validateDiscussionID rejects, and, as a second line, any id that could
 // escape the cleaned base directory: ".", "..", any slash or backslash, or
 // any id whose cleaned joined path does not sit directly under the base.
-// All refusals return errInvalidDiscussionID.
+// As a second barrier form, the id must also be a local name
+// (filepath.IsLocal), and reaching the cleaned joined path from the base
+// via filepath.Rel must not require climbing into a parent directory (a
+// relative result of ".." or starting with ".."). All refusals return
+// errInvalidDiscussionID.
 func (s *Server) discussionFolderForID(id string) (string, error) {
 	if err := validateDiscussionID(id); err != nil {
 		return "", err
@@ -21,6 +25,16 @@ func (s *Server) discussionFolderForID(id string) (string, error) {
 	base := filepath.Clean(s.statePath("discussions"))
 	clean := filepath.Clean(filepath.Join(base, id))
 	if !strings.HasPrefix(clean, base+string(filepath.Separator)) {
+		return "", errInvalidDiscussionID
+	}
+	// Second barrier form: demand additionally that the id be a local name
+	// and that the joined path be reachable from the base without a parent
+	// hop. Either refusal keeps the caller inside the discussions folder.
+	if !filepath.IsLocal(id) {
+		return "", errInvalidDiscussionID
+	}
+	rel, err := filepath.Rel(base, clean)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", errInvalidDiscussionID
 	}
 	return clean, nil
