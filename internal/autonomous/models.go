@@ -1461,6 +1461,9 @@ type Task struct {
 	// autonomous.parallel.read_only_tasks key is on, such a task skips
 	// the tree lock (see EffectiveReadOnlyTasks).
 	ReadOnly bool `json:"read_only,omitempty"`
+	// DaemonRun true means the daemon performs the task itself and no
+	// session is started for it.
+	DaemonRun bool `json:"daemon_run,omitempty"`
 
 	// ReportPath is the one repo-relative path a read-only task may
 	// write (see validateReportPath); empty means it writes nothing. It

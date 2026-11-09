@@ -55,7 +55,7 @@ func TestTemplateVerificationScriptCommandStringRejected(t *testing.T) {
 	// A rejected template is never instantiated: applying the set to a
 	// story adds no task for it.
 	story := testTaskTemplateStory(t)
-	_, applied := applyTemplatesToStory(story, "feature", []config.TaskTemplateDef{bad})
+	_, applied := applyTemplatesToStory(story, "feature", []config.TaskTemplateDef{bad}, nil)
 	if len(applied) != 0 {
 		t.Errorf("applied = %v, want none for a rejected template", applied)
 	}
@@ -141,7 +141,7 @@ func TestTemplateVerificationScriptPathAccepted(t *testing.T) {
 	// A valid script path is copied onto the instantiated task.
 	story := testTaskTemplateStory(t)
 	good := config.TaskTemplateDef{ID: "gate", Title: "Gate", VerificationScript: "scripts/verify.sh"}
-	out, applied := applyTemplatesToStory(story, "feature", []config.TaskTemplateDef{good})
+	out, applied := applyTemplatesToStory(story, "feature", []config.TaskTemplateDef{good}, nil)
 	if len(applied) != 1 {
 		t.Fatalf("applied = %v, want one task for a valid script path", applied)
 	}
