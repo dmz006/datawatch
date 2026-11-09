@@ -2,7 +2,10 @@
 // estimates for the window, grouped by the operator's choice, with each
 // row labeled by the owning provider's billing mode (bundled plan,
 // metered API spend or free local inference) and, for release groupings,
-// with the shipped units each release contains.
+// with the shipped units each release contains — plus the per-profile
+// and per-role startup token tables: how many attempts each worker
+// profile and role ran, the average startup token size over the attempts
+// that carry one, and the estimated / reported / no-data source counts.
 //
 // The engine is data-source-agnostic: it takes a Source (spend records
 // for a window), an optional ShippedSource (the releases the daemon has
@@ -16,6 +19,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -46,6 +51,26 @@ const UnattributedKey = "unattributed"
 // UnreleasedKey is the release-grouping key for work that has not shipped
 // yet.
 const UnreleasedKey = "unreleased"
+
+// StartupSource values: how an attempt's startup token size was obtained.
+const (
+	// StartupSourceEstimated marks a size estimated from the generated
+	// starting context at launch (the launch never saw real usage).
+	StartupSourceEstimated = "estimated"
+	// StartupSourceReported marks a size the worker or its runner
+	// reported at runtime.
+	StartupSourceReported = "reported"
+)
+
+// Row keys for attempts that ran with no profile or no role recorded.
+const (
+	// UnprofiledKey is the StartupByProfile row key for attempts that ran
+	// with no worker profile.
+	UnprofiledKey = "unprofiled"
+	// NoRoleKey is the StartupByRole row key for attempts that ran with
+	// no role.
+	NoRoleKey = "no role"
+)
 
 // MixedBillingMode is the Row.BillingMode value when a row spans more
 // than one billing mode (mixed providers) and only the USD estimate is
@@ -96,11 +121,39 @@ type SourceOptions struct {
 // SourceResult is a Source's answer for one window.
 type SourceResult struct {
 	Records []Record
+	// Attempts are the window's per-attempt startup records (see
+	// Attempt); empty when the source reports none. They feed the
+	// report's per-profile and per-role startup tables (Report.
+	// StartupByProfile / StartupByRole).
+	Attempts []Attempt
 	// LifetimeFallback is true when the window reaches further back than
 	// the store's retention horizon and its dollar answers fell back to
 	// lifetime session totals — the same fallback the per-PRD USD rollup
 	// in internal/autonomous already performs.
 	LifetimeFallback bool
+}
+
+// Attempt is one worker attempt's startup record a Source supplies
+// alongside the spend records: the profile and role the attempt's worker
+// started with, the startup token size the launch recorded for it, and
+// how that size was obtained (StartupSourceEstimated,
+// StartupSourceReported, or neither). An attempt with zero tokens is a
+// record from before startup sizes were captured: it still counts as an
+// attempt and as "no data", but stays out of the average.
+type Attempt struct {
+	// Profile names the worker profile the attempt's worker started with;
+	// empty for an unprofiled attempt (row key UnprofiledKey).
+	Profile string
+	// Role names the role of the attempt's worker session; empty for a
+	// role-less attempt (row key NoRoleKey).
+	Role string
+	// StartupTokens is the token size the attempt's worker started with;
+	// zero when the launch carried no starting context (or was recorded
+	// before startup sizes existed).
+	StartupTokens int
+	// Source is how StartupTokens was obtained: StartupSourceEstimated,
+	// StartupSourceReported, or "" when neither.
+	Source string
 }
 
 // Source is the spend read interface the report builds on. Today it is
@@ -209,6 +262,45 @@ type Report struct {
 	// the rows carry the sessions' lifetime totals instead of in-window
 	// spend.
 	RetentionNote string `json:"retention_note"`
+
+	// StartupByProfile and StartupByRole aggregate the window's attempt
+	// startup token sizes by the worker profile and role the attempt's
+	// worker started with: attempts per key, the average startup size
+	// over the attempts that carry one (omitted when none do), and the
+	// estimated / reported / no-data source counts. Rows are sorted by
+	// key; the slice is empty (not nil) when the source reports no
+	// attempts — records from before startup sizes were captured land
+	// in a key's no_data count, never in the average.
+	StartupByProfile []StartupRow `json:"startup_by_profile"`
+	StartupByRole    []StartupRow `json:"startup_by_role"`
+}
+
+// StartupRow is one row of Report.StartupByProfile / StartupByRole (see
+// Attempt for what an attempt record is): the profile or role key, how
+// many attempts ran with it, the average startup token size over the
+// attempts that have one, and the source counts — estimated, reported,
+// and no data (zero tokens, or a source the engine does not name).
+type StartupRow struct {
+	// Key is the worker profile (or role) the row counts attempts for;
+	// UnprofiledKey / NoRoleKey when the attempts ran with no profile /
+	// role.
+	Key string `json:"key"`
+	// Attempts is how many attempts ran with this key, including the no-
+	// data ones.
+	Attempts int `json:"attempts"`
+	// AvgStartupTokens is the mean startup token size over the attempts
+	// that carry one (zero-token attempts stay out of it); nil when no
+	// attempt for this key has a size.
+	AvgStartupTokens *float64 `json:"avg_startup_tokens,omitempty"`
+	// Estimated counts the attempts whose size came from the launch
+	// estimate (StartupSourceEstimated).
+	Estimated int `json:"estimated"`
+	// Reported counts the attempts whose size was reported at runtime
+	// (StartupSourceReported).
+	Reported int `json:"reported"`
+	// NoData counts the attempts with zero startup tokens (records from
+	// before startup sizes were captured) or an unrecognized source.
+	NoData int `json:"no_data"`
 }
 
 // The billing-mode row labels, surfaced verbatim.
@@ -390,7 +482,10 @@ func mergeReleaseUnits(out []Row, units []ShippedUnit) []Row {
 // Build assembles the cost report over src using the cost_report config
 // section cfg, pricing rows with rateFor, billing them with billing (nil
 // keeps the legacy USD-only shape), and — for release groupings — counting
-// the shipped units from shipped.
+// the shipped units from shipped. The report always carries the
+// per-profile and per-role startup tables, aggregated from the attempt
+// records src's answer reports (Report.StartupByProfile /
+// StartupByRole; empty when the source reports none).
 //
 // Window normalization uses the config only: an open Until becomes now, an
 // open Since becomes Until minus the config default window in days. Rows
@@ -521,6 +616,11 @@ func Build(
 	lifetimeFallback := res.LifetimeFallback ||
 		since.Before(now.AddDate(0, 0, -RetentionDays))
 
+	attempts := []Attempt{}
+	if res != nil {
+		attempts = res.Attempts
+	}
+
 	return &Report{
 		GroupBy:          req.GroupBy,
 		Since:            since,
@@ -529,5 +629,121 @@ func Build(
 		RetentionDays:    RetentionDays,
 		LifetimeFallback: lifetimeFallback,
 		RetentionNote:    retentionNote(lifetimeFallback),
+		StartupByProfile: startupTable(attempts, profileKey),
+		StartupByRole:    startupTable(attempts, roleKey),
 	}, nil
+}
+
+// profileKey is the StartupByProfile row key for an attempt: its
+// profile, or UnprofiledKey when the attempt ran with none.
+func profileKey(a Attempt) string {
+	if a.Profile == "" {
+		return UnprofiledKey
+	}
+	return a.Profile
+}
+
+// roleKey is the StartupByRole row key for an attempt: its role, or
+// NoRoleKey when the attempt ran with none.
+func roleKey(a Attempt) string {
+	if a.Role == "" {
+		return NoRoleKey
+	}
+	return a.Role
+}
+
+// startupAcc accumulates one key's attempt counts for startupTable.
+type startupAcc struct {
+	attempts   int
+	tokenSum   int
+	tokenCount int
+	estimated  int
+	reported   int
+	noData     int
+}
+
+// add folds one attempt into the accumulator: always an attempt; the
+// token size into the average only when nonzero; the source into
+// estimated / reported when named; and no_data when the attempt has no
+// token size or its source is not one the engine names.
+func (s *startupAcc) add(a Attempt) {
+	s.attempts++
+	if a.StartupTokens > 0 {
+		s.tokenSum += a.StartupTokens
+		s.tokenCount++
+	}
+	switch a.Source {
+	case StartupSourceEstimated:
+		s.estimated++
+	case StartupSourceReported:
+		s.reported++
+	}
+	if a.StartupTokens == 0 || (a.Source != StartupSourceEstimated && a.Source != StartupSourceReported) {
+		s.noData++
+	}
+}
+
+// startupTable aggregates the attempts into one StartupRow per key (via
+// keyOf), sorted by key, with the average startup size over the attempts
+// that carry one. An empty attempt list yields an empty (not nil) row
+// slice, so the JSON field is always present as [] or a row list.
+func startupTable(attempts []Attempt, keyOf func(Attempt) string) []StartupRow {
+	acc := map[string]*startupAcc{}
+	for _, a := range attempts {
+		key := keyOf(a)
+		s := acc[key]
+		if s == nil {
+			s = &startupAcc{}
+			acc[key] = s
+		}
+		s.add(a)
+	}
+	rows := make([]StartupRow, 0, len(acc))
+	for key, s := range acc {
+		row := StartupRow{Key: key, Attempts: s.attempts, Estimated: s.estimated, Reported: s.reported, NoData: s.noData}
+		if s.tokenCount > 0 {
+			avg := float64(s.tokenSum) / float64(s.tokenCount)
+			row.AvgStartupTokens = &avg
+		}
+		rows = append(rows, row)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Key < rows[j].Key })
+	return rows
+}
+
+// StartupText renders the per-profile and per-role startup tables as text
+// (a labeled header line, then one line per row with the average as "-"
+// where no attempt for the key carries a size; "no attempts" where a
+// table is empty), for the surfaces that print the report as text. It
+// renders both tables, profile first.
+func (r *Report) StartupText() string {
+	if r == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("startup tokens by profile:\n")
+	b.WriteString(renderStartupTable(r.StartupByProfile))
+	b.WriteString("\n")
+	b.WriteString("startup tokens by role:\n")
+	b.WriteString(renderStartupTable(r.StartupByRole))
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderStartupTable is the text body of one startup table (StartupText):
+// the column header plus one line per row, or a single "no attempts"
+// line for an empty table.
+func renderStartupTable(rows []StartupRow) string {
+	if len(rows) == 0 {
+		return "  (no attempts)\n"
+	}
+	var b strings.Builder
+	b.WriteString("  key\tattempts\tavg_startup_tokens\testimated\treported\tno_data\n")
+	for _, row := range rows {
+		avg := "-"
+		if row.AvgStartupTokens != nil {
+			avg = strconv.FormatFloat(*row.AvgStartupTokens, 'f', -1, 64)
+		}
+		fmt.Fprintf(&b, "  %s\t%d\t%s\t%d\t%d\t%d\n", row.Key, row.Attempts, avg, row.Estimated, row.Reported, row.NoData)
+	}
+	return b.String()
 }
