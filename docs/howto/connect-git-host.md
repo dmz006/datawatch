@@ -3,40 +3,253 @@ docs:
   index: true
   topics: [git, hosts, credentials, vault, readiness, connection-test, settings]
 exec_steps:
-  - tool: get_config
-    description: Read the git.hosts list shown in Settings → General → Git hosts
-    args: {section: git}
+  - tool: git_hosts_status
+    description: Read every configured git host with its live readiness (login, account, scopes, fix command)
+    args: {}
+    read_only: true
+  - tool: git_hosts_test
+    description: Run the connection test for one saved host by its name (replace prod-github with your host's name)
+    args: {name: prod-github}
     read_only: true
 ---
 
-# How to: Connect a git host from Settings
+# How to: Connect datawatch to your git host
 
-The **Git hosts** card in **Settings → General** of the PWA is the in-UI editor for `git.hosts` — the daemon's named list of git hosts it may push to and tag on. It reads the list from `GET /api/config` and each host's live readiness from `GET /api/git/hosts`, and saves by writing the whole list back with `PUT /api/config` (`git.hosts`). It is the same data and the same validation as every other write surface — see [git-hosts.md](git-hosts.md) for the full model, the credential sources, the per-host operations and the token rule.
+datawatch works with a git host (GitHub, GitLab, Gitea, Bitbucket or any plain git remote) through that host's own login. The host's own login is the default and recommended source. datawatch holds no token of its own for a git host. The token lives with the host's login, or in a vault entry that you create yourself.
 
-**What the card shows per host.** A row of readiness (`Ready` / `Not logged in` / `Status unknown`, the account, and the repo-scope status), the plain-language problem and the exact fix command when the daemon found one, then the editable fields:
+Every Automaton and Automation that pushes, opens a pull or merge request, files an issue or reads CI on a host uses the hosts you set up here.
 
-| Field | Notes |
+There are three credential sources. Pick one per host:
+
+| Source | What it means | When to use it |
+|---|---|---|
+| `host_login` (default, recommended) | The login already on this machine: `gh auth login` for GitHub, `glab auth login` for GitLab, or git's own credential helper for the plain kinds. Nothing is added to the environment. | Your own workstation, or any machine where you already log in to the host. |
+| `vault` | A token you stored in the secrets vault under a name. datawatch reads it only when it runs a host command, and passes it in that one command's environment. | A server or cluster with no interactive login. |
+| `broker` | The credential broker supplies tokens to worker sessions. datawatch adds no host-side token. The source is recorded in the audit log. | Worker sessions that get their tokens from the broker. |
+
+Start with `host_login`. Switch to `vault` only when the host cannot be logged in on the machine that runs datawatch.
+
+## Base requirements
+
+- A running datawatch daemon you can reach (the web UI, REST, MCP, the CLI or a comm channel).
+- The host's own command-line tool for `github` (`gh`) and `gitlab` (`glab`). `gitea`, `bitbucket` and `git` need only `git`.
+- For `vault`: a secrets vault entry that holds the token. See the [secrets manager](secrets-manager.md).
+
+## Setup
+
+### 1. Add the host to the config
+
+Hosts are the `git.hosts` list. Each entry needs a `name` and a `kind`. Self-hosted kinds also need a `base_url`.
+
+```yaml
+git:
+  hosts:
+    - name: prod-github
+      kind: github
+      # credential_source defaults to host_login
+
+    - name: work-gitea
+      kind: gitea
+      base_url: https://git.example.test
+      credential_source: vault
+      vault_secret: gitea-token     # the vault entry NAME, never the token
+      sign_tags: false
+      signing_key: ""
+```
+
+| Key | Required | Rules |
+|---|---|---|
+| `name` | yes | Unique lowercase slug (`a-z`, `0-9`, single hyphens). It cannot be changed once the host exists. |
+| `kind` | yes | `github`, `gitlab`, `gitea`, `bitbucket` or `git`. |
+| `base_url` | by kind | Required for `gitea`, `bitbucket` and `git`. For `gitlab` and `github`, empty means the public host (gitlab.com, github.com); set it for a self-hosted instance. |
+| `credential_source` | no | `host_login` (default), `vault` or `broker`. Empty reads as `host_login`. |
+| `vault_secret` | when `credential_source: vault` | The vault entry name. Required for `vault`; never the value. |
+| `sign_tags` | no | `true` or `false` (default `false`). Tags created for this host are signed when `true`. |
+| `signing_key` | no | Key id used when signing. Empty uses git's default signing key. |
+
+The whole list is validated when the config loads. Every problem is reported together, so fix them in one pass. A host that breaks the rules stops the config from loading.
+
+You can also change one field of an existing host without editing the file:
+
+```bash
+datawatch config set git.hosts.work-gitea.base_url https://git2.example.test
+datawatch config set git.hosts.work-gitea.vault_secret gitea-token
+```
+
+A field write names a host that already exists. Creating, renaming or removing a host is a whole-list write: edit the `hosts:` block, or use the Settings card described below.
+
+### 2. Log in on the host (`host_login`)
+
+Use the login command for the host's kind (see the tables below). Then check it with the readiness read in step 3.
+
+### 3. Store a token (`vault` only)
+
+```bash
+datawatch secrets set gitea-token "<token value>"
+datawatch config set git.hosts.work-gitea.credential_source vault
+```
+
+Set `vault_secret` before `credential_source` if you use single-key writes. A `vault` source with no `vault_secret` is rejected at load.
+
+### 4. Check readiness
+
+```bash
+datawatch git-hosts
+```
+
+For each host, this shows the readiness row: whether it is logged in, the account, the scopes it found, and, when something is missing, the problem and the exact fix command.
+
+### 5. Test connection
+
+The connection test runs one live, read-only probe against the host. In the web UI it is the **Test connection** button on the host row of the Git hosts card (Settings → General). From the other surfaces:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/api/git/hosts/prod-github/test
+```
+
+```json
+{
+  "host": "prod-github",
+  "ok": true,
+  "account": "dmz006",
+  "message": "Connected to github.com as dmz006."
+}
+```
+
+Test by the host's **saved** name. A new or renamed host must be saved before it can be tested.
+
+## Per-host-kind reference
+
+Each table gives the values for one host kind. The base URL is the value you put in `base_url`, or the public default when it is empty. The login command is the one to run on the datawatch machine. The fix command is what datawatch prints when readiness reports a problem. The test command is the probe datawatch runs on Test connection; you can run the same command by hand to see the same answer.
+
+### GitHub (`kind: github`)
+
+| Item | Value |
 |---|---|
-| **Name** | required and unique; the key in `git.hosts.<name>.<field>` and in `/api/git/hosts/<name>/test` |
-| **Kind** | `github`, `gitlab`, `gitea`, `bitbucket`, or plain `git` |
-| **Base URL** | hidden for `github` (always github.com); required for `gitea`, `bitbucket` and `git`; for `gitlab` only when self-hosted |
-| **Credential source** | `host_login` (default — the `gh`/`glab` login on this machine), `vault`, or `broker` |
-| **Vault secret name** | shown only for `vault`; the secrets-vault entry **name** holding the token — never the value |
+| Base URL | `https://github.com` (empty `base_url` means github.com). For GitHub Enterprise, set `base_url` to the instance URL. |
+| Login command | `gh auth login --hostname github.com` (use your instance's hostname for Enterprise) |
+| Scopes to check | `repo` and `workflow` |
+| Fix command | `gh auth refresh -s repo,workflow` (for an Enterprise host datawatch prints `gh auth refresh -h <host> -s repo,workflow`) |
+| Test command | `gh api user` (datawatch runs this; for an Enterprise host it adds `--hostname <host>`) |
 
-The card carries no `sign_tags`/`signing_key` fields: both are preserved from the loaded config when you save an existing host, and a host you add starts with signing off. Set them on the config file or a field write — see [git-hosts.md](git-hosts.md).
+### GitLab (`kind: gitlab`)
 
-**Saving and testing.** **Add host** appends a new row; **Remove** drops one; **Save git hosts** validates the whole list locally first (a failure names the host number and the reason — e.g. missing name, duplicate name, missing base URL for that kind, missing vault secret name) and, when valid, writes the **entire list** in one `PUT /api/config` — so a save from the card is a whole-list write, exactly like the YAML `hosts:` block. **Test connection** runs `POST /api/git/hosts/<name>/test` for one host by its **saved** name — a new or renamed host must be saved before it can be tested (the card's intro line says so). A test reports `Connection OK` / `Connection failed` with the daemon's plain-language message, the same answer every other channel gets.
+| Item | Value |
+|---|---|
+| Base URL | `https://gitlab.com` (empty `base_url` means gitlab.com). For a self-hosted instance, set `base_url`. |
+| Login command | `glab auth login --hostname gitlab.com` (use your instance's hostname when self-hosted) |
+| Scopes to check | `api` |
+| Fix command | `glab auth login --hostname <host>` |
+| Test command | `glab api user --hostname gitlab.com` |
 
-**The card is safe by construction.** If the config never loads, the editor stays off, so a save can never overwrite `git.hosts` with a list you never saw. No token or secret value is ever read into the card — a vault host shows its secret **name** only — and any problem text that reaches a row is redacted of token-shaped values and `user:password@` credentials before it is shown.
+### Gitea (`kind: gitea`)
 
-## Steps
+| Item | Value |
+|---|---|
+| Base URL | Required, for example `https://git.example.test` |
+| Login command | No `gitea` login command. datawatch uses git's own credentials for the base URL. Run `git ls-remote --heads -- https://git.example.test` once; if the host asks for a username and token, git's credential helper keeps them for later runs. |
+| Scopes to check | datawatch checks no scopes for this kind. Create the token in Gitea with read access to the repositories you use, and push access where you push. |
+| Fix command | datawatch prints no fix command. Its problem line reads "Could not reach <base URL>." Check the base URL and the git login, then run the test again. |
+| Test command | `git ls-remote --heads -- https://git.example.test` |
 
-1. Open **Settings → General → Git hosts** in the PWA.
-2. **Add host**; fill in the name, kind, base URL (when the field is shown), credential source and, for `vault`, the vault entry name.
-3. **Save git hosts**. The save either succeeds (a "Git hosts saved" toast) or names the first problem.
-4. **Test connection** on the host. If it reports a problem, follow its fix command (for example `gh auth login` or `gh auth refresh -s repo,workflow`) and test again.
-5. For a `vault` source with no entry yet, create the entry in the [secrets manager](secrets-manager.md) first, then point the host at its name.
+### Bitbucket (`kind: bitbucket`)
 
-## Help
+| Item | Value |
+|---|---|
+| Base URL | Required, for example `https://bitbucket.org` |
+| Login command | No `bitbucket` login command. Use git's credential helper, as for Gitea. |
+| Scopes to check | datawatch checks no scopes for this kind. Give the token repository read access, and write access where you push. |
+| Fix command | datawatch prints no fix command. Its problem line reads "Could not reach <base URL>." |
+| Test command | `git ls-remote --heads -- https://bitbucket.org` (use your own base URL) |
 
-The **?** button on each host row opens this howto in the built-in docs viewer. The full reference — credential sources, readiness rules per kind, per-host operations, every write and read surface, and what is deliberately not here yet — is [git-hosts.md](git-hosts.md).
+### Plain git (`kind: git`)
+
+| Item | Value |
+|---|---|
+| Base URL | Required: any git remote URL the machine can reach |
+| Login command | None. Use git's own credential helper or an SSH key for the remote. |
+| Scopes to check | Not applicable. datawatch checks reachability only. |
+| Fix command | None. Its problem line reads "Could not reach <base URL>." |
+| Test command | `git ls-remote --heads -- <base_url>` |
+
+Readiness and the test both give up after 15 seconds. A timeout reads "...timed out after 15 seconds."
+
+## What the readiness check does
+
+`datawatch git-hosts`, `GET /api/git/hosts`, the MCP tool `git_hosts_status` and the Git hosts card all run the same check for each host:
+
+- **github:** `gh auth status` on the host name. It reports `logged_in`, the `account`, the token `scopes`, and whether `repo` and `workflow` are present. A missing scope or a missing login is a problem with its fix command. A missing `gh` binary is its own problem.
+- **gitlab:** `glab auth status` on the host name. It reports `logged_in`, the `account`, the scopes, and whether `api` is present.
+- **gitea, bitbucket, git:** `git ls-remote --heads <base_url>`. It reports whether the base URL answered. No scope is read.
+
+Readiness never returns a token. It returns only the account name, the scope names, a problem in plain language and a fix command. Any token-shaped text that reaches an answer is replaced with `[redacted]`.
+
+**Limit to know about.** Readiness and Test connection check the login on the datawatch machine. They do not use a `vault` token. A `vault` host can therefore show ready while its vault token is missing or wrong. Check that the vault entry exists with `datawatch secrets list`.
+
+## The Test connection action
+
+Test connection runs in three steps:
+
+1. It runs the readiness check. If that reports a problem, it stops there, returns `ok: false` with the problem and the fix command, and does not probe.
+2. If the host is ready, it runs the one probe for its kind from the table above.
+3. It returns `ok`, the `account` it connected as, and a plain message. A failure names the cause: a missing CLI, a timeout, or an expired login (with the login command as the fix).
+
+Test connection by the saved name. From MCP, call `git_hosts_test` with `name`. An unknown name is a 404 on REST and a tool error on MCP.
+
+## The vault token environment variables
+
+When a host uses `credential_source: vault`, the daemon can put the token into the environment of one host command. It uses one variable per kind:
+
+| Host kind | Variable |
+|---|---|
+| `github` | `GH_TOKEN` |
+| `gitlab` | `GITLAB_TOKEN` |
+| `gitea`, `bitbucket`, `git` | `DATAWATCH_GIT_TOKEN` |
+
+The variable is set only in that command's environment. It is never written to the daemon's own environment, the config, an error message or a response. An error names the host and the vault entry, never the value. A `broker` host gets no variable from datawatch, and a `host_login` host gets none either.
+
+**Current build.** The variable is defined and used by the code that builds host command environments, but the git push and clone callers do not yet pass in the vault lookup. A `vault` host's push or clone therefore fails with "no secret resolver for vault secret ..." until that lookup is wired in. Use `host_login` for hosts you push to until then.
+
+## The Git hosts card in Settings
+
+Settings → General → **Git hosts** is the in-browser editor for the same `git.hosts` list.
+
+- Each row shows the readiness (Ready, Not logged in or Status unknown), the account, the problem and the fix command.
+- Editable fields: **Name**, **Kind**, **Base URL** (hidden for GitHub), **Credential source**, and **Vault secret name** (shown only for `vault`; the entry name, never the value).
+- **Add host** and **Remove** change the list. **Save git hosts** validates the whole list and writes it in one `PUT /api/config` (`git.hosts`). A failure names the first problem.
+- **Test connection** runs the test for the host by its saved name.
+- The card does not edit `sign_tags` or `signing_key`. It keeps the values you set in the config.
+- If the config fails to load, the editor stays off, so a save cannot overwrite the list with one you did not see.
+
+## All options (per channel)
+
+| Channel | Readiness and list | Test one host | Write |
+|---|---|---|---|
+| **Config file** | `git:` → `hosts:` in the config file | — | Edit `hosts:`. This is the only way to create, rename or remove a host by hand. |
+| **Web / PWA** | Settings → General → Git hosts | **Test connection** button | Add / Remove / Save git hosts (whole list) |
+| **REST** | `GET /api/git/hosts` | `POST /api/git/hosts/<name>/test` | `PUT /api/config` with `git.hosts` (whole list) or `git.hosts.<name>.<field>` keys |
+| **MCP** | `git_hosts_status` (no arguments) | `git_hosts_test` with `name` | No git-hosts write tool. Config writes stay on operator surfaces. |
+| **CLI** | `datawatch git-hosts` | Readiness is printed by `datawatch git-hosts`; the probe runs from REST or MCP | `datawatch config set git.hosts.<name>.<field> <value>` |
+| **Comm channel** | `configure git.hosts list` (name, kind, credential source and vault entry name; never a token) | Via the REST passthrough | `configure git.hosts.<name>.<field>=<value>` |
+
+Every channel is subject to the same rule: no response ever contains a token.
+
+## Troubleshooting
+
+| You see | Do this |
+|---|---|
+| "Not logged in to github.com with gh." | Run `gh auth login --hostname github.com`, then check again. |
+| "The gh login is missing the repo and workflow scope." | Run `gh auth refresh -s repo,workflow`. |
+| "The glab login is missing the api scope." | Run `glab auth login --hostname <host>` and grant the `api` scope. |
+| "The gh command is not installed..." | Install the GitHub CLI, then log in. |
+| "Could not reach <base URL>." | Check the URL and the network path, and run `git ls-remote --heads -- <base URL>` by hand. |
+| "No base URL is set for this host." | Set `base_url` for a `gitea`, `bitbucket` or `git` host. |
+| "credential_source vault requires vault_secret" at load | Set `vault_secret` to the vault entry name, or set `credential_source` back to `host_login`. |
+| "...no secret resolver..." | See the current-build note under the vault token variables. Use `host_login` until it is wired in. |
+
+## Related
+
+- [Git hosts](git-hosts.md): the full model, per-host operations and what is not here yet.
+- [Secrets manager](secrets-manager.md): creating the vault entry a `vault` host names.
+- [Audit and access logging](audit-logging.md): where host operations are recorded (`host_git_operation`).
+- [Automation repo CI watch](automation-repo-ci-watch.md): reads a watched repository's CI through a host of yours.
