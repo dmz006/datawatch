@@ -210,6 +210,9 @@ type Merger struct {
 	Model ConflictModel
 	// Questions raises the operator question; nil means none can be asked.
 	Questions QuestionRaiser
+	// VersionFiles are the repository-relative files that carry the release
+	// version line; a conflict in one of them is classed ClassVersionLine.
+	VersionFiles []string
 }
 
 func (m *Merger) settings() ConflictSettings {
@@ -455,14 +458,19 @@ func (m *Merger) abortQuietly(dir string) {
 	_, _ = m.git(ctx, dir, "merge", "--abort")
 }
 
-// mechanical runs the additive resolver over every conflicted file in dir. It
-// returns the new text of each file it fully settled, the hunks it settled and
-// the hunks (or whole files) it could not. A file with any unsettled hunk, or
-// with no readable markers, is not written.
+// mechanical settles every conflicted file in dir by its class. Code and
+// document files keep the additive-only rule: a hunk is settled only when both
+// sides add lines to the same place. The other classes go through
+// ResolveMechanicalFile, which applies each class's own rule; a locale or
+// generated file gets its ours and theirs sides from the index stages. It
+// returns the new text of each file it fully settled, the additive hunks it
+// settled and the hunks (or whole files) it could not. A file with anything
+// unsettled, or with no readable markers, is not written.
 func (m *Merger) mechanical(ctx context.Context, dir string, files []string) (map[string]string, []ResolvedHunk, []string, error) {
 	texts := map[string]string{}
 	var resolved []ResolvedHunk
 	var remaining []string
+	var regen []string
 	for _, f := range files {
 		p, err := filePath(dir, f)
 		if err != nil {
@@ -477,23 +485,102 @@ func (m *Merger) mechanical(ctx context.Context, dir string, files []string) (ma
 			remaining = append(remaining, f+" (binary)")
 			continue
 		}
-		text, res, rest, perr := ResolveAdditive(f, string(data))
-		if perr != nil {
-			remaining = append(remaining, f+" (no usable conflict markers)")
+		class := ClassifyConflictFile(f, m.VersionFiles)
+		if class == ClassCode || class == ClassDocument {
+			text, res, rest, perr := ResolveAdditive(f, string(data))
+			if perr != nil {
+				remaining = append(remaining, f+" (no usable conflict markers)")
+				continue
+			}
+			resolved = append(resolved, res...)
+			for _, h := range rest {
+				remaining = append(remaining, fmt.Sprintf("%s#%d", f, h.Index))
+			}
+			if len(rest) == 0 {
+				texts[f] = text
+			}
 			continue
 		}
-		resolved = append(resolved, res...)
-		for _, h := range rest {
-			remaining = append(remaining, fmt.Sprintf("%s#%d", f, h.Index))
+
+		var ours, theirs string
+		if class == ClassLocale || class == ClassGenerated {
+			if ours, err = m.stageOf(ctx, dir, f, "2"); err != nil {
+				remaining = append(remaining, f+" ("+string(class)+": ours side unreadable)")
+				continue
+			}
+			if theirs, err = m.stageOf(ctx, dir, f, "3"); err != nil {
+				remaining = append(remaining, f+" ("+string(class)+": theirs side unreadable)")
+				continue
+			}
 		}
-		if len(rest) == 0 {
-			texts[f] = text
+		text, settled, _, rerr := ResolveMechanicalFile(class, f, string(data), ours, theirs)
+		if rerr != nil || !settled {
+			remaining = append(remaining, fmt.Sprintf("%s (%s: not settled)", f, class))
+			continue
 		}
+		if class == ClassGenerated {
+			// The kept ours side is only a placeholder: the file is rebuilt
+			// by the project's docs-index target, and only when there is one.
+			if !MakefileHasDocsIndexTarget(projectMakefile(dir)) {
+				remaining = append(remaining, f+" (generated: no docs-index target to rebuild it)")
+				continue
+			}
+			regen = append(regen, f)
+		}
+		texts[f] = text
 	}
 	if len(remaining) > 0 {
 		return texts, resolved, remaining, nil
 	}
+	if len(regen) > 0 {
+		failed, err := m.regenerateDocsIndex(ctx, dir, texts, regen)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if len(failed) > 0 {
+			return texts, resolved, failed, nil
+		}
+	}
 	return texts, resolved, nil, nil
+}
+
+// stageOf returns the content of file at an index stage: "2" is ours, "3" is
+// theirs. A file that has no such stage is an error.
+func (m *Merger) stageOf(ctx context.Context, dir, file, stage string) (string, error) {
+	return m.gitOK(ctx, dir, "show", ":"+stage+":"+file)
+}
+
+// regenerateDocsIndex rebuilds the generated files in regen by running the
+// project's docs-index target, after the settled texts are staged, and reads
+// the rebuilt files back into texts. It returns one remaining entry per
+// generated file when the target fails; the caller then leaves the merge
+// unsettled.
+func (m *Merger) regenerateDocsIndex(ctx context.Context, dir string, texts map[string]string, regen []string) ([]string, error) {
+	if err := m.stageTexts(ctx, dir, texts); err != nil {
+		return nil, err
+	}
+	tctx, cancel := context.WithTimeout(ctx, DefaultStepTimeout)
+	defer cancel()
+	r, err := m.run(tctx, dir, "make", "docs-index")
+	if err != nil || r.Code != 0 {
+		var failed []string
+		for _, f := range regen {
+			failed = append(failed, f+" (generated: make docs-index failed)")
+		}
+		return failed, nil
+	}
+	for _, f := range regen {
+		p, err := filePath(dir, f)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(p) // #nosec G304 -- path checked to lie inside dir
+		if err != nil {
+			return nil, err
+		}
+		texts[f] = string(data)
+	}
+	return nil, nil
 }
 
 // commitResolved writes the settled files, stages them and commits the merge.
@@ -589,6 +676,16 @@ func makefileHasTarget(dir, target string) bool {
 		return false
 	}
 	return false
+}
+
+// projectMakefile returns the text of the first makefile dir holds, or "".
+func projectMakefile(dir string) string {
+	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
+		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil { // #nosec G304 -- fixed names under dir
+			return string(data)
+		}
+	}
+	return ""
 }
 
 // runTestSteps runs every test step of the pipeline in dir. It passes only if

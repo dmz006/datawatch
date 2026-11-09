@@ -192,7 +192,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if len(req.Branches) == 0 {
 		return finish(autonomous.MergeRunFailed, errors.New("at least one branch is required"))
 	}
-	st.m = &Merger{Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions}
+	st.m = &Merger{Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions, VersionFiles: r.VersionFiles}
 	st.record()
 	if err := st.preflight(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
