@@ -14,33 +14,26 @@ pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1" >&2; FAILURES=$((FAILURES + 1)); }
 
 # --- fake curl ---------------------------------------------------------------
+# The install script makes ONE curl invocation per run and relies on curl's own
+# --retry N flag for retries. The fake therefore emulates curl's retry loop:
+# when --retry N is present it makes up to N+1 transport attempts, and every
+# attempt is one counted "call". The fake never sleeps (no --retry-delay wait).
+#
 # Behaviour is driven by FAKE_CURL_MODE:
-#   flaky   - the first two calls fail with HTTP 504; the third writes a stub
-#             install script into the -o target and succeeds
-#   always504 - every call fails with HTTP 504
-# Calls are counted in $FAKE_CURL_DIR/calls; each call's argv is saved to
-# $FAKE_CURL_DIR/args-<n>. The fake never sleeps, so retry delays are skipped.
+#   flaky     - attempts 1 and 2 fail with HTTP 504; attempt 3 writes a stub
+#               install script into the -o target and succeeds
+#   always504 - every attempt fails with HTTP 504
+# Attempts are counted in $FAKE_CURL_DIR/calls; each invocation's argv is saved
+# to $FAKE_CURL_DIR/args-<invocation>.
 FAKE_CURL_MODE=""
 FAKE_CURL_DIR=""
-curl() {
-  local n=0 arg prev="" target=""
-  if [[ -f "$FAKE_CURL_DIR/calls" ]]; then
-    n="$(cat "$FAKE_CURL_DIR/calls")"
-  fi
-  n=$((n + 1))
-  printf '%s' "$n" > "$FAKE_CURL_DIR/calls"
-  printf '%s\n' "$@" > "$FAKE_CURL_DIR/args-$n"
 
-  for arg in "$@"; do
-    if [[ "$prev" == "-o" ]]; then
-      target="$arg"
-    fi
-    prev="$arg"
-  done
-
+# _fake_attempt <attempt-number> <target-file>: one simulated transport attempt.
+_fake_attempt() {
+  local attempt="$1" target="$2"
   case "$FAKE_CURL_MODE" in
     flaky)
-      if (( n <= 2 )); then
+      if (( attempt <= 2 )); then
         echo "curl: (22) The requested URL returned error: 504" >&2
         return 22
       fi
@@ -56,6 +49,42 @@ curl() {
       return 99
       ;;
   esac
+}
+
+curl() {
+  local n=0 attempt=0 retries=0 rc=0 arg prev="" target=""
+  if [[ -f "$FAKE_CURL_DIR/invocations" ]]; then
+    n="$(cat "$FAKE_CURL_DIR/invocations")"
+  fi
+  n=$((n + 1))
+  printf '%s' "$n" > "$FAKE_CURL_DIR/invocations"
+  printf '%s\n' "$@" > "$FAKE_CURL_DIR/args-$n"
+
+  for arg in "$@"; do
+    case "$prev" in
+      -o) target="$arg" ;;
+      --retry) retries="$arg" ;;
+    esac
+    prev="$arg"
+  done
+
+  # Emulate curl's internal retry: 1 initial attempt plus up to $retries more.
+  while :; do
+    attempt=$((attempt + 1))
+    # Each simulated attempt is one call; keep the running total on disk.
+    local total=0
+    if [[ -f "$FAKE_CURL_DIR/calls" ]]; then
+      total="$(cat "$FAKE_CURL_DIR/calls")"
+    fi
+    printf '%s' "$((total + 1))" > "$FAKE_CURL_DIR/calls"
+
+    rc=0
+    _fake_attempt "$attempt" "$target" "$@" || rc=$?
+    if (( rc == 0 )) || (( attempt > retries )); then
+      break
+    fi
+  done
+  return "$rc"
 }
 
 # --- Case 1: transient 504s, then success ------------------------------------
