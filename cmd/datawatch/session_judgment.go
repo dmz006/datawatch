@@ -338,13 +338,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 // and before the reader starts waiting on the output. A failed spawn never
 // calls it. A nil onSpawned makes this exactly runOneShotJSONSessionWithReader.
 func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags, onSpawned func(sessionID string)) (content string, sessionID string, err error) {
-	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
-	if scratchErr != nil {
-		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
-	}
-	relocate := func() (string, bool) {
-		return readOutput(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
-	}
+	relocate := oneShotOutputReader(cfg, prdID, sessionName, projectDir, outputFile, scratchRelocateName, readOutput)
 	// Restart-recovery: reuse output written by a previous attempt of
 	// the exact same call (same outputFile name, derived by the caller
 	// from its own content hash).
@@ -482,6 +476,33 @@ func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, b
 	// (see decomposeWaitingInputTick).
 	spawnedAt := time.Now()
 
+	return waitOneShotJSONSession(ctx, cfg, prdID, sessionName, backend, model, projectDir, outputFile, timeout, sessionID, spawnedAt, relocate)
+}
+
+// oneShotOutputReader returns the reader that polls a one-shot session's
+// output: readOutput applied to the output file's base name under projectDir,
+// with the scratch copy named scratchRelocateName under the PRD's scratch dir.
+func oneShotOutputReader(cfg *config.Config, prdID, sessionName, projectDir, outputFile, scratchRelocateName string, readOutput judgeOutputReader) func() (string, bool) {
+	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
+	if scratchErr != nil {
+		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
+	}
+	return func() (string, bool) {
+		return readOutput(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
+	}
+}
+
+// waitOneShotJSONSession is the wait half of runOneShotJSONSessionWithSpawnHook,
+// shared with the planning reader that re-attaches to a planner session after a
+// daemon restart (cmd/datawatch/planning_reattach.go). It polls session
+// sessionID until its output file is ready (relocate reports it), the session
+// reaches a terminal state, or ctx ends, and it kills the session on return.
+// The completion rules are the same whichever caller waits. spawnedAt is when
+// the session was known to be running; it anchors the waiting_input grace.
+func waitOneShotJSONSession(ctx context.Context, cfg *config.Config, prdID, sessionName, backend, model, projectDir, outputFile string, timeout time.Duration, sessionID string, spawnedAt time.Time, relocate func() (string, bool)) (string, string, error) {
+	startOut := struct {
+		ID string `json:"id"`
+	}{ID: sessionID}
 	// Best-effort: kill the session when this function returns (handles
 	// TUI sessions that land in waiting_input after writing the output).
 	defer func() {

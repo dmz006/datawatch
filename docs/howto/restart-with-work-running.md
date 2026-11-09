@@ -11,14 +11,16 @@ This page covers the planning setting. For running tasks, see
 
 ## Current status
 
-The setting is stored, validated and reported by `GET /api/config`. The daemon's
-boot-resume does not read it yet. After a restart, a planning Automaton is still
-reset to draft, whatever the value. The `reattach` and `restart` behaviours
-described below apply once the restart path reads the setting. Until then, every
-value behaves like `draft`. This is flagged for operator review under the
-*Still to review (operator)* section in [operations.md](../operations.md);
-confirm on the build in use that a restarted daemon does not reset a
-mid-decompose PRD to `draft` before relying on `reattach` or `restart`.
+The setting is stored, validated and reported by `GET /api/config`, and the
+daemon's boot path reads it. With `reattach` (the default), a planning Automaton
+whose planner session is still alive stays in planning: the daemon attaches a
+reader to that session and its output file, and when the planner writes its plan
+the decompose completes as if the restart had not happened. If the planner
+ended while the daemon was down and left a complete plan, that plan is ingested
+at boot. Otherwise the Automaton goes back to draft, as before. The `restart`
+value is not yet run at boot: it also goes back to draft, so the operator
+requests planning. Confirm on the build in use that a restarted daemon keeps a
+mid-decompose PRD in planning before relying on `reattach`.
 
 ## The three values
 
