@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // Defaults for the Runner's project layout. They match the layout the merge
@@ -96,6 +97,32 @@ type Runner struct {
 	ChangelogFile string // default CHANGELOG.md
 	ScriptDir     string // relative to Dir; default scripts
 	Now           func() time.Time
+	// Hosts are the configured git.hosts entries and RemoteURL is the
+	// project's remote. When RemoteURL resolves to one of Hosts, the steps
+	// that file issues go through the git host facade. Empty means the
+	// existing ShipRunner (gh) path.
+	Hosts     []git.GitHostConfig
+	RemoteURL string
+}
+
+// configuredHost returns the configured git host the project's remote belongs
+// to. ResolveProjectHost's built-in github.com and gitlab.com fallbacks do not
+// count: only an entry in Hosts selects the facade, and the entry returned is
+// the configured one, so its base_url and kind are the operator's.
+func (r *Runner) configuredHost() (git.GitHostConfig, bool) {
+	if len(r.Hosts) == 0 || strings.TrimSpace(r.RemoteURL) == "" {
+		return git.GitHostConfig{}, false
+	}
+	resolved, ok := git.ResolveProjectHost(r.Hosts, r.RemoteURL)
+	if !ok {
+		return git.GitHostConfig{}, false
+	}
+	for _, h := range r.Hosts {
+		if h.Name == resolved.Name {
+			return h, true
+		}
+	}
+	return git.GitHostConfig{}, false
 }
 
 func (r *Runner) now() time.Time {
@@ -362,6 +389,9 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 	case builtinRegistryRow:
 		return RunRegistryRow(ctx, dir, project, version, cfg)
 	case builtinParityIssue:
+		if host, ok := s.r.configuredHost(); ok {
+			return RunParityIssueOnHost(ctx, host, project, version, cfg)
+		}
 		return RunParityIssue(ctx, s.r.Ship, dir, project, version, cfg)
 	case builtinTag:
 		return RunTag(ctx, s.r.Ship, dir, version)
