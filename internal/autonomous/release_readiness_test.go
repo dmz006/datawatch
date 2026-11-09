@@ -130,3 +130,140 @@ func TestComputeReleaseReadiness_ZeroBarIsReady(t *testing.T) {
 		t.Fatalf("expected ready with empty bar, got %+v", res)
 	}
 }
+
+// readinessRecords returns n plan-equal-or-better records of size, of which the
+// first conflicts and the first pwa carry conflicts and PWA changes.
+func readinessRecords(size string, n, conflicts, pwa int) []ReleaseComparisonRecord {
+	var out []ReleaseComparisonRecord
+	for i := 0; i < n; i++ {
+		out = append(out, ReleaseComparisonRecord{
+			ID: "r", Size: size, PlanEqualOrBetter: true,
+			HasConflicts: i < conflicts, HasPWAChanges: i < pwa,
+		})
+	}
+	return out
+}
+
+func TestComputeReleaseReadinessConditions(t *testing.T) {
+	bar := DefaultReleaseReadinessBar()
+
+	t.Run("fewer than ten qualifying records lists the missing records and is not ready", func(t *testing.T) {
+		res, err := ComputeReleaseReadiness("minor", readinessRecords("minor", 9, 2, 2), bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Ready {
+			t.Fatal("expected not ready with 9 of 10 records")
+		}
+		if len(res.Missing) != 1 {
+			t.Fatalf("Missing = %v, want exactly the records sentence", res.Missing)
+		}
+		if !strings.Contains(res.Missing[0], "10") || !strings.Contains(res.Missing[0], "has 9") {
+			t.Errorf("records sentence = %q, want it to name 10 needed and 9 present", res.Missing[0])
+		}
+	})
+
+	t.Run("fewer than two qualifying records with conflicts lists the missing conflicts", func(t *testing.T) {
+		res, err := ComputeReleaseReadiness("minor", readinessRecords("minor", 10, 1, 2), bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Ready {
+			t.Fatal("expected not ready with one conflict record")
+		}
+		if len(res.Missing) != 1 || !strings.Contains(res.Missing[0], "conflicts") {
+			t.Fatalf("Missing = %v, want exactly the conflicts sentence", res.Missing)
+		}
+	})
+
+	t.Run("fewer than two qualifying records with PWA changes lists the missing PWA changes", func(t *testing.T) {
+		res, err := ComputeReleaseReadiness("minor", readinessRecords("minor", 10, 2, 1), bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Ready {
+			t.Fatal("expected not ready with one PWA record")
+		}
+		if len(res.Missing) != 1 || !strings.Contains(res.Missing[0], "PWA changes") {
+			t.Fatalf("Missing = %v, want exactly the PWA sentence", res.Missing)
+		}
+	})
+
+	t.Run("one blocking defect fails the bar even when all counts are met", func(t *testing.T) {
+		records := readinessRecords("minor", 10, 2, 2)
+		records[9].BlockingDefect = true
+		res, err := ComputeReleaseReadiness("minor", records, bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Ready {
+			t.Fatal("expected not ready with a blocking defect")
+		}
+		if res.Records != 10 || res.Conflicts != 2 || res.PWAChanges != 2 {
+			t.Fatalf("counts = %d/%d/%d, want all met", res.Records, res.Conflicts, res.PWAChanges)
+		}
+		if len(res.Missing) != 1 || !strings.Contains(res.Missing[0], "blocking defect") {
+			t.Fatalf("Missing = %v, want exactly the blocking defect sentence", res.Missing)
+		}
+	})
+
+	t.Run("a record whose PlanEqualOrBetter is false does not count toward Records", func(t *testing.T) {
+		records := readinessRecords("minor", 9, 2, 2)
+		records = append(records, ReleaseComparisonRecord{
+			ID: "behind", Size: "minor", PlanEqualOrBetter: false,
+			HasConflicts: true, HasPWAChanges: true,
+		})
+		res, err := ComputeReleaseReadiness("minor", records, bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Records != 9 {
+			t.Fatalf("Records = %d, want 9", res.Records)
+		}
+		if res.Ready {
+			t.Fatal("expected not ready: the plan-behind record must not count")
+		}
+		if res.Conflicts != 2 || res.PWAChanges != 2 {
+			t.Errorf("Conflicts/PWAChanges = %d/%d, want 2/2 (plan-behind record not counted)", res.Conflicts, res.PWAChanges)
+		}
+	})
+
+	t.Run("records of another size are ignored", func(t *testing.T) {
+		records := readinessRecords("minor", 9, 2, 2)
+		records = append(records, readinessRecords("major", 5, 5, 5)...)
+		records = append(records, readinessRecords("patch", 5, 5, 5)...)
+		res, err := ComputeReleaseReadiness("minor", records, bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Records != 9 || res.Conflicts != 2 || res.PWAChanges != 2 {
+			t.Fatalf("counts = %d/%d/%d, want 9/2/2 with other sizes ignored", res.Records, res.Conflicts, res.PWAChanges)
+		}
+		if res.Ready {
+			t.Fatal("expected not ready: other-size records must not fill the minor bar")
+		}
+	})
+
+	t.Run("an unknown size returns an error", func(t *testing.T) {
+		_, err := ComputeReleaseReadiness("huge", readinessRecords("huge", 10, 2, 2), bar)
+		if err == nil {
+			t.Fatal("expected an error for unknown size \"huge\"")
+		}
+		if !strings.Contains(err.Error(), `"huge"`) {
+			t.Errorf("error %q does not name the size", err)
+		}
+	})
+
+	t.Run("all conditions met gives Ready true with an empty Missing", func(t *testing.T) {
+		res, err := ComputeReleaseReadiness("major", readinessRecords("major", 10, 2, 2), bar)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Ready {
+			t.Fatalf("expected ready, got Missing=%v", res.Missing)
+		}
+		if len(res.Missing) != 0 {
+			t.Fatalf("Missing = %v, want empty", res.Missing)
+		}
+	})
+}
