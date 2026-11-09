@@ -12,7 +12,9 @@ write-ahead log.
 A discussion scope is a named memory partition keyed by a discussion ID (a short string
 you choose: 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected)). Each scope stores an ordered list of entries, a WAL at
 `~/.datawatch/discussions/<id>/wal.jsonl`, and an optional set of participant peers that
-automatically receive a copy of every new write.
+automatically receive a copy of every new write. Every id is checked at the point of use,
+and the cleaned folder path it names is verified to stay inside the discussions folder,
+so an id can never point at a file outside it.
 
 Use discussion scopes when:
 - You want multiple datawatch peers to share a memory thread about a topic or project.
