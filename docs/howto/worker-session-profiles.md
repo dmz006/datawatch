@@ -70,7 +70,7 @@ A profile with `mcp: none` and a small context level starts a session with none 
 Four built-in profiles ship, **named after what they do**:
 
 - **minimal** — the smallest that works: the task's spec and constraints, a fixed tool set for coding work (the file and shell tools, allow-listed in the code as `Read`, `Edit`, `Write`, `Bash`, `Glob`, `Grep`), no MCP servers, no skills. The context level is `minimal`.
-- **digest** — `minimal` with the datawatch MCP server (the session keeps the ability to read its own session, the PRD state and its own records) and the full tool set, and the project's rules as a [rules digest](automata-rules-and-context.md#the-rules-digest) (every heading plus the mandatory lines, cached by content hash) instead of the full rules files. No skills. The context level is `digest`.
+- **digest** — `minimal` with the datawatch MCP server (the session keeps the ability to read its own session, the Automaton state and its own records) and the full tool set, and the project's rules as a [rules digest](automata-rules-and-context.md#the-rules-digest) (every heading plus the mandatory lines, cached by content hash) instead of the full rules files. No skills. The context level is `digest`.
 - **datawatch-tools** — the task's context as above, plus the datawatch MCP server but no other MCP servers and no skills. The context level is `digest`. This is the profile the planner names on a task's spec when that task needs a tool or an MCP server.
 - **full** — what every session starts with: the full rules and context, the datawatch MCP server, the full tool set, skills on. This is "the old way", and it is **one setting away** from any task or role.
 
@@ -95,6 +95,15 @@ You can move the defaults to other profiles with `autonomous.worker_profile_defa
 You do not need to change a role default for one job. The planner, when it writes a task, can attach a **profile marker to the task spec** — one line — naming the profile that task needs: the name lands on the task's `worker_profile` field, the task runs under it at launch, and the rest of the Automaton keeps its defaults (the marker works today; the launch that runs under it is the part still landing). This is the same override a planner already makes when it attaches an existing verification script to a task: the marker is part of the spec, not a daemon change.
 
 Reading it back: the marker is the exact line `worker_profile: <name>` in the task's spec. The first such line is the one that counts, and it sets the task's own `worker_profile` field — a value you set on the task's field directly is never overridden by a spec line. Because the task layer outranks every layer below it, the line **does** override a profile the Automaton, the project or the daemon-wide setting carries, for that one task only; the Automaton and its other tasks keep theirs.
+
+## Giving a whole project more tools
+
+The resolution has a **project** layer between the Automaton and the daemon-wide name, but there is no project setting that names a profile yet, so today you give a project's work more tools in one of two ways:
+
+1. **Per Automaton.** Set the same profile name on each Automaton that works in the project — `autonomous_prd_set_worker_profile` over MCP, or the Automaton's `set_worker_profile` call over the REST API. Every task in that Automaton starts under it unless a task names its own.
+2. **Daemon-wide.** Define the profile you want under `autonomous.worker_profiles` (for example, a copy of `digest` with an `mcp` list that adds one more server), then name it in `autonomous.worker_profile`. This applies to every project that names nothing more specific, so use it only when most of your work needs the extra tools.
+
+For one task rather than a project, use the `worker_profile: <name>` spec line described above.
 
 ## How a profile is resolved
 
