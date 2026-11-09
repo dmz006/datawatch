@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/407 (release v9.113.0). -->
 # Release size and milestone views in the web UI (Part of finishing review and merge by the daemon, Phase 4 of the autonomy handover plan)
 
 ## Affected area

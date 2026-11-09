@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/406 (release v9.113.0). -->
 # Release size rules for the daemon merge (Part of finishing review and merge by the daemon, Phase 4 of the autonomy handover plan)
 
 ## Affected area
