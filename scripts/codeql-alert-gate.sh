@@ -65,7 +65,10 @@
 #   (WAIT_INITIAL_SECONDS when no reset time is known) and reads again,
 #   while the total budget WAIT_MAX_SECONDS (default 1500) lasts. If
 #   the budget is used up it exits 1 with '::error title=Rate limited::'
-#   and the reset time.
+#   and the reset time. When the reset is later than the remaining budget,
+#   the rate-limit retry ends early at once, without waiting, with the
+#   same '::error title=Rate limited::' line naming the reset epoch. That
+#   is reported as a rate limit and never as an open-alerts result.
 #
 #   Inputs (environment):
 #     REPO   owner/name of the repository (required)
@@ -400,6 +403,11 @@ open_alerts() {
     if [ "$waited" -ge "$wait_max" ]; then
       # A rate limit is not an open-alerts result.
       echo "::error title=Rate limited::Waited ${waited}s while the API kept returning rate limits (core reset epoch: ${last_reset:-unknown}). This is not a code problem, rerun the check after the reset time."
+      return 1
+    fi
+
+    if [ -n "$reset" ] && reset_out_of_reach "$reset" "$waited" "$wait_max"; then
+      echo "::error title=Rate limited::The core rate limit resets at epoch ${reset}, which is later than the remaining wait budget of $((wait_max - waited))s. This is not a code problem, rerun the check after the reset time."
       return 1
     fi
 
