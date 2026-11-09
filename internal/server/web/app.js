@@ -20511,18 +20511,28 @@ function _failureEscalationStepsText(steps) {
 // pid) collects it, accepts a rules array or {rules, disabled_rules}, issues
 // the PUT, and displays either the success line or the daemon's 400 text in
 // the card's feedback slot (validation feedback from the PUT).
+// decomposeLintLoadedTemplateBlocks keeps the full task_templates block from
+// the last successful GET per card pid, so the card's save (which only knows
+// the enabled checkbox) can send the block back intact instead of the daemon
+// replacing it with just {enabled: ...}.
+const decomposeLintLoadedTemplateBlocks = {};
 function settingsDecomposeLintLoadCore(pid) {
   apiFetch('/api/autonomous/decompose-lint/config').then(cfg => {
     if (!document.getElementById(pid)) return; // view changed while loading
     cfg = cfg || {};
     const dl = cfg.decompose_lint || {};
-    const tt = cfg.task_templates || {};
+    const tt = cfg.task_templates;
+    if (tt && typeof tt === 'object' && !Array.isArray(tt)) {
+      decomposeLintLoadedTemplateBlocks[pid] = JSON.parse(JSON.stringify(tt));
+    } else {
+      delete decomposeLintLoadedTemplateBlocks[pid];
+    }
     const modeEl = document.getElementById(pid + '-mode');
     if (modeEl) modeEl.value = String(dl.mode || 'off');
     const mrEl = document.getElementById(pid + '-maxretries');
     if (mrEl) mrEl.value = (dl.max_retries !== undefined && dl.max_retries !== null) ? dl.max_retries : 2;
     const tEl = document.getElementById(pid + '-tasktemplates');
-    if (tEl) tEl.checked = !!tt.enabled;
+    if (tEl) tEl.checked = !!(tt && tt.enabled);
     const gEl = document.getElementById(pid + '-guidance');
     if (gEl) gEl.value = String(cfg.decompose_guidance || '');
     const rEl = document.getElementById(pid + '-rules');
@@ -20579,9 +20589,17 @@ window.settingsDecomposeLintSave = function (pid) {
   }
   const body = {
     decompose_lint: { mode: String(val(pid + '-mode') || 'shadow'), max_retries: maxRet },
-    task_templates: { enabled: chk(pid + '-tasktemplates') },
     decompose_guidance: String(val(pid + '-guidance') || ''),
   };
+  // Send the loaded block back intact, with only enabled updated from the
+  // checkbox; if we never loaded a block, omit task_templates so the daemon
+  // leaves the stored block untouched.
+  const loadedTemplateBlock = decomposeLintLoadedTemplateBlocks[pid];
+  if (loadedTemplateBlock) {
+    const templateBlock = JSON.parse(JSON.stringify(loadedTemplateBlock));
+    templateBlock.enabled = chk(pid + '-tasktemplates');
+    body.task_templates = templateBlock;
+  }
   if (rules.length) body.decompose_lint.rules = rules;
   if (disabledRules.length) body.decompose_lint.disabled_rules = disabledRules;
 
