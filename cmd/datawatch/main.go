@@ -11956,7 +11956,12 @@ func newConfigSetCmd() *cobra.Command {
 			"Automata placement tag keys: autonomous.tags.placement.enabled (true|false; the master switch), " +
 			"and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind) " +
 			"autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template " +
-			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).",
+			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).\n\n" +
+			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
+			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
+			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
+			"starts with worker_profile is refused as unknown.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -11984,6 +11989,9 @@ func newConfigGetCmd() *cobra.Command {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
+	if isWorkerProfileConfigKeyFamily(key) {
+		return runWorkerProfileConfigSet(cfg, key, value)
+	}
 	url := loopbackBaseURL(cfg) + "/api/config"
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
@@ -12019,6 +12027,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
+	key = workerProfileGetKey(key)
 	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if cfg.Server.Token != "" {
