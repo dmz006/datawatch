@@ -141,25 +141,29 @@ The CodeQL workflow's alert-gate job makes two kinds of call to the
 code-scanning API: it waits for the default setup analyses to appear for
 the commit, and then it reads the open alerts once. Both steps treat a
 rate-limited response as wait-and-retry: the gate waits, longer when GitHub
-reports a reset time, and tries again. It waits and retries only while the
-reset time is inside its total wait budget. When GitHub's reset time is later
-than the time left in that budget, the gate ends early at once without
-waiting, and the red run then needs a rerun after the reset time. So a rate
-limit can turn the run red even when nothing is wrong with the code.
+reports a reset time, and tries again. It keeps retrying only while its total
+wait budget lasts. When GitHub's reset time is later than the time left in
+that budget, the gate does not wait for it: it ends at once, and the red run
+then needs a rerun after the reset time. So a rate limit can turn the run red
+even when nothing is wrong with the code.
 
 The step log is the check that tells the two red outcomes apart:
 
-- **`Rate limited`, as an error line that names a reset epoch, on the
-  analyses step (`wait-analyses`)**, means the reset is later than the wait
-  budget that was left, so the gate stopped at once instead of waiting. It is
-  not a finding and the run did not wait out the budget. Wait until the reset
-  time it names, then push a new commit or start the check again yourself.
-- **`Rate limited`, as a notice, with a reset time**, covers a wait-and-retry
-  that is still inside its budget, and also a spent budget or a reset time out
-  of reach, the cases where the gate ends early. While the gate is waiting it
-  retries on its own, and nothing is needed from you unless the run then ends
-  red. In the cases where it ends early, the advice to wait until the reset
-  time and start the check again applies.
+- **`Rate limited`, as an error line, on the analyses step
+  (`wait-analyses`)**, means the gate could not see the analyses inside its
+  wait budget. Either the reset is later than the budget that was left, so the
+  gate stopped at once instead of waiting, or the budget was spent while the
+  API kept limiting it. It is not a finding: the analyses were never seen, so
+  the `No analysis for` result never appears. The line names the reset epoch
+  when the gate learned one; with no reset reported it reads
+  `core reset epoch: unknown`.
+  Wait until the reset time it names, then push a new commit or start the
+  check again yourself.
+- **`Rate limited`, as a notice, saying the gate is retrying within the
+  budget**, is a wait-and-retry that is still inside its budget. While the
+  gate is waiting it retries on its own, and nothing is needed from you unless
+  the run then ends red; a run that ends red does so on one of the two error
+  lines in this list, never on the notice.
 - **`Rate limited`, as an error line that names a core reset epoch, on the
   alerts step (`open-alerts`)**, means the gate could not read the alerts
   inside its wait budget. Either the reset is later than the budget that was
@@ -174,13 +178,12 @@ The step log is the check that tells the two red outcomes apart:
   investigating.
 
 The gate's exit codes are unchanged by the rate-limit handling: both steps
-still exit 0 when clean and 2 on a usage error. On `wait-analyses`, a rate
-limit that the gate cannot ride out — a reset later than the remaining budget,
-or a spent budget with no reset time — exits 1 with the `Rate limited` notice. On
-`open-alerts`, a reset later than the remaining budget, or a spent budget, also
-exits 1 with the `Rate limited` notice. When the reset is out of reach the gate
-ends early at once. Either way the run is reported as a rate limit, never as a
-missing analysis or as a zero-alert read.
+still exit 0 when clean and 2 on a usage error. In both steps, a rate limit
+that the gate cannot ride out — a reset later than the remaining budget, or a
+spent budget — exits 1 with the `Rate limited` error line; when the reset is
+out of reach the gate ends early at once instead of waiting it out. Either way
+the run is reported as a rate limit, never as a missing analysis or as a
+zero-alert read.
 
 ## Optional: run it before every push
 

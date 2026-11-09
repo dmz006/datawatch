@@ -117,13 +117,14 @@ or reading the alerts. The run is red, so Automation records it the way it
 records any other failing `security` run — as a record, and nothing more: a
 rate limit earns no separate classification, and Automation never re-runs it.
 In that case the job log is the check that tells the two reds apart: a
-`Rate limited` line means the gate was waiting on the API, or — on the analyses
-step only — stopped at once because the API's reset time fell beyond its wait
-budget, so wait until the reset time
-it names; a `Rate limited` line naming a reset later than the run's wait budget
-means the gate ends early at once, so the rerun must wait for that reset. A
-`No analysis for` line is the real missing-analysis timeout and the one worth
-investigating.
+`Rate limited` notice means the gate was still waiting on the API inside its
+wait budget, retrying on its own; a `Rate limited` error line — on the
+analyses step as well as the alerts step — means the gate could not ride the
+limit out, either because the API's reset time was later than the wait budget
+that was left (the gate then stopped at once without waiting) or because the
+budget was spent, so wait until the reset time it names and start the check
+again yourself. A `No analysis for` line is the real missing-analysis timeout
+and the one worth investigating.
 
 ## The alert
 
