@@ -46,7 +46,7 @@ func (s *Server) handleBurnGuardRun(_ context.Context, _ mcpsdk.CallToolRequest)
 
 func (s *Server) toolBurnGuardConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("burn_guard_config_get",
-		mcpsdk.WithDescription("The burn guard settings (usage.burn_guard): enabled, interval_minutes, margin_points, ladder, step_back, cache price per million tokens, refit_on_reading, effort_ceiling, retry_limit_claude and ask_on_change."),
+		mcpsdk.WithDescription("The burn guard settings (usage.burn_guard): enabled, interval_minutes, margin_points, ladder, step_back, cache price per million tokens, refit_on_reading, effort_ceiling, retry_limit_claude, ask_on_change and max_projection_gap_points (the disagreement between the guard and the usage advice before the guard takes the lower projection)."),
 	)
 }
 
@@ -71,6 +71,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("refit_on_reading", mcpsdk.Description("Refit the cost model whenever a usage reading arrives")),
 		mcpsdk.WithNumber("retry_limit_claude", mcpsdk.Description("Most retries of one task on Claude, a whole number from 0 to 20")),
 		mcpsdk.WithBoolean("ask_on_change", mcpsdk.Description("When false (default) the guard sends one alert per change and no question; when true it keeps at most one open question")),
+		mcpsdk.WithNumber("max_projection_gap_points", mcpsdk.Description("Points of disagreement between the guard and the usage advice before the guard takes the lower projection; 0 never compares; default 25; see the burn guard how-to")),
 	)
 }
 
@@ -78,6 +79,7 @@ var burnGuardConfigArgs = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude", "ask_on_change",
+	"max_projection_gap_points",
 }
 
 func (s *Server) handleBurnGuardConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
