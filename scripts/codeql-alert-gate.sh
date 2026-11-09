@@ -22,9 +22,11 @@
 #   print a '::notice title=Rate limited::' line, make one extra call to
 #   the rate-limit endpoint to learn the core reset epoch, wait until it
 #   (at least 1 second, never longer than the remaining budget; the
-#   current interval when no reset is reported) and retry. Any other
-#   API failure keeps the old behaviour: nothing seen yet, retried on
-#   the normal schedule.
+#   current interval when no reset is reported) and retry. When the
+#   reset is later than the remaining budget, the gate does not wait at
+#   all: it prints a '::error title=Rate limited::' line naming the reset
+#   epoch and exits 1 at once. Any other API failure keeps the old
+#   behaviour: nothing seen yet, retried on the normal schedule.
 #
 #   Inputs (environment):
 #     REPO                 owner/name of the repository (required)
@@ -138,6 +140,19 @@ require_env() {
 # API call is a core rate limit (429) failure.
 rate_limit_from_error() {
   printf '%s\n' "$1" | grep -qiE 'rate limit|HTTP 429'
+}
+
+# reset_out_of_reach <reset_epoch> <waited> <wait_max> — true (0) when the
+# reset is later than the remaining budget (wait_max - waited), so waiting
+# for it cannot finish inside the budget. Prints nothing.
+reset_out_of_reach() {
+  local reset="$1"
+  local waited="$2"
+  local wait_max="$3"
+  local now remaining
+  now="$(date +%s)"
+  remaining=$((wait_max - waited))
+  [ $((reset - now)) -gt "$remaining" ]
 }
 
 # lookup_rate_reset <api_command> — one extra call to learn the core
@@ -294,6 +309,11 @@ wait_analyses() {
       else
         echo "::error title=Default setup analysis missing::No analysis for ${expected} on ${ref} at ${sha} after ${waited}s."
       fi
+      return 1
+    fi
+
+    if [ "$rate_limited" -eq 1 ] && [ -n "$reset" ] && reset_out_of_reach "$reset" "$waited" "$wait_max"; then
+      echo "::error title=Rate limited::The core rate limit resets at epoch ${reset}, which is later than the remaining wait budget of $((wait_max - waited))s. This is not a code problem, rerun the check after the reset time."
       return 1
     fi
 

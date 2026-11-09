@@ -36,9 +36,11 @@ Covered (wait-analyses unless stated):
   3. A missing category never appears: exit 1 with "No analysis for",
      no single sleep exceeds 300, and the total slept stays within
      WAIT_MAX_SECONDS (set to 700 here).
-  4. Rate limited until the budget runs out (WAIT_MAX_SECONDS=500,
-     reset far in the future): exit 1, output contains "Rate limited",
-     does not contain "No analysis for", total slept at most 500.
+  4. Rate limited with no reset reported until the budget runs out
+     (WAIT_MAX_SECONDS=500, endless rate limits): exit 1, output
+     contains "Rate limited", does not contain "No analysis for", and
+     the recorded sleeps are exactly 60, 120, 240, 80 (the last wait
+     clamped to the remaining budget).
   5. open-alerts: three rate-limit responses then no rows exits 0 with
      the clean no-alerts message.
   6. open-alerts: one high row exits 1 and the output contains
@@ -237,23 +239,19 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         self.assertLessEqual(sum(sleeps), 700,
                              "total slept {!r} exceeds WAIT_MAX_SECONDS=700".format(sleeps))
 
-    # 4. Rate limited until the total budget runs out.
-    def test_wait_analyses_rate_limited_until_budget(self):
+    # 4. Rate limited with no reset reported until the total budget runs out.
+    def test_wait_analyses_rate_limit_without_reset_waits_out_budget(self):
         proc = self.run_gate(
             "wait-analyses",
+            STUB_RATE_LIMIT_FAIL="1",  # no reset is reported: interval fallback
             WAIT_MAX_SECONDS="500",
             STUB_ANALYSES_FAIL_COUNT=str(10 ** 9),
-            STUB_RATE_LIMIT_FAIL="0",
-            STUB_RATE_LIMIT_RESET_OFFSET=str(10 ** 6),  # reset far in the future
         )
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         out = proc.stdout + proc.stderr
         self.assertIn("Rate limited", out)
         self.assertNotIn("No analysis for", out)
-        sleeps = self.recorded_sleeps()
-        self.assertTrue(sleeps, "no sleeps were recorded")
-        self.assertLessEqual(sum(sleeps), 500,
-                             "total slept {!r} exceeds WAIT_MAX_SECONDS=500".format(sleeps))
+        self.assertEqual(self.recorded_sleeps(), [60, 120, 240, 80])
 
     # 5. open-alerts: rate-limit retries, then a clean no-alerts result.
     def test_open_alerts_retries_then_no_rows(self):
