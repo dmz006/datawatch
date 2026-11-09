@@ -1,8 +1,8 @@
 package session
 
 // Placement start hook: an optional callback the daemon installs so that every
-// successful Manager.Start can have the new session's placement (system) tag
-// set applied. The hook is stored under Manager.mu and invoked after the
+// successful Manager.Start, and every successful Manager.Restart (and so
+// RestartSession), can have the session's placement (system) tag set applied. The hook is stored under Manager.mu and invoked after the
 // session record exists, with the lock released, so a hook may call back into
 // the Manager without deadlocking. A nil hook is a no-op.
 
