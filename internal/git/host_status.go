@@ -28,6 +28,11 @@ type GitHostConfig struct {
 	// VaultSecret is the secrets vault entry NAME holding the token when
 	// CredentialSource is vault. It never holds the secret value.
 	VaultSecret string
+	// SignTags makes CreateTagForHost create signed (git tag -s) tags.
+	SignTags bool
+	// SigningKey is the key id passed as git tag -u when SignTags is set.
+	// Empty uses git's default signing key.
+	SigningKey string
 }
 
 // HostReadiness reports whether datawatch can use one configured git host.
