@@ -11979,6 +11979,11 @@ func newConfigGetCmd() *cobra.Command {
 
 func runConfigSet(cfg *config.Config, key, value string) error {
 	url := loopbackBaseURL(cfg) + "/api/config"
+	// the merge-shadow settings are validated with the API's own rules and
+	// sent typed, with their help link printed on success.
+	if handled, err := mergeShadowConfigSet(cfg, key, value); handled {
+		return err
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and
