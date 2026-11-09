@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Sessions tile drops its placement chip as soon as the session's last placement tag is removed.** The summary rows of `GET /api/sessions?view=summary`, the window frames and the legacy session list records now always carry `system_tags`, as an empty array when the session holds no placement tag, so the PWA sees the removal and takes the chip off. A row that omits the key still keeps the chip, as before. Pinned by `sessionSummaryRow`, `sessionListRecord` and the PWA test `app-session-tile-last-placement-tag.test.js`.
+
 ## v9.112.8 — Sessions tiles show every session's system tag chips on the first load
 
 ### Fixed
