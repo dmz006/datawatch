@@ -324,10 +324,3 @@ func TestGitHub_CreateIssue_GhFailure(t *testing.T) {
 		t.Errorf("error missing gh stderr: %v", err)
 	}
 }
-
-func TestGitLab_CreateIssue_Stub(t *testing.T) {
-	_, err := NewGitLab().CreateIssue(context.Background(), IssueOptions{Repo: "g/p", Title: "x"})
-	if err != ErrNotImplemented {
-		t.Errorf("err=%v want ErrNotImplemented", err)
-	}
-}

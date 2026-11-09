@@ -73,9 +73,38 @@ func (g *GitLab) OpenPR(ctx context.Context, opts PROptions) (string, error) {
 	return "", fmt.Errorf("glab mr create: no merge request URL in output:\n%s", strings.TrimSpace(stdout))
 }
 
-// CreateIssue is a stub — returns ErrNotImplemented.
-func (*GitLab) CreateIssue(_ context.Context, _ IssueOptions) (string, error) {
-	return "", ErrNotImplemented
+// CreateIssue shells out to `glab issue create` and returns the issue
+// URL glab prints on stdout. Sibling to OpenPR.
+func (g *GitLab) CreateIssue(ctx context.Context, opts IssueOptions) (string, error) {
+	if opts.Repo == "" {
+		return "", fmt.Errorf("CreateIssue: Repo required")
+	}
+	if opts.Title == "" {
+		return "", fmt.Errorf("CreateIssue: Title required")
+	}
+	stdout, combined, err := g.run(ctx, gitlabIssueCreateArgs(opts)...)
+	if err != nil {
+		return "", fmt.Errorf("glab issue create: %w\n%s", err, strings.TrimSpace(combined))
+	}
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "https://") {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("glab issue create: no issue URL in output:\n%s", strings.TrimSpace(stdout))
+}
+
+// gitlabIssueCreateArgs builds the glab argv for CreateIssue. Kept
+// separate so the argument list can be checked without running glab.
+func gitlabIssueCreateArgs(opts IssueOptions) []string {
+	return []string{
+		"issue", "create",
+		"--repo", opts.Repo,
+		"--title", opts.Title,
+		"--description", opts.Body,
+		"--yes",
+	}
 }
 
 // run executes glab with a 30s cap. It returns stdout alone (for URL

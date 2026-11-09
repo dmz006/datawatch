@@ -160,6 +160,97 @@ func TestGitLabOpenMergeRequest(t *testing.T) {
 	})
 }
 
+func TestGitLabCreateIssue(t *testing.T) {
+	t.Run("argument list", func(t *testing.T) {
+		dir := newFakeGlab(t)
+		t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+		_ = os.WriteFile(filepath.Join(dir, "output.txt"),
+			[]byte("https://gitlab.com/group/project/-/issues/3\n"), 0644)
+
+		g := &GitLab{Bin: "glab"}
+		if _, err := g.CreateIssue(context.Background(), IssueOptions{
+			Repo: "group/project", Title: "Bug x", Body: "details",
+		}); err != nil {
+			t.Fatalf("CreateIssue: %v", err)
+		}
+		want := []string{
+			"issue", "create",
+			"--repo", "group/project",
+			"--title", "Bug x",
+			"--description", "details",
+			"--yes",
+		}
+		got := fakeGlabArgs(t, dir)
+		if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+			t.Errorf("argv mismatch\n got: %q\nwant: %q", got, want)
+		}
+	})
+
+	t.Run("returns issue URL", func(t *testing.T) {
+		dir := newFakeGlab(t)
+		t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+		_ = os.WriteFile(filepath.Join(dir, "output.txt"),
+			[]byte("Creating issue in group/project\n\n"+
+				"https://gitlab.example.com/group/project/-/issues/9\n"), 0644)
+
+		g := &GitLab{Bin: "glab"}
+		url, err := g.CreateIssue(context.Background(), IssueOptions{
+			Repo: "group/project", Title: "t", Body: "b",
+		})
+		if err != nil {
+			t.Fatalf("CreateIssue: %v", err)
+		}
+		if url != "https://gitlab.example.com/group/project/-/issues/9" {
+			t.Errorf("url=%q", url)
+		}
+	})
+
+	t.Run("non-zero exit is an error with glab output", func(t *testing.T) {
+		dir := newFakeGlab(t)
+		t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+		_ = os.WriteFile(filepath.Join(dir, "exitcode.txt"), []byte("1"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.txt"),
+			[]byte("ERROR: 403 forbidden\n"), 0644)
+
+		g := &GitLab{Bin: "glab"}
+		url, err := g.CreateIssue(context.Background(), IssueOptions{
+			Repo: "group/project", Title: "t", Body: "b",
+		})
+		if err == nil {
+			t.Fatal("expected error on non-zero exit")
+		}
+		if url != "" {
+			t.Errorf("url=%q want empty on failure", url)
+		}
+		if !strings.Contains(err.Error(), "403 forbidden") {
+			t.Errorf("error missing glab output: %v", err)
+		}
+	})
+
+	t.Run("error when no URL printed", func(t *testing.T) {
+		dir := newFakeGlab(t)
+		t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+		_ = os.WriteFile(filepath.Join(dir, "output.txt"), []byte("nothing useful\n"), 0644)
+
+		g := &GitLab{Bin: "glab"}
+		if _, err := g.CreateIssue(context.Background(), IssueOptions{
+			Repo: "group/project", Title: "t", Body: "b",
+		}); err == nil {
+			t.Error("expected error when glab prints no issue URL")
+		}
+	})
+
+	t.Run("required args", func(t *testing.T) {
+		g := NewGitLab()
+		if _, err := g.CreateIssue(context.Background(), IssueOptions{Title: "x"}); err == nil {
+			t.Error("missing Repo should fail")
+		}
+		if _, err := g.CreateIssue(context.Background(), IssueOptions{Repo: "g/p"}); err == nil {
+			t.Error("missing Title should fail")
+		}
+	})
+}
+
 func TestNewGitLab_DefaultBin(t *testing.T) {
 	if got := NewGitLab().Bin; got != "glab" {
 		t.Errorf("Bin=%q want glab", got)
