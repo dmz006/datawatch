@@ -28,11 +28,36 @@ type workerProfileStatus struct {
 	// Startup is the worker_startup block of the latest stats snapshot, as
 	// the stats block reports it. Both maps are always present.
 	Startup json.RawMessage `json:"startup"`
+	// InForce lists the profile each worker role and task kind starts with,
+	// built by workerprofile.InForce from the live daemon values (roles first,
+	// then kinds). It is always present, never null.
+	InForce []inForceRow `json:"in_force"`
+}
+
+// inForceRow is one in_force entry: the same shape GET /api/config reports.
+type inForceRow struct {
+	Scope   string `json:"scope"`
+	Key     string `json:"key"`
+	Profile string `json:"profile"`
+	Tier    string `json:"tier"`
+	Reason  string `json:"reason"`
+}
+
+// autonomousWorkerProfiles is the slice of GET /api/config's autonomous block
+// that the profile-in-force read needs: the user profiles, the role and kind
+// defaults and the global profile name, as the daemon reports them.
+type autonomousWorkerProfiles struct {
+	WorkerProfiles        map[string]workerprofile.WorkerProfile `json:"worker_profiles"`
+	WorkerProfileDefaults struct {
+		Role map[string]string `json:"role"`
+		Kind map[string]string `json:"kind"`
+	} `json:"worker_profile_defaults"`
+	WorkerProfile string `json:"worker_profile"`
 }
 
 func (s *Server) toolWorkerProfileStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("worker_profile_status",
-		mcpsdk.WithDescription("Read-only worker profile status: the built-in profile names (minimal, digest, full, datawatch-tools), the built-in default profile for each role and task kind, and the latest average start-up token size per profile and per role from the stats block (worker_startup). Configure profiles with config_set on autonomous.worker_profiles, autonomous.worker_profile_defaults and autonomous.worker_profile; read them with get_config section=autonomous."),
+		mcpsdk.WithDescription("Read-only worker profile status: the built-in profile names (minimal, digest, full, datawatch-tools), the built-in default profile for each role and task kind, and the latest average start-up token size per profile and per role from the stats block (worker_startup). The in_force field lists, for each role and task kind, the profile it starts with now (scope, key, profile, tier and reason), built from the live config. Configure profiles with config_set on autonomous.worker_profiles, autonomous.worker_profile_defaults and autonomous.worker_profile; read them with get_config section=autonomous."),
 	)
 }
 
@@ -41,17 +66,67 @@ func (s *Server) handleWorkerProfileStatus(_ context.Context, _ mcpsdk.CallToolR
 	if err != nil {
 		return toolErrorf("worker_profile_status", "stats error: %v", err), nil
 	}
+	inForce, err := s.fetchInForce()
+	if err != nil {
+		return toolErrorf("worker_profile_status", "config error: %v", err), nil
+	}
 	out := workerProfileStatus{
 		Profiles:     workerprofile.Names(),
 		RoleDefaults: workerprofile.RoleDefaults(),
 		KindDefaults: workerprofile.KindDefaults(),
 		Startup:      startup,
+		InForce:      inForce,
 	}
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return toolErrorf("worker_profile_status", "encode error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(string(b)), nil
+}
+
+// fetchInForce reads the autonomous worker profile settings from the daemon's
+// config and resolves the profile in force for each role and task kind with
+// workerprofile.InForce. It never returns a nil slice.
+func (s *Server) fetchInForce() ([]inForceRow, error) {
+	if s.webPort <= 0 {
+		return nil, fmt.Errorf("web server not available")
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		fmt.Sprintf("http://127.0.0.1:%d/api/config", s.webPort), nil)
+	resp, err := s.webDo(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var cfg struct {
+		Autonomous autonomousWorkerProfiles `json:"autonomous"`
+	}
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+	a := cfg.Autonomous
+	users := a.WorkerProfiles
+	entries := workerprofile.InForce(workerprofile.InForceInput{
+		RoleDefaults:  a.WorkerProfileDefaults.Role,
+		KindDefaults:  a.WorkerProfileDefaults.Kind,
+		GlobalProfile: a.WorkerProfile,
+		Lookup: func(name string) (workerprofile.WorkerProfile, bool) {
+			if p, ok := workerprofile.Builtin(name); ok {
+				return p, true
+			}
+			p, ok := users[name]
+			return p, ok
+		},
+	})
+	out := make([]inForceRow, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, inForceRow{Scope: e.Scope, Key: e.Key, Profile: e.Profile, Tier: e.Tier, Reason: e.Reason})
+	}
+	return out, nil
 }
 
 // fetchWorkerStartup reads the worker_startup block from the daemon's stats
