@@ -95,3 +95,73 @@ test('every worker profile field has its label and help keys in all five locales
     }
   }
 });
+
+test('the autonomous card lists a read-only profile-in-force field after the three worker profile fields', () => {
+  const fields = autonomousFields();
+  const idx = fields.findIndex(f => f.type === 'worker_profile_in_force');
+  const last = fields.findIndex(f => f.key === 'autonomous.worker_profiles');
+  assert.ok(idx >= 0, 'profile-in-force field missing');
+  assert.ok(idx > last, 'profile-in-force must sit below the worker profile selects');
+  const f = fields[idx];
+  assert.equal(f.labelKey, 'settings_worker_profile_in_force_label');
+  assert.equal(f.helpKey, 'settings_worker_profile_in_force_help');
+  assert.equal(f.key, undefined, 'a read-only list stores no config key');
+});
+
+test('workerProfileInForceHTML renders one line per in_force entry with its profile and tier', () => {
+  const sb = loadApp();
+  const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
+  sb.window._i18n = { bundle, fallback: bundle };
+  // Same shape GET /api/config serves: in_force sits inside the autonomous block.
+  const cfg = { autonomous: { in_force: [
+    { scope: 'role', key: 'worker', profile: 'full', tier: 'daemon', reason: '' },
+    { scope: 'kind', key: 'docs', profile: 'minimal', tier: 'built-in', reason: '' },
+    { scope: 'kind', key: 'note', profile: '', tier: 'none', reason: '' },
+  ] } };
+  sb.__cfg = cfg;
+  const html = vm.runInContext(
+    "workerProfileInForceHTML(__cfg, {labelKey: 'settings_worker_profile_in_force_label', helpKey: 'settings_worker_profile_in_force_help'}, 'Profile in force')", sb);
+  const items = html.match(/<li>[^<]*<\/li>/g) || [];
+  assert.deepEqual(items, [
+    '<li>worker: full (daemon-wide)</li>',
+    '<li>docs: minimal (built-in)</li>',
+    '<li>note: none (no profile)</li>',
+  ]);
+  assert.ok(!/<input|<select|<textarea/.test(html), 'the list must be read-only');
+});
+
+test('workerProfileInForceHTML renders nothing when the daemon reports no in_force block', () => {
+  const sb = loadApp();
+  sb.__cfg = {};
+  const html = vm.runInContext("workerProfileInForceHTML(__cfg, {}, 'x')", sb);
+  assert.equal(html, '');
+});
+
+test('workerProfileInForceHTML ignores a top-level in_force key the daemon never serves', () => {
+  const sb = loadApp();
+  const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
+  sb.window._i18n = { bundle, fallback: bundle };
+  sb.__cfg = { in_force: [{ scope: 'role', key: 'worker', profile: 'full', tier: 'daemon', reason: '' }] };
+  const html = vm.runInContext("workerProfileInForceHTML(__cfg, {}, 'x')", sb);
+  assert.equal(html, '');
+});
+
+test('every profile-in-force locale key is present in all five bundles', () => {
+  const keys = [
+    'settings_worker_profile_in_force_label',
+    'settings_worker_profile_in_force_help',
+    'settings_worker_profile_in_force_row',
+    'settings_worker_profile_in_force_none',
+    'settings_worker_profile_in_force_tier_built_in',
+    'settings_worker_profile_in_force_tier_daemon',
+    'settings_worker_profile_in_force_tier_role',
+    'settings_worker_profile_in_force_tier_kind',
+    'settings_worker_profile_in_force_tier_none',
+  ];
+  for (const lang of LOCALE_LIST) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, lang + '.json'), 'utf8'));
+    for (const k of keys) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0, lang + ' missing ' + k);
+    }
+  }
+});
