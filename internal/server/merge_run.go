@@ -113,12 +113,17 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 		Notifier: &mergeNotifier{sink: mr.AlertSink(), project: project},
 		ConflictSettings: func() mergepipeline.ConflictSettings {
 			s := mergepipeline.DefaultConflictSettings()
-			// The model is not wired here, so the model policy degrades to
-			// stop_and_ask exactly as ResolveConflictPolicy describes.
+			// The LLM registry is not passed here, so the model policy
+			// degrades to stop_and_ask exactly as ResolveConflictPolicy describes.
 			policy, _, _ := cfg.ResolveConflictPolicy(project, nil)
 			s.Policy = mergepipeline.ConflictPolicy(policy)
+			s.Mode = cfg.EffectiveConflictMode(project)
+			s.ConfirmFirstN = cfg.EffectiveConflictConfirmFirstN(project)
 			return s
 		},
+	}
+	if name := cfg.EffectiveConflictModel(project); name != "" {
+		runner.Model = newConflictModel(mr, name)
 	}
 	if q := mr.MergeQuestionStore(); q != nil {
 		runner.Questions = q

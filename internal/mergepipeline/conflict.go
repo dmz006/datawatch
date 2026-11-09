@@ -66,6 +66,9 @@ type ConflictSettings struct {
 	// ConflictModeShadow records it and leaves the project alone; ConflictModeOn
 	// applies it. Any other value fails Validate.
 	Mode string
+	// ConfirmFirstN is how many of a project's first model proposals need
+	// the operator's confirmation. Zero turns confirmation off.
+	ConfirmFirstN int
 }
 
 // Modes of a model proposal.
