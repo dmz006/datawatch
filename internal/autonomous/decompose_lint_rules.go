@@ -29,9 +29,9 @@ var decomposeLintRO = true
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Eight rules, in the order findings should surface them: the six
+// Nine rules, in the order findings should surface them: the six
 // block-severity rules (tasks that cross a hard boundary) first, then
-// the two warn-severity hygiene rules.
+// the three warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -99,6 +99,14 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "Task has no verification script; every decomposed task should declare one so its result can be checked.",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptEmpty: true,
+			},
+		},
+		{
+			ID:       "unexecutable_verification_script",
+			Severity: config.DecomposeLintSeverityWarning,
+			Message:  "Task's verification script is not a runnable script file (a command string, or a path that is missing, not executable or without a shebang); give it a repo-relative script file that exists and starts with a shebang.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptUnexecutable: true,
 			},
 		},
 		{

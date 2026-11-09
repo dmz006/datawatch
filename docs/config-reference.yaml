@@ -3964,7 +3964,8 @@ autonomous:
     # spec_regex / title_regex / files_regex over their fields, the
     # read_only tri-state (absent = don't check),
     # verification_script_empty, report_path_empty (no usable report path
-    # under .datawatch/reports/), and any_of (at least one member) / all_of
+    # under .datawatch/reports/), verification_script_unexecutable (the
+    # script is a command string or not a runnable file), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.
