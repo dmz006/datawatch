@@ -2,8 +2,6 @@ package mergeshadow
 
 import (
 	"testing"
-
-	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 const entryOutput = "## [9.200.0] - 2026-11-09\n" +
@@ -20,7 +18,7 @@ const entryOutput = "## [9.200.0] - 2026-11-09\n" +
 func TestReadChangelogEntry_PresentEntry(t *testing.T) {
 	tasks := []ChangelogTask{
 		{ID: "task-build", Kind: "", Output: "## [1.0.0] - 2026-01-01\n\nignored, no marker"},
-		{ID: "task-entry", Kind: autonomous.DefectTaskKindChangelog, Output: "Preface the worker wrote.\n\n" + entryOutput},
+		{ID: "task-entry", Kind: ChangelogTaskKind, Output: "Preface the worker wrote.\n\n" + entryOutput},
 	}
 	got := ReadChangelogEntry(tasks)
 	if got.Source != "task-entry" {
@@ -101,8 +99,8 @@ func TestReadChangelogEntry_SkipsMalformedThenUsesValid(t *testing.T) {
 	}
 }
 
-func TestChangelogTaskKindIsAutonomousMarker(t *testing.T) {
-	if ChangelogTaskKind != autonomous.DefectTaskKindChangelog {
-		t.Fatalf("ChangelogTaskKind = %q, want %q", ChangelogTaskKind, autonomous.DefectTaskKindChangelog)
+func TestChangelogTaskKindValue(t *testing.T) {
+	if ChangelogTaskKind != "defect_changelog" {
+		t.Fatalf("ChangelogTaskKind = %q, want %q", ChangelogTaskKind, "defect_changelog")
 	}
 }
