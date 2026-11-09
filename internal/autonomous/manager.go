@@ -2908,6 +2908,7 @@ func (m *Manager) EmitPRDUpdate(prdID string) {
 
 // NewManager constructs the Manager and opens the store under dataDir.
 func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, error) {
+	SetVerificationRunRoot(filepath.Join(scratchRoot(dataDir), "verify-runs"))
 	st, err := NewStore(dataDir)
 	if err != nil {
 		return nil, err
