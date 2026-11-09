@@ -1191,6 +1191,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if !ok {
 		return nil
 	}
+	// Phase 4 shadow merge — record what the daemon's merge of this
+	// Automaton would do. Runs in the background and never changes the
+	// repository; a no-op unless autonomous.merge_shadow is enabled.
+	m.startMergeShadow(prd)
 	// prd is the shared stored pointer; mutate under the store lock
 	// (same discipline as the memory-report write below).
 	m.store.WithLock(func() { applyParallelMetrics(prd) })

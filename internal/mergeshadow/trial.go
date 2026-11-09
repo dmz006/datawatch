@@ -22,6 +22,16 @@ import (
 //
 // A clean merge returns an empty (non-nil) slice.
 func TrialMerge(ctx context.Context, repoPath, defaultBranch, workBranch, scratchDir string) (conflicts []string, err error) {
+	return TrialMergeWith(ctx, repoPath, defaultBranch, workBranch, scratchDir, nil)
+}
+
+// TrialMergeWith is TrialMerge with a hook. When inside is not nil it runs
+// after the merge has been staged and the conflicted paths are known, while
+// the trial worktree still exists, so the caller can run gates against the
+// merged tree. inside receives the worktree path and the conflicted paths;
+// an error it returns is returned with the conflicts. The worktree is removed
+// once inside returns, on every path.
+func TrialMergeWith(ctx context.Context, repoPath, defaultBranch, workBranch, scratchDir string, inside func(worktree string, conflicts []string) error) (conflicts []string, err error) {
 	if repoPath == "" || defaultBranch == "" || workBranch == "" || scratchDir == "" {
 		return nil, errors.New("mergeshadow: repo path, branches and scratch directory are required")
 	}
@@ -86,6 +96,11 @@ func TrialMerge(ctx context.Context, repoPath, defaultBranch, workBranch, scratc
 	}
 	if mergeErr != nil && len(conflicts) == 0 {
 		return nil, fmt.Errorf("mergeshadow: trial merge: %w", mergeErr)
+	}
+	if inside != nil {
+		if ierr := inside(wt, conflicts); ierr != nil {
+			return conflicts, ierr
+		}
 	}
 	return conflicts, nil
 }
