@@ -8,28 +8,28 @@ import (
 // delivered result, used to judge whether a release is ready to ship.
 type ReleaseComparisonRecord struct {
 	// ID identifies the comparison record.
-	ID string
+	ID string `json:"id"`
 	// Size is the release size the record belongs to: "patch", "minor" or "major".
-	Size string
+	Size string `json:"size"`
 	// PlanEqualOrBetter is true when the delivered result matches or exceeds the plan.
-	PlanEqualOrBetter bool
+	PlanEqualOrBetter bool `json:"plan_equal_or_better"`
 	// HasConflicts is true when the comparison surfaced conflicts.
-	HasConflicts bool
+	HasConflicts bool `json:"has_conflicts"`
 	// HasPWAChanges is true when the comparison involved PWA changes.
-	HasPWAChanges bool
+	HasPWAChanges bool `json:"has_pwa_changes"`
 	// BlockingDefect is true when the comparison found a defect that blocks release.
-	BlockingDefect bool
+	BlockingDefect bool `json:"blocking_defect"`
 }
 
 // ReleaseReadinessBar holds the minimum counts a release of one size must reach
 // before it is considered ready.
 type ReleaseReadinessBar struct {
 	// Records is the minimum number of plan-equal-or-better comparison records.
-	Records int
+	Records int `json:"records"`
 	// Conflicts is the minimum number of counted records that show conflicts.
-	Conflicts int
+	Conflicts int `json:"conflicts"`
 	// PWAChanges is the minimum number of counted records that show PWA changes.
-	PWAChanges int
+	PWAChanges int `json:"pwa_changes"`
 }
 
 // DefaultReleaseReadinessBar returns the bar used when no other bar is configured:
@@ -41,21 +41,21 @@ func DefaultReleaseReadinessBar() ReleaseReadinessBar {
 // ReleaseReadiness is the computed readiness of one release size.
 type ReleaseReadiness struct {
 	// Size is the release size that was evaluated.
-	Size string
+	Size string `json:"size"`
 	// Records is the number of size-matching records where the plan was equal or better.
-	Records int
+	Records int `json:"records"`
 	// Conflicts is the number of counted records that show conflicts.
-	Conflicts int
+	Conflicts int `json:"conflicts"`
 	// PWAChanges is the number of counted records that show PWA changes.
-	PWAChanges int
+	PWAChanges int `json:"pwa_changes"`
 	// BlockingDefects is the number of size-matching records with a blocking defect.
-	BlockingDefects int
+	BlockingDefects int `json:"blocking_defects"`
 	// Required is the bar that was applied.
-	Required ReleaseReadinessBar
+	Required ReleaseReadinessBar `json:"required"`
 	// Missing lists one operator-facing sentence per unmet condition.
-	Missing []string
+	Missing []string `json:"missing"`
 	// Ready is true only when Missing is empty.
-	Ready bool
+	Ready bool `json:"ready"`
 }
 
 // ComputeReleaseReadiness evaluates records of the given release size against bar.

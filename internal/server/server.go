@@ -556,6 +556,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                         // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)            // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate)        // POST checks a pipeline body or a repository file without saving
+	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                 // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
 	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                              // resolved checks policy + recorded check findings
 	apiMux.HandleFunc("/api/autonomous/restart-interruptions", api.handleAutonomousRestartInterruptions) // what a restart now would interrupt + the restart policy
 	apiMux.HandleFunc("/api/autonomous/ship", api.handleAutonomousShip)                                  // resolved ship policy + recorded push/tag/CI-watch outcomes
