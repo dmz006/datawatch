@@ -218,8 +218,13 @@ Each item in the response carries a `server` field (e.g. `"server":"nas"`)
 identifying its origin. The PWA renders a **[nas]** tag on each card.
 
 The Observer and Settings pickers offer no **All** chip at all (only the
-local and federated chips), and the Dashboard has no separate "All"
-aggregation — **All** falls back to local data on that view.
+local and federated chips). The Dashboard is a set of independent panels
+that each fetch for the active host and re-render in place with the
+**Showing: \<name\>** line; in **All** mode its **Automata** panel uses
+`GET /api/autonomous/prds/aggregated` and its **Cost** panel uses
+`GET /api/cost/aggregated`, while the remaining panels (operator console,
+memory and web-search stats, cost report, integrations) have no aggregated
+variant.
 
 ## Proxy mode (specific server)
 
