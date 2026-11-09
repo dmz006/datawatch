@@ -141,7 +141,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 		return s
 	}
 	findings := func(s []Story) []LintFinding {
-		f := LintTasks(s, st.rules)
+		f := LintTasksIn(prd.ProjectDir, m.daemonModeStories(s), st.rules)
 		if f == nil {
 			f = []LintFinding{}
 		}
@@ -226,7 +226,7 @@ func (m *Manager) LintPRD(prdID string) (*DecomposeLintReport, error) {
 		return nil, fmt.Errorf("lint: prd %q not found", prdID)
 	}
 	st := m.decomposeLintSettingsSnapshot()
-	findings := LintTasks(prd.Story, st.rules)
+	findings := LintTasksIn(prd.ProjectDir, m.daemonModeStories(prd.Story), st.rules)
 	if findings == nil {
 		findings = []LintFinding{}
 	}

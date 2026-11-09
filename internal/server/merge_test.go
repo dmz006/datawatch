@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -283,5 +284,40 @@ func TestMergeRoute_Unavailable(t *testing.T) {
 	s := &Server{autonomousMgr: &fakeOrchAutonomous{}}
 	if rec := mergeRequest(t, s, http.MethodGet, "/api/autonomous/safe-to-delete"); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no merge reads: status = %d, want 503", rec.Code)
+	}
+}
+
+func TestMergeRoute_LockAndValidatorKeys(t *testing.T) {
+	since := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	st := mergeFixtureStatus()
+	st.MergeLock = &autonomous.MergeLockStatus{Repo: "/repo", RunID: "run-1", AutomatonID: "prd-a",
+		Branches: []string{"automaton/prd-a"}, Since: since}
+	st.LastValidator = &autonomous.MergeValidatorResult{Pass: false, Version: "1.2.3", CheckedAt: since,
+		Checks: []autonomous.MergeValidatorCheck{{Name: "changelog", Pass: false, Detail: "missing"}}}
+	s := &Server{autonomousMgr: &mergeSpy{status: st}}
+	rec := mergeRequest(t, s, http.MethodGet, "/api/autonomous/merge")
+	var set map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &set); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(set["merge_lock"], &lock); err != nil || lock["run_id"] != "run-1" || lock["automaton_id"] != "prd-a" {
+		t.Fatalf("merge_lock wrong: %s (%v)", set["merge_lock"], err)
+	}
+	var val struct {
+		Pass    bool `json:"pass"`
+		Version string
+		Checks  []map[string]any `json:"checks"`
+	}
+	if err := json.Unmarshal(set["last_validator"], &val); err != nil || val.Pass || val.Version != "1.2.3" || len(val.Checks) != 1 {
+		t.Fatalf("last_validator wrong: %s (%v)", set["last_validator"], err)
+	}
+
+	empty := &Server{autonomousMgr: &mergeSpy{status: mergeFixtureStatus()}}
+	body := mergeRequest(t, empty, http.MethodGet, "/api/autonomous/merge").Body.String()
+	for _, key := range []string{"merge_lock", "last_validator"} {
+		if strings.Contains(body, `"`+key+`"`) {
+			t.Fatalf("body carries %s when empty: %s", key, body)
+		}
 	}
 }

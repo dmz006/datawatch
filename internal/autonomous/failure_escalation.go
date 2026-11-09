@@ -84,9 +84,15 @@ type TaskAttempt struct {
 	// DurationSeconds is the wall-clock length of the attempt.
 	DurationSeconds int `json:"duration_seconds,omitempty"`
 	// Outcome is "failed", "stalled" or "cancelled".
-	Outcome         string   `json:"outcome,omitempty"`
-	FailureCategory string   `json:"failure_category,omitempty"`
-	FailureSummary  string   `json:"failure_summary,omitempty"`
+	Outcome         string `json:"outcome,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
+	FailureSummary  string `json:"failure_summary,omitempty"`
+	// NoRetryReason is set on a failed attempt that ends the task in
+	// operator review WITHOUT another attempt being started (a no-retry
+	// failure). It carries the operator-readable reason the retry was
+	// skipped, shown in the Automaton status view, the review question and
+	// the alert. Empty for an ordinary failed attempt that is retried.
+	NoRetryReason   string   `json:"no_retry_reason,omitempty"`
 	VerifierSummary string   `json:"verifier_summary,omitempty"`
 	VerifierIssues  []string `json:"verifier_issues,omitempty"`
 	ChangedFiles    []string `json:"changed_files,omitempty"`
@@ -105,6 +111,32 @@ type TaskAttempt struct {
 	// Escalated is true when this attempt ran on an escalation step rather
 	// than the task's normally resolved worker.
 	Escalated bool `json:"escalated,omitempty"`
+	// BackendReason says why this attempt ran on its backend and model: "first
+	// attempt for <kind> tasks", "escalated after <n> failures", "operator
+	// pinned" or "default choice" (see describeAttemptBackendReason). Attempts
+	// stored before it existed leave it empty.
+	BackendReason string `json:"backend_reason,omitempty"`
+	// Resumed is true when this attempt continued the previous session with the
+	// failure summary instead of starting a fresh session. Attempts stored
+	// before it existed read as false.
+	Resumed bool `json:"resumed,omitempty"`
+	// ResumeReason says why the retry resumed or did not resume: the retry
+	// decision's reason (see decideRetryResume). Empty when no retry decision
+	// was made, including on a record stored before the field existed.
+	ResumeReason string `json:"resume_reason,omitempty"`
+	// StartupTokens is the token size the attempt's worker started with.
+	// Zero when the launch carried no starting context.
+	StartupTokens int `json:"startup_tokens"`
+	// WorkerProfile names the worker profile the attempt's worker started
+	// with; empty when the attempt ran with no profile.
+	WorkerProfile string `json:"worker_profile"`
+	// WorkerRole names the role of the attempt's worker session.
+	WorkerRole string `json:"worker_role"`
+	// StartupTokenSource says how StartupTokens was obtained:
+	// "estimated" when it is the estimate from the generated starting
+	// context (see EstimateTokens in startup_tokens.go), or "reported" when
+	// the worker or its runner reported the usage itself.
+	StartupTokenSource string `json:"startup_token_source"`
 	// RunnerExitStatus is pi's exit status when the pane showed it; nil when
 	// no pi exit status was seen.
 	RunnerExitStatus *int `json:"runner_exit_status,omitempty"`

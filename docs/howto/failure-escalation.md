@@ -41,6 +41,10 @@ and it should not quietly fail either. Failure escalation does three things:
 3. **Asks you.** The task is held with the status `review_needed` and a report of
    every attempt. Nothing else is spent on it until you retry it, change it, or
    cancel it.
+4. **Stops early when another attempt cannot help.** A failure with no route to a
+   fix through another attempt is held for review at once, with the reason,
+   instead of burning the rest of the budget
+   ([No-retry failures](#no-retry-failures)).
 
 This is the decision the daemon used to make for you by failing the task. Now
 you make it, with the evidence in front of you.
@@ -48,11 +52,13 @@ you make it, with the evidence in front of you.
 ## Why this exists
 
 A worker that fails the same task three times usually fails the fourth time
-too, for the same reason. Retrying it unchanged wastes time and tokens. A
-different worker, or the same worker with the earlier failures in its prompt,
-has a real chance of getting past the problem. When even that does not work,
-the honest answer is "this needs a human," and the daemon should say so once,
-clearly, rather than keep trying or silently marking the task failed.
+too, for the same reason. Retrying it unchanged costs time. A different
+worker, or the same worker with the earlier failures in its prompt, has a real
+chance of getting past the problem. When even that does not work, the honest
+answer is "this needs a human," and the daemon should say so once, clearly,
+rather than keep trying or silently marking the task failed. When a task does
+fail, [What a non-final attempt costs](#what-a-non-final-attempt-costs) below
+shows how to keep those attempts cheap.
 
 ## The policy
 
@@ -143,11 +149,76 @@ datawatch autonomous failure-escalation set <automaton-id> --max-failures 4 \
 For a single task that needs a stronger worker from the start, put the same
 steps on that task with `--task <task-id>`.
 
+## Choosing the first-attempt worker
+
+Worker choice has a cheap tier in front of it: the **first-attempt pair**.
+Every task classifies into one of four **attempt kinds** from what its
+attempt produces, in this order, first match wins:
+
+| Kind | Meaning |
+|---|---|
+| `final_gate` | The PRD's final gate task |
+| `note` | A read-only task, or a task with no listed files |
+| `docs` | A task whose every listed file is documentation (a `.md` file, or a file under a `docs` directory) |
+| `implementation` | Everything else |
+
+The daemon-wide key `autonomous.first_attempt` maps a kind to the cheaper
+backend and model that kind's first attempts run on:
+
+```yaml
+autonomous:
+  first_attempt:
+    docs:
+      backend: pi-prompt
+      model: ollama/qwen3.8:27b
+    note:
+      backend: pi-prompt
+      model: ollama/qwen3.8:27b
+```
+
+How the pair is applied:
+
+- **First attempts only.** Once the task has failed
+  `autonomous.first_attempt_escalate_after_failures` times (default 1 — the
+  first failure escalates; range 0 to 20, and 0 behaves like 1), the pair
+  stops applying and the worker resolves the normal way again, including the
+  failure-escalation ladder when one is set.
+- **No entry, or an empty entry, keeps today's choice.** A kind you did not
+  name — and every attempt after escalation — resolves exactly as before:
+  task, story, PRD, Automaton, then the daemon default.
+- **A pin beats the pair.** If the task, its story, its PRD or its Automaton
+  pinned a worker, or the burn guard routed the attempt, the pair does not
+  apply.
+- **The ladder takes over after a failure.** An escalation step replaces
+  whatever worker was resolved for that attempt.
+
+One shared validator covers every surface that accepts these keys. It
+refuses an unknown kind, a `first_attempt` entry for `pi`, `pi-prompt` or
+`ollama` without a model (those backends refuse to start without one), and a
+`first_attempt_escalate_after_failures` outside 0 to 20 — each refusal names
+the key.
+
+The pair is daemon-wide; there is no per-Automaton or per-task map. For one
+task that needs a specific worker, pin at the task, story, PRD or Automaton
+level, or put a ladder step on that task with `--task <task-id>`.
+
+Each recorded attempt carries the **reason** it ran on its worker:
+"first attempt for `<kind>` tasks", "escalated after `<n>` failures",
+"escalation ladder step", "operator pinned" or "default choice". A held
+task's review entry shows the reason of its last attempt, so you can see
+which rule chose the worker before deciding on it. The record also states
+whether the attempt **resumed the previous session** and why
+([Retry resume](#retry-resume-continuing-the-previous-session)); the first
+attempt makes no retry decision and leaves both empty.
+
 ## What the retry prompt contains
 
-When a task has failed attempts on record, the next worker receives them before
-it starts. The prompt begins with a line saying earlier attempts did not finish
-successfully, then lists each attempt, oldest first:
+When a task has failed attempts on record, the worker of a **fresh** retry
+receives them before it starts. A retry that **resumes** the previous session
+receives the failure summary alone instead — see
+[Retry resume](#retry-resume-continuing-the-previous-session). The prompt
+begins with a line saying earlier attempts did not finish successfully, then
+lists each attempt, oldest first:
 
 - the attempt number and the worker it ran on
 - how long it ran and how it ended (`failed`, `stalled` or `cancelled`)
@@ -165,6 +236,94 @@ review retry that changes the worker: the worker you chose is kept for the
 attempts after it, and the ladder does not replace it. A review retry without a
 worker change lets the ladder apply again.
 
+## What a non-final attempt costs
+
+Every worker session begins with a fixed starting context. Measured on the
+sessions it runs on, a task session starts at around 85,000 input tokens of
+context, with the MCP tool definitions alone about 36,000 of that. Before the
+attempt-cost keys, every retry and every hop to the next worker on the
+ladder spawned a fresh session like that, so a task that failed up to three
+times paid the full starting context up to three times — up to about 255,000
+tokens for work that had already shown it would not succeed.
+
+Three daemon-wide keys keep that cost down:
+
+- **`autonomous.first_attempt`** — routes the cheap kinds onto a cheaper
+  worker ([Choosing the first-attempt worker](#choosing-the-first-attempt-worker)).
+  With it set, a `docs` or `note` task that ends up failing has spent one
+  cheap first attempt before the escalated attempts run on the strong worker
+  — instead of three strong starts.
+- **`autonomous.first_attempt_escalate_after_failures`** — how many
+  failures before the pair stops applying (default 1, range 0 to 20).
+- **`autonomous.retry_resume_max_context_tokens`** — the cap on how much
+  prior context a retry may resume with (default 150,000 tokens; 0 forces
+  every retry to start a fresh session). It is also the switch that turns
+  retry resume on and off — see
+  [Retry resume](#retry-resume-continuing-the-previous-session).
+
+None of them changes the failure flow. The attempt order, the ladder, and the
+`review_needed` hold and its alert all behave exactly as before. A first-try
+success runs on the worker its kind's pair resolves to — unchanged, if you set
+no pair. Nothing migrates: unset keys keep today's behavior exactly, and with
+`retry_resume_max_context_tokens` at 0 every retry starts a fresh session
+exactly as before ([Retry resume](#retry-resume-continuing-the-previous-session)).
+
+Set the keys in the autonomous block: the config file, the REST config
+round trip, MCP, CLI and comm config forms, or the PWA settings.
+
+**Operator note.** When you price a failing task, do not multiply the first
+attempt by the attempt count and assume the full starting context every time:
+attempts of one task can run on different workers, and each is charged for
+the context it carries. Read a few real failed attempts in the [cost
+report](cost-report.md) instead.
+
+## Retry resume: continuing the previous session
+
+A fresh retry pays the full starting context again. When it can, the daemon
+does something cheaper: it resumes the failed attempt's worker session and
+feeds it only what happened since — the failure summary. The session already
+carries the project, the task's spec and the attempt's own work, so the retry
+is priced on the summary line and the continuation, not on another ~85,000
+starting context.
+
+A retry resumes the previous session only when every check passes; the first
+one that fails sends the attempt to a fresh session, and the record says why:
+
+1. **The attempt failed verification** — the worker finished its work and the
+   verifier rejected it. Stalls, start failures and infra failures never set
+   up a resume.
+2. **The session is still open**, and the task still points at it.
+3. **The attempt's backend supports resume** — today that is `claude-code`
+   only; every other backend starts a fresh session.
+4. **`autonomous.retry_resume_max_context_tokens` is above 0.** `0` turns
+   resume off and forces a fresh session (the old behaviour).
+5. **The session's context is at or under that limit.** A size the daemon
+   could not measure passes when the other checks do.
+
+When it resumes, the attempt spawns nothing: it waits on the same session,
+and the worktree is whatever the failed attempt left behind — the worker fixes
+in place. The daemon types one line into the session: a marker naming this as
+an Automaton retry that was resumed with its context, followed by the same
+failure summary a fresh worker's retry prompt would carry, flattened to one
+line and cut at 4,000 characters. When the send path is missing or the send
+fails, the attempt falls back to a fresh session and the record says so.
+
+The record carries the outcome of every decision: `resumed` and
+`resume_reason` — `resumed previous session`, or one of the refusals:
+`session ended; starting a fresh attempt`, `backend cannot resume; starting a
+fresh attempt`, `resume disabled by setting; starting a fresh attempt`,
+`context above the limit; starting a fresh attempt`, or the send fallbacks
+`no send-input hook; starting a fresh attempt` and `send into session
+failed; starting a fresh attempt`. A held task's review entry shows the same
+two for its last attempt, next to the backend, model and the worker's choice
+reason.
+
+**What changes and what does not.** A resumed retry that still fails counts
+as a failed attempt exactly like any other: `max_failures`, the ladder, the
+held report and the alert are all unchanged. What changes is only the cost of
+the pass — the summary line and the continuation instead of a full cold
+start.
+
 ## When a task needs review
 
 A task reaching `max_failures` is **held**, not failed. What you see:
@@ -174,7 +333,8 @@ A task reaching `max_failures` is **held**, not failed. What you see:
   Automation strip, a count shows how many tasks are waiting.
 - **Status output.** `datawatch autonomous status` lists each held task under
   `review_needed`, with the Automaton, the task, the failed-attempt count, the
-  last worker and when it was held. The comm channel's `autonomous status`
+  last worker, when it was held, and for the last attempt whether it resumed
+  the previous session and why (`last_resumed`, `last_resume_reason`). The comm channel's `autonomous status`
   adds one line per held task and tells you the command to decide it. MCP
   `autonomous_status` and REST `GET /api/autonomous/status` carry the same
   `review_needed` array.
@@ -189,6 +349,51 @@ A task reaching `max_failures` is **held**, not failed. What you see:
   started: the one that is running picks up your decision.
 - **The report.** The task keeps every attempt, and its review report is a plain
   text summary of each one, with the total time spent.
+
+## No-retry failures
+
+Some failures have no route to a fix through another attempt. When the verifier
+rejects an attempt and the failure is one of them, the failed attempt is
+recorded — carrying the reason — and the task is **held for review at once**:
+no further attempt is scheduled, and the rest of the failure budget is not
+spent. This only runs with the policy on; with `enabled: false` every failure
+takes the ordinary retry, then fail path as before.
+
+A failure has no retry when any of these holds:
+
+| Condition | Why another attempt will not help |
+|---|---|
+| The verifier failed the task because **no files changed**, and the task writes nothing (read-only, or no planned files) | A re-run of a task that writes nothing has no new work to verify. |
+| The task's **verification script is missing** from the worktree | The same missing script fails the re-run the same way. |
+| The **same failure summary has already failed twice** (case and surrounding whitespace apart) | A third identical failure means retrying is not fixing anything. |
+
+What you see is the [When a task needs review](#when-a-task-needs-review) hold
+with one difference: the reason is the point.
+
+- **The alert.** One error-level alert, titled "Automaton task needs review
+  (no retry)", raises when the task is held. It names the Automaton and the
+  task, the reason — for example `verification script … is missing from the
+  worktree` or `this failure summary has already failed twice; a third
+  identical attempt will not change the outcome` — the last worker, and the
+  ways to act: change the task so it can be verified (give it files to write,
+  a verification script, or a changeable spec), or cancel it. One alert per
+  hold, as the usual one.
+- **The record.** The failed attempt carries the reason in its
+  `no_retry_reason` field, and the held task's review entry shows the same
+  reason — that is where you see it in `datawatch autonomous status` and on
+  the task row, next to the badge.
+- **The report.** It leads with the reason and then lists the recorded
+  attempt, whose last one is marked with the no-retry line.
+- **The actions.** The same five as the retry-limit hold: retry, edit spec and
+  retry, change worker, narrow scope, cancel, on every surface. For a no-retry
+  hold the useful moves are the ones that change the basis: give the task
+  files to write, put its verification script in the worktree, or replace the
+  spec — an unchanged retry re-enters the hold on the same basis, since the
+  cause was never touched.
+
+Every other failure keeps the ladder, the counts and the hold exactly as
+described above: the no-retry check runs on each verifier rejection, and only
+fires on those three conditions.
 
 ## The five operator actions
 
@@ -335,6 +540,8 @@ retry count is still `autonomous.auto_fix_retries`.
 
 ## See also
 
+- [failed-attempt-cost.md](failed-attempt-cost.md): what a failed attempt costs,
+  the first-attempt worker, resuming a retry and every attempt-cost setting
 - [retry-policy.md](retry-policy.md): failure categories and the retry budgets
   that apply before and after this policy
 - [autonomous-review-approve.md](autonomous-review-approve.md): the review gate

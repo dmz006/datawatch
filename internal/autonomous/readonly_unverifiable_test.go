@@ -335,15 +335,16 @@ func TestCheckPlanStructureReadOnlyUnverifiableSmokeAndFinalGateNoExemption(t *t
 
 // TestTaskTemplateFinalGateCarriesReadOnlyUnverifiableProof asserts the
 // shipped final_gate template task is not an unverifiable read-only
-// task: the template def carries its own verification script, copied
-// onto the produced task.
+// task: the template def carries a usable report path under
+// .datawatch/reports/ (its verdict is the proof), copied onto the
+// produced task. It carries no verification script.
 func TestTaskTemplateFinalGateCarriesReadOnlyUnverifiableProof(t *testing.T) {
 	for _, def := range BuiltInTaskTemplates() {
 		if def.ID != TemplateFinalGate {
 			continue
 		}
-		if strings.TrimSpace(def.VerificationScript) == "" {
-			t.Fatal("final_gate template def carries no verification script")
+		if err := validateReportPath(def.ReportPath); err != nil {
+			t.Fatalf("final_gate template def report path %q unusable: %v", def.ReportPath, err)
 		}
 	}
 	story := testTaskTemplateStory(t)
@@ -359,8 +360,8 @@ func TestTaskTemplateFinalGateCarriesReadOnlyUnverifiableProof(t *testing.T) {
 		if !strings.Contains(tsk.Spec, TaskTemplateIDMarker(TemplateFinalGate)) {
 			continue
 		}
-		if strings.TrimSpace(tsk.VerificationScript) == "" {
-			t.Fatalf("template task %s: no verification script (an unverifiable read-only task)", tsk.ID)
+		if strings.TrimSpace(tsk.VerificationScript) == "" && !taskHasUsableReportPath(tsk) {
+			t.Fatalf("template task %s: no verification script or usable report path (an unverifiable read-only task)", tsk.ID)
 		}
 		// and the whole template task must not trip the rule
 		found := LintTasks(got, []Rule{{

@@ -2061,6 +2061,35 @@ autonomous:
   #   or changes a registry entry.
   # version_files: project files, relative to the project, that carry the
   #   `var Version = "X.Y.Z"` line the release-version step sets. Default none.
+  # release_size_map: how much a merge steps the version, per Automaton kind.
+  #   Built-in (always present): feature=minor, bug=patch. A global or
+  #   project entry adds to or overrides the built-in. A value must be
+  #   patch, minor, major or none; a major entry is stored but never used -
+  #   a major is only ever an explicit release_size: major or a completed
+  #   milestone Automation. Unset reads the built-in map.
+  # major_trigger: manual | milestone | never. Default manual. manual: the
+  #   explicit major is the only route besides a breaking change; milestone:
+  #   a completed Automation marked `milestone` also steps major; never: a
+  #   milestone never steps a major.
+  # release_cadence: per_merge. Default per_merge. batch and manual are
+  #   named values refused as not available yet; any other name is invalid.
+  # version_scheme: semver. Default semver. Any other name is refused as not
+  #   available yet.
+  # release_approval: one mode per size of release - release_approval.patch,
+  #   .minor and .major - each auto | ask | manual (anything else is refused
+  #   with the key named). Defaults: patch auto, minor auto, major ask; a
+  #   release whose size cannot be read resolves to ask, never to shipping.
+  #   An unset size inherits the project's
+  #   autonomous.merge_pipeline.projects.<project>.release_approval, then the
+  #   global value, then that default. The merge run honours these modes:
+  #   auto ships a release whose checks pass and reports afterwards; ask raises
+  #   one "Ship this release?" decision and ships only on a yes; manual prepares
+  #   and reports, and a person ships. A failed check holds the release in every
+  #   mode. Example, one project ships minor releases by hand:
+  #     projects:
+  #       myproject:
+  #         release_approval:
+  #           minor: manual
   # merge_pipeline:
   #   file_name: .datawatch/merge-pipeline.yaml
   #   source_order: [file, record]
@@ -2068,6 +2097,14 @@ autonomous:
   #   conflict_policy: mechanical_and_model
   #   conflict_model: claude-opus-5-5
   #   version_files: []
+  #   release_size_map: {feature: minor, bug: patch}
+  #   major_trigger: manual
+  #   release_cadence: per_merge
+  #   version_scheme: semver
+  #   release_approval:
+  #     patch: auto
+  #     minor: auto
+  #     major: ask
   #   projects: {}
 
   # Post-ship hooks (autonomous.merge_pipeline.post_ship): the small steps a
@@ -2769,6 +2806,22 @@ autonomous:
   # exist; a missing directory parks the PRD as blocked (with a reason) and
   # raises an operator alert either way. Default 3600.
   # resume_max_age_seconds: 3600
+  # First-attempt cost. first_attempt maps a task kind (implementation, docs,
+  # note, final_gate) to the backend and model its first attempt runs on. An
+  # absent or empty entry keeps today's choice. A backend that needs a model
+  # (pi, pi-prompt, ollama) must name one.
+  # first_attempt:
+  #   docs:
+  #     backend: pi-prompt
+  #     model: qwen3.8:27b
+  # Default: empty (no kind is routed). Set per kind with
+  # `datawatch config set autonomous.first_attempt.<kind>.model <name>` (set the model before a pi, pi-prompt or ollama backend). How-to: docs/howto/failure-escalation.md#choosing-the-first-attempt-worker
+  # Failed attempts before the next attempt moves to the stronger choice.
+  # Default 1 (the first failure escalates). Range 0-20. How-to: docs/howto/failure-escalation.md#choosing-the-first-attempt-worker
+  # first_attempt_escalate_after_failures: 1
+  # Largest prior-context size, in tokens, a retry may resume with. Default
+  # 150000. 0 means every retry starts a fresh session. Range 0-2000000. How-to: docs/howto/failure-escalation.md#retry-resume-continuing-the-previous-session
+  # retry_resume_max_context_tokens: 150000
   # Number of local-model sessions one compute node runs at once. Default 1;
   # values below 1 are clamped to 1. The cap applies only to sessions whose
   # model runs on a local engine on that node (pi, pi-prompt, ollama, opencode,
@@ -3792,6 +3845,29 @@ autonomous:
     #     digest_mode: all
     #     digest_max_bytes: 8192
 
+  # Worker session profiles: what a worker session starts with (MCP servers,
+  # tools, skills, project context, model, effort). Built-in names: minimal,
+  # digest, full, datawatch-tools; a user profile may not reuse them.
+  #   worker_profiles: map of profile name to a profile. Profile fields are
+  #     name (must match the key or be empty), mcp {mode: none|datawatch|list,
+  #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
+  #     minimal|digest|full, model, effort. Default empty.
+  #   worker_profile_defaults.role: planner|worker|verifier|judge -> profile
+  #     name. worker_profile_defaults.kind: implementation|docs|note|final_gate
+  #     -> profile name. Empty value = no default. Default empty.
+  #   worker_profile: global profile name; empty = the role default.
+  #   Refused at load: a built-in name reused, an invalid profile, a value
+  #   naming an unknown profile, an unknown role or kind key.
+  worker_profiles: {}
+  #   reviewer:
+  #     mcp: {mode: list, servers: [github]}
+  #     tools: {mode: allow, allow: [Read, Grep]}
+  #     context: digest
+  worker_profile_defaults:
+    role: {}
+    kind: {}
+  worker_profile: ""
+
   # Named upstream repos a project-rule's file_upstream_issue action can
   # reference (e.g. a parity gap this repo's own PRD can't close alone).
   upstream_repos: [] # [{name: "app", owner_repo: "org/repo"}, ...]
@@ -3966,7 +4042,8 @@ autonomous:
     # spec_regex / title_regex / files_regex over their fields, the
     # read_only tri-state (absent = don't check),
     # verification_script_empty, report_path_empty (no usable report path
-    # under .datawatch/reports/), and any_of (at least one member) / all_of
+    # under .datawatch/reports/), verification_script_unexecutable (the
+    # script is a command string or not a runnable file), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.
@@ -3993,13 +4070,77 @@ autonomous:
   # built-in at its position, new id appends. Template ids must be
   # well-shaped ([a-z0-9_.-]+) and unique — the daemon validates before
   # applying, and a duplicate id is a 400, not a merge.
+  # Time cap, in whole seconds, on one script gate run. Default 900. 0 = no
+  # cap (the gate may run as long as its script needs); a negative value is
+  # refused at load time. The cap stops a runaway gate script, so keep it
+  # above the longest honest run of your build-and-test command. How-to:
+  # howto/automaton-daemon-task-modes.md.
+  script_gate_timeout_seconds: 900
+  # The project's own build-and-test command, run by the script gate as one
+  # line of shell text, for example "make test" or "npm test". Empty (the
+  # default) = unset. Not tied to any language. A value with a line break,
+  # a NUL byte or over 1024 bytes is refused. A project's policy block can
+  # override it per project (projects.<name>.policy.project_gate_command);
+  # an explicit empty string there unsets it for that project only. See the
+  # "Projects: per-project automation policy" section below. How-to:
+  # howto/automaton-daemon-task-modes.md.
+  project_gate_command: ""
   task_templates:
     # Global gate. Default true. false turns template apply off everywhere
     # (per-project overrides below can still force a project on/off).
     enabled: true
+    # Setting: autonomous.task_templates.mode (one template:
+    # autonomous.task_templates.mode.<id>). Values:
+    #   llm    - a worker session runs the task as a normal task, verifier included
+    #   daemon - the daemon does the task itself, with no model session
+    #   off    - the task is not added to the story at all
+    # Default: the shipped default per template, as listed below; llm for an id
+    # outside the built-in pack. daemon is accepted only for changelog_entry,
+    # parity_issue_draft, bounded_load_step and version_bump_left_to_merge;
+    # final_gate takes llm or off only.
+    # Ways to set it: the per-template select in the Settings autonomous card,
+    # PUT /api/config with the dotted per-template key, datawatch config set,
+    # configure on the chat or comm channels, the MCP autonomous_config_set
+    # task_templates_mode argument, and this YAML block itself.
+    # The decompose-lint surfaces (REST PUT /api/autonomous/decompose-lint/config,
+    # the MCP autonomous_decompose_lint_config_set tool and the decompose-lint
+    # card) replace the whole task_templates block when they send it. The card
+    # sends back the block it loaded with only its enabled checkbox changed.
+    # Who carries out each template's task. Three values:
+    #   llm    — a model session does the task (the default for most templates)
+    #   daemon — the daemon does the task itself with no model call; only the
+    #            four daemon-capable ids accept it: changelog_entry,
+    #            parity_issue_draft, bounded_load_step and
+    #            version_bump_left_to_merge
+    #   off    — the task is not generated at all
+    # Shipped defaults per built-in template id:
+    #   changelog_entry             daemon
+    #   parity_issue_draft          daemon
+    #   bounded_load_step           daemon
+    #   version_bump_left_to_merge  daemon
+    #   docs_set                    llm
+    #   final_gate                  llm (daemon is refused: it is a read-only gate)
+    # An id you do not list here falls back to the shipped default for that id
+    # (an id outside the built-in pack falls back to llm). Keys must be
+    # well-shaped template ids; an unknown mode value, or daemon on an id that
+    # cannot take it, is a validation error, not a silent fallback.
+    # Empty (the default) keeps every shipped default. Example override, to
+    # send the changelog entry through a model session instead of the daemon:
+    #   changelog_entry: llm
+    mode: {}
     # Operator template definitions (empty = the built-in pack,
-    # unmodified). {id, title, spec, files, kind, read_only, depends_on,
-    # applies_when}.
+    # unmodified). {id, title, spec, files, kind, read_only, report_path,
+    # depends_on, applies_when, verification_script_reason}.
+    # verification_script_reason is the explicit reason a task from the
+    # template has no verification script (note templates carry one); it
+    # is copied onto that task. verification_script must be one repo-relative script
+    # file (for example scripts/verify.sh), never a command string such as
+    # "go build ./... && go test ./...": the PUT that carries it is refused,
+    # and a template that still carries one is never applied.
+    # verification_script_reason is optional: a note-kind template that
+    # changes nothing carries its B124 exemption here — the stated reason
+    # it has no verification script to run (the built-in note templates
+    # carry one).
     templates: []
     # Per-project overrides, keyed by project directory or alias. An absent
     # flag means follow the global; a new project inherits the global
@@ -4697,6 +4838,11 @@ projects:
       # uncommitted_work_scope: commit | worktree (worktree = default, stricter).
       # burn_guard_ask_on_change: confirmation question (true) or silent write
       # (false, daemon default) for burn-guard changes to this project's tasks.
+      # project_gate_command: the build-and-test command the script gate runs for
+      # this project, one line, same rules as autonomous.project_gate_command.
+      # Absent = inherit the daemon value; an explicit "" unsets it for this
+      # project only, so its gate runs no project command.
+      # project_gate_command: make test
 
 # ── Auto-Update ──
 # Automatic self-update configuration.

@@ -9,6 +9,7 @@ package autonomous
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -100,8 +101,11 @@ func TestFailureReason_TaskExhausted_VerificationFailure_Populated(t *testing.T)
 	spawn := func(_ context.Context, _ SpawnRequest) (SpawnResult, error) {
 		return SpawnResult{SessionID: "s"}, nil
 	}
-	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
-		return VerificationResult{OK: false, Summary: "still broken", Issues: []string{"x stays broken"}}, nil
+	verify := func(_ context.Context, _ *PRD, task *Task) (VerificationResult, error) {
+		// A distinct summary per attempt so the task exhausts its budget on the
+		// retry-limit path rather than tripping the no-retry "three identical
+		// failures" hold.
+		return VerificationResult{OK: false, Summary: fmt.Sprintf("still broken (attempt %d)", len(task.Attempts)+1), Issues: []string{"x stays broken"}}, nil
 	}
 
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {

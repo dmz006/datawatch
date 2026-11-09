@@ -112,6 +112,12 @@ type Automation struct {
 	// block. Empty = no project to name, or the tags not yet derived.
 	SystemTags []string `json:"system_tags,omitempty"`
 
+	// Milestone marks this Automation (arc) as a milestone: when it completes
+	// it raises the major release step under the major approval mode. Unset
+	// (false) means an ordinary arc. Create copies it, update keeps the stored
+	// value, and the JSON clone keeps it.
+	Milestone bool `json:"milestone,omitempty"`
+
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
 
 	CreatedAt  time.Time  `json:"created_at"`

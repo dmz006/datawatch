@@ -973,7 +973,10 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = the default window), "+
 			"session.liveness_idle_timeout_overrides (a JSON object of backend name to whole seconds, e.g. {\"pi\":300}, or backend=seconds pairs such as pi=300; "+
 			"0 = off for that backend; an unknown backend name is refused; an empty object clears the overrides). "+
-			"Read both back with get_config section=session. A refused value returns the daemon's message."),
+			"Worker profile keys: autonomous.worker_profiles (a JSON object of user profile name to profile settings; a name may not be a built-in), "+
+			"autonomous.worker_profile_defaults (a JSON object with a role and/or kind map of profile names), and autonomous.worker_profile (a profile name, built-in or user-defined). "+
+			"Read them back with get_config section=autonomous, and see the built-in names and defaults with worker_profile_status. "+
+			"Read both session keys back with get_config section=session. A refused value returns the daemon's message and changes nothing."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),
 			mcpsdk.Description("Config key (e.g. 'detection.prompt_debounce', 'pipeline.max_parallel')"),

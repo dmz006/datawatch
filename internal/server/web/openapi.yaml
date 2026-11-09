@@ -1021,6 +1021,17 @@ paths:
         `autonomous.task_no_progress_seconds` (whole seconds >= 0, default 0 = off; stops an
         attempt with no output, file change, commit or CPU-using child process for this long,
         recommended 1800),
+        `autonomous.task_templates.mode` (an object of template id to `llm`, `daemon` or `off`;
+        empty keeps the shipped defaults: `daemon` for changelog_entry, parity_issue_draft,
+        bounded_load_step and version_bump_left_to_merge, `llm` for docs_set and final_gate;
+        `daemon` is refused for final_gate and for any id that is not daemon-capable; set it
+        and a bad value rejects the whole PUT with 400),
+        `autonomous.script_gate_timeout_seconds` (whole seconds >= 0, default 900; the time cap
+        on one script gate run, where 0 means no cap; a negative value is rejected with 400),
+        `autonomous.project_gate_command` (one line of shell text, at most 1024 bytes, default
+        unset; the build-and-test command the script gate runs; a line break or NUL byte is
+        rejected with 400; a project's `projects.<name>.policy.project_gate_command` overrides it,
+        and an explicit empty string there unsets it for that project only),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
@@ -1084,9 +1095,17 @@ paths:
         default `record`), `autonomous.merge_pipeline.conflict_policy` (`stop_and_ask`,
         `mechanical` or `mechanical_and_model`, default `mechanical_and_model`),
         `autonomous.merge_pipeline.conflict_model` (an LLM registry entry name; an empty
-        string means no model) and `autonomous.merge_pipeline.version_files` (a JSON
-        array or comma list of file names inside the project). Each of the six can be
-        set for one project as `autonomous.merge_pipeline.projects.<project>.<key>`;
+        string means no model), `autonomous.merge_pipeline.release_size_map` (a JSON object or kind=size pairs such as `feature=minor,bug=patch`; each size is `patch`, `minor`, `major` or `none`; kinds named here override the built-in map of feature = minor and bug = patch, and a major is never a default), `autonomous.merge_pipeline.major_trigger` (`manual`, `milestone` or `never`, default `manual`: when an Automation raises a major release step), `autonomous.merge_pipeline.release_cadence` (`per_merge`, the default and the only cadence available; `batch` and `manual` are refused with a 400 saying the cadence is not available yet) and `autonomous.merge_pipeline.version_scheme` (`semver`, the default and the only scheme available; any other name is refused with a 400 saying the scheme is not available yet), `autonomous.merge_pipeline.version_files` (a JSON
+        array or comma list of file names inside the project) and the release approval
+        modes `autonomous.merge_pipeline.release_approval.patch`, `autonomous.merge_pipeline.release_approval.minor`
+        and `autonomous.merge_pipeline.release_approval.major` (each `auto`, `ask` or `manual`;
+        default `auto` for patch and minor, `ask` for major). In plain terms: `auto` ships the
+        release when the checks pass and reports afterwards; `ask` prepares everything and raises
+        one decision for the operator; `manual` prepares and reports, and a person ships. Each of
+        the ten keys above and the three release approval modes can be set for one project as
+        `autonomous.merge_pipeline.projects.<project>.<key>`, where the release modes use the key
+        `release_approval.patch`, `release_approval.minor` or `release_approval.major`; a project
+        mode that is left out inherits the global mode;
         null clears a key back to its default, and null on
         `autonomous.merge_pipeline.projects.<project>` removes that project's overrides.
         The post-ship hook keys are global for every project and take no projects.<project> prefix: `autonomous.merge_pipeline.post_ship.enabled` (true|false; default false, and no hook runs while it is false), `autonomous.merge_pipeline.post_ship.registry_file` (the registry_row built-in's registry file, relative to the project) and `autonomous.merge_pipeline.post_ship.registry_row_pattern` (its row line template), `autonomous.merge_pipeline.post_ship.companion_repository` (the owner/name the parity_issue built-in files its issue in) and `autonomous.merge_pipeline.post_ship.issue_title_template` (its issue title), `autonomous.merge_pipeline.post_ship.notify_template` (the notify built-in's message body, and the parity_issue body; may name {project} and {version}) and `autonomous.merge_pipeline.post_ship.hooks` (a JSON array of objects; each has a non-empty unique name, exactly one of a built-in name — registry_row, parity_issue, tag or notify — or a command line, and an optional enabled flag that is false by default; at most 20). An enabled built-in is refused by name when its target is unset in the applied block, so one PUT may set the target and the hook together. 
@@ -2333,7 +2352,11 @@ paths:
         what is configured for merge conflicts; `conflict_policy_in_effect` and
         `conflict_model_in_effect` are what would be acted on, which fall back to
         `stop_and_ask` with no model when the policy needs a model that is not set
-        or not available (`conflict_degraded_reason` says why). `overrides` holds
+        or not available (`conflict_degraded_reason` says why). `release_approval_in_effect`
+        holds the mode acted on for each release size (`patch`, `minor` and `major`; each `auto`,
+        `ask` or `manual`): `auto` ships the release when the checks pass and reports afterwards,
+        `ask` prepares everything and raises one decision, and `manual` prepares and reports while
+        a person ships. The defaults are `auto` for patch and minor and `ask` for major. `overrides` holds
         the per-project values set for this project, or null. `record_updated_at` is
         when the daemon's record was last set, when it is the source. The project
         directory is the directory registered for the project, or the merge base
@@ -3479,6 +3502,67 @@ paths:
       responses:
         "200": {description: Updated Automaton}
         "400": {description: Unknown kind}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
+  /api/autonomous/prds/{id}/set_release_size:
+    post:
+      summary: Set the release size of an Automaton
+      description: |
+        Sets the explicit release size to `patch`, `minor`, `major` or `none`. An empty
+        value clears the setting, so the size is resolved again from the Automation
+        milestone rule, the project's kind-to-size map and the built-in default
+        (feature = minor, bug = patch). An unknown size is refused and is never stored.
+        The change is recorded on the decision timeline and audit-logged as
+        `set_release_size`. Needs the autonomous write capability when called by a
+        federated peer.
+      operationId: autonomousPRDSetReleaseSize
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [release_size]
+              properties:
+                release_size: {type: string, enum: [patch, minor, major, none, ""]}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Unknown release size}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
+  /api/autonomous/prds/{id}/set_breaking_change:
+    post:
+      summary: Set or clear the breaking-change flag of an Automaton
+      description: |
+        Sets the breaking-change flag. A breaking change raises the Automaton's release to
+        the major approval mode, so it is never merged quietly. `breaking_change` is
+        required, so an omitted value is refused rather than clearing the flag. The
+        change is recorded on the decision timeline and audit-logged as
+        `set_breaking_change`. Needs the autonomous write capability when called by a
+        federated peer.
+      operationId: autonomousPRDSetBreakingChange
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [breaking_change]
+              properties:
+                breaking_change: {type: boolean}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: breaking_change missing or not a boolean}
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
@@ -9790,7 +9874,7 @@ components:
         name: {type: string, description: "A name that is unique within the pipeline"}
         kind: {type: string, enum: [test, lint, version_bump, changelog, ship, tag, deploy, post_ship_hook, custom], description: "What the step is for"}
         command: {type: string, description: "A shell command line to run in the project"}
-        action: {type: string, enum: [check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, commit_release_bump, tag_release, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
+        action: {type: string, enum: [rebase_onto_main, check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, set_readme_release_line, commit_release_bump, tag_release, validate_release_bump, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
         dir: {type: string, description: "A directory inside the project to run in; empty means the project root"}
         on_failure: {type: string, enum: [stop, continue], description: "What the pipeline does when the step fails; stop by default"}
         requires_make_target: {type: string, description: "Run the step only when the project's Makefile defines this target"}
@@ -9819,6 +9903,13 @@ components:
           type: array
           items: {type: string}
           description: "The project files, relative to the project, that carry the version line the release version step sets"
+        release_approval:
+          type: object
+          description: "The release approval mode per release size for this project. A size that is left out inherits the global mode; the defaults are auto for patch and minor and ask for major."
+          properties:
+            patch: {type: string, enum: [auto, ask, manual], description: "Patch release mode: auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships"}
+            minor: {type: string, enum: [auto, ask, manual], description: "Minor release mode: auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships"}
+            major: {type: string, enum: [auto, ask, manual], description: "Major release mode: auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships"}
     MergePipelineSettings:
       type: object
       description: The pipeline resolution settings in effect for a project.
@@ -9850,6 +9941,13 @@ components:
         conflict_model: {type: string, description: "The conflict model configured"}
         conflict_model_in_effect: {type: string, description: "The conflict model that would be used; empty when none"}
         conflict_degraded_reason: {type: string, description: "Why the policy in effect differs from the one configured"}
+        release_approval_in_effect:
+          type: object
+          description: "The release approval mode acted on for each release size. auto ships when the checks pass and reports afterwards; ask prepares everything and raises one decision; manual prepares and reports, and a person ships. Defaults: auto for patch and minor, ask for major."
+          properties:
+            patch: {type: string, enum: [auto, ask, manual], description: "The patch release mode in effect"}
+            minor: {type: string, enum: [auto, ask, manual], description: "The minor release mode in effect"}
+            major: {type: string, enum: [auto, ask, manual], description: "The major release mode in effect"}
         post_ship:
           type: object
           description: "The global post-ship hook settings: whether the block is on, how many hooks are defined, and the names of the ones that would run"
@@ -11575,6 +11673,7 @@ components:
         id: {type: string, description: "Automation ID (8-hex)"}
         name: {type: string}
         description: {type: string}
+        milestone: {type: boolean, description: "true marks the Automation as a milestone arc: when it completes, its release step is raised to major under the project's major_trigger setting"}
         status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
         entry_member_id: {type: string, description: "Member the Automation starts at"}
         current_member_id: {type: string, description: "Member the cursor is on for a linear Automation; see active_cursors for fork/join"}
@@ -11761,6 +11860,7 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
+        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone arc. On create omitted means false; on update omitted keeps the stored value."}
         entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
         members:
           type: array

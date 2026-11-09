@@ -35,6 +35,18 @@ type View struct {
 	// defined, and the names of the ones that would run. The block is global,
 	// so it is the same for every project.
 	PostShip ViewPostShip `json:"post_ship"`
+	// ReleaseApprovalInEffect is the approval mode acted on for each release
+	// size, resolved for the project: its override, else the global value,
+	// else the built-in default. There is always a mode for each size.
+	ReleaseApprovalInEffect ReleaseApprovalInEffect `json:"release_approval_in_effect"`
+}
+
+// ReleaseApprovalInEffect is the approval mode in effect for each release
+// size. Every field is always set: an unset key resolves to its default.
+type ReleaseApprovalInEffect struct {
+	Patch string `json:"patch"`
+	Minor string `json:"minor"`
+	Major string `json:"major"`
 }
 
 // ViewSettings are the resolution settings in effect for the project.
@@ -43,6 +55,11 @@ type ViewSettings struct {
 	SourceOrder       []string `json:"source_order"`
 	FallbackOnBadFile string   `json:"fallback_on_bad_file"`
 	VersionFiles      []string `json:"version_files"`
+	// The release settings in effect for the project.
+	ReleaseSizeMap map[string]string `json:"release_size_map"`
+	MajorTrigger   string            `json:"major_trigger"`
+	ReleaseCadence string            `json:"release_cadence"`
+	VersionScheme  string            `json:"version_scheme"`
 }
 
 // ViewPostShip is the post-ship hook state as the text shows it.
@@ -265,6 +282,10 @@ func renderViewText(v View, postShipBlock string) string {
 	fmt.Fprintf(&b, "Order sources are tried in: %s\n", listOrNone(v.Settings.SourceOrder))
 	fmt.Fprintf(&b, "When the repository file is unusable: %s\n", dash(v.Settings.FallbackOnBadFile))
 	fmt.Fprintf(&b, "Files that hold the version: %s\n", listOrNone(v.Settings.VersionFiles))
+	fmt.Fprintf(&b, "Release size by kind: %s\n", sizeMapText(v.Settings.ReleaseSizeMap))
+	fmt.Fprintf(&b, "Major release trigger: %s\n", dash(v.Settings.MajorTrigger))
+	fmt.Fprintf(&b, "Release cadence: %s\n", dash(v.Settings.ReleaseCadence))
+	fmt.Fprintf(&b, "Version scheme: %s\n", dash(v.Settings.VersionScheme))
 	b.WriteString(postShipBlock)
 	fmt.Fprintf(&b, "Merge conflict policy: %s", dash(v.ConflictPolicy))
 	if v.ConflictPolicyInEffect != "" && v.ConflictPolicyInEffect != v.ConflictPolicy {
@@ -275,6 +296,8 @@ func renderViewText(v View, postShipBlock string) string {
 		b.WriteString(")")
 	}
 	b.WriteString("\n")
+	fmt.Fprintf(&b, "Release approval: patch %s, minor %s, major %s\n",
+		dash(v.ReleaseApprovalInEffect.Patch), dash(v.ReleaseApprovalInEffect.Minor), dash(v.ReleaseApprovalInEffect.Major))
 	if v.ConflictModel != "" || v.ConflictModelInEffect != "" {
 		fmt.Fprintf(&b, "Conflict model: %s", dash(v.ConflictModel))
 		if v.ConflictModelInEffect != v.ConflictModel {
@@ -375,6 +398,24 @@ func dash(s string) string {
 		return "(none)"
 	}
 	return s
+}
+
+// sizeMapText writes a kind-to-size map as kind=size pairs, sorted by kind.
+// An empty map reads as (none).
+func sizeMapText(m map[string]string) string {
+	if len(m) == 0 {
+		return "(none)"
+	}
+	kinds := make([]string, 0, len(m))
+	for k := range m {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	pairs := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		pairs = append(pairs, k+"="+m[k])
+	}
+	return strings.Join(pairs, ", ")
 }
 
 func listOrNone(l []string) string {

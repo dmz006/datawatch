@@ -71,7 +71,7 @@ func newAutonomousConfigSyncServer(t *testing.T) (*Server, string) {
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
-	cfg := &config.Config{}
+	cfg := &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}}
 	srv := NewServer(hub, sm, "h", "", nil, cfg, cfgPath)
 	srv.SetAutonomousAPI(&fakeAutonomousConfigStore{})
 	return srv, cfgPath
@@ -174,7 +174,7 @@ func TestHandleAutonomousConfig_PUT_ClearsVerificationBackendsToServerConfig(t *
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
-	cfg := &config.Config{}
+	cfg := &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}}
 	srv := NewServer(hub, sm, "h", "", nil, cfg, cfgPath)
 	store := &fakeRealAutonomousConfigStore{
 		cfg: autonomous.Config{VerificationBackends: []string{"ollama-a", "ollama-b"}},

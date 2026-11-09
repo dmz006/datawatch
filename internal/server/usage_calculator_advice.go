@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
@@ -182,8 +183,47 @@ func (s *Server) AttachUsageCalculator(queue usagecalc.QueueCounter) error {
 		return UsageCalculatorSettings(s.cfg.Usage)
 	}
 	s.SetUsageCalculator(usagecalc.NewService(series, store, settings, queue,
-		usagecalc.WithLiveLanes(usageLaneCounter{s: s})))
+		usagecalc.WithLiveLanes(usageLaneCounter{s: s}),
+		usagecalc.WithStartupSource(s.usageStartupProfiles)))
 	return nil
+}
+
+// usageStartupProfiles returns the start-up figures per worker profile for the advice's
+// start-up line, read from the same cost report the cost_report surface serves (the
+// per-profile startup table over the daemon's recorded attempts). It is read-only. The
+// unprofiled row is left out: it names no profile to change. It returns nil when the daemon
+// has no session manager or the report cannot be built, so the advice carries no line.
+func (s *Server) usageStartupProfiles() []usagecalc.StartupProfile {
+	if s == nil || s.manager == nil {
+		return nil
+	}
+	mgr := s.costReportAutonomousManager()
+	src := managerCostSource{
+		m:     s.manager,
+		owner: s.costReportOwners(mgr),
+		auto:  mgr,
+	}
+	cr := config.CostReportConfig{}
+	if s.cfg != nil {
+		cr = s.cfg.CostReport
+	}
+	rep, err := costreport.Build(cr, costreport.Request{}, src, src, s.exposedRate, nil, time.Now())
+	if err != nil || rep == nil {
+		return nil
+	}
+	out := make([]usagecalc.StartupProfile, 0, len(rep.StartupByProfile))
+	for _, row := range rep.StartupByProfile {
+		if row.Key == costreport.UnprofiledKey {
+			continue
+		}
+		p := usagecalc.StartupProfile{Profile: row.Key, Attempts: row.Attempts}
+		if row.AvgStartupTokens != nil {
+			p.AvgTokens = *row.AvgStartupTokens
+			p.HasAverage = true
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // usageSeriesAndStore returns the shared series and the daemon-local store behind it.

@@ -1,6 +1,7 @@
 package costreport
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -723,5 +724,181 @@ func TestCostReportRetentionNote(t *testing.T) {
 	}
 	if !strings.Contains(rep.RetentionNote, "lifetime") {
 		t.Fatalf("fallback note should mention lifetime totals, got %q", rep.RetentionNote)
+	}
+}
+
+// wantStartupRow finds the startup table's row for key and checks every
+// field against want (avg_startup_tokens compared numerically, or
+// required absent).
+func wantStartupRow(t *testing.T, rows []StartupRow, key string, want StartupRow) {
+	t.Helper()
+	for _, row := range rows {
+		if row.Key != key {
+			continue
+		}
+		if row.Attempts != want.Attempts || row.Estimated != want.Estimated ||
+			row.Reported != want.Reported || row.NoData != want.NoData {
+			t.Fatalf("startup row %q: want %+v, got %+v", key, want, row)
+		}
+		if want.AvgStartupTokens == nil {
+			if row.AvgStartupTokens != nil {
+				t.Fatalf("startup row %q: want no average, got %v", key, *row.AvgStartupTokens)
+			}
+			return
+		}
+		if row.AvgStartupTokens == nil {
+			t.Fatalf("startup row %q: want average %v, got none", key, *want.AvgStartupTokens)
+		}
+		floatEq(t, *row.AvgStartupTokens, *want.AvgStartupTokens)
+		return
+	}
+	t.Fatalf("startup row %q not found in %+v", key, rows)
+}
+
+func TestCostReportStartupTablesByProfileAndRole(t *testing.T) {
+	// Two profiles, two roles, an estimated and a reported source per
+	// profile, and one zero-token attempt (a record from before startup
+	// sizes were captured) that must stay out of the average and count
+	// as no data.
+	src := &fakeSource{result: &SourceResult{
+		Records: []Record{
+			makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 10, 10, false),
+		},
+		Attempts: []Attempt{
+			{Profile: "worker", Role: "worker", StartupTokens: 100, Source: StartupSourceEstimated},
+			{Profile: "worker", Role: "worker", StartupTokens: 300, Source: StartupSourceReported},
+			{Profile: "verifier", Role: "verifier", StartupTokens: 40, Source: StartupSourceEstimated},
+			{Profile: "verifier", Role: "verifier", StartupTokens: 0, Source: ""},
+		},
+	}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.StartupByProfile) != 2 || len(rep.StartupByRole) != 2 {
+		t.Fatalf("want 2 profile and 2 role rows, got %+v / %+v", rep.StartupByProfile, rep.StartupByRole)
+	}
+	// The spend rows are unaffected by the attempts (aider: 10/1K*0.03 +
+	// 10/1K*0.006 = 0.00036).
+	wantRow(t, rep, "auto1", Row{Sessions: 1, TokensIn: 10, TokensOut: 10, RateConfigured: true, USDEstimate: usd(0.00036)})
+
+	// Per profile: worker averages over its two sized attempts (100+300)/2
+	// = 200; verifier keeps only its sized attempt at 40 and counts the
+	// zero-token one under no data.
+	wantStartupRow(t, rep.StartupByProfile, "worker", StartupRow{Attempts: 2, AvgStartupTokens: usd(200), Estimated: 1, Reported: 1})
+	wantStartupRow(t, rep.StartupByProfile, "verifier", StartupRow{Attempts: 2, AvgStartupTokens: usd(40), Estimated: 1, NoData: 1})
+	// The role table mirrors the profile table here (roles match
+	// profiles).
+	wantStartupRow(t, rep.StartupByRole, "worker", StartupRow{Attempts: 2, AvgStartupTokens: usd(200), Estimated: 1, Reported: 1})
+	wantStartupRow(t, rep.StartupByRole, "verifier", StartupRow{Attempts: 2, AvgStartupTokens: usd(40), Estimated: 1, NoData: 1})
+	// Rows stay sorted by key.
+	if rep.StartupByProfile[0].Key != "verifier" || rep.StartupByProfile[1].Key != "worker" {
+		t.Fatalf("profile rows not sorted by key: %+v", rep.StartupByProfile)
+	}
+
+	// The JSON carries both tables under the contract names.
+	blob, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(blob), `"startup_by_profile"`) || !strings.Contains(string(blob), `"startup_by_role"`) {
+		t.Fatalf("report JSON must carry startup_by_profile and startup_by_role: %s", blob)
+	}
+
+	// The text rendering shows both tables, profile first.
+	text := rep.StartupText()
+	if !strings.Contains(text, "startup tokens by profile:") || !strings.Contains(text, "startup tokens by role:") {
+		t.Fatalf("text rendering must show both tables, got %q", text)
+	}
+	if strings.Index(text, "startup tokens by profile:") > strings.Index(text, "startup tokens by role:") {
+		t.Fatalf("profile table must come first, got %q", text)
+	}
+	if !strings.Contains(text, "worker\t2\t200\t1\t1\t0") || !strings.Contains(text, "verifier\t2\t40\t1\t0\t1") {
+		t.Fatalf("text rows missing or wrong, got %q", text)
+	}
+}
+
+func TestCostReportStartupAverageAbsentWhenNoAttemptCarriesASize(t *testing.T) {
+	// Every attempt for the key is a zero-token record: the average is
+	// absent (not zero) and the whole key lands in no_data.
+	src := &fakeSource{result: &SourceResult{Attempts: []Attempt{
+		{Profile: "verifier", Role: "verifier", StartupTokens: 0, Source: ""},
+		{Profile: "verifier", Role: "verifier", StartupTokens: 0, Source: ""},
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.StartupByProfile) != 1 {
+		t.Fatalf("want one profile row, got %+v", rep.StartupByProfile)
+	}
+	row := rep.StartupByProfile[0]
+	if row.Key != "verifier" || row.Attempts != 2 || row.NoData != 2 {
+		t.Fatalf("want verifier 2 attempts / 2 no-data, got %+v", row)
+	}
+	if row.AvgStartupTokens != nil {
+		t.Fatalf("want no average, got %v", *row.AvgStartupTokens)
+	}
+	blob, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(blob), `"avg_startup_tokens"`) {
+		t.Fatalf("avg_startup_tokens must be omitted when no attempt carries a size: %s", blob)
+	}
+	// The text renders the average as "-".
+	if !strings.Contains(rep.StartupText(), "verifier\t2\t-\t0\t0\t2") {
+		t.Fatalf("text average must be '-', got %q", rep.StartupText())
+	}
+}
+
+func TestCostReportStartupUnprofiledAndNoRoleKeys(t *testing.T) {
+	// Attempts with no profile and no role land under the named fallback
+	// keys.
+	src := &fakeSource{result: &SourceResult{Attempts: []Attempt{
+		{StartupTokens: 10, Source: StartupSourceReported},
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.StartupByProfile) != 1 || len(rep.StartupByRole) != 1 {
+		t.Fatalf("want one row per table, got %+v / %+v", rep.StartupByProfile, rep.StartupByRole)
+	}
+	if rep.StartupByProfile[0].Key != UnprofiledKey {
+		t.Fatalf("want profile key %q, got %q", UnprofiledKey, rep.StartupByProfile[0].Key)
+	}
+	if rep.StartupByRole[0].Key != NoRoleKey {
+		t.Fatalf("want role key %q, got %q", NoRoleKey, rep.StartupByRole[0].Key)
+	}
+	wantStartupRow(t, rep.StartupByProfile, UnprofiledKey, StartupRow{Attempts: 1, AvgStartupTokens: usd(10), Reported: 1})
+	wantStartupRow(t, rep.StartupByRole, NoRoleKey, StartupRow{Attempts: 1, AvgStartupTokens: usd(10), Reported: 1})
+}
+
+func TestCostReportStartupTablesEmptyWhenSourceReportsNoAttempts(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 10, 10, false),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.StartupByProfile == nil || len(rep.StartupByProfile) != 0 {
+		t.Fatalf("startup_by_profile must be present and empty, got %+v", rep.StartupByProfile)
+	}
+	if rep.StartupByRole == nil || len(rep.StartupByRole) != 0 {
+		t.Fatalf("startup_by_role must be present and empty, got %+v", rep.StartupByRole)
+	}
+	blob, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(blob), `"startup_by_profile":[]`) || !strings.Contains(string(blob), `"startup_by_role":[]`) {
+		t.Fatalf("empty tables must serialize as [], got %s", blob)
+	}
+	// The text still renders both labels, each with the no-attempts line.
+	text := rep.StartupText()
+	if strings.Count(text, "(no attempts)") != 2 {
+		t.Fatalf("both empty tables must say 'no attempts', got %q", text)
 	}
 }

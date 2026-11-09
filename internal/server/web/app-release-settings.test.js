@@ -1,8 +1,8 @@
-// Pins the Settings > Sessions release block (autonomous.push_and_tag,
-// autonomous.release_path, git.release_ci_window_minutes). The block reads
-// every value from the config object, always draws its switch (an off
-// switch still shows), and draws the last-release status line only when a
-// release record is present.
+// Pins the release settings on Settings > Automation > Merge pipeline: the
+// four fields render with their help link, the release size map saves as one
+// object through PUT /api/config, a refused cadence or scheme shows the
+// daemon's reason and puts the select back, and every label, option and help
+// key exists in all five locale bundles.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,114 +10,228 @@ const path = require('path');
 const fs = require('fs');
 const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
 
-const LOCALE_LIST = ['en', 'de', 'es', 'fr', 'ja'];
-const LOCALE_DIR = path.join(__dirname, 'locales');
+const LOCALES = ['en', 'de', 'es', 'fr', 'ja'];
+const PREFIX = 'autonomous.merge_pipeline.';
 
 function loadApp() {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
-  sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
   return sandbox;
 }
 
-function renderSection(cfg) {
+function field(sandbox, key) {
+  const json = vm.runInContext(
+    "JSON.stringify(((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === '" + key + "') || null))",
+    sandbox);
+  return JSON.parse(json);
+}
+
+// recordToasts swaps showToast for a recorder so tests can read the messages.
+function recordToasts(sandbox) {
+  const toasts = [];
+  sandbox.__toasts = toasts;
+  vm.runInContext("showToast = function (m, kind) { __toasts.push({ m: String(m), kind: kind }); };", sandbox);
+  return toasts;
+}
+
+// stubT makes t() echo its key and arguments, since no locale bundle is loaded
+// in this sandbox. The toast text then shows the reason passed to t().
+function stubT(sandbox) {
+  vm.runInContext("t = function (k, a) { return a && a.length ? k + ': ' + a.join(' ') : k; };", sandbox);
+}
+
+// recordPuts swaps fetch for a recorder that answers with status and body.
+function recordPuts(sandbox, status, body) {
+  const calls = [];
+  sandbox.fetch = (url, opts) => {
+    calls.push({ url, method: opts && opts.method, body: opts && opts.body });
+    return Promise.resolve({ ok: status >= 200 && status < 300, status, text: () => Promise.resolve(body) });
+  };
+  return calls;
+}
+
+const flush = () => new Promise(resolve => setImmediate(resolve));
+
+const RELEASE_KEYS = [
+  'settings_merge_pipeline_release_size_map',
+  'settings_merge_pipeline_release_size_map_help',
+  'settings_merge_pipeline_release_size_map_kind',
+  'settings_merge_pipeline_release_size_map_size',
+  'settings_merge_pipeline_release_size_map_add',
+  'settings_merge_pipeline_release_size_map_remove',
+  'settings_merge_pipeline_release_size_map_save',
+  'settings_merge_pipeline_release_size_map_empty_kind',
+  'settings_merge_pipeline_release_size_map_duplicate',
+  'merge_pipeline_release_size_patch',
+  'merge_pipeline_release_size_minor',
+  'merge_pipeline_release_size_major',
+  'merge_pipeline_release_size_none',
+  'settings_merge_pipeline_major_trigger',
+  'settings_merge_pipeline_major_trigger_help',
+  'merge_pipeline_major_manual',
+  'merge_pipeline_major_milestone',
+  'merge_pipeline_major_never',
+  'settings_merge_pipeline_release_cadence',
+  'settings_merge_pipeline_release_cadence_help',
+  'merge_pipeline_cadence_per_merge',
+  'merge_pipeline_cadence_batch',
+  'merge_pipeline_cadence_manual',
+  'settings_merge_pipeline_version_scheme',
+  'settings_merge_pipeline_version_scheme_help',
+  'merge_pipeline_scheme_semver',
+];
+
+test('the four release fields render on the autonomous card with their help link', () => {
   const sandbox = loadApp();
-  sandbox.__cfg = cfg;
-  return vm.runInContext('releaseSettingsSectionHTML(__cfg)', sandbox);
+  const size = field(sandbox, PREFIX + 'release_size_map');
+  assert.ok(size, 'release_size_map missing');
+  assert.equal(size.type, 'release_size_map');
+  assert.equal(size.helpDocs, 'datawatch-definitions.md#release-size');
+
+  const trigger = field(sandbox, PREFIX + 'major_trigger');
+  assert.equal(trigger.type, 'select');
+  assert.deepEqual(trigger.options, ['manual', 'milestone', 'never']);
+  assert.equal(trigger.default, 'manual');
+  assert.equal(trigger.helpDocs, 'datawatch-definitions.md#release-size');
+
+  const cadence = field(sandbox, PREFIX + 'release_cadence');
+  assert.equal(cadence.type, 'select');
+  assert.deepEqual(cadence.options, ['per_merge', 'batch', 'manual']);
+  assert.equal(cadence.default, 'per_merge');
+  assert.equal(cadence.helpDocs, 'datawatch-definitions.md#release-size');
+
+  const scheme = field(sandbox, PREFIX + 'version_scheme');
+  assert.equal(scheme.type, 'select');
+  assert.deepEqual(scheme.options, ['semver']);
+  assert.equal(scheme.default, 'semver');
+  assert.equal(scheme.helpDocs, 'datawatch-definitions.md#release-size');
+});
+
+test('the help link maps to the Release size entry of the definitions through the merge pipeline table', () => {
+  const sandbox = loadApp();
+  for (const key of [PREFIX + 'release_size_map', PREFIX + 'major_trigger', PREFIX + 'release_cadence', PREFIX + 'version_scheme']) {
+    const link = vm.runInContext("docsLinkForKey(" + JSON.stringify(key) + ")", sandbox);
+    assert.equal(link, 'datawatch-definitions.md#release-size', key);
+  }
+  // The existing merge pipeline keys keep their own glossary anchors.
+  const other = vm.runInContext("docsLinkForKey('" + PREFIX + "conflict_policy')", sandbox);
+  assert.notEqual(other, 'datawatch-definitions.md#release-size');
+});
+
+test('a select save PUTs the value to /api/config under its key', async () => {
+  const sandbox = loadApp();
+  const calls = recordPuts(sandbox, 200, '');
+  recordToasts(sandbox);
+  vm.runInContext("saveMergePipelineReleaseField('" + PREFIX + "major_trigger', { value: 'milestone', tagName: 'SELECT', options: [] })", sandbox);
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'PUT');
+  assert.match(calls[0].url, /\/api\/config$/);
+  assert.deepEqual(JSON.parse(calls[0].body), { [PREFIX + 'major_trigger']: 'milestone' });
+});
+
+test('a refused cadence shows the daemon reason and puts the select back to the saved value', async () => {
+  const sandbox = loadApp();
+  const reason = 'autonomous.merge_pipeline.release_cadence: release cadence batch is not available yet';
+  const calls = recordPuts(sandbox, 400, reason + '\n');
+  const toasts = recordToasts(sandbox);
+  stubT(sandbox);
+  const el = {
+    tagName: 'SELECT',
+    value: 'batch',
+    options: [{ value: 'per_merge', defaultSelected: true }, { value: 'batch', defaultSelected: false }],
+  };
+  sandbox.__el = el;
+  vm.runInContext("saveMergePipelineReleaseField('" + PREFIX + "release_cadence', __el)", sandbox);
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].body), { [PREFIX + 'release_cadence']: 'batch' });
+  assert.equal(el.value, 'per_merge', 'the select must go back to the saved value');
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].kind, 'error');
+  assert.ok(toasts[0].m.includes('release cadence batch is not available yet'), toasts[0].m);
+});
+
+test('a refused version scheme is shown with the daemon reason', async () => {
+  const sandbox = loadApp();
+  const reason = 'autonomous.merge_pipeline.version_scheme: version scheme calver is not available yet';
+  recordPuts(sandbox, 400, reason);
+  const toasts = recordToasts(sandbox);
+  stubT(sandbox);
+  vm.runInContext("saveMergePipelineReleaseField('" + PREFIX + "version_scheme', { value: 'calver', tagName: 'SELECT', options: [] })", sandbox);
+  await flush();
+  assert.ok(toasts.some(t => t.kind === 'error' && t.m.includes('version scheme calver is not available yet')), JSON.stringify(toasts));
+});
+
+// fakeRow builds the element shape saveReleaseSizeMap reads from one row.
+function fakeRow(kind, size) {
+  return {
+    querySelector(sel) {
+      if (sel === '[data-release-kind]') return { value: kind };
+      if (sel === '[data-release-size]') return { value: size };
+      return null;
+    },
+  };
 }
 
-// Pull the checkbox tag for the push-and-tag switch out of the rendered block.
-function switchTag(html) {
-  const m = html.match(/<input type="checkbox" data-cfg-key="autonomous\.push_and_tag"[^>]*>/);
-  return m ? m[0] : null;
+function withRows(sandbox, rows) {
+  sandbox.__rows = { querySelectorAll: () => rows };
+  vm.runInContext("document.getElementById = function (id) { return id === 'release_size_map_rows' ? __rows : null; };", sandbox);
 }
 
-test('the push-and-tag switch reads autonomous.push_and_tag from the config object', () => {
-  const on = switchTag(renderSection({ autonomous: { push_and_tag: true } }));
-  assert.ok(on, 'switch control missing');
-  assert.match(on, /\schecked\b/);
-  const off = switchTag(renderSection({ autonomous: { push_and_tag: false } }));
-  assert.ok(off, 'an off switch must still render its control');
-  assert.doesNotMatch(off, /\schecked\b/);
+test('the release size map saves every kind row as one object through PUT /api/config', async () => {
+  const sandbox = loadApp();
+  const calls = recordPuts(sandbox, 200, '');
+  recordToasts(sandbox);
+  withRows(sandbox, [fakeRow(' feature ', 'major'), fakeRow('chore', 'none'), fakeRow('bug', 'patch')]);
+  vm.runInContext("saveReleaseSizeMap()", sandbox);
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[0].body), {
+    [PREFIX + 'release_size_map']: { feature: 'major', chore: 'none', bug: 'patch' },
+  });
 });
 
-test('an unset push_and_tag renders the switch off, not missing', () => {
-  const tag = switchTag(renderSection({}));
-  assert.ok(tag, 'switch control missing when config has no release keys');
-  assert.doesNotMatch(tag, /\schecked\b/);
+test('a blank or repeated kind is refused in the browser and nothing is sent', async () => {
+  const sandbox = loadApp();
+  const calls = recordPuts(sandbox, 200, '');
+  const toasts = recordToasts(sandbox);
+  withRows(sandbox, [fakeRow('feature', 'minor'), fakeRow('feature', 'major')]);
+  vm.runInContext("saveReleaseSizeMap()", sandbox);
+  await flush();
+  assert.equal(calls.length, 0);
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].kind, 'error');
+
+  withRows(sandbox, [fakeRow('  ', 'minor')]);
+  vm.runInContext("saveReleaseSizeMap()", sandbox);
+  await flush();
+  assert.equal(calls.length, 0);
+  assert.equal(toasts.length, 2);
 });
 
-test('the release path select reads autonomous.release_path and offers both values', () => {
-  const html = renderSection({ autonomous: { release_path: 'pull_request' } });
-  assert.match(html, /<select[^>]*data-cfg-key="autonomous\.release_path"/);
-  assert.match(html, /<option value="pull_request" selected>/);
-  assert.match(html, /<option value="direct_push" >/);
+test('the release size row offers patch, minor, major and none and names the kind', () => {
+  const sandbox = loadApp();
+  const html = vm.runInContext("_releaseSizeMapRowHTML('feature', 'minor')", sandbox);
+  assert.ok(html.includes('data-release-kind'));
+  assert.ok(html.includes('value="feature"'));
+  for (const size of ['patch', 'minor', 'major', 'none']) {
+    assert.ok(html.includes('<option value="' + size + '"'), 'missing size ' + size);
+  }
+  assert.ok(/<option value="minor" selected>/.test(html), 'the given size is selected');
 });
 
-test('an unknown release path falls back to direct_push', () => {
-  const html = renderSection({ autonomous: { release_path: 'force_push' } });
-  assert.match(html, /<option value="direct_push" selected>/);
-});
-
-test('the CI window reads git.release_ci_window_minutes and defaults to 60', () => {
-  const set = renderSection({ git: { release_ci_window_minutes: 90 } });
-  assert.match(set, /data-cfg-key="git\.release_ci_window_minutes"[^>]*value="90"/);
-  const unset = renderSection({});
-  assert.match(unset, /data-cfg-key="git\.release_ci_window_minutes"[^>]*value="60"/);
-});
-
-test('every control carries a help entry that links to the release howto', () => {
-  const html = renderSection({});
-  const links = html.match(/href="\/diagrams\.html#docs\/howto\/release-push-and-tag\.md"/g) || [];
-  assert.equal(links.length, 3, 'expected one ? help link per control');
-});
-
-test('the last-release status line is not rendered without a release record', () => {
-  const html = renderSection({ autonomous: { push_and_tag: true } });
-  assert.doesNotMatch(html, /Last release/);
-  const noVersion = renderSection({ autonomous: { last_release: {} } });
-  assert.doesNotMatch(noVersion, /Last release/);
-});
-
-test('the last-release status line renders when a release record is present', () => {
-  const html = renderSection({ autonomous: { last_release: { version: 'v1.2.3' } } });
-  assert.match(html, /Last release: v1\.2\.3/);
-});
-
-test('release locale keys exist with the same key set in all five bundles', () => {
-  const keys = [
-    'settings_release_section',
-    'settings_release_push_and_tag',
-    'settings_release_push_and_tag_help',
-    'settings_release_path',
-    'settings_release_path_help',
-    'settings_release_ci_window',
-    'settings_release_ci_window_help',
-    'settings_release_help_link_label',
-    'settings_release_last_status',
-  ];
-  const sets = {};
-  for (const locale of LOCALE_LIST) {
-    const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, locale + '.json'), 'utf8'));
-    for (const k of keys) {
-      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0,
-        k + ' missing or empty in ' + locale + ' locale');
-      assert.doesNotMatch(bundle[k], /PRD/, k + ' in ' + locale + ' must say Automaton, not PRD');
+test('every release label, option and help key exists in all five locale bundles', () => {
+  for (const locale of LOCALES) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of RELEASE_KEYS) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0, k + ' missing or empty in ' + locale);
     }
-    sets[locale] = Object.keys(bundle).filter(k => k.startsWith('settings_release_')).sort().join(',');
+    // Placeholders in the duplicate-kind message must match English.
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+    const ph = s => (s.match(/%\d\$[sd]/g) || []).sort().join(',');
+    assert.equal(ph(bundle.settings_merge_pipeline_release_size_map_duplicate), ph(en.settings_merge_pipeline_release_size_map_duplicate), locale);
   }
-  for (const locale of LOCALE_LIST) {
-    assert.equal(sets[locale], sets.en, locale + ' settings_release_* key set differs from en');
-  }
-});
-
-test('the release field is registered in the Sessions card next to the git settings', () => {
-  const sandbox = loadApp();
-  const keys = JSON.parse(vm.runInContext(
-    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'sess') || {fields: []}).fields.map(f => f.key))",
-    sandbox));
-  const gitIdx = keys.indexOf('git.secret_scan.allow_list.fingerprints');
-  const relIdx = keys.indexOf('release.section');
-  assert.ok(gitIdx >= 0 && relIdx > gitIdx, 'release block must follow the git settings in the Sessions card');
 });

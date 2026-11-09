@@ -25,7 +25,7 @@ import (
 
 func (s *Server) toolAutonomousStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_status",
-		mcpsdk.WithDescription("BL24 — return autonomous loop status (each Automaton row whose completion review blocked carries rules_review_outcome: action, findings, retries; running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default). The `queue` array lists every queued or capacity-waiting task with the plain-words reason it waits (task_id, prd_id, prd_title, task_title, cause, reason, since, resets_at when known, holder when the reason names one); the `holdings` array lists every running task with the pools it holds (host, llm:, node: and any tree lock key), node, session_id and since. Both are omitted when empty. The `review_needed` array lists every task held for operator review across all Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title, failure_count (failed attempts), last_backend and last_model (the worker of the last attempt) and held_at. It is omitted when no task is held; decide each one with autonomous_prd_resolve_task_review. The `memory_ceiling` object is the effective memory ceiling of a verification run with no project or task kind override: effective_mb (0 when none), source (default, project, task_kind or none), enforcement_path (scope for a systemd user scope, watchdog for the /proc watchdog, none when nothing enforces it) and the share_percent, floor_mb and cap_mb it is computed from; source is none while no ceiling settings are installed, and the settings are changed with config_set on resource_limits.memory_share_percent, resource_limits.memory_floor_mb and resource_limits.memory_cap_mb."))
+		mcpsdk.WithDescription("BL24 — return autonomous loop status (each Automaton row whose completion review blocked carries rules_review_outcome: action, findings, retries; running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default). The `queue` array lists every queued or capacity-waiting task with the plain-words reason it waits (task_id, prd_id, prd_title, task_title, cause, reason, since, resets_at when known, holder when the reason names one); the `holdings` array lists every running task with the pools it holds (host, llm:, node: and any tree lock key), node, session_id and since. Both are omitted when empty. The `review_needed` array lists every task held for operator review across all Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title, failure_count (failed attempts), last_backend and last_model (the worker of the last attempt), held_at, and the attempt record of that last attempt: last_backend_reason (why that backend was chosen), last_resumed (true when it resumed the previous session), last_resume_reason (the retry-resume decision) and no_retry_reason (why the task went to review without another attempt). The reason and resume fields are omitted when not recorded. It is omitted when no task is held; decide each one with autonomous_prd_resolve_task_review. The `memory_ceiling` object is the effective memory ceiling of a verification run with no project or task kind override: effective_mb (0 when none), source (default, project, task_kind or none), enforcement_path (scope for a systemd user scope, watchdog for the /proc watchdog, none when nothing enforces it) and the share_percent, floor_mb and cap_mb it is computed from; source is none while no ceiling settings are installed, and the settings are changed with config_set on resource_limits.memory_share_percent, resource_limits.memory_floor_mb and resource_limits.memory_cap_mb."))
 }
 func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/autonomous/status", nil)
@@ -73,13 +73,17 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"defect_intake_automation (string, empty by default) names the Automation that new kind:bug defect filings are recorded under; empty means the filing is recorded, not filed into any Automation. "+
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task. "+
 			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. "+
-			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set."),
+			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set. "+
+			"The attempt-cost keys are included too: first_attempt (object: task kind implementation, docs, note or final_gate → {backend, model}; an empty entry keeps today's choice), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session). Set them with the same-named arguments of autonomous_config_set."+
+			daemonTaskKeysGetDescription),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	// The judge prompt delivery settings live in the daemon config, not in the
 	// manager config /api/autonomous/config returns, so they are merged in
 	// from /api/config (stored values; 0 = file route off / no extra wait).
+	// The three daemon task settings (task template modes, script gate timeout,
+	// project gate command) come from the same /api/config read.
 	prompt, err := s.judgePromptSettings()
 	if err != nil {
 		return nil, err
@@ -89,6 +93,10 @@ func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolR
 		return nil, err
 	}
 	out, err = mergeJudgePromptSettings(out, prompt)
+	if err != nil {
+		return nil, err
+	}
+	out, err = mergeDaemonTaskSettings(out, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +137,11 @@ func mergeJudgePromptSettings(autoCfg []byte, prompt map[string]json.RawMessage)
 			merged[k.key] = v
 		}
 	}
+	for _, key := range attemptCostKeyNames {
+		if v, ok := prompt[key]; ok {
+			merged[key] = v
+		}
+	}
 	return json.Marshal(merged)
 }
 
@@ -154,12 +167,14 @@ func judgePromptPatch(req mcpsdk.CallToolRequest) (map[string]any, error) {
 func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_set", append([]mcpsdk.ToolOption{
 		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. " +
+			daemonTaskKeysSetDescription +
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. " +
 			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected. " +
 			"override_queued_tasks (default on; unset = on) is the master switch for those overrides on a locked Automaton status: when on, a story- or task-level set-llm call applies to the tasks that are still queued and lists the ones left alone (running/finished); when off, the same call is refused on a locked status. " +
 			"snapshot_never_stage sets the path patterns the autonomous snapshot must never `git add` (e.g. secret files, out-of-scope vendor trees); blank patterns are rejected, and when unset the built-in default list applies. " +
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. " +
-			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart."),
+			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart. " +
+			"The attempt-cost arguments are checked before anything is written, and a refused value changes nothing: first_attempt (object of task kind implementation, docs, note or final_gate → {backend, model}; replaces the whole map; backends pi, pi-prompt and ollama need a model), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session)."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_concurrent_tasks", mcpsdk.Description("Daemon-wide default for how many independent tasks of one Automaton run at once. An Automaton's own setting overrides it. 1 = sequential (the default); values below 1 are ignored.")),
@@ -175,6 +190,9 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
 		mcpsdk.WithBoolean("override_queued_tasks", mcpsdk.Description("Master switch for task/story-level LLM overrides on a locked Automaton status. On (the default; unset reads as on) a set-llm call applies to the still-queued tasks and lists the ones left alone; off refuses such calls on a locked status. Absent key = leave the stored value as-is.")),
 		mcpsdk.WithArray("snapshot_never_stage", mcpsdk.Description("Path patterns the autonomous snapshot must never `git add` (e.g. '.env', 'node_modules/'). Blank patterns are rejected; an explicit empty list clears the list (nothing is protected); when unset the built-in default list applies."), mcpsdk.WithStringItems()),
+		mcpsdk.WithObject(attemptCostFirstAttemptKey, mcpsdk.Description(attemptCostFirstAttemptDesc)),
+		mcpsdk.WithNumber(attemptCostEscalateKey, mcpsdk.Description(attemptCostEscalateDesc)),
+		mcpsdk.WithNumber(attemptCostResumeKey, mcpsdk.Description(attemptCostResumeDesc)),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
 		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
@@ -280,7 +298,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
-	}, append(append(append(append(append(verifierPolicyConfigTools(), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
+	}, append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -288,6 +306,25 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	promptPatch, perr := judgePromptPatch(req)
 	if perr != nil {
 		return mcpsdk.NewToolResultError(perr.Error()), nil
+	}
+	// Attempt-cost keys go to the same /api/config PUT as the judge prompt keys,
+	// after the shared validator has accepted the whole candidate.
+	attemptPatch, aerr := s.attemptCostSetPatch(req)
+	if aerr != nil {
+		return mcpsdk.NewToolResultError(aerr.Error()), nil
+	}
+	for k, v := range attemptPatch {
+		promptPatch[k] = v
+	}
+	// The daemon task settings (task template modes, script gate timeout,
+	// project gate command) ride in the same /api/config PUT as the judge
+	// prompt keys. They are validated here too, before anything is written.
+	daemonPatch, derr := daemonTaskKeysPatch(req)
+	if derr != nil {
+		return toolError("autonomous_config_set", derr), nil
+	}
+	for k, v := range daemonPatch {
+		promptPatch[k] = v
 	}
 	for _, k := range []string{"enabled", "security_scan"} {
 		if v := req.GetBool(k, false); v {
@@ -569,7 +606,8 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if mpErr != nil {
 		return toolError("autonomous_config_set", mpErr), nil
 	}
-	if len(mpEntries) > 0 {
+	mpSent := len(mpEntries) > 0
+	if mpSent {
 		if allocation == nil {
 			allocation = map[string]any{}
 		}
@@ -793,7 +831,7 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if len(promptPatch) > 0 {
 		o, err := s.proxyJSON(http.MethodPut, "/api/config", promptPatch)
 		if err != nil {
-			return nil, err
+			return toolError("autonomous_config_set", err), nil
 		}
 		promptOut = o
 		if len(body) == 0 && allocation == nil {
@@ -803,7 +841,7 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if allocation != nil && len(body) == 0 {
 		out, err := s.putPlanTierAllocation(allocation)
 		if err != nil {
-			return nil, err
+			return configWriteRefusal(mpSent, err)
 		}
 		return textOK(string(out)), nil
 	}
@@ -813,10 +851,21 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if allocation != nil {
 		if _, err := s.putPlanTierAllocation(allocation); err != nil {
-			return nil, err
+			return configWriteRefusal(mpSent, err)
 		}
 	}
 	return textOK(string(out)), nil
+}
+
+// configWriteRefusal answers a daemon refusal of a config write. A refusal of
+// the merge pipeline settings is a tool error carrying the daemon's message,
+// which names the value to use (for example the cadence or version scheme that
+// is not available yet); other config writes keep their existing reply.
+func configWriteRefusal(mergePipeline bool, err error) (*mcpsdk.CallToolResult, error) {
+	if mergePipeline {
+		return toolError("autonomous_config_set", err), nil
+	}
+	return nil, err
 }
 
 // qualityGatesSmokePackages normalises the quality_gates_smoke_packages / smoke_packages
@@ -913,6 +962,42 @@ func (s *Server) handleAutonomousPRDSetKind(_ context.Context, req mcpsdk.CallTo
 	id := req.GetString("id", "")
 	body, _ := json.Marshal(map[string]string{"kind": req.GetString("kind", "")})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_kind", body)
+	return llmSetterResult(out, err)
+}
+
+func (s *Server) toolAutonomousPRDSetReleaseSize() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_release_size",
+		mcpsdk.WithDescription("Set the release size of an Automaton: patch, minor, major or none. An empty size clears the setting so the size is resolved again from the Automation, the project's kind map and the built-in default. A major is raised by the operator here or by the Automation milestone rule; it is never inferred from a diff."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("release_size", mcpsdk.Required(), mcpsdk.Enum("patch", "minor", "major", "none", ""), mcpsdk.Description("patch, minor, major or none; empty to resolve again")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetReleaseSize(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"release_size": req.GetString("release_size", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_release_size", body)
+	return llmSetterResult(out, err)
+}
+
+func (s *Server) toolAutonomousPRDSetBreakingChange() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_breaking_change",
+		mcpsdk.WithDescription("Set or clear the breaking-change flag of an Automaton. A breaking change raises its release to the major approval mode, so it is never merged quietly."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithBoolean("breaking_change", mcpsdk.Required(), mcpsdk.Description("true when the change breaks users; false clears the flag")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetBreakingChange(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	v, present := req.GetArguments()["breaking_change"]
+	if !present {
+		return mcpsdk.NewToolResultError("breaking_change is required (true or false)"), nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return mcpsdk.NewToolResultError("breaking_change must be true or false"), nil
+	}
+	body, _ := json.Marshal(map[string]bool{"breaking_change": b})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_breaking_change", body)
 	return llmSetterResult(out, err)
 }
 

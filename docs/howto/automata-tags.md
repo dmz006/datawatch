@@ -245,7 +245,16 @@ started it.
 
 - **On the list.** Each session card, and each node of the session tree,
   shows its own tags as normal chips. Tags inherited from its Automaton are
-  drawn as dashed chips with a small *inherited* label.
+  drawn as dashed chips with a small *inherited* label. Placement (system)
+  tags are drawn as green chips with a small ⚙️ mark. All three chip kinds
+  appear on the first draw of the page: the summary rows of the session
+  list carry the session's `tags`, `inherited_tags` and `system_tags`, so
+  the chips never wait for the full record to load. The placement chip in
+  particular is drawn on the very first frame, before the tag registry
+  even arrives — it renders from the tag name itself, not from a registry
+  entry — and once it is shown it stays through later list refreshes and
+  session updates; it drops out of the tile only when the server
+  explicitly reports the session's `system_tags` as empty.
 - **Inherited tags are read-only.** They change when you change the
   Automaton's tags, not on the session. The session editor never sends them.
 - **Edit a session's own tags.** Open the session and choose **Tags → This
@@ -462,7 +471,30 @@ tree:
   keeps pointing at the same registry entry.
 - **Filter and group, don't edit.** Every surface can filter by a system
   tag or by a whole axis (`compute:*`); the PWA groups them by axis in the
-  header Tags menu, the session list and the dashboard.
+  session list and the dashboard.
+- **One row per tag in the Sessions header Tags menu.** The menu lists each
+  tag exactly once: the placement tags (`axis:value`) appear only in the
+  **Placement tags (system)** section, under their own axis heading; the
+  Tags section beneath it carries the remaining system tags (with the
+  padlock mark) and your operator tags, exactly as before. Ticking a
+  placement tag checks its single row, and the match-mode (any/all) toggle
+  and Clear work as before even with a placement tag selected. The tag
+  filter rows elsewhere (Automata, tasks, facets) are unchanged and still
+  show system tags with the padlock. It is display-only: tags, stored
+  selections and the results of an active tag filter are untouched —
+  refresh the PWA and the menu is correct.
+- **Shown on the session card.** The PWA's session list draws each
+  session's placement tags as green chips with a small ⚙️ mark, next to its
+  own tags (normal chips) and its inherited tags (dashed). The summary rows
+  of `GET /api/sessions?view=summary` carry each session's `system_tags`,
+  so the chips are drawn at first load of the Sessions page — not only
+  after the full record arrives — and the group-by-axis control sees them
+  for filtering and grouping. The placement chip is named, not id-resolved,
+  so it paints on the first frame even before the tag registry has loaded;
+  when the registry does arrive, the own and inherited operator chips join
+  the tile without dropping it. A later list row or session update that
+  simply omits `system_tags` keeps the chip; only an explicit empty
+  `system_tags` removes it.
 
 ### Stamping, re-stamping and the startup backfill
 

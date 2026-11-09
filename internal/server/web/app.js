@@ -3162,8 +3162,15 @@ function _mergeSessionFields(cur, row) {
     }
     if (still.length) row.truncated_fields = still; else delete row.truncated_fields;
   }
-  if (!cur || 'task' in row) return Object.assign({}, row);
+  if (!cur || 'task' in row) {
+    const full = Object.assign({}, row);
+    // A row with no system_tags key (an older server shape) keeps the placement
+    // tags already held; a row that carries the key, even empty, wins.
+    if (cur && full.system_tags === undefined && cur.system_tags !== undefined) full.system_tags = cur.system_tags;
+    return full;
+  }
   const out = Object.assign({}, cur);
+  if (row.system_tags === undefined) delete row.system_tags;
   for (const k of SESSION_SUMMARY_KEYS) if (!(k in row)) delete out[k];
   return Object.assign(out, row);
 }
@@ -9728,7 +9735,19 @@ const DOCS_POST_SHIP_LINKS = [
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
 const DOCS_MERGE_PIPELINE_LINKS = [
+  // Release settings: the release size map, major trigger, release cadence
+  // and version scheme open the Release size entry of the definitions.
+  [['autonomous.merge_pipeline.release_size_map', 'autonomous.merge_pipeline.major_trigger',
+    'autonomous.merge_pipeline.release_cadence', 'autonomous.merge_pipeline.version_scheme',
+    'settings_merge_pipeline_release_size_map', 'settings_merge_pipeline_major_trigger',
+    'settings_merge_pipeline_release_cadence', 'settings_merge_pipeline_version_scheme',
+    'merge_pipeline_release_size_', 'merge_pipeline_major_', 'merge_pipeline_cadence_', 'merge_pipeline_scheme_'],
+    DOCS_DEFINITIONS + '#release-size'],
   [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
+  // The release approval fields, their card rows and the card label link to the
+  // Release approval modes section of the how-to. Before the generic prefixes.
+  [['autonomous.merge_pipeline.release_approval.', 'settings_merge_pipeline_release_approval_',
+    'merge_pipeline_release_approval_'], 'howto/merge-pipeline.md#release-approval-modes'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
     'merge_pipeline_source'], DOCS_DEFINITIONS + '#merge-pipeline-source'],
@@ -9736,6 +9755,8 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     DOCS_DEFINITIONS + '#merge-conflict-policy'],
   [['autonomous.merge_pipeline.conflict_model', 'settings_merge_pipeline_conflict_model', 'merge_pipeline_conflict_model'],
     DOCS_DEFINITIONS + '#merge-conflict-model'],
+  [['merge_lock_'], DOCS_DEFINITIONS + '#merge-lock'],
+  [['merge_validator_'], DOCS_DEFINITIONS + '#release-bump-validator'],
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
 ];
 
@@ -14738,6 +14759,164 @@ window.shippedChipLabel = shippedChipLabel;
 // shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
 // the release + merge metadata in the tooltip and the shipped_chip docs
 // link. Returns '' for non-shipped records.
+// Release size of an Automaton (Phase 4). The list row and the detail header
+// show the resolved size with the layer that decided it, and a breaking-change
+// badge when the flag is set. A none or unresolved size with the flag off
+// shows nothing. An explicit release_size is layer 1 and is already resolved;
+// the other layers arrive as the server's read-only release_size_resolved and
+// release_size_source.
+const AUTOMATON_RELEASE_SIZES = ['patch', 'minor', 'major'];
+const AUTOMATON_RELEASE_SOURCE_KEYS = {
+  explicit: 'automaton_release_source_explicit',
+  automation_milestone: 'automation_release_source_milestone',
+  project_map: 'automaton_release_source_project',
+  built_in_default: 'automaton_release_source_default',
+};
+function automatonReleaseInfo(rec) {
+  const explicit = String((rec && rec.release_size) || '').trim().toLowerCase();
+  let size = '';
+  let source = '';
+  if (explicit === 'none' || AUTOMATON_RELEASE_SIZES.includes(explicit)) {
+    size = explicit;
+    source = 'explicit';
+  } else {
+    const resolved = String((rec && rec.release_size_resolved) || '').trim().toLowerCase();
+    if (AUTOMATON_RELEASE_SIZES.includes(resolved)) {
+      size = resolved;
+      source = String((rec && rec.release_size_source) || '').trim().toLowerCase();
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(AUTOMATON_RELEASE_SOURCE_KEYS, source)) source = '';
+  const breaking = !!(rec && rec.breaking_change);
+  return {
+    size,
+    source,
+    showSize: AUTOMATON_RELEASE_SIZES.includes(size),
+    showBreaking: breaking,
+  };
+}
+function automatonReleaseSizeLabel(size) {
+  if (size === 'patch') return t('automaton_release_size_patch');
+  if (size === 'minor') return t('automaton_release_size_minor');
+  if (size === 'major') return t('automaton_release_size_major');
+  return t('automaton_release_size_none');
+}
+// automatonReleaseBadgesHtml renders the release-size chip and the breaking
+// badge for an Automaton row or header. It returns '' when there is nothing to
+// show, so an empty status leaves the markup unchanged.
+function automatonReleaseBadgesHtml(rec) {
+  const info = automatonReleaseInfo(rec);
+  if (!info.showSize && !info.showBreaking) return '';
+  const base = 'font-size:10px;padding:2px 7px;border-radius:8px;margin-left:6px;font-weight:600;white-space:nowrap;display:inline-block;vertical-align:middle;';
+  let html = '';
+  if (info.showSize) {
+    const label = t('automaton_release_size_label');
+    const sizeText = automatonReleaseSizeLabel(info.size);
+    const sourceText = info.source ? t(AUTOMATON_RELEASE_SOURCE_KEYS[info.source]) : '';
+    const text = sourceText ? sizeText + ' · ' + sourceText : sizeText;
+    html += `<span class="automaton-release-chip" data-release-size="${escHtml(info.size)}" data-release-source="${escHtml(info.source)}" style="${base}border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);" title="${escHtml(label + ': ' + text)}">${escHtml(label)}: ${escHtml(text)}</span>`;
+  }
+  if (info.showBreaking) {
+    html += `<span class="automaton-breaking-badge" style="${base}border:1px solid #ef4444;color:#fff;background:#ef4444;" title="${escHtml(t('automaton_release_breaking_hint'))}">${escHtml(t('automaton_release_breaking_label'))}</span>`;
+  }
+  return html;
+}
+window.automatonReleaseBadgesHtml = automatonReleaseBadgesHtml;
+
+// Milestone marker. An Automation with milestone set shows a badge on its list
+// row and in its detail header; an ordinary arc shows nothing. The detail header
+// carries the toggle that marks or unmarks it through the Automation update
+// path (PUT /api/automations/{id}).
+function automationIsMilestone(a) {
+  return !!(a && a.milestone === true);
+}
+// automationMilestoneBadgeHtml is the badge for a milestone, or '' otherwise.
+function automationMilestoneBadgeHtml(a) {
+  if (!automationIsMilestone(a)) return '';
+  const style = 'font-size:10px;padding:2px 7px;border-radius:8px;margin-left:6px;font-weight:600;white-space:nowrap;display:inline-block;vertical-align:middle;border:1px solid var(--accent);color:var(--accent);background:rgba(245,158,11,0.12);';
+  return `<span class="automation-milestone-badge" data-milestone="true" style="${style}" title="${escHtml(t('automation_milestone_hint'))}">${escHtml(t('automation_milestone_badge'))}</span>`;
+}
+window.automationMilestoneBadgeHtml = automationMilestoneBadgeHtml;
+
+// automationMilestoneToggleHtml is the detail-header button that marks or
+// unmarks the milestone. Its aria-pressed state mirrors the current value.
+function automationMilestoneToggleHtml(a) {
+  const on = automationIsMilestone(a);
+  const label = t(on ? 'automation_milestone_unmark' : 'automation_milestone_mark');
+  return `<button type="button" class="btn-secondary automation-milestone-toggle" data-milestone="${on ? 'true' : 'false'}" aria-pressed="${on ? 'true' : 'false'}" onclick="automationToggleMilestone('${escJsAttr(a.id)}')">${escHtml(label)}</button>`;
+}
+
+// automationMilestoneBody is the full update body for a milestone change. The
+// update path overwrites the Automation's own settings from the body and keeps
+// only the members, decision assistant, auto tags and milestone when they are
+// absent, so the body echoes every loaded setting back unchanged.
+function automationMilestoneBody(a, milestone) {
+  return {
+    name: a.name || '',
+    description: a.description || '',
+    entry_member_id: a.entry_member_id || '',
+    budget_policy: a.budget_policy || null,
+    project_dir: a.project_dir || '',
+    backend: a.backend || '',
+    model: a.model || '',
+    effort: a.effort || '',
+    verification_backend: a.verification_backend || '',
+    verification_model: a.verification_model || '',
+    verification_effort: a.verification_effort || '',
+    milestone: !!milestone,
+    expected_version: Number(a.version) || 0,
+    actor: 'operator',
+  };
+}
+
+// automationSetMilestone marks or unmarks the open Automation through PUT. The
+// update does not carry the planning LLM pair, so when the Automation had one it
+// is put back through set_llm straight after. A 409 opens the stale prompt; any
+// other failure is a toast. Resolves the updated Automation, or null on failure.
+function automationSetMilestone(id, milestone) {
+  const st = _automationState;
+  const a = st.detail;
+  if (!a || a.id !== id) return Promise.resolve(null);
+  const planningBackend = String(a.planning_backend || '');
+  const planningModel = String(a.planning_model || '');
+  const base = '/api/automations/' + encodeURIComponent(id);
+  return automationRequest('PUT', base, automationMilestoneBody(a, milestone))
+    .then(data => {
+      if (!data || typeof data !== 'object') return data;
+      if (!planningBackend && !planningModel) return data;
+      return automationRequest('POST', base + '/set_llm', {
+        planning_backend: planningBackend,
+        planning_model: planningModel,
+        expected_version: Number(data.version) || 0,
+        actor: 'operator',
+      }).then(restored => (restored && typeof restored === 'object' ? restored : data), restoreErr => {
+        showToast(String((restoreErr && restoreErr.message) || restoreErr || ''), 'error');
+        return data;
+      });
+    })
+    .then(data => {
+      if (data && typeof data === 'object' && st.detailId === id) {
+        st.detail = data;
+        _automationDrawDetail(data);
+      }
+      return data;
+    }, err => {
+      const message = String((err && err.message) || err || '');
+      if (err && err.status === 409) automationShowStalePrompt(message);
+      else showToast(message, 'error');
+      return null;
+    });
+}
+window.automationSetMilestone = automationSetMilestone;
+
+// automationToggleMilestone flips the open Automation's milestone flag.
+function automationToggleMilestone(id) {
+  const a = _automationState.detail;
+  if (!a || a.id !== id) return Promise.resolve(null);
+  return automationSetMilestone(id, !automationIsMilestone(a));
+}
+window.automationToggleMilestone = automationToggleMilestone;
+
 function shippedChipHtml(rec) {
   if (!_shippedState.enabled || !_shippedState.show_chip) return '';
   if (!shippedCarriesState(rec)) return '';
@@ -15119,7 +15298,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -17473,6 +17652,8 @@ function openPRDSettingsModal(prdID) {
       const cur = {
         type:                 prd.type || '',
         kind:                 prd.kind || '',
+        release_size:         prd.release_size || '',
+        breaking_change:      !!prd.breaking_change,
         lane_preference:      prd.lane_preference || 'any',
         backend:              prd.backend || '',
         effort:               prd.effort || '',
@@ -17590,6 +17771,23 @@ function openPRDSettingsModal(prdID) {
               <label class="wizard-label">${escHtml(t('prd_settings_priority_label')||'Capacity queue priority (higher runs first)')}</label>
               <input type="number" id="prdSettingsPriority" class="form-input" min="-100" max="100" value="${cur.priority}" placeholder="0" style="width:80px;" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_priority_hint')||'Used when tasks wait for free capacity.')}</div>
+            </div>
+            <div class="wizard-grid-mobile" style="margin-top:2px;">
+              <div class="wizard-field">
+                <label class="wizard-label" for="prdSettingsReleaseSize">${escHtml(t('automaton_release_size_label'))}</label>
+                <select id="prdSettingsReleaseSize" class="form-select">
+                  <option value="" ${!cur.release_size?'selected':''}>${escHtml(t('automaton_release_size_resolve'))}</option>
+                  ${['patch','minor','major','none'].map(v => `<option value="${v}" ${cur.release_size===v?'selected':''}>${escHtml(automatonReleaseSizeLabel(v))}</option>`).join('')}
+                </select>
+                <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('automaton_release_size_hint'))}</div>
+              </div>
+              <div class="wizard-field">
+                <label class="wizard-label" style="display:flex;gap:6px;align-items:center;">
+                  <input type="checkbox" id="prdSettingsBreakingChange" ${cur.breaking_change?'checked':''} />
+                  ${escHtml(t('automaton_release_breaking_label'))}
+                </label>
+                <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('automaton_release_breaking_hint'))}</div>
+              </div>
             </div>
             <div class="wizard-field" style="margin-top:2px;">
               <label class="wizard-label">${escHtml(t('prd_settings_write_dirs_label')||'Writable directories (comma-separated, absolute; empty = project dir)')}</label>
@@ -17757,6 +17955,22 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_kind', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ kind: newKind }),
+            }));
+          }
+          // Release size and breaking flag (Phase 4). An empty release_size
+          // resolves the size again from the layers below it.
+          const newReleaseSize = document.getElementById('prdSettingsReleaseSize')?.value || '';
+          if (newReleaseSize !== cur.release_size) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_release_size', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ release_size: newReleaseSize }),
+            }));
+          }
+          const newBreakingChange = !!document.getElementById('prdSettingsBreakingChange')?.checked;
+          if (newBreakingChange !== cur.breaking_change) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_breaking_change', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ breaking_change: newBreakingChange }),
             }));
           }
           const newLanePreference = document.getElementById('prdSettingsLanePreference')?.value || 'any';
@@ -18235,6 +18449,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.judge_verdict_cache_enabled', label: 'Judge verdict cache', labelKey: 'settings_judge_verdict_cache', helpKey: 'settings_judge_verdict_cache_help', type: 'toggle', default: true },
     { key: 'autonomous.judge_prompt_file_threshold_lines', label: 'Judge prompt file threshold (lines, 0=always send in full)', labelKey: 'settings_judge_prompt_file_threshold', helpKey: 'settings_judge_prompt_file_threshold_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 100000, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_prompt_file_threshold_lines', this)" },
     { key: 'autonomous.judge_delivery_wait_per_thousand_lines_seconds', label: 'Judge extra wait per 1000 prompt lines (sec, 0=none)', labelKey: 'settings_judge_delivery_wait', helpKey: 'settings_judge_delivery_wait_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 3600, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_delivery_wait_per_thousand_lines_seconds', this)" },
+    // Daemon task modes and gate settings. The mode control renders one select
+    // per built-in template id (daemon only for the daemon-capable ids). A write
+    // the daemon refuses shows the daemon's own text.
+    { key: 'autonomous.task_templates.mode', label: 'Task template modes (llm, daemon or off, per template)', labelKey: 'settings_daemon_task_modes', helpKey: 'settings_daemon_task_modes_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'task_template_modes' },
+    { key: 'autonomous.script_gate_timeout_seconds', label: 'Script gate time cap (seconds, 0 = no cap, default 900)', labelKey: 'settings_daemon_script_gate_timeout', helpKey: 'settings_daemon_script_gate_timeout_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'number', min: 0, step: 1, placeholder: '900', default: '900', onchange: "saveDaemonTaskNumberField('autonomous.script_gate_timeout_seconds', this)" },
+    { key: 'autonomous.project_gate_command', label: 'Project gate command (one line of shell text, empty = unset)', labelKey: 'settings_daemon_project_gate_command', helpKey: 'settings_daemon_project_gate_command_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'text', onchange: "saveDaemonTaskTextField('autonomous.project_gate_command', this)" },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/
@@ -18351,6 +18571,20 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.failure_escalation.enabled', label: 'Failure escalation enabled', labelKey: 'settings_failure_escalation_enabled', type: 'toggle' },
     { key: 'autonomous.failure_escalation.max_failures', label: 'Failed attempts before the task is held for review (minimum 1, default 3)', labelKey: 'settings_failure_escalation_max_failures', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
     { key: 'autonomous.failure_escalation.steps', label: 'Escalation steps (backend:model@attempts, comma separated)', labelKey: 'settings_failure_escalation_steps', type: 'failure_escalation_steps', placeholder: 'ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5', hintKey: 'settings_failure_escalation_steps_hint' },
+    // Attempt cost — the cheap first-attempt worker per task kind, how many
+    // failures before the strong worker takes over, and the cap on resumed
+    // retry context. Every field saves on change through saveAttemptCostField
+    // or saveAttemptCostNumber, which shows the daemon's refusal inline.
+    { key: 'autonomous.first_attempt.implementation.backend', label: 'First attempt backend: implementation tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_implementation_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.implementation.backend', this)" },
+    { key: 'autonomous.first_attempt.implementation.model', label: 'First attempt model: implementation tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_implementation_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.implementation.model', this)" },
+    { key: 'autonomous.first_attempt.docs.backend', label: 'First attempt backend: docs tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_docs_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.docs.backend', this)" },
+    { key: 'autonomous.first_attempt.docs.model', label: 'First attempt model: docs tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_docs_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.docs.model', this)" },
+    { key: 'autonomous.first_attempt.note.backend', label: 'First attempt backend: note tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_note_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.note.backend', this)" },
+    { key: 'autonomous.first_attempt.note.model', label: 'First attempt model: note tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_note_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.note.model', this)" },
+    { key: 'autonomous.first_attempt.final_gate.backend', label: 'First attempt backend: final gate tasks (empty = normal choice)', labelKey: 'settings_attempt_cost_final_gate_backend', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'claude-code', onchange: "saveAttemptCostField('autonomous.first_attempt.final_gate.backend', this)" },
+    { key: 'autonomous.first_attempt.final_gate.model', label: 'First attempt model: final gate tasks (needed for pi, pi-prompt, ollama)', labelKey: 'settings_attempt_cost_final_gate_model', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'text', placeholder: 'qwen3.8:27b', onchange: "saveAttemptCostField('autonomous.first_attempt.final_gate.model', this)" },
+    { key: 'autonomous.first_attempt_escalate_after_failures', label: 'Failed attempts before the strong worker takes over (0 to 20, default 1)', labelKey: 'settings_attempt_cost_escalate_after', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'number', min: 0, max: 20, step: 1, placeholder: '1', onchange: "saveAttemptCostNumber('autonomous.first_attempt_escalate_after_failures', this, 0, 20)" },
+    { key: 'autonomous.retry_resume_max_context_tokens', label: 'Resume context limit for retries, in tokens (0 to 2000000, default 150000; 0 = always start fresh)', labelKey: 'settings_attempt_cost_resume_limit', helpKey: 'settings_attempt_cost_help', helpDocs: 'howto/failed-attempt-cost.md', type: 'number', min: 0, max: 2000000, step: 1, placeholder: '150000', onchange: "saveAttemptCostNumber('autonomous.retry_resume_max_context_tokens', this, 0, 2000000)" },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
     // Plan-coverage gate — how strictly decompose must cover the spec's
@@ -18582,7 +18816,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.fallback_on_bad_file', label: 'Merge pipeline when the project file is bad (record, default or none; default record)', labelKey: 'settings_merge_pipeline_fallback_on_bad_file', hintKey: 'settings_merge_pipeline_fallback_on_bad_file_hint', docsKey: 'autonomous.merge_pipeline.fallback_on_bad_file', type: 'select', options: ['record', 'default', 'none'], optionLabelKeys: { record: 'settings_merge_pipeline_fallback_record', default: 'settings_merge_pipeline_fallback_default', none: 'settings_merge_pipeline_fallback_none' }, default: 'record' },
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
+    { key: 'autonomous.merge_pipeline.release_approval.patch', label: 'Release approval for patch releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_patch', hintKey: 'settings_merge_pipeline_release_approval_patch_hint', docsKey: 'autonomous.merge_pipeline.release_approval.patch', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
+    { key: 'autonomous.merge_pipeline.release_approval.minor', label: 'Release approval for minor releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_minor', hintKey: 'settings_merge_pipeline_release_approval_minor_hint', docsKey: 'autonomous.merge_pipeline.release_approval.minor', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
+    { key: 'autonomous.merge_pipeline.release_approval.major', label: 'Release approval for major releases (auto, ask or manual; default ask)', labelKey: 'settings_merge_pipeline_release_approval_major', hintKey: 'settings_merge_pipeline_release_approval_major_hint', docsKey: 'autonomous.merge_pipeline.release_approval.major', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'ask' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
+    { key: 'autonomous.merge_pipeline.release_size_map', label: 'Release size by kind (the step each Automaton kind adds to the version)', labelKey: 'settings_merge_pipeline_release_size_map', helpKey: 'settings_merge_pipeline_release_size_map_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'release_size_map' },
+    { key: 'autonomous.merge_pipeline.major_trigger', label: 'Major release trigger (manual, milestone or never; default manual)', labelKey: 'settings_merge_pipeline_major_trigger', helpKey: 'settings_merge_pipeline_major_trigger_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['manual', 'milestone', 'never'], optionLabelKeys: { manual: 'merge_pipeline_major_manual', milestone: 'merge_pipeline_major_milestone', never: 'merge_pipeline_major_never' }, default: 'manual', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.major_trigger', this)" },
+    { key: 'autonomous.merge_pipeline.release_cadence', label: 'Release cadence (per_merge, batch or manual; default per_merge)', labelKey: 'settings_merge_pipeline_release_cadence', helpKey: 'settings_merge_pipeline_release_cadence_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['per_merge', 'batch', 'manual'], optionLabelKeys: { per_merge: 'merge_pipeline_cadence_per_merge', batch: 'merge_pipeline_cadence_batch', manual: 'merge_pipeline_cadence_manual' }, default: 'per_merge', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.release_cadence', this)" },
+    { key: 'autonomous.merge_pipeline.version_scheme', label: 'Version scheme (semver; default semver)', labelKey: 'settings_merge_pipeline_version_scheme', helpKey: 'settings_merge_pipeline_version_scheme_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['semver'], optionLabelKeys: { semver: 'merge_pipeline_scheme_semver' }, default: 'semver', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.version_scheme', this)" },
     // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
     // every hook is disabled until you switch it on. The four builtins are
     // registry_row, parity_issue, tag and notify; the registry, companion
@@ -18699,6 +18940,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.tags.direct_counts_visible', label: 'Show the direct count as a tooltip beside the subtree count', labelKey: 'settings_tags_direct_counts_visible', type: 'toggle' },
     { key: 'autonomous.tags.registry_keeper', label: 'Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)', labelKey: 'settings_tags_registry_keeper', type: 'text', placeholder: '' },
     { key: 'autonomous.tags.registry_sync_seconds', label: 'Tag registry sync interval (seconds, minimum 5, default 30)', labelKey: 'settings_tags_registry_sync_seconds', type: 'number', placeholder: '30', min: 5, step: 1, default: '30' },
+    // Worker session profiles — the named profiles that size a worker
+    // session's context and tools, the daemon-wide default profile, and the
+    // per-role / per-task-kind defaults. Every field's ? entry opens the
+    // worker-session-profiles howto. worker_profile's options are the
+    // built-in names plus the user profiles (see workerProfileNames).
+    { label: 'Worker session profiles', labelKey: 'settings_worker_profiles_group', type: 'group', hintKey: 'settings_worker_profiles_group_help' },
+    { key: 'autonomous.worker_profile', label: 'Daemon-wide worker profile', labelKey: 'settings_worker_profile_label', helpKey: 'settings_worker_profile_help', helpDocs: 'howto/worker-session-profiles.md', type: 'select', optionsFrom: 'worker_profiles' },
+    { key: 'autonomous.worker_profile_defaults', label: 'Default profile per role and task kind', labelKey: 'settings_worker_profile_defaults_label', helpKey: 'settings_worker_profile_defaults_help', helpDocs: 'howto/worker-session-profiles.md', type: 'worker_profile_defaults' },
+    { key: 'autonomous.worker_profiles', label: 'Worker profiles (JSON object keyed by name)', labelKey: 'settings_worker_profiles_label', helpKey: 'settings_worker_profiles_help', helpDocs: 'howto/worker-session-profiles.md', type: 'worker_profiles_json', placeholder: '{"my-profile": {}}' },
     // Automatic tags — the tags datawatch gives every Automaton for its
     // Automation, stage and kind. The templates may use {automation},
     // {stage} and {kind}; kind_labels is a "kind:label" comma list.
@@ -19645,17 +19895,56 @@ function loadGeneralConfig() {
                 ${checkboxes}
               </div>
             </div>`;
+          } else if (f.type === 'worker_profile_defaults') {
+            // autonomous.worker_profile_defaults: one select per role and per
+            // task kind. Empty = the built-in default for that key.
+            const _wpd = (val && typeof val === 'object') ? val : {};
+            const _wpdNames = workerProfileNames(cfg);
+            const _wpdSelect = (group, key) => {
+              const cur = (_wpd[group] && _wpd[group][key]) || '';
+              const opts = [''].concat(_wpdNames).map(n =>
+                `<option value="${escHtml(n)}" ${cur === n ? 'selected' : ''}>${escHtml(n || '—')}</option>`).join('');
+              return `<label style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--text2);">
+                <span>${escHtml(key)}</span>
+                <select class="form-select general-cfg-input" data-wpd-group="${group}" data-wpd-key="${key}"
+                  onchange="saveWorkerProfileDefaults(this.closest('.wpd-grid'))">${opts}</select>
+              </label>`;
+            };
+            const _wpdRoles = WORKER_PROFILE_ROLES.map(k => _wpdSelect('role', k)).join('');
+            const _wpdKinds = WORKER_PROFILE_KINDS.map(k => _wpdSelect('kind', k)).join('');
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">role</div>${_wpdRoles}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">kind</div>${_wpdKinds}</div>
+              </div>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
+          } else if (f.type === 'worker_profiles_json') {
+            // autonomous.worker_profiles: the user profiles as one JSON object.
+            // Saved on change; the PUT is refused with the daemon's message on
+            // a bad profile, so the toast carries the reason back.
+            const _wpText = (val && typeof val === 'object' && Object.keys(val).length)
+              ? JSON.stringify(val, null, 2) : '';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <textarea class="form-input general-cfg-input" rows="6" spellcheck="false"
+                style="font-family:monospace;font-size:11px;min-width:0;max-width:100%;"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                onchange="saveWorkerProfilesJSON(this)">${escHtml(_wpText)}</textarea>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
           } else if (f.type === 'select') {
             const selVal = String(val);
-            const opts = (f.options || []).map(o =>
-              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(_selectOptionLabel(f, o))}</option>`
+            const _selOpts = f.optionsFrom === 'worker_profiles' ? workerProfileNames(cfg, true) : (f.options || []);            const opts = _selOpts.map(o =>
+              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(_selectOptionLabel(f, o) || '—')}</option>`
             ).join('');
             // f.onchange lets a field supply its own save handler (the gate
             // scope select, for example, saves an empty selection as '').
             const selOnchange = f.onchange || `saveGeneralField('${f.key}', this.value)`;
             const _selHint = _fieldHintHTML(f);
-            html += `<div class="settings-row" style="justify-content:space-between;${_selHint ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
+            html += `<div class="settings-row" style="justify-content:space-between;${(_selHint || f.helpDocs) ? 'flex-wrap:wrap;' : ''}">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <select class="form-select general-cfg-input" onchange="${selOnchange}">${opts}</select>
               ${_selHint}
             </div>`;
@@ -19844,6 +20133,20 @@ function loadGeneralConfig() {
                   });
               };
             }, 0);
+          } else if (f.type === 'release_size_map') {
+            // Kind-to-size rows: one row per Automaton kind with its release
+            // size. Save PUTs the whole map as a JSON object.
+            const _rsMap = (val && typeof val === 'object') ? val : {};
+            const _rsRows = Object.keys(_rsMap).sort().map(k => _releaseSizeMapRowHTML(k, _rsMap[k])).join('');
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
+              <div id="release_size_map_rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">${_rsRows}</div>
+              <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn-secondary" style="font-size:11px;" onclick="addReleaseSizeMapRow()">${escHtml(t('settings_merge_pipeline_release_size_map_add'))}</button>
+                <button class="btn-secondary" style="font-size:11px;" onclick="saveReleaseSizeMap()">${escHtml(t('settings_merge_pipeline_release_size_map_save'))}</button>
+              </div>
+              ${_settingsHelpTextHTML(f)}
+            </div>`;
           } else if (f.type === 'post_ship_hooks') {
             // Seed the editable copy from the config GET (the daemon returns
             // the array) and render the initial rows straight into the html.
@@ -19953,6 +20256,8 @@ function loadGeneralConfig() {
             // Populate once the card is in the DOM (GET the current config
             // from the dedicated endpoint; silent on daemons without it).
             setTimeout(() => { if (window.settingsDecomposeLintLoad) window.settingsDecomposeLintLoad(pid); }, 0);
+          } else if (f.type === 'task_template_modes') {
+            html += taskTemplateModesHTML(f, fLabel, val);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -20215,18 +20520,28 @@ function _failureEscalationStepsText(steps) {
 // pid) collects it, accepts a rules array or {rules, disabled_rules}, issues
 // the PUT, and displays either the success line or the daemon's 400 text in
 // the card's feedback slot (validation feedback from the PUT).
+// decomposeLintLoadedTemplateBlocks keeps the full task_templates block from
+// the last successful GET per card pid, so the card's save (which only knows
+// the enabled checkbox) can send the block back intact instead of the daemon
+// replacing it with just {enabled: ...}.
+const decomposeLintLoadedTemplateBlocks = {};
 function settingsDecomposeLintLoadCore(pid) {
   apiFetch('/api/autonomous/decompose-lint/config').then(cfg => {
     if (!document.getElementById(pid)) return; // view changed while loading
     cfg = cfg || {};
     const dl = cfg.decompose_lint || {};
-    const tt = cfg.task_templates || {};
+    const tt = cfg.task_templates;
+    if (tt && typeof tt === 'object' && !Array.isArray(tt)) {
+      decomposeLintLoadedTemplateBlocks[pid] = JSON.parse(JSON.stringify(tt));
+    } else {
+      delete decomposeLintLoadedTemplateBlocks[pid];
+    }
     const modeEl = document.getElementById(pid + '-mode');
     if (modeEl) modeEl.value = String(dl.mode || 'off');
     const mrEl = document.getElementById(pid + '-maxretries');
     if (mrEl) mrEl.value = (dl.max_retries !== undefined && dl.max_retries !== null) ? dl.max_retries : 2;
     const tEl = document.getElementById(pid + '-tasktemplates');
-    if (tEl) tEl.checked = !!tt.enabled;
+    if (tEl) tEl.checked = !!(tt && tt.enabled);
     const gEl = document.getElementById(pid + '-guidance');
     if (gEl) gEl.value = String(cfg.decompose_guidance || '');
     const rEl = document.getElementById(pid + '-rules');
@@ -20283,9 +20598,17 @@ window.settingsDecomposeLintSave = function (pid) {
   }
   const body = {
     decompose_lint: { mode: String(val(pid + '-mode') || 'shadow'), max_retries: maxRet },
-    task_templates: { enabled: chk(pid + '-tasktemplates') },
     decompose_guidance: String(val(pid + '-guidance') || ''),
   };
+  // Send the loaded block back intact, with only enabled updated from the
+  // checkbox; if we never loaded a block, omit task_templates so the daemon
+  // leaves the stored block untouched.
+  const loadedTemplateBlock = decomposeLintLoadedTemplateBlocks[pid];
+  if (loadedTemplateBlock) {
+    const templateBlock = JSON.parse(JSON.stringify(loadedTemplateBlock));
+    templateBlock.enabled = chk(pid + '-tasktemplates');
+    body.task_templates = templateBlock;
+  }
   if (rules.length) body.decompose_lint.rules = rules;
   if (disabledRules.length) body.decompose_lint.disabled_rules = disabledRules;
 
@@ -20572,6 +20895,7 @@ function _taskAttemptsHTML(task) {
         <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
       <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
       ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${_attemptWhyHTML(a)}
       ${a.memory_killed ? `<div class="prd-task-attempt-memory" style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('memory_attempt_over_limit', [String(a.ceiling_mb || 0), a.killed_process || t('memory_attempt_unknown_process'), String(a.peak_memory_mb || 0)]))}</div>` : ''}
       ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
       ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
@@ -20647,8 +20971,189 @@ function _cfgTextareaText(val) {
   return String(val || '');
 }
 
+// Release settings on the Merge pipeline card. The sizes a kind may take.
+const RELEASE_SIZE_CHOICES = ['patch', 'minor', 'major', 'none'];
+const RELEASE_SIZE_LABEL_KEYS = {
+  patch: 'merge_pipeline_release_size_patch',
+  minor: 'merge_pipeline_release_size_minor',
+  major: 'merge_pipeline_release_size_major',
+  none: 'merge_pipeline_release_size_none',
+};
+
+// _releaseSizeMapRowHTML: one kind row of the release size map, a kind text
+// box, a size select and a remove button.
+function _releaseSizeMapRowHTML(kind, size) {
+  const opts = RELEASE_SIZE_CHOICES.map(s =>
+    `<option value="${s}" ${s === String(size) ? 'selected' : ''}>${escHtml(t(RELEASE_SIZE_LABEL_KEYS[s]))}</option>`
+  ).join('');
+  return `<div class="release-size-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <input type="text" class="form-input" data-release-kind value="${escHtml(kind)}" placeholder="${escHtml(t('settings_merge_pipeline_release_size_map_kind'))}" aria-label="${escHtml(t('settings_merge_pipeline_release_size_map_kind'))}" style="flex:1;min-width:120px;" />
+    <select class="form-select" data-release-size aria-label="${escHtml(t('settings_merge_pipeline_release_size_map_size'))}" style="width:auto;">${opts}</select>
+    <button class="btn-secondary" style="font-size:11px;" onclick="this.closest('.release-size-row').remove()">${escHtml(t('settings_merge_pipeline_release_size_map_remove'))}</button>
+  </div>`;
+}
+
+// addReleaseSizeMapRow appends an empty kind row, sized minor by default.
+function addReleaseSizeMapRow() {
+  const list = document.getElementById('release_size_map_rows');
+  if (!list) return;
+  list.insertAdjacentHTML('beforeend', _releaseSizeMapRowHTML('', 'minor'));
+}
+
+// saveReleaseSizeMap reads the kind rows and PUTs them as one object. A blank
+// or repeated kind is refused in the browser before anything is sent.
+function saveReleaseSizeMap() {
+  const list = document.getElementById('release_size_map_rows');
+  if (!list) return;
+  const map = {};
+  let err = '';
+  list.querySelectorAll('.release-size-row').forEach(row => {
+    const kind = (row.querySelector('[data-release-kind]').value || '').trim();
+    const size = row.querySelector('[data-release-size]').value;
+    if (!kind) {
+      err = err || t('settings_merge_pipeline_release_size_map_empty_kind');
+    } else if (Object.prototype.hasOwnProperty.call(map, kind)) {
+      err = err || t('settings_merge_pipeline_release_size_map_duplicate', [kind]);
+    } else {
+      map[kind] = size;
+    }
+  });
+  if (err) { showToast(err, 'error'); return; }
+  putMergePipelineSetting('autonomous.merge_pipeline.release_size_map', map, null);
+}
+
+// saveMergePipelineReleaseField saves a release select (major trigger, release
+// cadence, version scheme) when it changes.
+function saveMergePipelineReleaseField(key, el) {
+  putMergePipelineSetting(key, el.value, el);
+}
+
+// putMergePipelineSetting PUTs one merge pipeline value to /api/config. A
+// refused value (the daemon answers 400 with the reason) is shown in full and
+// the select goes back to the value in effect, so the control never shows a
+// value the daemon did not keep.
+function putMergePipelineSetting(key, value, el) {
+  fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => r.text().then(body => {
+      if (r.ok) { showToast('Saved', 'success', 1500); return; }
+      if (el && el.tagName === 'SELECT') {
+        const saved = Array.from(el.options).find(o => o.defaultSelected);
+        if (saved) el.value = saved.value;
+      }
+      showToast(t('merge_pipeline_save_failed', [(body || '').trim() || ('HTTP ' + r.status)]), 'error');
+    }))
+    .catch(() => showToast('Save failed', 'error'));
+}
+
 function saveGeneralField(key, value) {
   saveGeneralConfigPut(key, value);
+}
+
+// Attempt-cost settings. A write the daemon refuses shows its message inline,
+// in a line under the field that was edited, and the field keeps the text the
+// operator typed so it can be corrected. A saved write clears that line.
+function _attemptCostErrorEl(el, create) {
+  const row = (el && el.closest && el.closest('.settings-row')) || (el && el.parentElement);
+  if (!row) return null;
+  let err = row.querySelector('.attempt-cost-error');
+  if (!err && create) {
+    err = document.createElement('div');
+    err.className = 'attempt-cost-error';
+    err.setAttribute('role', 'alert');
+    err.style.cssText = 'flex-basis:100%;font-size:11px;color:#ef4444;margin-top:4px;';
+    row.appendChild(err);
+  }
+  return err;
+}
+
+function _showAttemptCostError(el, message) {
+  const err = _attemptCostErrorEl(el, true);
+  if (err) {
+    err.textContent = message;
+    err.style.display = '';
+  } else {
+    showToast(message, 'error');
+  }
+}
+
+function _clearAttemptCostError(el) {
+  const err = _attemptCostErrorEl(el, false);
+  if (err) {
+    err.textContent = '';
+    err.style.display = 'none';
+  }
+}
+
+// _attemptCostRefusalText reads the daemon's refusal: a JSON body carries its
+// message under error or message; any other body is shown as sent. An empty
+// body falls back to the generic refusal line.
+function _attemptCostRefusalText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return t('settings_attempt_cost_error_refused');
+  try {
+    const body = JSON.parse(raw);
+    const msg = body && (body.error || body.message);
+    if (msg) return String(msg);
+  } catch (_) { /* not JSON: show the body as sent */ }
+  return raw;
+}
+
+function _saveAttemptCost(key, value, el) {
+  // Proxy-aware like the other general-settings writes.
+  return fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => {
+      if (r.ok) {
+        _clearAttemptCostError(el);
+        showToast('Saved', 'success', 1500);
+        return null;
+      }
+      return r.text().then(text => _showAttemptCostError(el, _attemptCostRefusalText(text)));
+    })
+    .catch(() => _showAttemptCostError(el, t('settings_attempt_cost_error_network')));
+}
+
+// saveAttemptCostField saves a first-attempt backend or model. An empty box
+// clears the entry (the normal choice applies); the daemon checks the value.
+function saveAttemptCostField(key, el) {
+  return _saveAttemptCost(key, String(el && el.value != null ? el.value : '').trim(), el);
+}
+
+// saveAttemptCostNumber saves a whole-number attempt-cost setting once it
+// falls inside the range the daemon enforces. An empty, non-whole or
+// out-of-range entry is reported inline and nothing is sent.
+function saveAttemptCostNumber(key, el, min, max) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isInteger(n) || n < min || n > max) {
+    _showAttemptCostError(el, t('settings_attempt_cost_error_range', [String(min), String(max)]));
+    return null;
+  }
+  return _saveAttemptCost(key, n, el);
+}
+
+// _attemptWhyHTML draws the attempt's backend reason, whether it resumed the
+// previous session or started fresh (with the retry decision's reason), and
+// the no-retry reason when the failure held the task without another attempt.
+function _attemptWhyHTML(a) {
+  const parts = [];
+  if (a.backend_reason) {
+    parts.push(`<div style="font-size:11px;">${escHtml(t('review_attempt_why'))}: ${escHtml(a.backend_reason)}</div>`);
+  }
+  const mode = a.resumed ? t('review_attempt_resumed') : t('review_attempt_fresh');
+  const why = a.resume_reason ? ` · ${escHtml(t('review_attempt_resume_reason'))}: ${escHtml(a.resume_reason)}` : '';
+  parts.push(`<div style="font-size:11px;">${escHtml(mode)}${why}</div>`);
+  if (a.no_retry_reason) {
+    parts.push(`<div style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('review_attempt_no_retry'))}: ${escHtml(a.no_retry_reason)}</div>`);
+  }
+  return parts.join('');
 }
 
 // settingsHelpLink: the ? help entry on a field with helpDocs. It opens the
@@ -20788,6 +21293,129 @@ function saveJudgePromptNumberField(key, el) {
 }
 window.saveJudgePromptNumberField = saveJudgePromptNumberField;
 
+// Daemon task modes. The built-in decomposition template ids, and the subset
+// the daemon can carry out (daemon is offered only for those; final_gate is
+// never daemon). They mirror config.DefaultTaskTemplateModes.
+const DAEMON_TASK_TEMPLATE_IDS = ['changelog_entry', 'parity_issue_draft', 'docs_set', 'bounded_load_step', 'final_gate', 'version_bump_left_to_merge'];
+const DAEMON_TASK_DAEMON_CAPABLE_IDS = ['changelog_entry', 'parity_issue_draft', 'bounded_load_step', 'version_bump_left_to_merge'];
+
+// Locale keys for the template and mode labels, spelled out in full so each
+// key is visible to the locale coverage check.
+const DAEMON_TASK_TEMPLATE_LABEL_KEYS = {
+  changelog_entry: 'settings_daemon_task_template_changelog_entry',
+  parity_issue_draft: 'settings_daemon_task_template_parity_issue_draft',
+  docs_set: 'settings_daemon_task_template_docs_set',
+  bounded_load_step: 'settings_daemon_task_template_bounded_load_step',
+  final_gate: 'settings_daemon_task_template_final_gate',
+  version_bump_left_to_merge: 'settings_daemon_task_template_version_bump_left_to_merge',
+};
+const DAEMON_TASK_MODE_LABEL_KEYS = {
+  llm: 'settings_daemon_task_mode_llm',
+  daemon: 'settings_daemon_task_mode_daemon',
+  off: 'settings_daemon_task_mode_off',
+};
+
+function daemonTaskModeOptions(id) {
+  return DAEMON_TASK_DAEMON_CAPABLE_IDS.includes(id) ? ['llm', 'daemon', 'off'] : ['llm', 'off'];
+}
+
+function daemonTaskDefaultMode(id) {
+  return DAEMON_TASK_DAEMON_CAPABLE_IDS.includes(id) ? 'daemon' : 'llm';
+}
+
+// taskTemplateModesHTML renders the autonomous.task_templates.mode control: a
+// heading with its ? help entry, then one select per built-in template id.
+// Each select saves its own dotted key on change.
+function taskTemplateModesHTML(f, fLabel, val) {
+  const stored = (val && typeof val === 'object' && !Array.isArray(val)) ? val : {};
+  const head = `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+    <div class="settings-label">${escHtml(fLabel)}${settingsHelpLink(f)}</div>
+    ${_settingsHelpTextHTML(f)}
+  </div>`;
+  const rows = DAEMON_TASK_TEMPLATE_IDS.map(id => {
+    const cur = stored[id] ? String(stored[id]) : daemonTaskDefaultMode(id);
+    const opts = daemonTaskModeOptions(id).map(m =>
+      `<option value="${escHtml(m)}" ${cur === m ? 'selected' : ''}>${escHtml(t(DAEMON_TASK_MODE_LABEL_KEYS[m]))}</option>`
+    ).join('');
+    return `<div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(t(DAEMON_TASK_TEMPLATE_LABEL_KEYS[id]))}</div>
+      <select class="form-select general-cfg-input" data-daemon-task-template="${escHtml(id)}" data-saved="${escHtml(cur)}" onchange="saveDaemonTaskModeSetting('${escHtml(id)}', this)">${opts}</select>
+    </div>`;
+  }).join('');
+  return head + rows;
+}
+
+// saveDaemonTaskSetting PUTs one dotted key to /api/config. On success it shows
+// a short confirmation and resolves true. On a refusal (the daemon answers 400
+// with its own text) it shows that text as the error, runs onRefused to put the
+// control back, and resolves false.
+function saveDaemonTaskSetting(key, value, onRefused) {
+  return fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast(t('settings_daemon_task_saved'), 'success', 1500);
+        return true;
+      }
+      return r.text().then(msg => {
+        const text = String(msg || '').trim() || t('settings_daemon_task_save_failed');
+        showToast(text, 'error', 8000);
+        if (onRefused) onRefused();
+        return false;
+      });
+    })
+    .catch(() => {
+      showToast(t('settings_daemon_task_save_failed'), 'error');
+      return false;
+    });
+}
+
+// saveDaemonTaskModeSetting saves one template's mode (autonomous.task_templates.mode.<id>).
+function saveDaemonTaskModeSetting(id, el) {
+  const mode = String(el && el.value ? el.value : '');
+  const prev = el && el.dataset ? (el.dataset.saved || '') : '';
+  saveDaemonTaskSetting('autonomous.task_templates.mode.' + id, mode, () => {
+    if (el) el.value = prev;
+  }).then(ok => {
+    if (ok && el && el.dataset) el.dataset.saved = mode;
+  });
+}
+
+// saveDaemonTaskNumberField saves the script gate time cap as typed. An empty
+// or non-numeric box is reported here and sends nothing; any other value goes to
+// the daemon, which refuses a negative or fractional value with its own text.
+function saveDaemonTaskNumberField(key, el) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isFinite(n)) {
+    showToast(t('settings_daemon_task_number_invalid'), 'error');
+    if (el && el.defaultValue !== undefined) el.value = el.defaultValue;
+    return;
+  }
+  saveDaemonTaskSetting(key, n, () => {
+    if (el) el.value = el.defaultValue !== undefined ? el.defaultValue : '';
+  }).then(ok => {
+    if (ok && el) el.defaultValue = String(n);
+  });
+}
+
+// saveDaemonTaskTextField saves the project gate command. Empty clears it; a
+// multi-line or over-long value is refused by the daemon with its own text.
+function saveDaemonTaskTextField(key, el) {
+  const value = String(el && el.value != null ? el.value : '').trim();
+  saveDaemonTaskSetting(key, value, () => {
+    if (el) el.value = el.defaultValue !== undefined ? el.defaultValue : '';
+  }).then(ok => {
+    if (ok && el) el.defaultValue = value;
+  });
+}
+window.saveDaemonTaskModeSetting = saveDaemonTaskModeSetting;
+window.saveDaemonTaskNumberField = saveDaemonTaskNumberField;
+window.saveDaemonTaskTextField = saveDaemonTaskTextField;
+
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and
 // nothing is sent.
@@ -20807,6 +21435,53 @@ function saveTracingBackendsSetting(key, el) {
   saveGeneralConfigPut(key, obj);
 }
 window.saveTracingBackendsSetting = saveTracingBackendsSetting;
+
+// Worker session profiles (autonomous.worker_profile*). The built-in profile
+// names and the role and kind keys mirror the daemon's validator
+// (internal/config ValidateWorkerProfileConfig); the daemon owns every rule
+// and its refusal arrives as the error toast.
+const WORKER_PROFILE_BUILTINS = ['minimal', 'digest', 'datawatch-tools', 'full'];
+const WORKER_PROFILE_ROLES = ['planner', 'worker', 'verifier', 'judge'];
+const WORKER_PROFILE_KINDS = ['implementation', 'docs', 'note', 'final_gate'];
+
+// workerProfileNames lists the built-in profile names followed by the user
+// profiles from autonomous.worker_profiles, each name once. withBlank puts an
+// empty entry first (the "no profile" choice for a select).
+function workerProfileNames(cfg, withBlank) {
+  const user = (cfg && cfg.autonomous && cfg.autonomous.worker_profiles) || {};
+  const names = WORKER_PROFILE_BUILTINS.slice();
+  Object.keys(user).forEach(n => { if (!names.includes(n)) names.push(n); });
+  return withBlank ? [''].concat(names) : names;
+}
+
+// saveWorkerProfileDefaults reads every role and kind select in the grid and
+// PUTs autonomous.worker_profile_defaults as one object. An empty select is
+// left out, so it falls back to the built-in default.
+function saveWorkerProfileDefaults(grid) {
+  if (!grid) return;
+  const out = { role: {}, kind: {} };
+  grid.querySelectorAll('select[data-wpd-group]').forEach(sel => {
+    const group = sel.getAttribute('data-wpd-group');
+    const key = sel.getAttribute('data-wpd-key');
+    if (sel.value) out[group][key] = sel.value;
+  });
+  saveGeneralConfigPut('autonomous.worker_profile_defaults', out);
+}
+
+// saveWorkerProfilesJSON parses the worker profiles textarea. It must hold a
+// JSON object (or be empty, which clears the user profiles). Anything else is
+// refused here with a toast and nothing is sent.
+function saveWorkerProfilesJSON(el) {
+  const text = String(el && el.value ? el.value : '').trim();
+  if (text === '') { saveGeneralConfigPut('autonomous.worker_profiles', {}); return; }
+  let obj = null;
+  try { obj = JSON.parse(text); } catch (e) { obj = null; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    showToast(t('settings_worker_profiles_invalid') || 'Worker profiles must be a JSON object keyed by profile name', 'error');
+    return;
+  }
+  saveGeneralConfigPut('autonomous.worker_profiles', obj);
+}
 
 function saveJSONMapSetting(key, el) {
   const text = String(el && el.value ? el.value : '').trim();
@@ -22399,7 +23074,30 @@ function selectServer(name) {
       }
       showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Connected to ${_localHostname || 'this server'}`), 'info');
     }
+    // Re-render the view the operator is on so its picker bar re-injects
+    // with the new active chip highlighted (it used to redraw only Sessions).
+    _rerenderActiveViewForServerSwitch();
   }
+}
+
+// Re-renders the view currently shown after a real picker switch. The view is
+// read from state.activeView (the field navigate() sets). Views that show no
+// picker bar are skipped (no route). Settings and Observer inject the bar with
+// hideAll, so the "All" selection is skipped there and they keep their present
+// behaviour.
+function _rerenderActiveViewForServerSwitch() {
+  const routes = {
+    sessions:   { render: () => renderSessionsView(),   hidesAll: false },
+    autonomous: { render: () => renderAutonomousView(), hidesAll: false },
+    alerts:     { render: () => renderAlertsView(),     hidesAll: false },
+    dashboard:  { render: () => renderDashboardView(),  hidesAll: false },
+    settings:   { render: () => renderSettingsView(),   hidesAll: true },
+    observer:   { render: () => renderObserverView(),   hidesAll: true },
+  };
+  const route = routes[state.activeView];
+  if (!route) return;
+  if (route.hidesAll && state.activeServer === 'all') return;
+  route.render();
 }
 
 // BL312 S4 — fetch sessions from /api/sessions/aggregated and merge into state.
@@ -26908,7 +27606,7 @@ function _renderDetailContent(prd) {
 
   // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
   const tab = _automataDetailTab || 'overview';
-  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd), tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
+  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd) + automatonReleaseBadgesHtml(prd),tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
@@ -29118,8 +29816,10 @@ function _infraRetryLoadMax(prd) {
 // /api/autonomous/merge-pipeline body into the Automation Setup card for one
 // project: where the pipeline in effect comes from (file, record or default)
 // with the reason, the steps in order, the conflict policy and the conflict
-// model. The operator can edit the record the daemon keeps, choose the policy
-// and choose the model from the registry list (opts.models, names). A missing
+// model, and the release approval mode in effect for each release size. The
+// operator can edit the record the daemon keeps, choose the policy, choose the
+// model from the registry list (opts.models, names) and choose a release
+// approval mode per size. A missing
 // view renders the placeholder; the loader owns the failed state. Every value
 // is escaped. The key maps hold literal locale keys, so the key-coverage guard
 // can see them.
@@ -29144,6 +29844,62 @@ function _mergePipelineStepHtml(step, n) {
 function _mergePipelineSelect(id, onchange, options, selected) {
   const opts = options.map(([v, label]) => `<option value="${escHtml(v)}"${v === selected ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
   return `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="${onchange}(this.value)">${opts}</select>`;
+}
+// The release approval rows: one per release size, each with the three modes.
+// The row shows the mode in effect (release_approval_in_effect); a change is
+// saved as that project's override, like the card's policy and model.
+const MERGE_PIPELINE_RELEASE_SIZES = [
+  ['patch', 'merge_pipeline_release_approval_patch'],
+  ['minor', 'merge_pipeline_release_approval_minor'],
+  ['major', 'merge_pipeline_release_approval_major'],
+];
+const MERGE_PIPELINE_RELEASE_MODES = [
+  ['auto', 'merge_pipeline_release_approval_mode_auto'],
+  ['ask', 'merge_pipeline_release_approval_mode_ask'],
+  ['manual', 'merge_pipeline_release_approval_mode_manual'],
+];
+// ── Merge lock and last validator lines ─────────────────────────────────────
+// _mergeStatusBlockHtml(status) draws the read-only lines of GET
+// /api/autonomous/merge under the Merge pipeline card: one line while the merge
+// lock on the base repository is held (Automaton, branches, since) and one line
+// for the last release-bump validator result, with each failing check under
+// it. Nothing is drawn when both are absent. Each line carries a ? link to its
+// definitions entry, found by the merge_lock_ and merge_validator_ keys in
+// DOCS_MERGE_PIPELINE_LINKS. Every value is escaped.
+function _mergeHelpLink(key, tipKey) {
+  if (localStorage.getItem('cs_show_docs_links') === '0') return '';
+  const target = docsLinkForKey(key) || DOCS_DEFINITIONS;
+  const tip = escHtml(t(tipKey));
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="merge-status-help" title="${tip}" aria-label="${tip}" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+}
+function _mergeLockLineHtml(lock) {
+  const branches = (Array.isArray(lock.branches) ? lock.branches : []).filter(b => typeof b === 'string' && b);
+  const names = branches.length ? branches.join(', ') : t('merge_lock_no_branches');
+  const since = (typeof lock.since === 'string' && lock.since !== '') ? _triageTime(lock.since) : '';
+  const text = t('merge_lock_line', [String(lock.automaton_id || '—'), names, since || '—']);
+  return `<div class="merge-status-lock" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(text)}${_mergeHelpLink('merge_lock_line', 'merge_lock_help')}</div>`;
+}
+function _mergeValidatorLineHtml(v) {
+  const pass = v.pass === true;
+  const at = (typeof v.checked_at === 'string' && v.checked_at !== '') ? _triageTime(v.checked_at) : '';
+  const text = t(pass ? 'merge_validator_pass' : 'merge_validator_fail', [String(v.version || '—'), at || '—']);
+  const line = `<div class="merge-status-validator" style="font-size:12px;color:${pass ? 'var(--text2)' : 'var(--error,#c00)'};overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_validator_pass', 'merge_validator_help')}</div>`;
+  const checks = (Array.isArray(v.checks) ? v.checks : [])
+    .filter(c => c && typeof c === 'object' && c.pass !== true)
+    .map(c => {
+      const name = String(c.name || '—');
+      const detail = String(c.detail || '');
+      const msg = detail ? t('merge_validator_check', [name, detail]) : t('merge_validator_check_bare', [name]);
+      return `<div class="merge-validator-check" style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;margin-left:12px;">${escHtml(msg)}${_mergeHelpLink('merge_validator_check', 'merge_validator_help')}</div>`;
+    }).join('');
+  return line + checks;
+}
+function _mergeStatusBlockHtml(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const lines = [];
+  if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
+  if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
 }
 window.mergePipelineCardHtml = function(view, opts) {
   opts = opts || {};
@@ -29176,6 +29932,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<label for="mergePipelineProject" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_project'))}</label>` +
     `<input id="mergePipelineProject" class="form-input" list="mergePipelineProjects" value="${escHtml(project)}" style="flex:1;min-width:120px;max-width:100%;font-size:12px;" onchange="window.mergePipelineSelectProject(this.value)" autocomplete="off" />` +
     `<datalist id="mergePipelineProjects">${projects.map(p => `<option value="${escHtml(p)}"></option>`).join('')}</datalist></div>`;
+  const statusBlock = _mergeStatusBlockHtml(opts.mergeStatus);
   const srcKey = _mergePipelineKey(MERGE_PIPELINE_SOURCE_KEYS, view.source);
   const srcName = srcKey ? view.source : 'none';
   const srcLabel = srcKey ? t(srcKey) : t('merge_pipeline_source_none');
@@ -29204,6 +29961,21 @@ window.mergePipelineCardHtml = function(view, opts) {
   const model = `<div class="merge-pipeline-model" style="margin-top:8px;min-width:0;">` +
     `<label for="mergePipelineConflictModel" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_conflict_model_label'))}${defsLink('merge_pipeline_conflict_model_label')}</label> ` +
     _mergePipelineSelect('mergePipelineConflictModel', 'window.mergePipelineSetModel', modelOptions, current) + `</div>`;
+  // The mode in effect per size. The daemon always sends all three, so every
+  // row has a mode to show.
+  const inEffect = view.release_approval_in_effect && typeof view.release_approval_in_effect === 'object' ? view.release_approval_in_effect : {};
+  const releaseModeOptions = MERGE_PIPELINE_RELEASE_MODES.map(([v, k]) => [v, t(k)]);
+  const releaseRows = MERGE_PIPELINE_RELEASE_SIZES.map(([size, labelKey]) => {
+    const id = 'mergePipelineReleaseApproval-' + size;
+    return `<div class="merge-pipeline-release-approval-row" data-size="${size}" style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:4px;min-width:0;">` +
+      `<label for="${id}" style="font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}${defsLink(labelKey)}</label>` +
+      `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="window.mergePipelineSetReleaseApproval('${size}', this.value)">` +
+      releaseModeOptions.map(([v, label]) => `<option value="${escHtml(v)}"${v === inEffect[size] ? ' selected' : ''}>${escHtml(label)}</option>`).join('') +
+      `</select></div>`;
+  }).join('');
+  const releaseApproval = `<div class="merge-pipeline-release-approval" style="margin-top:8px;min-width:0;">` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_release_approval_label'))}${defsLink('merge_pipeline_release_approval_label')}</div>` +
+    releaseRows + `</div>`;
   const recordText = view.source === 'record' && view.definition ? JSON.stringify(view.definition, null, 2) : '';
   const editor = `<details class="merge-pipeline-editor" style="margin-top:8px;min-width:0;"><summary style="cursor:pointer;font-size:12px;">${escHtml(t('merge_pipeline_edit_record'))}</summary>` +
     `<div style="font-size:11px;color:var(--text2);margin:4px 0;">${escHtml(t('merge_pipeline_record_hint'))}</div>` +
@@ -29212,7 +29984,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<button type="button" class="btn-primary merge-pipeline-save" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineSaveRecord()">${escHtml(t('merge_pipeline_save_record'))}</button>` +
     `<button type="button" class="btn-secondary merge-pipeline-clear" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineClearRecord()">${escHtml(t('merge_pipeline_clear_record'))}</button></div>` +
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
-  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${editor}</div>`;
+  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${releaseApproval}${statusBlock}${editor}</div>`;
 };
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the
@@ -29255,6 +30027,13 @@ function _mergePipelineSetting(field, value) {
 }
 window.mergePipelineSetPolicy = function(value) { return _mergePipelineSetting('conflict_policy', value); };
 window.mergePipelineSetModel = function(value) { return _mergePipelineSetting('conflict_model', value); };
+// mergePipelineSetReleaseApproval saves one size's mode as the shown project's
+// override. The size and mode are checked here before anything is sent.
+window.mergePipelineSetReleaseApproval = function(size, value) {
+  if (!MERGE_PIPELINE_RELEASE_SIZES.some(([s]) => s === size)) return Promise.resolve();
+  if (!MERGE_PIPELINE_RELEASE_MODES.some(([v]) => v === value)) return Promise.resolve();
+  return _mergePipelineSetting('release_approval.' + size, value);
+};
 window.mergePipelineSaveRecord = function() {
   const ta = document.getElementById('mergePipelineRecord');
   if (!ta) return Promise.resolve();
@@ -29955,7 +30734,7 @@ const MERGE_BADGE_STATES = ['pending', 'needs_look'];
 const MERGE_MIN_REFETCH_MS = 5000;
 // _mergeStatus is the last good GET /api/autonomous/merge read, indexed by
 // Automaton id. A failed read keeps it, so a flaky poll never blinks a badge.
-const _mergeStatus = { byId: {}, at: 0, inflight: null };
+const _mergeStatus = { byId: {}, body: null, at: 0, inflight: null };
 window._mergeStatus = _mergeStatus;
 function _mergeIndex(body) {
   const byId = {};
@@ -29994,6 +30773,7 @@ window.loadMergeStatus = function() {
   if (_mergeStatus.at && (Date.now() - _mergeStatus.at) < MERGE_MIN_REFETCH_MS) return Promise.resolve(_mergeStatus.byId);
   _mergeStatus.inflight = Promise.resolve().then(() => apiFetch('/api/autonomous/merge')).then(body => {
     _mergeStatus.byId = _mergeIndex(body);
+    _mergeStatus.body = (body && typeof body === 'object') ? body : null;
     _mergeStatus.at = Date.now();
     return _mergeStatus.byId;
   }).catch(() => _mergeStatus.byId).then(byId => { _mergeStatus.inflight = null; return byId; });
@@ -34746,12 +35526,14 @@ function _automationMergePipelineLoader() {
   _mergePipelineLoadLists();
   return window._listLoaders.automation_merge_pipeline || listLoader({
     key: 'automation_merge_pipeline', el: 'automationMergePipelineCard', get url() { return _mergePipelineUrl(); }, pollMs: 0,
-    fetch: _mergePipelineFetch,
+    // The merge status (lock and last validator) is read with the pipeline;
+    // a failed status read leaves its lines out and never fails the card.
+    fetch: (url, o) => Promise.all([_mergePipelineFetch(url, o), window.loadMergeStatus().catch(() => null)]).then(r => r[0]),
     failedText: msg => t('merge_pipeline_failed', [msg]),
     active: () => !!document.getElementById('automationMergePipelineCard'),
     render: view => {
       if (view && view.project) window._mergePipelineShown = view.project;
-      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects });
+      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects, mergeStatus: window._mergeStatus.body });
     },
   });
 }
@@ -36124,7 +36906,7 @@ function buildAutomationCardHTML(automation, ctx) {
     onOpen: open,
     statusClass,
     statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
-    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)),
+    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a),
     title: a.name,
     titleClass: 'automation-card-title',
     progress: { done, total },
@@ -36824,6 +37606,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
+      ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}
     </div>${desc}${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
@@ -47540,7 +48323,7 @@ function toggleTagsMenu() {
 // watch and tag-edit actions for that session.
 function _tagsMenuHTML() {
   const watched = `<label class="tags-menu-row"><input type="checkbox" ${state.sessionWatchFilter ? 'checked' : ''} onchange="toggleSessionWatchFilter()"><span>${escHtml(t('tags_menu_watched_only'))}</span></label>`;
-  const rows = _tagFilterRowsHTML('session');
+  const rows = _tagFilterRowsHTML('session', undefined, { hidePlacementTags: true });
   const list = rows
     ? `<div class="tags-menu-list">${rows}</div>`
     : `<div class="tag-multi-empty">${escHtml(t('tags_menu_no_tags'))}</div>`;
@@ -48810,11 +49593,17 @@ function _tagFilterGroupOf(tag) {
 }
 
 // _tagFilterRowsHTML draws the checkbox rows of a scope grouped by
-// _tagFilterGroupOf, each non-empty group under its heading.
-function _tagFilterRowsHTML(scope, counts) {
+// _tagFilterGroupOf, each non-empty group under its heading. The optional
+// third argument is an options object; { hidePlacementTags: true } skips every
+// system tag that has a placement axis (the tags _tagsPlacementMenuHTML draws),
+// before grouping, so a group left empty draws no heading. System tags with no
+// axis and all operator tags stay listed. Unset, the output is unchanged.
+function _tagFilterRowsHTML(scope, counts, opts) {
   const sc = _tagBrowse[scope];
+  const hidePlacement = !!(opts && opts.hidePlacementTags);
   const groups = {};
   _tagTreeOrder(_tagsState.list).forEach(({ tag, depth }) => {
+    if (hidePlacement && tag.system === true && _placementAxisOf(tag.name)) return;
     const g = _tagFilterGroupOf(tag);
     (groups[g] = groups[g] || []).push({ tag, depth: g === 'other' ? depth : 0 });
   });

@@ -1845,6 +1845,9 @@ func (a *API) SetDecomposeLintConfig(body map[string]any) error {
 		if err := ct.Validate(); err != nil {
 			return err
 		}
+		if err := validateTaskTemplateVerificationScripts(ct.Templates); err != nil {
+			return err
+		}
 		tpl = &ct
 	}
 	if raw, ok := body["decompose_guidance"]; ok {
@@ -1959,6 +1962,38 @@ func (a *API) SetPRDPriority(prdID string, n int) (any, error) {
 // an empty kind clears it.
 func (a *API) SetPRDKind(prdID, kind string) (any, error) {
 	if err := a.M.SetPRDKind(prdID, kind); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+// SetPRDReleaseSize sets the explicit release size (patch, minor, major or
+// none) of an Automaton; an empty size clears it.
+func (a *API) SetPRDReleaseSize(prdID, size string) (any, error) {
+	if err := a.M.SetPRDReleaseSize(prdID, size); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+// SetPRDBreakingChange sets or clears the breaking-change flag of an Automaton.
+func (a *API) SetPRDBreakingChange(prdID string, breaking bool) (any, error) {
+	if err := a.M.SetPRDBreakingChange(prdID, breaking); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+// SetPRDWorkerProfile sets the worker profile name of an Automaton; an empty
+// name clears it so the global layer applies again.
+func (a *API) SetPRDWorkerProfile(prdID, name string) (any, error) {
+	if err := a.M.SetPRDWorkerProfile(prdID, name); err != nil {
 		return nil, err
 	}
 	a.M.EmitPRDUpdate(prdID)

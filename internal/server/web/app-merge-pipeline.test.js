@@ -3,13 +3,15 @@
 // window.mergePipelineCardHtml(view, opts) turns the decoded GET
 // /api/autonomous/merge-pipeline body into the Automation Overview card: the
 // source in effect with its reason, the steps in order, the conflict policy and
-// the conflict model. The Autonomous settings group carries the six
-// autonomous.merge_pipeline.* fields plus the Post-ship hooks card (the
-// autonomous.merge_pipeline.post_ship.* fields), docsLinkForKey maps the
-// merge pipeline keys and card to the four glossary sections and the
-// post-ship keys and card to the Post-ship hooks howto, and every
-// merge_pipeline_, settings_merge_pipeline_, post_ship_ and
-// settings_post_ship_ locale key is present in all five bundles.
+// the conflict model, and the release approval mode in effect for each size.
+// The Autonomous settings group carries the six autonomous.merge_pipeline.*
+// fields, the three release approval fields and the Post-ship hooks card (the
+// autonomous.merge_pipeline.post_ship.* fields). docsLinkForKey maps the
+// merge pipeline keys and card to the four glossary sections, the release
+// approval keys to the Release approval modes howto section, and the post-ship
+// keys and card to the Post-ship hooks howto. Every merge_pipeline_,
+// settings_merge_pipeline_, release_approval, post_ship_ and settings_post_ship_
+// locale key is present in all five bundles.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -61,7 +63,8 @@ function view(over) {
     project: 'demo', definition: { steps: steps() }, source: 'file', reason: 'the project file was found',
     settings: { file_name: '.datawatch/merge-pipeline.yaml', source_order: ['file', 'record'], fallback_on_bad_file: 'record', version_files: [] },
     conflict_policy: 'mechanical_and_model', conflict_policy_in_effect: 'mechanical_and_model',
-    conflict_model: 'claude-opus-5-5', conflict_model_in_effect: 'claude-opus-5-5', ...over,
+    conflict_model: 'claude-opus-5-5', conflict_model_in_effect: 'claude-opus-5-5',
+    release_approval_in_effect: { patch: 'auto', minor: 'ask', major: 'manual' }, ...over,
   };
 }
 
@@ -180,6 +183,51 @@ test('choosing a policy or a model writes the per-project setting', async () => 
   assert.equal(model[2], JSON.stringify({ 'autonomous.merge_pipeline.projects.demo.conflict_model': '' }));
 });
 
+// ── release approval ────────────────────────────────────────────────────────
+
+function releaseSelect(html, size) {
+  const at = html.indexOf('id="mergePipelineReleaseApproval-' + size + '"');
+  assert.ok(at > 0, size + ' select missing: ' + html);
+  return html.slice(at, html.indexOf('</select>', at));
+}
+
+test('the card shows the release approval mode in effect for each size, always', () => {
+  const html = render(view());
+  assert.ok(html.includes('class="merge-pipeline-release-approval"'), html);
+  assert.ok(html.includes('Release approval'), html);
+  for (const [size, mode] of [['patch', 'auto'], ['minor', 'ask'], ['major', 'manual']]) {
+    const sel = releaseSelect(html, size);
+    assert.ok(sel.includes('value="' + mode + '" selected'), size + ' not showing ' + mode + ': ' + sel);
+    assert.equal((sel.match(/ selected/g) || []).length, 1, size + ' has more than one selected mode');
+    for (const v of ['auto', 'ask', 'manual']) assert.ok(sel.includes('value="' + v + '"'), size + ' lacks ' + v);
+  }
+  assert.ok(html.includes('Patch releases') && html.includes('Minor releases') && html.includes('Major releases'), html);
+  assert.ok(html.includes('>Ship without waiting<') && html.includes('>Ask the operator first<') && html.includes('>Left for the operator to ship<'), html);
+});
+
+test('the card always shows a mode, even when the view omits the in-effect block', () => {
+  const html = render(view({ release_approval_in_effect: undefined }));
+  assert.ok(html.includes('class="merge-pipeline-release-approval"'), html);
+  assert.ok(!html.includes(' selected>Ship without waiting'), 'a mode was invented: ' + html);
+});
+
+test('the release approval rows link their labels to the how-to section', () => {
+  const html = render(view());
+  assert.ok(html.includes('/diagrams.html#docs/' + RELEASE_HOWTO + '"'), 'release approval help link missing: ' + html);
+});
+
+test('choosing a release approval mode writes that project and size only', async () => {
+  const sandbox = loadApp();
+  sandbox._calls = [];
+  vm.runInContext("apiFetch = (url, o) => { _calls.push([url, o && o.method, o && o.body]); return Promise.resolve({}); };", sandbox);
+  vm.runInContext("window._mergePipelineProject = 'demo';", sandbox);
+  await vm.runInContext("window.mergePipelineSetReleaseApproval('minor', 'manual')", sandbox);
+  assert.deepEqual(Array.from(sandbox._calls[0]), ['/api/config', 'PUT', JSON.stringify({ 'autonomous.merge_pipeline.projects.demo.release_approval.minor': 'manual' })]);
+  // An unknown size or mode is refused before anything is sent.
+  await vm.runInContext("window.mergePipelineSetReleaseApproval('hotfix', 'manual'); window.mergePipelineSetReleaseApproval('major', 'never')", sandbox);
+  assert.equal(sandbox._calls.length, 1, 'a bad size or mode was sent: ' + JSON.stringify(sandbox._calls));
+});
+
 test('the record editor rejects invalid JSON without calling the daemon', async () => {
   const sandbox = loadApp();
   sandbox._calls = [];
@@ -220,9 +268,28 @@ test('docsLinkForKey maps the merge pipeline keys to the four sections', () => {
   assert.equal(docsLink('merge_pipeline_no_project_title'), DEFS + 'merge-pipeline', 'the other no-project keys keep the glossary link');
 });
 
+const RELEASE_HOWTO = 'howto/merge-pipeline.md#release-approval-modes';
+
+test('the release approval keys link to the Release approval modes howto section', () => {
+  const keys = [
+    'autonomous.merge_pipeline.release_approval.patch',
+    'autonomous.merge_pipeline.release_approval.minor',
+    'autonomous.merge_pipeline.release_approval.major',
+    'settings_merge_pipeline_release_approval_patch',
+    'settings_merge_pipeline_release_approval_major_hint',
+    'merge_pipeline_release_approval_label',
+    'merge_pipeline_release_approval_minor',
+    'merge_pipeline_release_approval_mode_manual',
+  ];
+  for (const k of keys) assert.equal(docsLink(k), RELEASE_HOWTO, k);
+  assert.ok(fs.existsSync(path.join(__dirname, '..', '..', '..', 'docs', 'howto', 'merge-pipeline.md')), 'the how-to is missing');
+  const md = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'docs', 'howto', 'merge-pipeline.md'), 'utf8');
+  assert.ok(/^## Release approval modes$/m.test(md), 'the how-to has no "Release approval modes" section');
+});
+
 // ── settings fields ─────────────────────────────────────────────────────────
 
-test('the Autonomous settings group has the six merge_pipeline fields with the right types', () => {
+test('the Autonomous settings group has the six merge_pipeline fields and the three release approval fields with the right types', () => {
   const fields = mergeFields();
   const byKey = Object.fromEntries(fields.map(f => [f.key, f]));
   const want = {
@@ -232,8 +299,16 @@ test('the Autonomous settings group has the six merge_pipeline fields with the r
     'autonomous.merge_pipeline.conflict_policy': 'select',
     'autonomous.merge_pipeline.conflict_model': 'text',
     'autonomous.merge_pipeline.version_files': 'text',
+    // Release settings: their own help link, checked in the next test.
+    'autonomous.merge_pipeline.release_size_map': 'release_size_map',
+    'autonomous.merge_pipeline.major_trigger': 'select',
+    'autonomous.merge_pipeline.release_cadence': 'select',
+    'autonomous.merge_pipeline.version_scheme': 'select',
+    'autonomous.merge_pipeline.release_approval.patch': 'select',
+    'autonomous.merge_pipeline.release_approval.minor': 'select',
+    'autonomous.merge_pipeline.release_approval.major': 'select',
   };
-  assert.equal(fields.length, 6, 'expected six fields: ' + fields.map(f => f.key).join(','));
+  assert.equal(fields.length, 13, 'expected thirteen fields: ' + fields.map(f => f.key).join(','));
   for (const [key, type] of Object.entries(want)) {
     assert.ok(byKey[key], key + ' missing');
     assert.equal(byKey[key].type, type, key + ' has the wrong type');
@@ -244,11 +319,32 @@ test('the Autonomous settings group has the six merge_pipeline fields with the r
   assert.equal(byKey['autonomous.merge_pipeline.version_files'].csv, true);
 });
 
+test('each release approval field offers auto, ask and manual, with its default', () => {
+  const byKey = Object.fromEntries(mergeFields().map(f => [f.key, f]));
+  const defaults = { patch: 'auto', minor: 'auto', major: 'ask' };
+  for (const size of ['patch', 'minor', 'major']) {
+    const f = byKey['autonomous.merge_pipeline.release_approval.' + size];
+    assert.deepEqual(f.options, ['auto', 'ask', 'manual'], size + ' options');
+    assert.equal(f.default, defaults[size], size + ' default');
+    assert.deepEqual(Object.keys(f.optionLabelKeys).sort(), ['ask', 'auto', 'manual'], size + ' option labels');
+    assert.equal(f.optionLabelKeys.auto, 'merge_pipeline_release_approval_mode_auto');
+    assert.equal(f.optionLabelKeys.ask, 'merge_pipeline_release_approval_mode_ask');
+    assert.equal(f.optionLabelKeys.manual, 'merge_pipeline_release_approval_mode_manual');
+  }
+});
+
 test('every merge_pipeline field has a label key, an inline description key and a docs link', () => {
   const en = bundle('en');
   for (const f of mergeFields()) {
-    const name = f.key.slice('autonomous.merge_pipeline.'.length);
+    // A dotted key maps to underscores: release_approval.patch -> release_approval_patch.
+    const name = f.key.slice('autonomous.merge_pipeline.'.length).replace(/\./g, '_');
     assert.equal(f.labelKey, 'settings_merge_pipeline_' + name, f.key + ' labelKey');
+    if (f.helpDocs) {
+      // Release fields carry a '?' help link (helpDocs) instead of the docs pill.
+      assert.ok(en[f.helpKey], f.key + ' help text missing in en');
+      assert.equal(docsLink(f.key), f.helpDocs, f.key + ' help link does not map to its howto');
+      continue;
+    }
     assert.equal(f.hintKey, 'settings_merge_pipeline_' + name + '_hint', f.key + ' hintKey');
     assert.ok(en[f.labelKey] && en[f.hintKey], f.key + ' label or description missing in en');
     assert.ok(f.docsKey, f.key + ' has no docs link');
@@ -562,6 +658,59 @@ test('every post_ship key the app references exists in all five bundles', () => 
   }
 });
 
+// ── release approval locale keys ────────────────────────────────────────────
+
+function releaseKeys(b) {
+  return Object.keys(b).filter(k => k.includes('release_approval')).sort();
+}
+
+test('the release_approval keys are identical in all five bundles, with a value in each', () => {
+  const en = releaseKeys(bundle('en'));
+  assert.ok(en.length >= 13, 'too few release_approval keys in en: ' + en.length);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    assert.deepEqual(releaseKeys(b), en, lang + ' release_approval key set differs from en');
+    for (const k of en) assert.ok(typeof b[k] === 'string' && b[k].length > 0, k + ' empty in ' + lang);
+  }
+});
+
+test('the release_approval strings are translated in the non-English bundles', () => {
+  const en = bundle('en');
+  for (const lang of LANGS.filter(l => l !== 'en')) {
+    const b = bundle(lang);
+    const same = releaseKeys(en).filter(k => b[k] === en[k]);
+    assert.deepEqual(same, [], lang + ' leaves English text in');
+  }
+});
+
+test('no release_approval string uses the word PRD or a tracker identifier', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of releaseKeys(b)) {
+      assert.ok(!/\bPRD/i.test(b[k]), k + ' uses PRD in ' + lang);
+      assert.ok(!/\b(BL|GH|SEC|HLLM)-?\d+\b/.test(b[k]), k + ' carries a tracker ID in ' + lang);
+    }
+  }
+});
+
+test('every release_approval key the app references exists in all five bundles', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const referenced = new Set();
+  for (const m of src.matchAll(/['"`]((?:settings_|autonomous\.merge_pipeline\.)?(?:merge_pipeline_)?release_approval[a-z_.]*)['"`]/g)) referenced.add(m[1]);
+  // The field keys are settings keys, not locale keys: keep only the locale ones.
+  // A string that is only the start of other keys is a help-link prefix, not a key.
+  const enKeys = Object.keys(bundle('en'));
+  for (const k of [...referenced]) {
+    if (k.startsWith('autonomous.') || k.endsWith('.')) referenced.delete(k);
+    else if (enKeys.some(e => e !== k && e.startsWith(k))) referenced.delete(k);
+  }
+  assert.ok(referenced.size >= 10, 'too few references found: ' + referenced.size);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of referenced) assert.ok(typeof b[k] === 'string', k + ' missing in ' + lang);
+  }
+});
+
 // ── the stats-poll rule ─────────────────────────────────────────────────────
 
 test('the card stores no setInterval on a DOM element', () => {
@@ -570,4 +719,91 @@ test('the card stores no setInterval on a DOM element', () => {
   const end = src.indexOf('// ── Triage card');
   assert.ok(start > 0 && end > start);
   assert.ok(!/setInterval/.test(src.slice(start, end)), 'the card must not start a timer of its own');
+});
+
+// ── merge lock and last validator lines ─────────────────────────────────────
+
+const LOCK = { repo: '/repo', run_id: 'run-1', automaton_id: 'auto-1', branches: ['feat/x', 'feat/y'], since: '2026-11-08T10:00:00Z' };
+const PASS_V = { pass: true, version: '9.1.0', checked_at: '2026-11-08T11:00:00Z', checks: [
+  { name: 'version_variables_equal', pass: true, detail: '' },
+  { name: 'tag_not_taken', pass: true, detail: '' },
+] };
+const FAIL_V = { pass: false, version: '9.1.0', checked_at: '2026-11-08T11:00:00Z', checks: [
+  { name: 'version_variables_equal', pass: true, detail: '' },
+  { name: 'tag_not_taken', pass: false, detail: 'tag v9.1.0 already exists' },
+  { name: 'readme_line_matches', pass: false, detail: '' },
+] };
+
+test('no merge lock and no validator result renders no status block', () => {
+  const bare = render(view());
+  assert.ok(!bare.includes('merge-status'), bare);
+  assert.equal(render(view(), { mergeStatus: {} }), bare);
+  assert.equal(render(view(), { mergeStatus: null }), bare);
+  assert.equal(render(view(), { mergeStatus: { merge_lock: null, last_validator: null } }), bare);
+});
+
+test('a held merge lock renders one line naming the Automaton, branches and since', () => {
+  const html = render(view(), { mergeStatus: { merge_lock: LOCK } });
+  assert.ok(html.includes('class="merge-status-lock"'), html);
+  assert.ok(html.includes('Merge lock held: Automaton auto-1, branches feat/x, feat/y, since '), html);
+  assert.ok(!html.includes('merge-status-validator'), html);
+  assert.ok(html.includes(DEFS + 'merge-lock'), 'the lock line links to the merge lock entry');
+  assert.equal(html.split('class="merge-status-lock"').length - 1, 1);
+});
+
+test('a failing validator renders its version and each failing check', () => {
+  const html = render(view(), { mergeStatus: { last_validator: FAIL_V } });
+  assert.ok(html.includes('class="merge-status-validator"'), html);
+  assert.ok(html.includes('Last release check failed: version 9.1.0, '), html);
+  assert.ok(html.includes('Failed check tag_not_taken: tag v9.1.0 already exists'), html);
+  assert.ok(html.includes('Failed check readme_line_matches'), html);
+  assert.ok(!html.includes('Failed check version_variables_equal'), 'passing checks are not listed');
+  assert.equal(html.split('class="merge-validator-check"').length - 1, 2);
+  assert.ok(html.includes(DEFS + 'release-bump-validator'), 'the validator line links to the validator entry');
+});
+
+test('a passing validator renders one line with no failing checks', () => {
+  const html = render(view(), { mergeStatus: { last_validator: PASS_V } });
+  assert.ok(html.includes('Last release check passed: version 9.1.0, '), html);
+  assert.ok(!html.includes('merge-validator-check'), html);
+  assert.ok(!html.includes('merge-status-lock'), html);
+});
+
+test('the lock and the validator render together, lock first', () => {
+  const html = render(view(), { mergeStatus: { merge_lock: LOCK, last_validator: PASS_V } });
+  assert.ok(html.indexOf('merge-status-lock') > 0 && html.indexOf('merge-status-lock') < html.indexOf('merge-status-validator'), html);
+});
+
+test('merge lock and validator values from the API are escaped', () => {
+  const html = render(view(), { mergeStatus: {
+    merge_lock: { ...LOCK, automaton_id: HOSTILE, branches: [HOSTILE] },
+    last_validator: { ...FAIL_V, version: HOSTILE, checks: [{ name: HOSTILE, pass: false, detail: HOSTILE }] },
+  } });
+  assert.ok(!html.includes(HOSTILE), html);
+  assert.ok(html.includes('&lt;img src=x'), html);
+});
+
+test('the merge lock and validator keys link to their definitions entries', () => {
+  assert.ok(docsLink('merge_lock_line').endsWith(DEFS + 'merge-lock'), docsLink('merge_lock_line'));
+  assert.ok(docsLink('merge_validator_check').endsWith(DEFS + 'release-bump-validator'), docsLink('merge_validator_check'));
+});
+
+test('every merge_lock_ and merge_validator_ key the app references exists in all five bundles', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const referenced = new Set();
+  for (const m of src.matchAll(/['"`](merge_(?:lock|validator)_[a-z_]+)['"`]/g)) referenced.add(m[1]);
+  assert.ok(referenced.size >= 8, 'too few references found: ' + referenced.size);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of referenced) assert.ok(typeof b[k] === 'string' && b[k] !== '', k + ' missing in ' + lang);
+  }
+});
+
+test('no merge lock or validator string uses the word PRD', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of Object.keys(b).filter(k => k.startsWith('merge_lock_') || k.startsWith('merge_validator_'))) {
+      assert.ok(!/\bPRD/i.test(b[k]), k + ' uses PRD in ' + lang);
+    }
+  }
 });

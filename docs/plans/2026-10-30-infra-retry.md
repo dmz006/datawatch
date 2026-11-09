@@ -163,7 +163,7 @@ not written here. Every phase's own checklist is the Phase Completion Checklist 
 - [x] The new infrastructure retry tests green. The full `go test ./...` is green; the full
       `node --test internal/server/web/*.test.js` has one failure that is already present at the
       merge base and is not in this feature. Both are recorded in
-      `docs/plans/2026-10-30-infra-retry-final-gate-report.md`.
+      `docs/plans/historical-plans/2026-10-30-infra-retry-final-gate-report.md`.
 - [x] General documentation checklist: `CHANGELOG.md`, `docs/config-reference.yaml`,
       `docs/operations.md`, `README.md`, the doc index in `README.md` and `docs/README.md`,
       `docs/testing-tracker.md`, no leaked tracker IDs (`scripts/check-no-internal-refs.sh`),

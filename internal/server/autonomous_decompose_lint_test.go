@@ -211,7 +211,7 @@ func TestDecomposeLintConfigHandler_PUT_RoundTripsToYamlishConfig(t *testing.T) 
 	dir := t.TempDir()
 	s := &Server{
 		autonomousMgr: spy,
-		cfg:           &config.Config{},
+		cfg:           &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}},
 		cfgPath:       dir + "/config.yaml",
 	}
 

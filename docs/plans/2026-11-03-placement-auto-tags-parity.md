@@ -125,3 +125,7 @@ that repo next takes mobile parity work.
 No `gh` command was run in this task, no issue was filed in
 `dmz006/datawatch-app`, and no version bump or CHANGELOG entry is owed: this
 is a docs-only change (one howto section, this parity record).
+
+## 2026-11-08: which sessions carry which placement tags
+
+Question to the operator: the planner (decompose) sessions carry `automaton:`, `kind:decompose`, `lane:` and `role:planner` but no `compute:` tag, and the supervisor session carries no system tags at all; should they get the full set? The operator answered, quoted: "Yes all that we are able to add tag for should". Decision: every session that can carry a placement tag carries every axis that applies to it, including `compute:` for the node it runs on. Draft Automaton filed from the spec in the supervisor scratch folder.

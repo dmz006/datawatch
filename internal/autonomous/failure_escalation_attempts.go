@@ -58,6 +58,8 @@ type attemptRun struct {
 	RefsBefore int
 	// Escalated is true when an escalation step chose this attempt's worker.
 	Escalated bool
+	// BackendReason is the describeAttemptBackendReason text for the worker.
+	BackendReason string
 	// SessionID and TmuxSession name the session the attempt used, when the
 	// caller knows them. Both stay empty when no session started.
 	SessionID   string
@@ -68,6 +70,23 @@ type attemptRun struct {
 	// AttemptsBefore is len(t.Attempts) when the attempt began; the executor's
 	// exit hook uses it to tell whether the attempt was already recorded.
 	AttemptsBefore int
+	// Resumed is true when the attempt continued the previous session with the
+	// failure summary instead of starting a fresh one (see tryRetryResume).
+	Resumed bool
+	// ResumeReason is the retry-resume decision's reason for this attempt: the
+	// outcome of decideRetryResume, or the fallback reason when a decision to
+	// resume could not be carried out. Empty when no retry decision was made.
+	ResumeReason string
+	// WorkerProfile names the worker profile the launch applied; empty when
+	// the attempt ran with no profile.
+	WorkerProfile string
+	// WorkerRole names the role of the attempt's worker session.
+	WorkerRole string
+	// LaunchContext is the starting context generated for the worker at
+	// launch, when one was generated; empty for a launch without a
+	// starting context. The attempt record estimates its token size from it
+	// and records the estimated source.
+	LaunchContext string
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -92,6 +111,10 @@ type attemptFailure struct {
 	// means "derive it from Outcome and Category".
 	EndReason string
 	EndDetail string
+	// NoRetryReason is set on the failed attempt recorded for a no-retry
+	// hold: the operator-readable reason the task is sent to review without
+	// another attempt. Empty for an ordinary failed attempt.
+	NoRetryReason string
 }
 
 // deriveAttemptEndReason picks an end reason for a failure whose caller did
@@ -137,11 +160,14 @@ func (m *Manager) attemptNow() time.Time {
 func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, run attemptRun, f attemptFailure) {
 	ended := m.attemptNow()
 	backend, model, effort := run.Backend, run.Model, run.Effort
+	backendReason := run.BackendReason
 	if backend == "" {
 		story := findStory(prd, t.StoryID)
 		auto := m.AutomationForPRD(prd)
-		backend, model, _ = resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+		var source string
+		backend, model, source = resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
 		effort = resolveTaskEffort(t, story, prd, auto)
+		backendReason = describeAttemptBackendReason(source, taskAttemptKind(t), m.escalationFailureCount(t))
 	}
 
 	started := run.StartedAt
@@ -173,15 +199,25 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		Outcome:         f.Outcome,
 		FailureCategory: f.Category,
 		FailureSummary:  f.Summary,
+		NoRetryReason:   f.NoRetryReason,
 		VerifierSummary: f.Verification.Summary,
 		VerifierIssues:  append([]string(nil), f.Verification.Issues...),
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
 		SnapshotRef:     ref,
 		Escalated:       run.Escalated,
+		BackendReason:   backendReason,
+		Resumed:         run.Resumed,
+		ResumeReason:    run.ResumeReason,
+		WorkerProfile:   run.WorkerProfile,
+		WorkerRole:      run.WorkerRole,
+		StartupTokens:   EstimateTokens(run.LaunchContext),
 		SessionID:       sessionID,
 		TmuxSession:     tmux,
 		EndReason:       deriveAttemptEndReason(f, adopted),
 		EndDetail:       f.EndDetail,
+	}
+	if run.LaunchContext != "" {
+		rec.StartupTokenSource = StartupTokenSourceEstimated
 	}
 	m.store.WithLock(func() {
 		if ev := t.RunnerEvidence; ev != nil {

@@ -207,7 +207,7 @@ func TestDashboardHideInactiveCardsRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cfgPath := filepath.Join(home, "config.yaml")
-	s := &Server{cfg: &config.Config{}, cfgPath: cfgPath}
+	s := &Server{cfg: &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}}, cfgPath: cfgPath}
 
 	get := func() (bool, bool) {
 		t.Helper()

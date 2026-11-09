@@ -374,7 +374,10 @@ is bounded by `autonomous.capacity_wait_timeout_seconds`, and cancelling
 or rejecting the PRD drops the planner from the queue immediately —
 reported as "decompose cancelled", and not consuming the decompose retry
 budget. The planner ranks after workers and verifiers, so planning never
-starves running work.
+starves running work. A planner that has waited ten minutes ranks as a
+worker, so the Automaton's priority decides between it and the workers
+instead of workers always going first; this keeps planning, which feeds the
+lanes, from starving. Verifiers still go first.
 
 ### Retargeting while queued
 
