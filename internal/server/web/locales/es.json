@@ -4166,6 +4166,7 @@
   "settings_decompose_lint_mode": "Modo (off | shadow | enforce)",
   "settings_decompose_lint_max_retries": "Reintentos máx. (0-5, por defecto 2)",
   "settings_decompose_lint_task_templates": "Plantillas de tareas",
+  "settings_decompose_lint_task_templates_help": "Configura las tareas estándar que el descompositor añade a cada historia.",
   "settings_decompose_lint_guidance": "Guía de descomposición",
   "settings_decompose_lint_rules": "Reglas (JSON)",
   "settings_decompose_lint_rules_help": "un array de reglas o {rules, disabled_rules}; el demonio completa valores por defecto y valida al guardar",

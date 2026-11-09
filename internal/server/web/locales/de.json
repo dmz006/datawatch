@@ -4166,6 +4166,7 @@
   "settings_decompose_lint_mode": "Modus (off | shadow | enforce)",
   "settings_decompose_lint_max_retries": "Max. Wiederholungen (0-5, Standard 2)",
   "settings_decompose_lint_task_templates": "Aufgabenvorlagen",
+  "settings_decompose_lint_task_templates_help": "Konfiguriert die Standardaufgaben, die der Decomposer jeder Story hinzufügt.",
   "settings_decompose_lint_guidance": "Decompose-Anleitung",
   "settings_decompose_lint_rules": "Regeln (JSON)",
   "settings_decompose_lint_rules_help": "ein Regel-Array oder {rules, disabled_rules}; der Daemon ergänzt Standardwerte und validiert beim Speichern",

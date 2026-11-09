@@ -4166,6 +4166,7 @@
   "settings_decompose_lint_mode": "モード（off | shadow | enforce）",
   "settings_decompose_lint_max_retries": "最大リトライ（0-5、既定 2）",
   "settings_decompose_lint_task_templates": "タスクテンプレート",
+  "settings_decompose_lint_task_templates_help": "デコンポーザーが各ストーリーに追加する標準タスクを設定します。",
   "settings_decompose_lint_guidance": "Decompose ガイダンス",
   "settings_decompose_lint_rules": "ルール（JSON）",
   "settings_decompose_lint_rules_help": "ルールの配列、または {rules, disabled_rules}。デーモンは既定値をマージし、保存時に検証します",

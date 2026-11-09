@@ -4166,6 +4166,7 @@
   "settings_decompose_lint_mode": "Mode (off | shadow | enforce)",
   "settings_decompose_lint_max_retries": "Réessais max. (0-5, défaut 2)",
   "settings_decompose_lint_task_templates": "Gabarits de tâches",
+  "settings_decompose_lint_task_templates_help": "Configure les tâches standard que le décomposeur ajoute à chaque story.",
   "settings_decompose_lint_guidance": "Guides de décomposition",
   "settings_decompose_lint_rules": "Règles (JSON)",
   "settings_decompose_lint_rules_help": "un tableau de règles ou {rules, disabled_rules} ; le démon complète les valeurs par défaut et valide à l'enregistrement",
