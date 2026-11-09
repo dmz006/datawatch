@@ -30,6 +30,9 @@
 # Exit 0 when every case passes, 1 otherwise.
 
 set -euo pipefail
+# A clean CI runner has no git identity: every commit the fixtures make needs one from the environment.
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-tidy-test}" GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-tidy-test@localhost}"
+export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-tidy-test}" GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-tidy-test@localhost}"
 
 # never attach to a tmux session while testing
 unset TMUX TMUX_TMPDIR
@@ -99,6 +102,7 @@ new_repo() {
     cp "$REPO_DIR/scripts/tidy-plans.sh"        scripts/
     cp "$REPO_DIR/scripts/plans_links.py"       scripts/
     cp "$REPO_DIR/scripts/plans_registry_hygiene.py" scripts/
+    cp "$REPO_DIR/scripts/plans_monthly_archive.py" scripts/
     cp "$REPO_DIR/scripts/check-plans-links.sh" scripts/
   )
   NEW_REPO="$d"
@@ -446,6 +450,131 @@ EOF
 
 # ── dispatch ─────────────────────────────────────────────────────────────
 echo "── test-tidy-plans: mode=$MODE ──"
+# ── reports / parity-issues monthly archive cases ────────────────────────
+# Fixture: old filed + unfiled parity drafts, an old report with an open
+# registry row, an old report with no reference (no name date prefix, dated
+# by a git committer date 30 days ago), and an old report (name prefix)
+# with only closed-row / plan-doc links.  Sets NEW_REPO and AGE_MONTH.
+AGE_MONTH=""
+build_archive_fixture() {
+  local repo pd rp d30
+  new_repo; repo=$NEW_REPO
+  pd="$repo/docs/plans/parity-issues"; rp="$repo/docs/plans/reports"
+  mkdir -p "$pd" "$rp"
+  d30=$(date -d '30 days ago' '+%Y-%m-%dT12:00:00')
+  AGE_MONTH=$(date -d '30 days ago' '+%Y-%m')
+  printf '# filed draft\n\n## Filed issue\n\nhttps://github.com/example/repo/issues/55\n' > "$pd/${OLD}-filed.md"
+  printf '# unfiled draft\n\n## Filed issue\n\nNot filed yet.\n' > "$pd/${OLD}-unfiled.md"
+  printf '# open report\n' > "$rp/${OLD}-open-rep.md"
+  printf '# unreferenced report\n' > "$rp/loose-report.md"
+  printf '# linked report\n' > "$rp/${OLD}-linked-rep.md"
+  printf '# linker plan\n\nSee [the report](reports/%s-linked-rep.md) and docs/plans/reports/%s-linked-rep.md.\n' "$OLD" "$OLD" > "$repo/docs/plans/${OLD}-linker.md"
+  cat > "$repo/docs/plans/README.md" <<EOF
+# Registry
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [open report](reports/${OLD}-open-rep.md) | in progress |
+| 2 | [linked report](reports/${OLD}-linked-rep.md) | done |
+| 3 | [linker plan](${OLD}-linker.md) | in progress |
+EOF
+  (
+    cd "$repo"
+    git add -A
+    GIT_AUTHOR_DATE="$d30" GIT_COMMITTER_DATE="$d30" git commit -q -m fixture
+  )
+  return 0
+}
+
+# hash of every file outside .git plus the porcelain status
+repo_state() { ( cd "$1" && find . -path ./.git -prune -o -type f -print0 | sort -z | xargs -0 sha256sum; git status --porcelain ); }
+
+case_archive_parity_filed_moves() {
+  local repo out
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "parity filed: tidy crashed: $out"; return; fi
+  assert_file    "parity filed: filed draft archived" "$repo/docs/plans/parity-issues/archive/2020-01/${OLD}-filed.md"
+  assert_no_file "parity filed: filed draft left top-level" "$repo/docs/plans/parity-issues/${OLD}-filed.md"
+  assert_line    "parity filed: counted" "$out" 'parity issues archived: 1'
+}
+
+case_archive_parity_unfiled_stays() {
+  local repo out
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "parity unfiled: tidy crashed: $out"; return; fi
+  assert_file    "parity unfiled: draft stays" "$repo/docs/plans/parity-issues/${OLD}-unfiled.md"
+  assert_no_file "parity unfiled: not archived" "$repo/docs/plans/parity-issues/archive/2020-01/${OLD}-unfiled.md"
+}
+
+case_archive_report_open_row_stays() {
+  local repo out
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "report open row: tidy crashed: $out"; return; fi
+  assert_file    "report open row: report stays" "$repo/docs/plans/reports/${OLD}-open-rep.md"
+  assert_no_file "report open row: not archived" "$repo/docs/plans/reports/archive/2020-01/${OLD}-open-rep.md"
+}
+
+case_archive_report_unreferenced_moves() {
+  local repo out
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "report loose: tidy crashed: $out"; return; fi
+  assert_file    "report loose: archived under its commit month" "$repo/docs/plans/reports/archive/${AGE_MONTH}/loose-report.md"
+  assert_no_file "report loose: left top-level" "$repo/docs/plans/reports/loose-report.md"
+  assert_line    "report loose: counted" "$out" 'reports archived: 2'
+}
+
+case_archive_links_rewritten() {
+  local repo out reg doc
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "report links: tidy crashed: $out"; return; fi
+  assert_file "report links: linked report archived" "$repo/docs/plans/reports/archive/2020-01/${OLD}-linked-rep.md"
+  reg=$(cat "$repo/docs/plans/README.md")
+  doc=$(cat "$repo/docs/plans/${OLD}-linker.md")
+  assert_contains "report links: registry row rewritten" "$reg" "](reports/archive/2020-01/${OLD}-linked-rep.md)"
+  assert_lacks    "report links: registry old link gone" "$reg" '\]\(reports/2020-01-01-linked-rep\.md\)'
+  assert_contains "report links: doc link rewritten" "$doc" "](reports/archive/2020-01/${OLD}-linked-rep.md)"
+  assert_contains "report links: doc path mention rewritten" "$doc" "docs/plans/reports/archive/2020-01/${OLD}-linked-rep.md"
+  assert_lacks    "report links: doc old mention gone" "$doc" 'docs/plans/reports/2020-01-01-linked-rep'
+  assert_contains "report links: open-row link untouched" "$reg" "](reports/${OLD}-open-rep.md)"
+}
+
+case_archive_link_check_passes() {
+  local repo out n=""
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "link check: tidy crashed: $out"; return; fi
+  if n=$(run_checker "$repo" 2>&1); then
+    ok "link check: passes after the move"
+  else
+    printf '     checker said: %s\n' "$n" >&2; fail "link check: passes after the move"
+  fi
+  assert_line "link check: zero broken targets" "$n" '^0$'
+}
+
+case_archive_second_run_noop() {
+  local repo before after out
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "second run: first tidy crashed: $out"; return; fi
+  before=$(repo_state "$repo")
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "second run: tidy crashed: $out"; return; fi
+  after=$(repo_state "$repo")
+  if [ "$before" = "$after" ]; then ok "second run: file hashes and git status unchanged"
+  else
+    diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") >&2 || true
+    fail "second run: file hashes and git status unchanged"
+  fi
+  assert_line "second run: nothing archived" "$out" 'reports archived: 0'
+  assert_line "second run: no parity archived" "$out" 'parity issues archived: 0'
+  assert_line "second run: no links rewritten" "$out" 'links rewritten: 0'
+}
+
+case_archive_counts_only() {
+  local repo out
+  build_archive_fixture; repo=$NEW_REPO
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "archive counts: tidy crashed: $out"; return; fi
+  assert_counts_only "archive counts: no .md file name in output" "$out"
+  assert_lacks "archive counts: no fixture names in output" "$out" 'filed|open-rep|loose-report|linked-rep|linker'
+}
+
 case "$MODE" in
   hygiene)
     case_hygiene_registry_cleaned
@@ -462,6 +591,14 @@ case "$MODE" in
     case_links_rewritten
     case_links_check
     case_counts_only_output
+    case_archive_parity_filed_moves
+    case_archive_parity_unfiled_stays
+    case_archive_report_open_row_stays
+    case_archive_report_unreferenced_moves
+    case_archive_links_rewritten
+    case_archive_link_check_passes
+    case_archive_second_run_noop
+    case_archive_counts_only
     case_hygiene_registry_cleaned
     case_hygiene_trim_and_dry_run
     case_hygiene_stale_corrected

@@ -32,6 +32,11 @@
 # stale draft/not-started rows from an Automaton list export (JSON, read
 # as-is; no daemon, no gh).
 #
+# Reports (docs/plans/reports/) and parity issues (docs/plans/parity-issues/)
+# are archived monthly by scripts/plans_monthly_archive.py, which runs after
+# the dated-plan step with the same --days and --dry-run values; its link
+# and unclassified counts are folded into the summary totals.
+#
 # Output is counts only (kept, archived, links rewritten, ...) -- never a
 # list of files.
 #
@@ -96,6 +101,15 @@ plans_kept=$(printf '%s\n' "$PLAN_OUT"  | sed -n 's/^plans kept:[[:space:]]*//p'
 plans_archived=$(printf '%s\n' "$PLAN_OUT" | sed -n 's/^plans archived:[[:space:]]*//p')
 links_rewritten=$(printf '%s\n' "$PLAN_OUT" | sed -n 's/^links rewritten:[[:space:]]*//p')
 
+# ── reports and parity issues: monthly archive helper ───────────────────
+MA_OUT=$(python3 "$ROOT/scripts/plans_monthly_archive.py" "$ROOT" "${PY_ARGS[@]}")
+ma_get() { printf '%s\n' "$MA_OUT" | sed -n "s/^$1:[[:space:]]*//p"; }
+reports_archived=$(ma_get "reports archived")
+parity_archived=$(ma_get "parity issues archived")
+ma_links=$(ma_get "links rewritten")
+ma_unclassified=$(ma_get "unclassified")
+links_rewritten=$(( ${links_rewritten:-0} + ${ma_links:-0} ))
+
 # ── release notes: group by minor version ────────────────────────────────
 moved_rn=0
 if [ "$RELEASES" -eq 1 ] && [ -f "$ROOT/cmd/datawatch/main.go" ]; then
@@ -136,12 +150,13 @@ for f in "$PLANS_DIR"/*.md; do
   [ -f "$f" ] || continue
   base=$(basename "$f")
   case "$base" in
-    README.md|HISTORY.md) continue ;;
+    README.md|HISTORY.md|roadmap-archive-*.md) continue ;;
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.md) continue ;;
     RELEASE-NOTES-v[0-9]*.[0-9]*.*) continue ;;
   esac
   unclassified=$((unclassified + 1))
 done
+unclassified=$((unclassified + ${ma_unclassified:-0}))
 
 echo
 echo "── tidy-plans summary ──"
@@ -149,6 +164,8 @@ echo "current minor: v${CURRENT_MINOR:-?}.x  (plan-age cutoff: $DAYS days)"
 echo "plans kept: $plans_kept"
 echo "plans archived: $plans_archived"
 echo "links rewritten: $links_rewritten"
+echo "reports archived: ${reports_archived:-0}"
+echo "parity issues archived: ${parity_archived:-0}"
 echo "release notes moved: $moved_rn"
 if [ -n "$HYGIENE_OUT" ]; then
   echo "registry hygiene:"
@@ -166,9 +183,9 @@ fi
 # --check: non-zero exit if anything would have moved.  Used by
 # release-smoke.sh to fail-fast when the operator hasn't tidied between
 # releases (per the operator's "build process" rule, 2026-05-05).
-if [ "$CHECK" -eq 1 ] && [ $((plans_archived + moved_rn)) -gt 0 ]; then
+if [ "$CHECK" -eq 1 ] && [ $((plans_archived + moved_rn + ${reports_archived:-0} + ${parity_archived:-0})) -gt 0 ]; then
   echo
-  echo "ERR: $((plans_archived + moved_rn)) file(s) need to move out of docs/plans/." >&2
+  echo "ERR: $((plans_archived + moved_rn + ${reports_archived:-0} + ${parity_archived:-0})) file(s) need to move out of docs/plans/." >&2
   echo "     Run \`scripts/tidy-plans.sh\` (no flags) to perform the moves," >&2
   echo "     then commit before re-running release-smoke." >&2
   exit 1

@@ -94,10 +94,28 @@ DATED_LEAF_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*
 MD_TARGET_RE = re.compile(r"\]\(\s*<?([^)<\s]+)>?")
 
 
+TRACKED_DIRS = ("reports", "parity-issues")
+
+
+def archived_leaf_exists(leaf: str) -> bool:
+    # reports/ and parity-issues/ hold archive/YYYY-MM/ subfolders; a
+    # target counts as present when its leaf lives in any of them
+    for d in TRACKED_DIRS:
+        base = os.path.join(plans_dir, d)
+        if os.path.exists(os.path.join(base, leaf)):
+            return True
+        arch = os.path.join(base, "archive")
+        if os.path.isdir(arch):
+            for sub in os.listdir(arch):
+                if os.path.exists(os.path.join(arch, sub, leaf)):
+                    return True
+    return False
+
+
 def is_plans_target(clean: str) -> bool:
     if not clean.endswith(".md"):
         return False
-    if "plans/" in clean:
+    if "plans/" in clean or any(f"{d}/" in clean for d in TRACKED_DIRS):
         return True
     return bool(DATED_LEAF_RE.match(clean.rsplit("/", 1)[-1]))
 
@@ -110,7 +128,12 @@ def resolvable(clean: str, srcdir: str) -> bool:
     if clean.startswith("plans/"):
         if os.path.exists(os.path.join(root, "docs", clean)):
             return True
+    if os.path.exists(os.path.join(plans_dir, clean)):
+        return True
     leaf = clean.rsplit("/", 1)[-1]
+    if any(f"{d}/" in clean for d in TRACKED_DIRS) or DATED_LEAF_RE.match(leaf):
+        if archived_leaf_exists(leaf):
+            return True
     if DATED_LEAF_RE.match(leaf):
         for base in (plans_dir, os.path.join(plans_dir, "historical-plans")):
             if os.path.exists(os.path.join(base, leaf)):

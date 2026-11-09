@@ -110,8 +110,34 @@ td_install_traps "$@"
 
 # --- static source lints (no daemon required) --------------------------------
 # v6.11.25 — keep docs/plans/ clean before every release.
+# The daily plans-tidy Automation writes a run stamp (ran_at in UTC, result).
+# A stamp with result "ok" and ran_at under 24 hours old lets the smoke skip the
+# --check. Any other result, an old stamp, or a missing/unreadable stamp keeps
+# the --check and its abort. DW_SKIP_TIDY_CHECK=1 still skips the whole gate.
+TIDY_STAMP_FILE="$REPO_DIR/.datawatch/reports/plans-tidy-last-run.json"
+tidy_stamp_fresh() {
+  # Returns 0 only when the stamp is ok and fresh; otherwise returns 1.
+  local stamp="$1" ran_at result ran_epoch now_epoch age
+  [ -f "$stamp" ] || return 1
+  ran_at=$(sed -n 's/.*"ran_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$stamp" | head -n 1)
+  result=$(sed -n 's/.*"result"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$stamp" | head -n 1)
+  [ "$result" = "ok" ] || return 1
+  [ -n "$ran_at" ] || return 1
+  command -v date >/dev/null 2>&1 || return 1
+  ran_epoch=$(date -u -d "$ran_at" +%s 2>/dev/null) || return 1
+  now_epoch=$(date -u +%s 2>/dev/null) || return 1
+  [ -n "$ran_epoch" ] && [ -n "$now_epoch" ] || return 1
+  age=$(( now_epoch - ran_epoch ))
+  [ "$age" -ge 0 ] && [ "$age" -lt 86400 ] || return 1
+  TIDY_STAMP_RAN_AT="$ran_at"
+  return 0
+}
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
-  "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
+  if tidy_stamp_fresh "$TIDY_STAMP_FILE"; then
+    echo "tidy gate: daily Automation ran at $TIDY_STAMP_RAN_AT (result ok, under 24h) — skipping --check" >&2
+  else
+    "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
+  fi
 fi
 # v6.12.1 — keep the embedded /docs/ mirror current.
 if [ "${DW_SKIP_DOCS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/sync-docs-to-webfs.sh" ]; then

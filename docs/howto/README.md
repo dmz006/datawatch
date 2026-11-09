@@ -119,6 +119,7 @@ you already have a daemon you can talk to.
 | [Discussion Scopes](discussion-scopes.md) | Per-discussion memory namespaces with WAL, federated sync, conflict detection, and 60 ops/min throttle |
 | [Classification Verdicts](classification-verdicts.md) | Judge verification by option probabilities: enable classify mode, allowlist a publisher, probe and calibrate, read the route and score vector, failure behaviour |
 | [Plugin services (imap-mcp)](imap-mcp-service.md) | Run imap-mcp standalone, attach datawatch or let it manage the process, mint and rotate the service and push tokens, read the status card, act on each of the four events, and the troubleshooting table |
+| [Plans folder tidy](plans-folder-tidy.md) | The folder rules for `docs/plans/` (what stays, what moves, the age cutoff, references, the filed-only rule, unclassified files), the daily Automation run, its alert, run stamp and daily report, the 24-hour release smoke window, and every setting: three environment variables, the `tidy-plans.sh` flags and the Automation import file |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has
 > first-time install. [`docs/api/`](../api/) has REST/MCP/CLI

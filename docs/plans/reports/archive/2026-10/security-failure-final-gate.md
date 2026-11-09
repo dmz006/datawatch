@@ -79,7 +79,7 @@ do not:
 
 ## Live check
 
-`docs/plans/reports/security-failure-shadow-live-check.md` ends with **`Result: PASS`**. Summary:
+`docs/plans/reports/archive/2026-10/security-failure-shadow-live-check.md` ends with **`Result: PASS`**. Summary:
 
 * Shadow: the report is stored with a `would_stop` line; nothing is stopped or alerted; the run is assessed once.
 * `on`: the linked Automaton is blocked, the report is copied byte-identically into its triage record, and
@@ -108,8 +108,8 @@ Uncommitted at the time of the gate (`git status --short`):
  M docs/mcp.md                                 (row label Automata)
  M docs/plans/2026-10-25-automation-supervisor-duties-proposal.md  (Step 7 parity)
  M docs/plans/README.md                        (B127, B128, B129)
- M docs/plans/reports/security-failure-shadow-live-check.md
- M docs/plans/reports/security-failure-final-gate.md
+ M docs/plans/reports/archive/2026-10/security-failure-shadow-live-check.md
+ M docs/plans/reports/archive/2026-10/security-failure-final-gate.md
  M docs/testing.md                             (section count 89; the gate fix)
  M internal/autonomous/security_failure_pass.go  (the gh runner seam)
  M internal/config/config.go                   (default security_workflows; B127)
