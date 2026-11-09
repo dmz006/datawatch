@@ -161,6 +161,11 @@ picked and the list/content becomes that host's data, without you leaving
 and re-opening the view. Picking **Local** or **All** takes the same page
 back to that view the same way.
 
+On the **Dashboard** the switch is per panel rather than one list: each
+panel re-fetches for the active host. Only the **Automata** and **Cost**
+panels aggregate under **All** (`/api/autonomous/prds/aggregated`,
+`/api/cost/aggregated`); the other panels have no aggregated variant.
+
 > **Confirm this on your setup before relying on it.** The in-place switch
 > is recorded under **[Unreleased] → Fixed** in the
 > [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry records
@@ -218,8 +223,11 @@ Each item in the response carries a `server` field (e.g. `"server":"nas"`)
 identifying its origin. The PWA renders a **[nas]** tag on each card.
 
 The Observer and Settings pickers offer no **All** chip at all (only the
-local and federated chips), and the Dashboard has no separate "All"
-aggregation — **All** falls back to local data on that view.
+local and federated chips). On the Dashboard, **All** aggregates per panel:
+the Automata and Cost panels use the aggregated endpoints above
+(`/api/autonomous/prds/aggregated`, `/api/cost/aggregated`); the other
+Dashboard panels have no aggregated variant and show the selected server's
+data.
 
 ## Proxy mode (specific server)
 
