@@ -72,7 +72,9 @@ Two companion pieces travel with it:
 
 - **Task templates** — reusable task definitions (a changelog entry, a
   final gate, …) that are appended to every story the planner left
-  incomplete, idempotently;
+  incomplete, idempotently. Each template runs as an LLM session, in the
+  daemon, or not at all; see [daemon task modes and the script gate](automaton-daemon-task-modes.md)
+  for the per-template modes, the defaults and the gate settings;
 - **Decompose guidance** — the text handed to the planner *before* it
   writes the plan, generated from your active rules unless you supply your
   own.
