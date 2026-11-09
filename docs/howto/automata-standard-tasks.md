@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [standard tasks, standard task, automaton templates, automaton template, task templates, decomposer, story tasks, per-project override, templates tab]
+  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab]
 exec_params:
   - {name: project, required: false, description: "Project directory or alias: shows the standard-task list as that project sees it (its override applied)"}
 exec_steps:
