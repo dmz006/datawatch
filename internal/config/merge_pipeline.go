@@ -43,6 +43,21 @@ const (
 	ConflictPolicyMechanicalAndModel = "mechanical_and_model"
 )
 
+// How the conflict model's proposals are used.
+const (
+	// ConflictModeShadow runs the model without acting on its proposal.
+	ConflictModeShadow = "shadow"
+	// ConflictModeOn acts on the model's proposal.
+	ConflictModeOn = "on"
+	// MergeConflictModeDefault is the mode read when conflict_mode is unset.
+	MergeConflictModeDefault = ConflictModeShadow
+)
+
+// MergeConflictConfirmFirstNDefault is how many of a project's first
+// conflict proposals need confirmation when conflict_confirm_first_n is unset.
+// An explicit 0 turns confirmation off.
+const MergeConflictConfirmFirstNDefault = 5
+
 // Post-ship hook built-in names. A hook uses exactly one of a built-in and
 // a command; the built-in says which setting provides its target.
 const (
@@ -79,12 +94,14 @@ func MergePipelineDefaultSourceOrder() []string {
 
 // MergePipelineOverride holds one project's values; an unset key inherits.
 type MergePipelineOverride struct {
-	FileName          string   `yaml:"file_name,omitempty" json:"file_name,omitempty"`
-	SourceOrder       []string `yaml:"source_order,omitempty" json:"source_order,omitempty"`
-	FallbackOnBadFile string   `yaml:"fallback_on_bad_file,omitempty" json:"fallback_on_bad_file,omitempty"`
-	ConflictPolicy    string   `yaml:"conflict_policy,omitempty" json:"conflict_policy,omitempty"`
-	ConflictModel     *string  `yaml:"conflict_model,omitempty" json:"conflict_model,omitempty"`
-	VersionFiles      []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
+	FileName              string   `yaml:"file_name,omitempty" json:"file_name,omitempty"`
+	SourceOrder           []string `yaml:"source_order,omitempty" json:"source_order,omitempty"`
+	FallbackOnBadFile     string   `yaml:"fallback_on_bad_file,omitempty" json:"fallback_on_bad_file,omitempty"`
+	ConflictPolicy        string   `yaml:"conflict_policy,omitempty" json:"conflict_policy,omitempty"`
+	ConflictModel         *string  `yaml:"conflict_model,omitempty" json:"conflict_model,omitempty"`
+	ConflictMode          string   `yaml:"conflict_mode,omitempty" json:"conflict_mode,omitempty"`
+	ConflictConfirmFirstN *int     `yaml:"conflict_confirm_first_n,omitempty" json:"conflict_confirm_first_n,omitempty"`
+	VersionFiles          []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
 }
 
 // MergePipelineConfig is the autonomous.merge_pipeline block.
@@ -104,6 +121,12 @@ type MergePipelineConfig struct {
 	// Unset reads MergePipelineDefaultConflictModel; an explicit empty string
 	// means no model.
 	ConflictModel *string `yaml:"conflict_model,omitempty" json:"conflict_model,omitempty"`
+	// ConflictMode is "shadow" or "on". Unset reads "shadow".
+	ConflictMode string `yaml:"conflict_mode,omitempty" json:"conflict_mode,omitempty"`
+	// ConflictConfirmFirstN is how many of a project's first conflict
+	// proposals need confirmation. Unset reads 5; an explicit 0 turns
+	// confirmation off; a negative value is invalid.
+	ConflictConfirmFirstN *int `yaml:"conflict_confirm_first_n,omitempty" json:"conflict_confirm_first_n,omitempty"`
 	// VersionFiles lists the project files, relative to the project, that
 	// carry the `var Version = "X.Y.Z"` line the release-version step sets.
 	// Unset means none: a pipeline that bumps the version fails that step
@@ -121,7 +144,8 @@ type MergePipelineConfig struct {
 // IsZero reports whether no key is set, so yaml.v3 can drop an unset block.
 func (c MergePipelineConfig) IsZero() bool {
 	return c.FileName == "" && c.SourceOrder == nil && c.FallbackOnBadFile == "" &&
-		c.ConflictPolicy == "" && c.ConflictModel == nil && c.VersionFiles == nil &&
+		c.ConflictPolicy == "" && c.ConflictModel == nil && c.ConflictMode == "" &&
+		c.ConflictConfirmFirstN == nil && c.VersionFiles == nil &&
 		c.PostShip.IsZero() && len(c.Projects) == 0
 }
 
@@ -131,6 +155,7 @@ func (c MergePipelineConfig) Clone() MergePipelineConfig {
 	out.SourceOrder = cloneStrings(c.SourceOrder)
 	out.VersionFiles = cloneStrings(c.VersionFiles)
 	out.ConflictModel = cloneStringPtr(c.ConflictModel)
+	out.ConflictConfirmFirstN = cloneIntPtr(c.ConflictConfirmFirstN)
 	out.PostShip = c.PostShip.Clone()
 	if c.Projects != nil {
 		out.Projects = make(map[string]MergePipelineOverride, len(c.Projects))
@@ -138,10 +163,19 @@ func (c MergePipelineConfig) Clone() MergePipelineConfig {
 			v.SourceOrder = cloneStrings(v.SourceOrder)
 			v.VersionFiles = cloneStrings(v.VersionFiles)
 			v.ConflictModel = cloneStringPtr(v.ConflictModel)
+			v.ConflictConfirmFirstN = cloneIntPtr(v.ConflictConfirmFirstN)
 			out.Projects[k] = v
 		}
 	}
 	return out
+}
+
+func cloneIntPtr(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 func cloneStrings(s []string) []string {
@@ -233,6 +267,31 @@ func (c MergePipelineConfig) EffectiveConflictModel(project string) string {
 		return *c.ConflictModel
 	}
 	return MergePipelineDefaultConflictModel
+}
+
+// EffectiveConflictMode returns "shadow" or "on" for project: the project
+// value, else the global value, else MergeConflictModeDefault.
+func (c MergePipelineConfig) EffectiveConflictMode(project string) string {
+	if v := c.override(project).ConflictMode; v != "" {
+		return v
+	}
+	if c.ConflictMode != "" {
+		return c.ConflictMode
+	}
+	return MergeConflictModeDefault
+}
+
+// EffectiveConflictConfirmFirstN returns how many first conflict proposals
+// need confirmation for project: the project value, else the global value,
+// else MergeConflictConfirmFirstNDefault. An explicit 0 is returned as is.
+func (c MergePipelineConfig) EffectiveConflictConfirmFirstN(project string) int {
+	if v := c.override(project).ConflictConfirmFirstN; v != nil {
+		return *v
+	}
+	if c.ConflictConfirmFirstN != nil {
+		return *c.ConflictConfirmFirstN
+	}
+	return MergeConflictConfirmFirstNDefault
 }
 
 // PostShipHook is one entry of the post-ship hook list. Exactly one of
@@ -493,6 +552,21 @@ func validConflictPolicy(key, v string) error {
 		ConflictPolicyStopAndAsk, ConflictPolicyMechanical, ConflictPolicyMechanicalAndModel)
 }
 
+func validConflictMode(key, v string) error {
+	switch v {
+	case "", ConflictModeShadow, ConflictModeOn:
+		return nil
+	}
+	return fmt.Errorf("%s: %q is invalid; use %q or %q", key, v, ConflictModeShadow, ConflictModeOn)
+}
+
+func validConfirmFirstN(key string, v *int) error {
+	if v == nil || *v >= 0 {
+		return nil
+	}
+	return fmt.Errorf("%s: %d is invalid; use 0 or more (0 turns confirmation off)", key, *v)
+}
+
 func validModelName(key string, v *string) error {
 	if v == nil || *v == "" {
 		return nil
@@ -527,6 +601,12 @@ func (c MergePipelineConfig) Validate() error {
 		return err
 	}
 	if err := validModelName(p+"conflict_model", c.ConflictModel); err != nil {
+		return err
+	}
+	if err := validConflictMode(p+"conflict_mode", c.ConflictMode); err != nil {
+		return err
+	}
+	if err := validConfirmFirstN(p+"conflict_confirm_first_n", c.ConflictConfirmFirstN); err != nil {
 		return err
 	}
 	if err := c.PostShip.Validate(); err != nil {
@@ -564,6 +644,12 @@ func (c MergePipelineConfig) Validate() error {
 			return err
 		}
 		if err := validModelName(k+"conflict_model", o.ConflictModel); err != nil {
+			return err
+		}
+		if err := validConflictMode(k+"conflict_mode", o.ConflictMode); err != nil {
+			return err
+		}
+		if err := validConfirmFirstN(k+"conflict_confirm_first_n", o.ConflictConfirmFirstN); err != nil {
 			return err
 		}
 	}
