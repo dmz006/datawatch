@@ -47,8 +47,9 @@ bash scripts/ci-install-trivy.sh "<trivy-version-tag>" <install-dir>
 It guarantees, in order:
 
 - **Fails loudly.** `set -euo pipefail` throughout. A download that fails
-  exits non-zero with curl's status, the failing URL is written to stderr
-  (for example `download failed: <url> (curl exit 22)`), and the install
+  exits non-zero with curl's status and the failing URL named on stderr
+  (for example `error: failed to download Trivy install script (curl exit
+  status 22): https://raw.githubusercontent.com/aquasecurity/trivy/v0.73.0/contrib/install.sh`) and the install
   directory is left empty. Step fails, run red, nothing hides.
 - **Retries before giving up.** The download gets 5 attempts, 10 s apart, on
   any error (`--retry-all-errors`), with a 20 s connect timeout and a 120 s
@@ -57,10 +58,11 @@ It guarantees, in order:
   version tag** (`aquasecurity/trivy/<tag>/contrib/install.sh`), not from
   the moving `main` branch — the script that runs is the one that belongs to
   the version being installed.
-- **No pipe-to-shell.** The script downloads first into a temp file in the
-  repository tree, then runs `sh <tmpfile> -b <install-dir> <tag>` over the
-  file. `sh` never receives a pipe as its script source, and the temp file
-  is cleaned up on exit.
+- **No pipe-to-shell.** The script downloads first into a temp file
+  (created with `mktemp`), then feeds that file to
+  `sh -s -- -b <install-dir> <tag>` — `sh` never reads a pipe, so a
+  truncated download can never run as partial code, and the temp file is
+  removed on exit.
 
 Run its coverage with
 `bash scripts/tests/ci-install-trivy_test.sh` — the test fakes `curl` on the
@@ -74,9 +76,13 @@ across the three workflow files) still use the inline `curl … | sh` form,
 fetching the installer from `main`. Migrate each one to
 `bash scripts/ci-install-trivy.sh "v<the pinned version>" /usr/local/bin`
 (image-refresh pins it via the workflow's `TRIVY_VERSION`; the others name
-the tag inline in the step) so the guarantees above hold there as well. The
-migration is the operator's call — the script is safe to invoke as-is, but
-the scan pipeline is only as loud as its install step.
+the tag inline in the step) so the guarantees above hold there as well.
+While migrating, also decide on a single Trivy pin: today the workflows
+disagree — `containers.yaml` pins `v0.70.0` while `release.yaml` and
+`image-refresh.yaml` pin `v0.73.0` — so a pin change that looks like it
+updates the scan tooling would silently leave `containers.yaml` behind.
+The migration is the operator's call — the script is safe to invoke as-is,
+but the scan pipeline is only as loud as its install step.
 
 ## Running it by hand
 

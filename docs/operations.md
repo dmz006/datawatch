@@ -2524,19 +2524,23 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 - retries the download 5 times, 10 s apart, on any error, with a 20 s
   connect and a 120 s total timeout;
 - on a persistent failure, exits non-zero with curl's status and names the
-  failing URL on stderr (for example `download failed: <url> (curl exit
-  22)`) and leaves the install directory empty — the step fails loudly
-  instead of the pipeline discovering the gap at scan time, or never.
+  failing URL on stderr (for example `error: failed to download Trivy
+  install script (curl exit status 22): <url>`) and leaves the install
+  directory empty — the step fails loudly instead of the pipeline
+  discovering the gap at scan time, or never.
 
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
 **Still pending review:** at the time of writing, the `release.yaml`,
-`containers.yaml` and `image-refresh.yaml` "Install Trivy" steps (8 lines
+`containers.yaml` and `image-refresh.yaml` "Install Trivy" steps (8 steps
 across the three files) still use the inline form fetching the installer
 from `main`. Migrate each to
 `bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin` — in
-`image-refresh.yaml` that is the workflow's `TRIVY_VERSION` pin. Full
+`image-refresh.yaml` that is the workflow's `TRIVY_VERSION` pin (`v0.73.0`).
+Also decide on a single Trivy pin while migrating: `containers.yaml` pins
+`v0.70.0` while `release.yaml` and `image-refresh.yaml` pin `v0.73.0`, a
+disagreement the inline form hides but the script would make explicit. Full
 write-up in [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
