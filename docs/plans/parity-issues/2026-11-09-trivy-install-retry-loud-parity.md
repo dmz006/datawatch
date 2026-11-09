@@ -38,10 +38,13 @@ steps later with `trivy: command not found`, or — the worst case — a
 non-blocking scan step with a trailing `|| true` silently skipping the scan
 entirely, so a release could publish with no image scan performed and no red
 anywhere in the run. The work closes this on the install side: all eight
-steps now invoke `bash scripts/ci-install-trivy.sh <tag> /usr/local/bin`
+steps — `release.yaml` lines 278–279 and 370–371,
+`containers.yaml` lines 91–92 and 166–167, and `image-refresh.yaml`
+lines 84–85, 160–161, 229–230 and 612–613 — now invoke
+`bash scripts/ci-install-trivy.sh <tag> /usr/local/bin`
 (release and image-refresh with `v0.73.0`, containers with `v0.70.0`,
-image-refresh via its `TRIVY_VERSION` variable), and the installer
-guarantees, in order, that a failed download exits non-zero with curl's
+image-refresh via its `TRIVY_VERSION` variable at the top of the file), and
+the installer guarantees, in order, that a failed download exits non-zero with curl's
 status and the failing URL on stderr and the install directory left empty;
 that the download is retried five times ten seconds apart on any error, with
 a twenty-second connect timeout and a one-hundred-twenty-second total cap;
@@ -119,3 +122,12 @@ present binary, and exercise the failure path once deliberately (a run where
 the download cannot succeed) to confirm the step goes red with the expected
 error text and empty install directory rather than a quiet missing scanner
 two steps later.
+
+Verified against the tree the draft describes: the eight steps above all
+invoke `scripts/ci-install-trivy.sh` exactly as stated (no workflow still
+fetches the Trivy installer off `main`); `scripts/ci-install-trivy.sh` and
+`scripts/tests/ci-install-trivy_test.sh` are present on `main`-equivalent;
+the three "Still pending review" passages and the superseded draft
+`2026-11-09-trivy-install-workflow-migration.md` still read as of the draft
+date; and `kind-smoke.yaml` is the only remaining unpinned `main`-branch
+pipe-to-shell tool install in the workflow set.
