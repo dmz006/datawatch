@@ -4301,5 +4301,16 @@
   "automation.review.judgeOutcome.foundProblem": "Judge found a problem",
   "automation.review.judgeOutcome.next.couldNotStart": "Nothing to do — it is retried.",
   "automation.review.judgeOutcome.next.timedOut": "Nothing to do — it is retried, or see Events.",
-  "automation.review.judgeOutcome.next.foundProblem": "Open the finding."
+  "automation.review.judgeOutcome.next.foundProblem": "Open the finding.",
+  "automata_std_col_title": "Title",
+  "automata_std_col_kind": "Kind",
+  "automata_std_col_summary": "Summary",
+  "automata_std_col_when": "When it is offered",
+  "automata_std_col_enabled": "On or off",
+  "automata_std_col_mode": "Mode",
+  "automata_std_on": "On",
+  "automata_std_off": "Off",
+  "automata_std_load_failed": "Load failed:",
+  "automata_std_howto": "Standard tasks how-to",
+  "automata_std_mode_note": "The mode is fixed to model session for now. Changing it will be done in Settings under the standard task settings once that setting exists; the setting key is"
 }

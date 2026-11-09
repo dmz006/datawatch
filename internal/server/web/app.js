@@ -25608,6 +25608,48 @@ function loadAutomataTemplatesPanel() {
 }
 window.loadAutomataTemplatesPanel = loadAutomataTemplatesPanel;
 
+// ── Standard tasks sub-tab ────────────────────────────────────────────────────
+
+const _automataStandardTasksState = { status: 'loading', tasks: [], error: '' };
+
+function _automataStandardTasksRender() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  const st = _automataStandardTasksState;
+  if (st.status === 'loading') {
+    panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
+    return;
+  }
+  if (st.status === 'error') {
+    panel.innerHTML = `<span style="color:var(--error);">${escHtml(t('automata_std_load_failed'))} ${escHtml(st.error)}</span>`;
+    return;
+  }
+  const cols = ['title', 'kind', 'summary', 'when', 'enabled', 'mode'];
+  const th = cols.map(c => `<th style="text-align:left;padding:4px 8px;">${escHtml(t('automata_std_col_' + c))}</th>`).join('');
+  const rows = st.tasks.map(tk => {
+    const on = tk.enabled === false ? t('automata_std_off') : t('automata_std_on');
+    const vals = [tk.title, tk.kind, tk.summary || tk.description, tk.when || tk.offered_when || tk.offered, on, tk.mode];
+    return `<tr>${vals.map(v => `<td style="padding:4px 8px;vertical-align:top;">${escHtml(v == null ? '' : String(v))}</td>`).join('')}</tr>`;
+  }).join('');
+  panel.innerHTML = `<div style="font-size:12px;color:var(--text2);margin:0 0 10px;">${escHtml(t('automata_std_mode_note'))} <code>autonomous.task_templates</code>${docsLink('howto/automata-standard-tasks.md', t('automata_std_howto'))}</div>`
+    + `<table class="automata-standard-tasks" style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function _automataStandardTasksLoad() {
+  const st = _automataStandardTasksState;
+  return apiFetch('/api/autonomous/standard-tasks')
+    .then(data => {
+      st.tasks = (data && Array.isArray(data.tasks)) ? data.tasks : [];
+      st.status = 'ok';
+      st.error = '';
+    })
+    .catch(err => {
+      st.status = 'error';
+      st.error = (err && err.message) || String(err);
+    })
+    .then(() => { if (_automataTmplSubtab === 'standard') _automataStandardTasksRender(); });
+}
+
 // ── Templates tab sub-tabs ────────────────────────────────────────────────────
 
 // _AUTOMATA_TEMPLATE_SUBTABS is the registry of the Templates tab's sub-tabs.
@@ -25627,15 +25669,10 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
   {
     key: 'standard',
     titleKey: 'automata_templates_subtab_standard',
-    // Standard tasks: a later task fills in the loader and the real
-    // renderer. Until then the loader does nothing and the renderer
-    // shows the loading state, so the bar and the mechanism exist before
-    // the content behind them does.
-    load() {},
-    render() {
-      const panel = document.getElementById('automataPanel');
-      if (panel) panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
-    },
+    // Standard tasks: a read-only table of the tasks the decomposer adds to
+    // every story, loaded from the REST read (never the config directly).
+    load: () => _automataStandardTasksLoad(),
+    render: () => _automataStandardTasksRender(),
   },
 ];
 
