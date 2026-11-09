@@ -104,7 +104,23 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 	}
 	if q := mr.MergeQuestionStore(); q != nil {
 		runner.Questions = q
+		// The gate reads the operator's answer through the same store that
+		// raises its question, so an ask-mode run finds a yes it already
+		// raised rather than raising a second one.
+		runner.ReleaseAnswers = q
 	}
+	// Release gate wiring for this runner: the effective approval mode for
+	// this release's size, resolved by the caller's settings. The size comes
+	// from the same place the release-version step learns the version:
+	// the pipeline bumps a patch, so a readable version is a patch release;
+	// with no version file the size is unknown and the approval resolves to
+	// ask rather than shipping.
+	size := config.ReleaseSizePatch
+	if len(runner.VersionFiles) == 0 {
+		size = ""
+	}
+	runner.ReleaseSize = size
+	runner.ReleaseApproval = cfg.EffectiveReleaseApproval(project, size)
 	return runner
 }
 
