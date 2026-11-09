@@ -9,6 +9,7 @@ docs:
 
 A worker, verifier or judge session does not have to start with the operator's full harness — the complete rules and context files, the platform context, and the full MCP tool definitions. Instead, its launch **resolves a worker session profile** by the rule in [How a profile is resolved](#how-a-profile-is-resolved), and the session starts with a starting context and a tool set **chosen for the job it is about to do**.
 
+- **Where it applies today.** Worker launches resolve and apply their profile. **Verifier and judge launches do not yet**: the resolver exists, but no verifier or judge launch path calls it, so those sessions start with the full harness whatever you configure. Until that wiring lands, the verifier and judge rows of the profile-in-force read describe what would apply, not what does, and the rollout step that moves the `verifier` role to `minimal` has no effect yet (see [Rollout](#rollout)).
 - **With nothing configured, no profile is applied.** The session starts with the full harness, exactly as it did before profiles existed.
 - **Once a role or kind default is configured**, the launch resolves against it. A configured role default applies to kinds that have no configured kind entry.
 - **A profile that cannot be applied falls back to the full harness.** The fallback is recorded on the attempt with its reason, so the session is never silently smaller than the operator expects.
@@ -155,7 +156,7 @@ Move a task kind or role to a smaller profile one step at a time, and widen a st
 
 1. **The docs kind on `minimal`.** Set `autonomous.worker_profile_defaults.kind.docs` to `minimal` through any surface in the [table above](#setting-and-reading-it) — the settings file, the web settings group, `PUT /api/config`, the MCP `config_set`, `datawatch config set`, or the comm channel `configure`. Docs tasks cover the parity-issue-draft work too: that work has no task kind of its own in the code, so it runs under the `docs` kind's default.
 2. **Changelog and final-gate kinds.** Once step 1 is steady, move the `final_gate` kind (and the changelog work that runs under it) to the next profile down.
-3. **Verifiers.** Then move the `verifier` role to `minimal`.
+3. **Verifiers.** Then move the `verifier` role to `minimal`. **Not yet effective:** verifier launches do not apply a profile today (see [What changes at launch](#what-changes-at-launch)), so this step changes the profile in force read but not the sessions. Do it once verifier wiring ships, and check the read matches the launch.
 4. **Code tasks.** Last, move the `implementation` kind and the `worker` role.
 
 Widen a step — take on the next step's kind or role — only while the per-profile attempt cost report in [cost-report.md](cost-report.md#the-start-up-tables) shows the **failed-attempt rate not rising** for the profile you have already moved. If the failed-attempt rate rises, put the kind or role back on its previous profile and leave the next step alone.
@@ -165,6 +166,7 @@ Widen a step — take on the next step's kind or role — only while the per-pro
 The operator direction allows corrections, and these are the places the correction is due:
 
 - **The defaults table against your fleet.** The built-in table above — the planner on `full`, the worker, the verifier and implementation, docs and final-gate tasks on `digest`, the judge and note-kind tasks on `minimal` — is what a launch falls back to when nothing is configured, set to the smallest that works. If a role is under-equipped on your fleet (a worker that needs a tool the `digest` default does not give it), the spec-line marker on one task fixes that one task, and `autonomous.worker_profile_defaults` fixes the rest.
+- **Verifier and judge wiring.** Confirm whether verifier and judge launches apply their profile on your build. The resolver is in `internal/autonomous/worker_profile_launch.go` (`ResolveSessionProfile`) with no production caller at the time of writing; until a launch path calls it, the judge and verifier rows of the profile-in-force read are not what those sessions start with. Either wire it or keep this note.
 - **The field values of the four built-ins and your own profiles** as they apply on your backends: the allow-lists in `tools`, the named server list in `mcp`, and the context level of each.
 - **The per-surface names and read-backs.** The surfaces above set and read the keys under the names in the table — check they read the way you'd say them, and that a refused value names the valid ones, and that the profile-in-force read names the right tier on each surface.
 - **The measured starting context in your own cost report.** The 85,000-token baseline and the 36,000 MCP block are one machine's 2026-11-08 figures. When you see the profile name and the measured start against them across a representative window, you can price the difference and, where a profile costs more than its job needs, move it down one level.
