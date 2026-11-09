@@ -629,30 +629,30 @@ func Build(
 		RetentionDays:    RetentionDays,
 		LifetimeFallback: lifetimeFallback,
 		RetentionNote:    retentionNote(lifetimeFallback),
-		StartupByProfile: startupTable(attempts, profileKey),
-		StartupByRole:    startupTable(attempts, roleKey),
+		StartupByProfile: StartupTable(attempts, ProfileKey),
+		StartupByRole:    StartupTable(attempts, RoleKey),
 	}, nil
 }
 
-// profileKey is the StartupByProfile row key for an attempt: its
+// ProfileKey is the StartupByProfile row key for an attempt: its
 // profile, or UnprofiledKey when the attempt ran with none.
-func profileKey(a Attempt) string {
+func ProfileKey(a Attempt) string {
 	if a.Profile == "" {
 		return UnprofiledKey
 	}
 	return a.Profile
 }
 
-// roleKey is the StartupByRole row key for an attempt: its role, or
+// RoleKey is the StartupByRole row key for an attempt: its role, or
 // NoRoleKey when the attempt ran with none.
-func roleKey(a Attempt) string {
+func RoleKey(a Attempt) string {
 	if a.Role == "" {
 		return NoRoleKey
 	}
 	return a.Role
 }
 
-// startupAcc accumulates one key's attempt counts for startupTable.
+// startupAcc accumulates one key's attempt counts for StartupTable.
 type startupAcc struct {
 	attempts   int
 	tokenSum   int
@@ -683,11 +683,11 @@ func (s *startupAcc) add(a Attempt) {
 	}
 }
 
-// startupTable aggregates the attempts into one StartupRow per key (via
+// StartupTable aggregates the attempts into one StartupRow per key (via
 // keyOf), sorted by key, with the average startup size over the attempts
 // that carry one. An empty attempt list yields an empty (not nil) row
 // slice, so the JSON field is always present as [] or a row list.
-func startupTable(attempts []Attempt, keyOf func(Attempt) string) []StartupRow {
+func StartupTable(attempts []Attempt, keyOf func(Attempt) string) []StartupRow {
 	acc := map[string]*startupAcc{}
 	for _, a := range attempts {
 		key := keyOf(a)
