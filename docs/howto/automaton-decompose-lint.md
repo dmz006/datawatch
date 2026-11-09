@@ -5,6 +5,8 @@ docs:
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
+  - {name: template_id, required: false, description: "A task-template id whose mode to set (e.g. changelog_entry, docs_set, final_gate)"}
+  - {name: template_mode, required: false, description: "The mode to set for the named template: llm, daemon or off"}
   - {name: prd_id, required: false, description: "The id of the Automaton to dry-run or read the stored record for"}
 exec_steps:
   - tool: autonomous_decompose_lint_config_get
@@ -28,7 +30,14 @@ exec_steps:
         mode: "{{params.mode}}"
         max_retries: "{{params.max_retries}}"
     read_only: false
----
+  - tool: autonomous_decompose_lint_config_set
+    description: Set the mode for one task template (llm, daemon or off); the key is the template id
+    args:
+      task_templates:
+        mode:
+          "{{params.template_id}}": "{{params.template_mode}}"
+    read_only: false
+------
 
 # How-to: the decompose-lint quality check and task templates
 
@@ -235,20 +244,70 @@ detected, and nothing is added twice. Slots `{{feature}}`, `{{files}}` and
 story's task files; a template's `depends_on` lists *template* ids it must
 run after, and the resulting task also depends on the story's other tasks.
 
-The **built-in pack** is the floor — five templates, written to hold three
+The **built-in pack** is the floor — six templates, written to hold three
 hard properties for every feature name a story can carry: no blocking
 decompose-lint finding, no hosting-CLI side effects, and no verification
 script that is not genuinely a script file (the read-only ones verify
 through their report instead) — so a decomposed Automaton's closing tasks
 reach the verifier and pass it, instead of being rejected at pre-start.
 
-| Template id | What it adds |
+| Template id | Default mode | What it adds |
+|---|---|---|
+| `changelog_entry` | `daemon` | a changelog entry for the feature (`CHANGELOG.md`) |
+| `parity_issue_draft` | `daemon` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
+| `docs_set` | `llm` | the feature's docs into shape, over the story's own files |
+| `final_gate` | `llm` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
+| `version_bump_left_to_merge` | `daemon` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit, and no verification script: the verifier reads it rather than runs it |
+| `bounded_load_step` | `daemon` | a *note* (record the posture rule, no files written) — the task's spec is the bounded-load-step rule text so it can be found in search and the audit |
+
+### Template mode: who runs the task
+
+Each built-in template has a **default mode** (column above). The mode
+decides *who* runs the task when it is appended to a story:
+
+| Mode | Meaning |
 |---|---|
-| `changelog_entry` | a changelog entry for the feature (`CHANGELOG.md`) |
-| `parity_issue_draft` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
-| `docs_set` | the feature's docs into shape, over the story's own files |
-| `final_gate` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
-| `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit, and no verification script: the verifier reads it rather than runs it |
+| `llm` | a worker session runs the task as a normal LLM task (no change from before the modes were introduced) |
+| `daemon` | the daemon performs the task itself — no model session, no worker — and records it as done |
+| `off` | the template is **not appended** to the story at all (the task does not appear) |
+
+The mode is set per-template with `autonomous.task_templates.mode` (a
+map of template id → mode string):
+
+```yaml
+autonomous:
+  task_templates:
+    enabled: true
+    mode:
+      # The four daemon-mode templates below run without a model session.
+      changelog_entry: daemon
+      parity_issue_draft: daemon
+      version_bump_left_to_merge: daemon
+      bounded_load_step: daemon
+      # The two LLM-mode templates spawn a worker session.
+      docs_set: llm
+      final_gate: llm
+```
+
+**What a daemon-mode task does differently:**
+
+- **No model session** is started. The daemon performs the task
+  (writing the file, or recording a note) and the task immediately
+  transitions to `done`. There is no worker session entry in the
+  session list for it.
+- **No verification script, report or changed-file requirement** applies:
+  the plan-structure checks (per-task verification script, file tokens,
+  read-only rules) skip daemon-mode tasks entirely.
+- **`changelog_entry`** and **`parity_issue_draft`** in daemon mode write
+  their generated artefact file (the same rendered changelog entry /
+  parity draft the *generated-artefacts* feature would produce) to the
+  story's project directory. If the task's story has no change record yet,
+  the daemon writes a minimal note instead.
+- **`bounded_load_step`** and **`version_bump_left_to_merge`** in daemon
+  mode write no files — the task completes with the note already in the
+  story record. Both carry the `note` kind and the B124 verification-exemption
+  reason, so the plan-structure check sees them as exempted even if a
+  reviewer looks at them in `enforce` mode.
 
 Templates are applied in **shadow and enforce** (off applies nothing), and
 `autonomous.task_templates.enabled` (default **true**) gates them globally.
@@ -303,9 +362,8 @@ autonomous:
 ### Per-project overrides
 
 `autonomous.task_templates.projects` maps a **project directory or alias**
-to an `{enabled: …}` override. The override wins for that project; an
-absent flag means *follow the global*. A new project you have not
-configured follows the global `enabled`.
+to an `{enabled: …, mode: …}` override. The override wins for that project;
+an absent key means *follow the global*.
 
 ```yaml
   projects:
@@ -313,6 +371,8 @@ configured follows the global `enabled`.
       enabled: false   # template apply off for this project only
     "billing":
       enabled: true     # on, even if the global were off
+      mode:
+        changelog_entry: llm   # override one template's mode for this project
 ```
 
 ## 6. Decompose guidance — text or file
