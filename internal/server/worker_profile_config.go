@@ -110,3 +110,21 @@ func validateWorkerProfilePatch(cfg *config.Config, patch map[string]interface{}
 	c.Autonomous = candidate
 	return config.ValidateWorkerProfileConfig(&c)
 }
+
+// validateWorkerProfileName checks a worker profile name an Automaton is set
+// to: empty clears the override; anything else must be a built-in profile or
+// a user-defined autonomous.worker_profiles entry.
+func validateWorkerProfileName(cfg *config.Config, name string) error {
+	if name == "" {
+		return nil
+	}
+	if _, ok := workerprofile.Builtin(name); ok {
+		return nil
+	}
+	if cfg != nil {
+		if _, ok := cfg.Autonomous.WorkerProfiles[name]; ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("worker profile %q is neither a built-in nor a user-defined profile", name)
+}
