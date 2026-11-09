@@ -38,16 +38,6 @@ const attemptCostEscalateDesc = "How many failed attempts move the next attempt 
 // attemptCostResumeDesc names the range of retry_resume_max_context_tokens.
 const attemptCostResumeDesc = "Cap on the prior context, in tokens, a retry may resume with: a whole number from 0 to 2000000 (default 150000). 0 = every retry starts a fresh session."
 
-// attemptCostSetOptions are the three attempt-cost arguments of
-// autonomous_config_set, each described with its key and range.
-func attemptCostSetOptions() []mcpsdk.ToolOption {
-	return []mcpsdk.ToolOption{
-		mcpsdk.WithObject(attemptCostFirstAttemptKey, mcpsdk.Description(attemptCostFirstAttemptDesc)),
-		mcpsdk.WithNumber(attemptCostEscalateKey, mcpsdk.Description(attemptCostEscalateDesc)),
-		mcpsdk.WithNumber(attemptCostResumeKey, mcpsdk.Description(attemptCostResumeDesc)),
-	}
-}
-
 // attemptCostArgPresent reports whether the caller gave any attempt-cost argument.
 func attemptCostArgPresent(args map[string]any) bool {
 	for _, k := range attemptCostKeyNames {
