@@ -133,6 +133,9 @@ func textLines(resp Response) []string {
 			lines = append(lines, line)
 		}
 	}
+	if resp.Startup != nil {
+		lines = append(lines, resp.Startup.Line)
+	}
 	lines = append(lines, "advice: "+ad.Advice.Headline)
 	for _, n := range ad.Advice.Notes {
 		lines = append(lines, "  - "+n)

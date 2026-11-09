@@ -127,7 +127,9 @@ type AdviceResult struct {
 	StaleReason string     `json:"stale_reason,omitempty"`
 	CopiedAt    *time.Time `json:"copied_at,omitempty"`
 	Advice      Advice     `json:"advice"`
-	Text        TextForms  `json:"text"`
+	// Startup is the start-up advice line (startup.go); nil when there is no start-up data.
+	Startup *StartupAdvice `json:"startup,omitempty"`
+	Text    TextForms      `json:"text"`
 }
 
 // TextForms are the CLI and comm-channel renderings of one advice, built by FormatCLI and
@@ -147,6 +149,7 @@ type Service struct {
 	settingsF SettingsGetter
 	queue     QueueCounter
 	live      LaneCounter
+	startup   StartupSource
 	now       func() time.Time
 }
 
@@ -280,6 +283,7 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		Stale:       snap.Stale,
 		StaleReason: snap.StaleReason,
 		Advice:      advice,
+		Startup:     s.startupAdvice(),
 	}
 	if !snap.CopiedAt.IsZero() {
 		at := snap.CopiedAt
