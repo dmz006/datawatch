@@ -1536,6 +1536,9 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 ## Concepts & Glossary
 
+**Rate-limit reset out of reach** — the CodeQL alert gate's wait-analyses state when GitHub's core rate limit resets later than the wait budget that is left (`WAIT_MAX_SECONDS` minus the time already waited). The gate does not sleep toward a reset it cannot reach: it prints a `Rate limited` error line naming the reset epoch and exits 1 at once. A reset inside the budget is waited for and retried; a rate limit with no reset time is retried on the normal interval until the budget runs out. Either way the run is a rate limit, not a missing analysis. See [`howto/codeql-local-scan.md`](howto/codeql-local-scan.md#red-check-from-a-rate-limit).
+
+
 Key terms used across the docs, API, and hook payloads.
 
 **Tag selection** — the tags chosen in an Automata list filter, and how they are checked. An object's derived system tags (for example `project:datawatch`) and its assigned tag IDs are pooled; match ANY needs at least one selected tag in the pool, match ALL needs every one, and a selection with no tags matches every object. The check is unchanged by the code-scanning fix, which only removed a computed size hint on the internal lookup set. See [howto/automata-tags.md](howto/automata-tags.md).
