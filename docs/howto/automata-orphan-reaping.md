@@ -243,7 +243,7 @@ An Automaton that plans a task leaves the host as it found it, so an
 unbounded load step in a plan is a defect in the plan — that is why the
 rule is part of the planning conversation, not just of the docs. The rule
 lives in one source and is carried verbatim into three surfaces: the
-built-in `bounded_load_step` task template a fresh story starts with, the
+built-in `bounded_load_step` standard task a fresh story starts with, the
 rules block appended to the decompose prompt, and a warn-severity
 `unbounded_load_step` finding in the decompose lint
 ([automaton-decompose-lint.md](automaton-decompose-lint.md)) when a task
