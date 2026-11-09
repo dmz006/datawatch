@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // workerProfileKeys are the three settable worker-profile keys, as the daemon
@@ -139,5 +141,82 @@ func TestWorkerProfileConfigure_InvalidWriteIsRefused(t *testing.T) {
 		if _, ok := stored[key]; ok {
 			t.Errorf("refused write of %s was stored", key)
 		}
+	}
+}
+
+// A bare worker-profile key read adds the profile in force: one line per role
+// and task kind, built from the live values the read function returns.
+func TestWorkerProfileConfigure_BareKeyReadAddsInForce(t *testing.T) {
+	r, sent, mu, wg := newWorkerProfileRouter(t, func(string, string) error {
+		t.Fatal("a bare key must not write")
+		return nil
+	})
+	r.SetWorkerProfileInForceFunc(func() ([]workerprofile.InForceEntry, error) {
+		return []workerprofile.InForceEntry{
+			{Scope: workerprofile.ScopeRole, Key: "worker", Profile: "full", Tier: "role"},
+			{Scope: workerprofile.ScopeKind, Key: "note", Profile: "", Tier: workerprofile.TierNone},
+		}, nil
+	})
+	for _, key := range workerProfileKeys {
+		reply := runConfigure(t, r, key, sent, mu, wg)
+		if !strings.Contains(reply, workerProfileHowto) {
+			t.Errorf("reply for %s lacks the howto path: %q", key, reply)
+		}
+		for _, want := range []string{
+			"profile in force:",
+			"role worker profile=full tier=role",
+			"kind note profile=none tier=none",
+		} {
+			if !strings.Contains(reply, want) {
+				t.Errorf("reply for %s lacks %q: %q", key, want, reply)
+			}
+		}
+	}
+}
+
+// The in-force lines come after the help text, one per line, in the order the
+// read function returns them.
+func TestWorkerProfileConfigure_InForceLinesFollowHelp(t *testing.T) {
+	r, sent, mu, wg := newWorkerProfileRouter(t, func(string, string) error { return nil })
+	r.SetWorkerProfileInForceFunc(func() ([]workerprofile.InForceEntry, error) {
+		return []workerprofile.InForceEntry{
+			{Scope: workerprofile.ScopeRole, Key: "worker", Profile: "full", Tier: "role"},
+			{Scope: workerprofile.ScopeRole, Key: "judge", Profile: "minimal", Tier: "built-in"},
+		}, nil
+	})
+	reply := runConfigure(t, r, "autonomous.worker_profile", sent, mu, wg)
+	helpAt := strings.Index(reply, workerProfileHowto)
+	workerAt := strings.Index(reply, "role worker profile=full")
+	judgeAt := strings.Index(reply, "role judge profile=minimal tier=built-in")
+	if helpAt < 0 || workerAt < helpAt || judgeAt < workerAt {
+		t.Errorf("reply order wrong (help=%d worker=%d judge=%d): %q", helpAt, workerAt, judgeAt, reply)
+	}
+	if !strings.Contains(reply, "\n    role worker profile=full tier=role") {
+		t.Errorf("in-force line is not indented under the header: %q", reply)
+	}
+}
+
+// A failed read names the failure and still sends the help text.
+func TestWorkerProfileConfigure_InForceReadErrorIsNamed(t *testing.T) {
+	r, sent, mu, wg := newWorkerProfileRouter(t, func(string, string) error { return nil })
+	r.SetWorkerProfileInForceFunc(func() ([]workerprofile.InForceEntry, error) {
+		return nil, errors.New("daemon not reachable")
+	})
+	reply := runConfigure(t, r, "autonomous.worker_profile", sent, mu, wg)
+	if !strings.Contains(reply, workerProfileHowto) {
+		t.Errorf("help text missing on read error: %q", reply)
+	}
+	if !strings.Contains(reply, "profile in force: unavailable (daemon not reachable)") {
+		t.Errorf("read error not named: %q", reply)
+	}
+}
+
+// With no read function wired, the bare key still returns its help and says the
+// profile in force is not available.
+func TestWorkerProfileConfigure_NoInForceFuncSaysUnavailable(t *testing.T) {
+	r, sent, mu, wg := newWorkerProfileRouter(t, func(string, string) error { return nil })
+	reply := runConfigure(t, r, "autonomous.worker_profile", sent, mu, wg)
+	if !strings.Contains(reply, "profile in force: not available") {
+		t.Errorf("unwired read not reported: %q", reply)
 	}
 }

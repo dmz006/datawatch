@@ -172,3 +172,106 @@ func TestWorkerProfileGetKey(t *testing.T) {
 		}
 	}
 }
+
+// The four accepted worker profile keys print the profile in force on read;
+// nothing else does, and an unknown worker_profile key does not.
+func TestWorkerProfileInForceKey(t *testing.T) {
+	for _, k := range []string{"worker_profile", "worker_profiles", "worker_profile_defaults.role", "worker_profile_defaults.kind"} {
+		if !isWorkerProfileInForceKey(k) {
+			t.Errorf("isWorkerProfileInForceKey(%q) = false, want true", k)
+		}
+	}
+	for _, k := range []string{"worker_profile_other", "session.max_sessions", "autonomous.worker_profile"} {
+		if isWorkerProfileInForceKey(k) {
+			t.Errorf("isWorkerProfileInForceKey(%q) = true, want false", k)
+		}
+	}
+}
+
+// workerProfileInForceLines prints a header then one indented line per role and
+// task kind, matching workerprofile.InForce over the same config body.
+func TestWorkerProfileInForceLines(t *testing.T) {
+	body := []byte(`{"autonomous":{"worker_profile":"","worker_profiles":{},` +
+		`"worker_profile_defaults":{"role":{"worker":"full"},"kind":{"note":"digest"}}}}`)
+	lines, err := workerProfileInForceLines(body)
+	if err != nil {
+		t.Fatalf("workerProfileInForceLines: %v", err)
+	}
+	if len(lines) != 1+3+4 {
+		t.Fatalf("got %d lines, want 8 (header, 3 roles, 4 kinds): %q", len(lines), lines)
+	}
+	if lines[0] != "profile in force:" {
+		t.Errorf("header = %q", lines[0])
+	}
+	want := map[string]bool{
+		"  role worker profile=full tier=role": false,
+		"  kind note profile=digest tier=kind": false,
+	}
+	for _, l := range lines[1:] {
+		if !strings.HasPrefix(l, "  role ") && !strings.HasPrefix(l, "  kind ") {
+			t.Errorf("line %q is not indented scope line", l)
+		}
+		if _, ok := want[l]; ok {
+			want[l] = true
+		}
+	}
+	for l, seen := range want {
+		if !seen {
+			t.Errorf("missing line %q in %q", l, lines)
+		}
+	}
+}
+
+// A body that is not JSON is an error, so the read fails instead of printing a
+// block built from nothing.
+func TestWorkerProfileInForceLines_BadBody(t *testing.T) {
+	if _, err := workerProfileInForceLines([]byte("not json")); err == nil {
+		t.Fatal("want an error for a non-JSON config body")
+	}
+}
+
+// workerProfileInForceReader reads GET /api/config from the daemon with the
+// bearer token and builds the in-force entries from the live values.
+func TestWorkerProfileInForceReader(t *testing.T) {
+	var gotAuth, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotMethod = r.Header.Get("Authorization"), r.Method
+		w.Write([]byte(`{"autonomous":{"worker_profile":"minimal","worker_profiles":{},` + //nolint:errcheck
+			`"worker_profile_defaults":{"role":{},"kind":{}}}}`))
+	}))
+	defer srv.Close()
+	cfg := &config.Config{}
+	cfg.Server.Token = "tok"
+	pointServerAt(t, srv.URL)
+	entries, err := workerProfileInForceReader(cfg)()
+	if err != nil {
+		t.Fatalf("reader: %v", err)
+	}
+	if gotMethod != http.MethodGet || gotAuth != "Bearer tok" {
+		t.Errorf("request method=%q auth=%q, want GET with bearer token", gotMethod, gotAuth)
+	}
+	if len(entries) == 0 || entries[0].Profile != "minimal" || entries[0].Tier != "daemon" {
+		t.Errorf("entries[0] = %+v, want the global profile minimal at tier daemon", entries[0])
+	}
+}
+
+// A daemon that refuses the read makes the reader fail with the HTTP status.
+func TestWorkerProfileInForceReader_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	pointServerAt(t, srv.URL)
+	cfg := &config.Config{}
+	if _, err := workerProfileInForceReader(cfg)(); err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Fatalf("err = %v, want HTTP 500", err)
+	}
+}
+
+// pointServerAt aims the CLI at a test server for the rest of the test.
+func pointServerAt(t *testing.T, url string) {
+	t.Helper()
+	old := serverURL
+	serverURL = url
+	t.Cleanup(func() { serverURL = old })
+}

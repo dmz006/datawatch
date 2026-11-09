@@ -3145,6 +3145,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// without shelling into the host. Same parity rule as `reload`.
 		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
+		r.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
@@ -8531,6 +8532,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// /api/test/message surface would return "Channel info not wired".
 		testRouter.SetChannelInfoFn(channelInfoSummary)
 		testRouter.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
+		testRouter.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
 			body := configureRequestBody(key, value)
@@ -12085,6 +12087,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
+	inForceKey := isWorkerProfileInForceKey(key)
 	key = workerProfileGetKey(key)
 	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
@@ -12109,6 +12112,15 @@ func runConfigGet(cfg *config.Config, key string) error {
 		return fmt.Errorf("config key %q not found", key)
 	}
 	fmt.Println(formatConfigGetOutput(full, key, v))
+	if inForceKey {
+		lines, err := workerProfileInForceLines(raw)
+		if err != nil {
+			return err
+		}
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+	}
 	return nil
 }
 
