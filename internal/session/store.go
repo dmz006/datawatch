@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/secfile"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // lockFileName is the sidecar advisory-lock file used by flockAcquire.
@@ -148,7 +149,15 @@ type Session struct {
 	ChannelPort      int               `json:"channel_port,omitempty"`  // per-session MCP channel HTTP port
 	ThreadIDs        map[string]string `json:"thread_ids,omitempty"`    // per-backend thread IDs for threaded messaging
 	Profile          string            `json:"profile,omitempty"`       // named profile used to launch this session
-	FallbackOf       string            `json:"fallback_of,omitempty"`   // session ID this is a fallback for
+	// AppliedFields records, per worker-profile field (mcp, tools, skills,
+	// context, model, effort), what the launch backend actually did with it
+	// at start time (workerprofile.RecordApplied). Set from
+	// StartOptions.WorkerProfile for backends that implement the duck-typed
+	// `RecordApplied(workerprofile.WorkerProfile)` optional interface; empty
+	// when the session was started without a worker profile, or on backends
+	// (such as Claude Code) that apply the profile in their own launch path.
+	AppliedFields []workerprofile.FieldOutcome `json:"applied_fields,omitempty"`
+	FallbackOf    string                       `json:"fallback_of,omitempty"` // session ID this is a fallback for
 	// LastResponse holds the short LLM summary (or raw tmux capture when no
 	// summarizer is configured), captured on running→waiting_input transitions.
 	// Used for /copy, push alerts, mobile notifications, and Android Auto.
