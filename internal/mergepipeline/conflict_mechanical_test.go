@@ -69,3 +69,26 @@ func TestMechanicalLocaleRule(t *testing.T) {
 		}
 	}
 }
+
+func TestMechanicalGeneratedRule(t *testing.T) {
+	c := hunkText("", "ours index\n", "base index\n", "theirs index\n", "")
+	got, settled, notes, err := ResolveMechanicalFile(ClassGenerated, "internal/docsindex/assets/index.json", c, "ours index\n", "theirs index\n")
+	if err != nil || !settled {
+		t.Fatalf("settled=%v err=%v", settled, err)
+	}
+	if got != "ours index\n" {
+		t.Fatalf("got %q want the ours side", got)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "regenerate") {
+		t.Fatalf("notes %v", notes)
+	}
+
+	if !MakefileHasDocsIndexTarget("build:\n\tgo build\n\ndocs-index: docs\n\tgen\n") {
+		t.Fatal("docs-index target not found")
+	}
+	for _, no := range []string{"", "build:\n\tgo build\n", "# docs-index: note\n", "  docs-index: indented\n"} {
+		if MakefileHasDocsIndexTarget(no) {
+			t.Fatalf("false positive for %q", no)
+		}
+	}
+}
