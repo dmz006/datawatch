@@ -243,7 +243,7 @@ sessions it runs on, a task session starts at around 85,000 input tokens of
 context, with the MCP tool definitions alone about 36,000 of that. Before the
 attempt-cost keys, every retry and every hop to the next worker on the
 ladder spawned a fresh session like that, so a task that failed up to three
-times paid the full starting context up to three times — up to about 285,000
+times paid the full starting context up to three times — up to about 255,000
 tokens for work that had already shown it would not succeed.
 
 Three daemon-wide keys keep that cost down:
