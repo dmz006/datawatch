@@ -1,0 +1,32 @@
+# [sync] Part of finishing review and merge by the daemon (Phase 4 of the autonomy handover plan)
+
+The work built the engine: the merge pipeline Runner and its built-in default pipeline. The gaps below are the operator-facing policy it does not yet carry.
+
+## Affected area
+
+- `internal/mergepipeline/` — `run.go` (the Runner: per-repository lock, run and step tracking, main-moved redos, post-ship hooks, the `ShipRunner` wiring), `definition.go` (pipeline steps, kinds, built-in actions, validation), `default.go` (the built-in 12-step pipeline), and their tests.
+- Downstream of it: the daemon merge-run API (`POST /api/autonomous/merge/run`, `GET /api/autonomous/merge`), `internal/git` (git host layer), the release CI job.
+
+## Current behavior
+
+The Runner runs a merge end to end, in-process in the daemon, against a single project checked out on its main branch with a clean tree. It takes the repository lock, rebases the branches onto main (throwaway worktrees, conflicts leave the branch untouched), runs the project's version check, merges the branches in order, then, when something new was merged, sets the next version (a fixed size for the run), writes the changelog heading and the README release line, commits the bump, tags it, validates the release bump before anything leaves the machine, pushes main and the tag, and restarts the local deployment. It never rewrites the remote: if the remote's main moved, it undoes only what the run itself made (its own commits, its own tag, its own bump), starts over from the rebase step, bounded redos, and fails when main keeps moving. A run that merged nothing is released as nothing new, and everything is written as it happens to the run record with its steps.
+
+## Expected behavior
+
+- **Release approval policy is not modeled at all.** Phase 4 decided a setting with a mode per release size — for each of patch, minor and major, one of automatic, ask, or manual — overridable per project, with the modes moving over time as the daemon earns trust. The Runner has a single `ReleaseSize` field (fixed per run) and no approval gate: it computes the size, does the release, and only the daemon decides what to do before or after. The ask and manual modes have nothing to hang on inside the pipeline.
+- **Release size is decided by the caller, not the work.** Today the size is whatever the caller passes; nothing looks at what actually merged (a feature is a minor, a bug gives a patch) or at project-level intent for a major. That decision is part of the policy the setting carries, and it is not in these files.
+- **There is no prepare-only mode.** Phase 4 made who pushes and tags a setting, per project, with push and tag on or prepare-only. `ShipRunner.Push` and the `push-release` and `tag-release` steps always push; the tag-release step always writes the tag. A project that wants the daemon to prepare the release but not send it out has no way to say so.
+- **Push is always direct to main.** The release path decision — direct push, or open a pull request and merge when checks pass for a protected branch — is not in the Runner or the default pipeline. `ExecShipRunner.Push` pushes branch and tag to the remote and nothing else; there is no pull-request path in the step vocabulary.
+- **Shadow comparison is not reachable from here.** Phase 4 runs the daemon's merge in shadow beside the supervisor's manual merge, comparing each plan with what the supervisor did and recording every difference, before the modes move toward automatic. The Runner ships what it does the same way in shadow and on; the daemon issue carries that gap, but the pipeline would need an observable run plan the supervisor can diff against the manual merge, which the run record does not yet expose as a plan.
+- **Model-resolved conflicts have no confirmation counter.** Phase 4's conflict decision: mechanical files always resolved automatically, code and documents resolved by the model in a throwaway worktree with build, lint and full tests passing, and the first N model-resolved code conflicts after the switch to on need the operator's confirmation (default 5, 0 turns it off). The Runner's `Questions` wiring can raise a question and a `conflict_policy` and `conflict_model` setting exist, but nothing counts, thresholds or auto-approves the first N resolutions the way the decision needs.
+- **Git hosts beyond GitHub are not here, and credentials are not audited through this path.** `internal/git`'s GitLab is a stub, the default is the host's own `gh` login with an optional vault token passed as an environment variable, and every push and tag is to be audit-logged with the credential source and never the token. The Runner's ship path is `gh`-shaped (its `FileIssue` hook runs `gh issue create`) and records no credential source; the GitLab tooling is missing entirely.
+- **Pre-push secret scan is not enforced from the run.** It exists and defaults to shadow; Phase 4 requires it in enforce mode before the daemon pushes main on its own, and no step in the default pipeline or any `Step` action references it.
+- **The release CI feedback loop is not wired.** Phase 4's fallback rule — after a switch, a failed validator, a red release CI within the window, or a merge that needed a manual fix moves that release size back to ask, raises an alert and files a defect — has no hook into the Runner's finish path, where only the run result and the post-ship hooks exist.
+
+## Suggested next step
+
+1. Model the release approval policy as a setting (mode per release size, per-project override, and the rule that decides the size from the work actually merged), and give the Runner a gate before `tag-release` and `push-release` where ask and manual modes hold the run with the prepared release instead of shipping it.
+2. Add the prepare-only mode (the release is committed and tagged locally, push and tag held) and the pull-request release path for protected branches, as step behavior the pipeline can express per project.
+3. Build the shadow comparison the supervisor diffs: a run plan the record exposes before shipping, and the first-N model-resolution confirmation counter with its default of 5.
+4. Finish the git host story (GitLab through its own command line, the vault-token fallback, the audit of credential source on every push and tag, the Git hosts card) and enforce the pre-push secret scan from the run when it is in enforce mode.
+5. Wire the fallback rule — the size moves back to ask on the named events, with the alert and the defect — into the run's finish path.
