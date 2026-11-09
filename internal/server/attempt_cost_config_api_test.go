@@ -1,11 +1,13 @@
 package server
 
-// Attempt-cost settings surface — verify autonomous.first_attempt,
-// autonomous.first_attempt_escalate_after_failures and autonomous.retry_resume_max_
-// context_tokens round-trip through GET/PUT /api/config, that each of the
-// shared config.ValidateAttemptCostSettings refusals answers 400 and leaves
-// the stored value unchanged, and that a patch which omits a key keeps that
-// key's existing value.
+// The three autonomous attempt-cost keys (autonomous.first_attempt,
+// autonomous.first_attempt_escalate_after_failures,
+// autonomous.retry_resume_max_context_tokens) through GET and PUT
+// /api/config: a valid PUT round-trips to the GET surface and to the saved
+// file; each refusal the shared config.ValidateAttemptCostSettings can make
+// answers 400, messages that name the offending key, and leaves the stored
+// value untouched; a patch that omits one of the keys keeps that key's
+// stored value.
 
 import (
 	"bytes"
@@ -18,212 +20,221 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// newAttemptCostServer builds the minimal Server for GET/PUT /api/config:
-// the live autonomous manager is a no-op spy (the PUT's SetConfig propagation
-// lands there, never at the filesystem) and the config path is a throwaway
-// temp file config.Save writes to / config.Load reads back from.
-func newAttemptCostServer(t *testing.T, cfg *config.Config) *Server {
+// attemptCostAPIServer returns a Server wired only for the config handlers:
+// a no-op autonomous manager spy so PUT's config propagation reaches a fake,
+// and a throwaway config path so config.Save/config.Load exercise a real
+// file without touching operator config.
+func attemptCostAPIServer(t *testing.T, cfg *config.Config) *Server {
 	t.Helper()
 	return &Server{
 		cfg:           cfg,
-		cfgPath:       t.TempDir() + "/config.yaml",
+		cfgPath:       t.TempDir() + "/attempt-cost-config.yaml",
 		autonomousMgr: &fakeOrchAutonomous{},
 	}
 }
 
-func bacPutConfig(t *testing.T, s *Server, body map[string]interface{}) (int, string) {
+// putConfigRaw runs PUT /api/config with body and returns the status code
+// and response body.
+func putConfigRaw(t *testing.T, s *Server, body map[string]interface{}) (int, string) {
 	t.Helper()
 	raw, err := json.Marshal(body)
 	if err != nil {
-		t.Fatalf("marshal patch: %v", err)
+		t.Fatalf("marshal request body: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(raw))
 	rr := httptest.NewRecorder()
-	s.handlePutConfig(rr, req)
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(raw)))
 	return rr.Code, rr.Body.String()
 }
 
-func getAutonomous(t *testing.T, s *Server) map[string]interface{} {
+// getAutonomousBlock runs GET /api/config and returns its autonomous object.
+func getAutonomousBlock(t *testing.T, s *Server) map[string]interface{} {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	rr := httptest.NewRecorder()
-	s.handleGetConfig(rr, req)
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
 	if rr.Code != http.StatusOK {
-		t.Fatalf("GET /api/config: want 200, got %d body=%s", rr.Code, rr.Body.String())
+		t.Fatalf("GET /api/config: want 200, got %d (%s)", rr.Code, rr.Body.String())
 	}
 	var full map[string]interface{}
 	if err := json.Unmarshal(rr.Body.Bytes(), &full); err != nil {
-		t.Fatalf("decode GET config: %v", err)
+		t.Fatalf("decode GET response: %v", err)
 	}
-	a, ok := full["autonomous"].(map[string]interface{})
+	block, ok := full["autonomous"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("GET config: missing autonomous object (body=%s)", rr.Body.String())
+		t.Fatalf("GET response has no autonomous object: %s", rr.Body.String())
 	}
-	return a
+	return block
 }
 
-func roundTripStored(t *testing.T, s *Server, key string) interface{} {
+// storedValue reloads the saved config from disk and returns one of the
+// three attempt-cost fields — the ground truth a refusal or partial patch
+// must match.
+func storedValue(t *testing.T, s *Server, which string) interface{} {
 	t.Helper()
 	loaded, err := config.Load(s.cfgPath)
 	if err != nil {
-		t.Fatalf("load saved config: %v", err)
+		t.Fatalf("reload saved config: %v", err)
 	}
-	switch key {
-	case "autonomous.first_attempt":
+	switch which {
+	case "first_attempt":
 		return loaded.Autonomous.FirstAttempt
-	case "autonomous.first_attempt_escalate_after_failures":
+	case "first_attempt_escalate_after_failures":
 		return loaded.Autonomous.FirstAttemptEscalateAfterFailures
-	case "autonomous.retry_resume_max_context_tokens":
+	case "retry_resume_max_context_tokens":
 		return loaded.Autonomous.RetryResumeMaxContextTokens
 	}
-	t.Fatalf("unknown key %q", key)
+	t.Fatalf("unknown field %q", which)
 	return nil
 }
 
-func firstAttemptStored(t *testing.T, s *Server) map[string]config.FirstAttemptChoice {
-	t.Helper()
-	v := roundTripStored(t, s, "autonomous.first_attempt")
-	m, _ := v.(map[string]config.FirstAttemptChoice)
-	return m
+func asInt(v interface{}) int {
+	f, _ := v.(float64)
+	return int(f)
 }
 
 func TestAttemptCostConfigAPI_RoundTrip(t *testing.T) {
-	s := newAttemptCostServer(t, &config.Config{})
+	s := attemptCostAPIServer(t, &config.Config{})
 
-	body := map[string]interface{}{
+	// Every key in one PUT, all valid.
+	if code, body := putConfigRaw(t, s, map[string]interface{}{
 		"autonomous.first_attempt": map[string]interface{}{
 			"implementation": map[string]interface{}{"backend": "pi-prompt", "model": "qwen3.8:27b"},
 			"note":           map[string]interface{}{},
 		},
-		"autonomous.first_attempt_escalate_after_failures": 2,
-		"autonomous.retry_resume_max_context_tokens":       80000,
-	}
-	if code, b := bacPutConfig(t, s, body); code != http.StatusOK {
-		t.Fatalf("PUT valid attempt-cost settings: want 200, got %d body=%s", code, b)
+		"autonomous.first_attempt_escalate_after_failures": 3,
+		"autonomous.retry_resume_max_context_tokens":       90000,
+	}); code != http.StatusOK {
+		t.Fatalf("valid PUT: want 200, got %d (%s)", code, body)
 	}
 
-	a := getAutonomous(t, s)
-	fa, ok := a["first_attempt"].(map[string]interface{})
+	// The GET surface reports exactly what was written.
+	block := getAutonomousBlock(t, s)
+	fa, ok := block["first_attempt"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("GET first_attempt: want object, got %v", a["first_attempt"])
+		t.Fatalf("GET first_attempt: want object, got %v", block["first_attempt"])
 	}
-	impl, ok := fa["implementation"].(map[string]interface{})
-	if !ok || impl["backend"] != "pi-prompt" || impl["model"] != "qwen3.8:27b" {
+	impl, _ := fa["implementation"].(map[string]interface{})
+	if impl["backend"] != "pi-prompt" || impl["model"] != "qwen3.8:27b" {
 		t.Fatalf("GET first_attempt.implementation: got %v", fa["implementation"])
 	}
 	if _, ok := fa["note"].(map[string]interface{}); !ok {
-		t.Fatalf("GET first_attempt.note: empty kind choice missing, got %v", fa)
+		t.Fatalf("GET first_attempt: empty-kind entry missing: %v", fa)
 	}
-	if got := a["first_attempt_escalate_after_failures"]; got == nil || toIntAny(got) != 2 {
-		t.Fatalf("GET first_attempt_escalate_after_failures: got %v, want 2", got)
+	if got := asInt(block["first_attempt_escalate_after_failures"]); got != 3 {
+		t.Fatalf("GET first_attempt_escalate_after_failures: got %v, want 3", block["first_attempt_escalate_after_failures"])
 	}
-	if got := a["retry_resume_max_context_tokens"]; got == nil || toIntAny(got) != 80000 {
-		t.Fatalf("GET retry_resume_max_context_tokens: got %v, want 80000", got)
+	if got := asInt(block["retry_resume_max_context_tokens"]); got != 90000 {
+		t.Fatalf("GET retry_resume_max_context_tokens: got %v, want 90000", block["retry_resume_max_context_tokens"])
 	}
 
-	// The save must have persisted all three — a fresh load out of the file
-	// agrees with what the GET surface reported.
-	implChoice := config.FirstAttemptChoice{Backend: "pi-prompt", Model: "qwen3.8:27b"}
-	if stored := firstAttemptStored(t, s); stored["implementation"] != implChoice {
-		t.Fatalf("persisted first_attempt.implementation: got %v", stored)
+	// ...and the save persisted all three to disk.
+	if m, _ := storedValue(t, s, "first_attempt").(map[string]config.FirstAttemptChoice); m["implementation"] != (config.FirstAttemptChoice{Backend: "pi-prompt", Model: "qwen3.8:27b"}) {
+		t.Fatalf("persisted first_attempt.implementation: got %v", m)
 	}
-	if got := roundTripStored(t, s, "autonomous.first_attempt_escalate_after_failures"); got != 2 {
-		t.Fatalf("persisted first_attempt_escalate_after_failures: got %v, want 2", got)
+	if got := storedValue(t, s, "first_attempt_escalate_after_failures"); got != 3 {
+		t.Fatalf("persisted first_attempt_escalate_after_failures: got %v, want 3", got)
 	}
-	if got := roundTripStored(t, s, "autonomous.retry_resume_max_context_tokens"); got != 80000 {
-		t.Fatalf("persisted retry_resume_max_context_tokens: got %v, want 80000", got)
+	if got := storedValue(t, s, "retry_resume_max_context_tokens"); got != 90000 {
+		t.Fatalf("persisted retry_resume_max_context_tokens: got %v, want 90000", got)
 	}
 }
 
 func TestAttemptCostConfigAPI_RefusalsLeaveStoredValueUnchanged(t *testing.T) {
 	cases := []struct {
-		name          string
-		initial       config.AutonomousConfig
-		patch         map[string]interface{}
-		key           string
-		wantUnchanged int
-		wantMsg       string
+		name     string
+		patch    map[string]interface{}
+		check    string // which storedValue key holds wantKept after the refusal
+		wantKept interface{}
+		wantsIn  string // substring the 400 message must contain
 	}{
 		{
-			name:          "out-of-range escalate-after-failures (above max)",
-			initial:       config.AutonomousConfig{FirstAttemptEscalateAfterFailures: 2, RetryResumeMaxContextTokens: 80000},
-			patch:         map[string]interface{}{"autonomous.first_attempt_escalate_after_failures": 25},
-			key:           "autonomous.first_attempt_escalate_after_failures",
-			wantUnchanged: 2,
-			wantMsg:       "autonomous.first_attempt_escalate_after_failures",
+			name: "escalate-after-failures above the 20 ceiling",
+			patch: map[string]interface{}{
+				"autonomous.first_attempt_escalate_after_failures": 21,
+			},
+			check: "first_attempt_escalate_after_failures", wantKept: 2, wantsIn: "first_attempt_escalate_after_failures",
 		},
 		{
-			name:          "out-of-range escalate-after-failures (negative)",
-			initial:       config.AutonomousConfig{FirstAttemptEscalateAfterFailures: 2},
-			patch:         map[string]interface{}{"autonomous.first_attempt_escalate_after_failures": -1},
-			key:           "autonomous.first_attempt_escalate_after_failures",
-			wantUnchanged: 2,
-			wantMsg:       "autonomous.first_attempt_escalate_after_failures",
+			name: "escalate-after-failures negative",
+			patch: map[string]interface{}{
+				"autonomous.first_attempt_escalate_after_failures": -5,
+			},
+			check: "first_attempt_escalate_after_failures", wantKept: 2, wantsIn: "first_attempt_escalate_after_failures",
 		},
 		{
-			name:          "out-of-range retry-resume-tokens (negative)",
-			initial:       config.AutonomousConfig{RetryResumeMaxContextTokens: 80000},
-			patch:         map[string]interface{}{"autonomous.retry_resume_max_context_tokens": -1},
-			key:           "autonomous.retry_resume_max_context_tokens",
-			wantUnchanged: 80000,
-			wantMsg:       "autonomous.retry_resume_max_context_tokens",
+			name: "retry-resume-tokens negative",
+			patch: map[string]interface{}{
+				"autonomous.retry_resume_max_context_tokens": -1,
+			},
+			check: "retry_resume_max_context_tokens", wantKept: 80000, wantsIn: "retry_resume_max_context_tokens",
 		},
 		{
-			name:          "out-of-range retry-resume-tokens (above max)",
-			initial:       config.AutonomousConfig{RetryResumeMaxContextTokens: 80000},
-			patch:         map[string]interface{}{"autonomous.retry_resume_max_context_tokens": 2000001},
-			key:           "autonomous.retry_resume_max_context_tokens",
-			wantUnchanged: 80000,
-			wantMsg:       "autonomous.retry_resume_max_context_tokens",
+			name: "retry-resume-tokens above the 2000000 ceiling",
+			patch: map[string]interface{}{
+				"autonomous.retry_resume_max_context_tokens": 2000001,
+			},
+			check: "retry_resume_max_context_tokens", wantKept: 80000, wantsIn: "retry_resume_max_context_tokens",
 		},
 		{
-			name:    "unknown first_attempt kind",
-			initial: config.AutonomousConfig{RetryResumeMaxContextTokens: 80000},
-			patch: map[string]interface{}{"autonomous.first_attempt": map[string]interface{}{
-				"review": map[string]interface{}{"backend": "claude-code"},
-			}},
-			key:     "autonomous.first_attempt",
-			wantMsg: "unknown task kind",
+			name: "first_attempt unknown task kind",
+			patch: map[string]interface{}{
+				"autonomous.first_attempt": map[string]interface{}{
+					"review": map[string]interface{}{"backend": "claude-code"},
+				},
+			},
+			check: "first_attempt", wantKept: nil, wantsIn: "unknown task kind",
 		},
 		{
-			name:    "backend needing a model with none named",
-			initial: config.AutonomousConfig{RetryResumeMaxContextTokens: 80000},
-			patch: map[string]interface{}{"autonomous.first_attempt": map[string]interface{}{
-				"docs": map[string]interface{}{"backend": "ollama"},
-			}},
-			key:     "autonomous.first_attempt",
-			wantMsg: "autonomous.first_attempt.docs.model",
+			name: "first_attempt backend that needs a model without one",
+			patch: map[string]interface{}{
+				"autonomous.first_attempt": map[string]interface{}{
+					"docs": map[string]interface{}{"backend": "ollama"},
+				},
+			},
+			check: "first_attempt", wantKept: nil, wantsIn: "needs a model",
 		},
 	}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newAttemptCostServer(t, &config.Config{Autonomous: tc.initial})
-			// Establish a persisted baseline so "unchanged" is measurable
-			// against what was on disk before the refused PUT.
-			if code, b := bacPutConfig(t, s, map[string]interface{}{
-				"autonomous.first_attempt_escalate_after_failures": tc.initial.FirstAttemptEscalateAfterFailures,
-				"autonomous.retry_resume_max_context_tokens":       tc.initial.RetryResumeMaxContextTokens,
+			s := attemptCostAPIServer(t, &config.Config{Autonomous: config.AutonomousConfig{
+				FirstAttemptEscalateAfterFailures: 2,
+				RetryResumeMaxContextTokens:       80000,
+			}})
+			// Persist a valid baseline so "unchanged" is checked against
+			// what a fresh load reads back from disk.
+			if code, body := putConfigRaw(t, s, map[string]interface{}{
+				"autonomous.first_attempt_escalate_after_failures": 2,
+				"autonomous.retry_resume_max_context_tokens":       80000,
 			}); code != http.StatusOK {
-				t.Fatalf("baseline PUT: want 200, got %d body=%s", code, b)
+				t.Fatalf("baseline PUT: want 200, got %d (%s)", code, body)
 			}
 
-			code, body := bacPutConfig(t, s, tc.patch)
+			code, body := putConfigRaw(t, s, tc.patch)
 			if code != http.StatusBadRequest {
-				t.Fatalf("refusal PUT: want 400, got %d body=%s", code, body)
+				t.Fatalf("refusal PUT: want 400, got %d (%s)", code, body)
 			}
-			if !strings.Contains(body, tc.wantMsg) {
-				t.Fatalf("refusal message %q does not name %q", body, tc.wantMsg)
+			if !strings.Contains(body, tc.wantsIn) {
+				t.Fatalf("400 message %q must contain %q", body, tc.wantsIn)
 			}
-
-			switch tc.key {
-			case "autonomous.first_attempt":
-				if m := firstAttemptStored(t, s); len(m) != 0 {
-					t.Fatalf("stored first_attempt after refusal: got %v, want empty", m)
+			// Neither the live config nor the saved file may have moved.
+			if tc.check == "first_attempt" {
+				if m, _ := storedValue(t, s, tc.check).(map[string]config.FirstAttemptChoice); len(m) != 0 {
+					t.Fatalf("stored first_attempt after refusal: %v, want empty", m)
+				}
+			} else if got := storedValue(t, s, tc.check); got != tc.wantKept {
+				t.Fatalf("stored value after refusal: got %v, want unchanged %v", got, tc.wantKept)
+			}
+			switch tc.check {
+			case "first_attempt_escalate_after_failures":
+				if got := s.cfg.Autonomous.FirstAttemptEscalateAfterFailures; got != 2 {
+					t.Fatalf("live FirstAttemptEscalateAfterFailures after refusal: %d", got)
+				}
+			case "retry_resume_max_context_tokens":
+				if got := s.cfg.Autonomous.RetryResumeMaxContextTokens; got != 80000 {
+					t.Fatalf("live RetryResumeMaxContextTokens after refusal: %d", got)
 				}
 			default:
-				if got := roundTripStored(t, s, tc.key); got != tc.wantUnchanged {
-					t.Fatalf("stored %s after refusal: got %v, want %v (must be unchanged)", tc.key, got, tc.wantUnchanged)
+				if got := len(s.cfg.Autonomous.FirstAttempt); got != 0 {
+					t.Fatalf("live FirstAttempt after refusal: %v", s.cfg.Autonomous.FirstAttempt)
 				}
 			}
 		})
@@ -231,40 +242,33 @@ func TestAttemptCostConfigAPI_RefusalsLeaveStoredValueUnchanged(t *testing.T) {
 }
 
 func TestAttemptCostConfigAPI_AbsentKeyKeepsItsValue(t *testing.T) {
-	s := newAttemptCostServer(t, &config.Config{})
-	if code, b := bacPutConfig(t, s, map[string]interface{}{
-		"autonomous.first_attempt":                         map[string]interface{}{"docs": map[string]interface{}{"backend": "pi-prompt", "model": "qwen3.8:27b"}},
+	s := attemptCostAPIServer(t, &config.Config{})
+
+	// Establish all three from one valid PUT.
+	if code, body := putConfigRaw(t, s, map[string]interface{}{
+		"autonomous.first_attempt": map[string]interface{}{
+			"docs": map[string]interface{}{"backend": "pi-prompt", "model": "qwen3.8:27b"},
+		},
 		"autonomous.first_attempt_escalate_after_failures": 2,
 		"autonomous.retry_resume_max_context_tokens":       80000,
 	}); code != http.StatusOK {
-		t.Fatalf("baseline PUT: want 200, got %d body=%s", code, b)
+		t.Fatalf("baseline PUT: want 200, got %d (%s)", code, body)
 	}
 
-	// A patch touching only ONE key must leave the other two exactly as stored.
-	if code, b := bacPutConfig(t, s, map[string]interface{}{
+	// Then a patch that touches ONLY retry_resume_max_context_tokens.
+	if code, body := putConfigRaw(t, s, map[string]interface{}{
 		"autonomous.retry_resume_max_context_tokens": 120000,
 	}); code != http.StatusOK {
-		t.Fatalf("partial PUT: want 200, got %d body=%s", code, b)
+		t.Fatalf("partial PUT: want 200, got %d (%s)", code, body)
 	}
 
-	if got := roundTripStored(t, s, "autonomous.first_attempt_escalate_after_failures"); got != 2 {
-		t.Fatalf("escalate-after survived a patch that didn't touch it: got %v, want 2", got)
+	if got := storedValue(t, s, "retry_resume_max_context_tokens"); got != 120000 {
+		t.Fatalf("touched key: got %v, want 120000", got)
 	}
-	fa := firstAttemptStored(t, s)
-	wantChoice := config.FirstAttemptChoice{Backend: "pi-prompt", Model: "qwen3.8:27b"}
-	if fa["docs"] != wantChoice {
-		t.Fatalf("first_attempt.docs survived a patch that didn't touch it: got %v", fa)
+	if got := storedValue(t, s, "first_attempt_escalate_after_failures"); got != 2 {
+		t.Fatalf("untouched first_attempt_escalate_after_failures moved: got %v, want 2", got)
 	}
-	if got := roundTripStored(t, s, "autonomous.retry_resume_max_context_tokens"); got != 120000 {
-		t.Fatalf("touched retry_resume_max_context_tokens: got %v, want 120000", got)
+	if m, _ := storedValue(t, s, "first_attempt").(map[string]config.FirstAttemptChoice); m["docs"] != (config.FirstAttemptChoice{Backend: "pi-prompt", Model: "qwen3.8:27b"}) {
+		t.Fatalf("untouched first_attempt.docs moved: got %v", m)
 	}
-}
-
-// toIntAny reads a decoded-JSON number (float64) straight into an int for
-// asserting GET /api/config values.
-func toIntAny(v interface{}) int {
-	if f, ok := v.(float64); ok {
-		return int(f)
-	}
-	return 0
 }
