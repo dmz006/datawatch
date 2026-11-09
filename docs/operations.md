@@ -1162,6 +1162,36 @@ in autonomous.model_pull_consent.publishers
 
 A listed refusal carries its note in the reason (`allowed: false` entries, e.g. the `--deny` CLI form which stores `denied by operator` as the note). The operator guide is [howto/model-pull-consent.md](howto/model-pull-consent.md).
 
+### Git hosts
+
+`git.hosts` is the list of git hosts the daemon may push to: one entry per host (a GitHub, a GitLab, a Gitea, a Bitbucket, or a plain git remote) with its `kind`, `base_url` (required for the self-hosted kinds), `credential_source` (`host_login` default, `vault`, or `broker`), `vault_secret` (the vault entry **name** holding the token, when the source is `vault`), and `sign_tags`/`signing_key` for signed tags. The list is validated at config load — every problem in the list is reported together, and one invalid entry fails the load. It is the credential and host model the autonomy handover plan builds the daemon's own push-and-tag on (Phase 4); **no push path consumes it yet**, so in this release the live surface is the config block plus two read-only REST reads.
+
+**Write.**
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `git:` → `hosts:` — the only write surface in this tree; the block with per-field comments is in [config-reference.yaml](config-reference.yaml) |
+| **Config key** | `datawatch config` is the generic config interface (get/set); there is no dedicated `git hosts` CLI subcommand yet, and the dotted-key addressing `git.hosts.<name>.<field>` the config model exposes is not wired to a channel yet. The host `name` is the key — it cannot be renamed through a field write, and a host is created by writing the whole list |
+
+**Read.**
+
+| Method | How |
+|--------|-----|
+| **CLI** | `datawatch config get git` (or `datawatch config get git.hosts`) — the block with defaults applied (`credential_source` read back as `host_login` when empty) |
+| **REST API** | `GET /api/git/hosts` — every host with its **live readiness**: `kind`, the credential source, the vault secret name, plus `logged_in`, `account`, `scopes` and the `has_repo_scope`/`has_workflow_scope` (github) or `has_api_scope` (gitlab) booleans, and `problem` + `fix_command` when something is missing. All readiness reads are read-only and bounded by a 15-second deadline. `GET /api/config` reads the raw block. Both require the config-read federation capability |
+| **MCP** | `get_config` with `section: git` returns the `git` block, hosts list included. No dedicated `git_hosts_*` tool yet |
+| **Comm channel** | the generic `config` reads carry the block; a channel with the REST passthrough can run `GET /api/git/hosts` |
+
+**Test one host.** `POST /api/git/hosts/<name>/test` — the sole test surface (REST; via the comm channel's REST passthrough where it exists). It first runs the readiness check (a readiness problem returns `ok: false` with the problem and the `fix_command` and stops), then one live probe under the same 15-second deadline — `gh api user` for github, `glab api user` for gitlab, `git ls-remote` for the other kinds — and reports the account connected as. An unknown name is a 404.
+
+**Token rule.** No surface returns a token: the vault credential appears only as its entry name (`vault_secret`), a `vault`-sourced host's token is placed only in the one host command's environment (`GH_TOKEN` / `GITLAB_TOKEN` / `DATAWATCH_GIT_TOKEN`), and any token-shaped value or `user:password@` credential that reaches an answer is written out as `[redacted]`. Creating or rotating the vault entry itself is the [secrets](howto/secrets-manager.md) surface.
+
+**Rotating a vault credential.** Rotate the entry in the vault under the same name and the host is unchanged — the config stores the name, not the value. Changing `vault_secret` means editing the list (YAML write above).
+
+**Removing a host.** Edit the `git:` block: delete the entry, drop an empty `hosts: []`, reload. An unconfigured name immediately becomes a 404 on the readiness and test reads.
+
+**Review items for the operator.** No push path consumes `git.hosts` yet (the daemon push-and-tag is the follow-up in [plans/2026-11-03-autonomy-handover-plan.md](plans/2026-11-03-autonomy-handover-plan.md), Phase 4 — until then `sign_tags`/`signing_key` are configured but unused); the Git hosts settings card with an in-UI Test connection button is not built; and the two REST reads authenticate as config-read, so deciding whether the connection test deserves its own capability gate is open. See [howto/git-hosts.md](howto/git-hosts.md).
+
 ## 5. Signal Account Management
 
 ### Find your group ID

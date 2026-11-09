@@ -8353,6 +8353,106 @@ paths:
         "403": {description: Caller lacks the health capability}
         "405": {description: Method not allowed (GET only)}
 
+  /api/git/hosts:
+    get:
+      summary: List the configured git hosts, each with a live readiness check
+      description: |
+        Every `git.hosts` entry — `name`, `kind` (github, gitlab, gitea,
+        bitbucket or git), `base_url` (empty for github.com / gitlab.com),
+        `credential_source` (`host_login`, `vault`, or `broker`) and, for a
+        `vault` source, the vault entry's NAME `vault_secret` — plus a
+        live-computed `readiness` object per host: `logged_in`, `account`,
+        `scopes`, the scope flags for the kind (`has_repo_scope` /
+        `has_workflow_scope` for github, `has_api_scope` for gitlab), and
+        when the host is not usable a plain-language `problem` and a
+        `fix_command`.
+
+        Readiness is computed on every call, not cached: `gh auth status`
+        (github), `glab auth status` (gitlab), or `git ls-remote` (the other
+        kinds), each bounded by a 15-second deadline, with the host's
+        configured base URL (`--hostname` for the CLIs). A missing CLI, an
+        expired login or a missing scope is reported in `problem` — never an
+        error status.
+
+        Neither response nor any other surface reads or returns a token:
+        `vault_secret` is the entry name, and anything token-shaped that
+        reaches an answer is written out as `[redacted]`. Authenticates with
+        the config-read capability; a federated peer without it is refused
+        with 403.
+      operationId: gitHostsList
+      tags: [Singletons]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hosts]
+                properties:
+                  hosts:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, kind, credential_source, readiness]
+                      properties:
+                        name: {type: string}
+                        kind: {type: string, enum: [github, gitlab, gitea, bitbucket, git]}
+                        base_url: {type: string, description: Empty for github.com / gitlab.com}
+                        credential_source: {type: string, enum: [host_login, vault, broker]}
+                        vault_secret: {type: string, description: The vault entry NAME for a `vault` source; never the secret value}
+                        readiness:
+                          type: object
+                          required: [host, kind, logged_in]
+                          properties:
+                            host: {type: string}
+                            kind: {type: string}
+                            logged_in: {type: boolean}
+                            account: {type: string}
+                            scopes: {type: array, items: {type: string}}
+                            has_repo_scope: {type: boolean, description: github only}
+                            has_workflow_scope: {type: boolean, description: github only}
+                            has_api_scope: {type: boolean, description: gitlab only}
+                            problem: {type: string, description: Plain-language; absent when the host is usable}
+                            fix_command: {type: string}
+        "403": {description: Caller lacks the config-read capability}
+        "405": {description: Method not allowed (GET only)}
+
+  /api/git/hosts/{name}/test:
+    post:
+      summary: Test the connection to one configured git host
+      description: |
+        Runs `git.TestHostConnection` for the named host: the readiness
+        check first, then one read-only probe — `gh api user` (github),
+        `glab api user` (gitlab), `git ls-remote` (the other kinds) — and
+        reports the account it is connected as. The response body is
+        `{"host": "<name>", "ok": bool, "account": str, "message": str,
+        "fix_command": str}`; `message` is plain-language and free of
+        tokens. An unknown host name is a 404 with the text `git host not
+        found`; any other path under the prefix 404s; GET is 405.
+        Authenticates with the config-read capability (403 without it).
+      operationId: gitHostTest
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "The host's `name` field in git.hosts"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [host, ok, message]
+                properties:
+                  host: {type: string, description: The configured host name}
+                  ok: {type: boolean}
+                  account: {type: string}
+                  message: {type: string, description: "Plain-language outcome; never carries a token"}
+                  fix_command: {type: string}
+        "403": {description: Caller lacks the config-read capability}
+        "404": {description: "The host name is not in git.hosts (body text `git host not found`)", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed (POST only)}
+
   /api/questions:
     post:
       summary: Raise an operator question

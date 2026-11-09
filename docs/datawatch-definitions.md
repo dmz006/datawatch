@@ -27,6 +27,7 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 - **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view.
 - **Autonomous Automata (PRD-DAG)** — high-level intent decomposed into a directed graph of stories and tasks, executed under verification + guardrails.
 - **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards. Community plugins can be installed from a connected registry with `datawatch plugins install <registry> <name>`.
+- **Git hosts** — the daemon's named list of git push targets: host `kind`, base URL, token source (`host_login`, `vault`, or the credential broker), and tag-signing; readiness (login, account, scopes) and a connection test per host over the REST API, with the token never returned on any read. See [Git hosts](#git-hosts).
 
 ## How it's built
 
@@ -98,6 +99,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automate](#settings-automate)
   - [MCP](#settings-mcp)
   - [About](#settings-about)
+- [Git hosts](#git-hosts)
 - [Documentation index](#documentation-index)
 
 ---
@@ -2382,8 +2384,23 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Goose backend | [`docs/llm-backends.md`](llm-backends.md) | v8.13.36–v8.14.0 | provider/model/api_key env-var injection, MCP channel bridge, `agent-goose` container, `channel_enabled` config flag |
 | Vision input system | [`docs/config-reference.yaml`](config-reference.yaml) · [`docs/mcp.md`](mcp.md) | v8.15.0 (pending) | `vision.*` config, `POST /api/vision/describe`, comms image→description injection, `vision_describe` MCP tool, `image_paths` on start_session/send_input, council `image_path`, skills `accepts_images`, `remember [image]` |
 | Automaton lifecycle event subscriptions | [`howto/automaton-lifecycle-subscriptions.md`](howto/automaton-lifecycle-subscriptions.md) · [`flow/lifecycle-subscription-flow.md`](flow/lifecycle-subscription-flow.md) | Unreleased (Phases 3–4 of `plans/2026-10-13-prd-lifecycle-events.md`) | persisted encrypted store, engine with one-shot/expire/coalesce, comm/session(bridge, SendInput)/topic/alert/mcp_queue sinks, pending-events queue + polling, update + test-fire, REST + MCP + CLI + owner-scoped comm verbs + PWA Subscriptions tab, live re-attach (no restart) |
+| Git hosts | [`howto/git-hosts.md`](howto/git-hosts.md) · [Git hosts](#git-hosts) | Unreleased (Phase 4 of `plans/2026-11-03-autonomy-handover-plan.md`) | `git.hosts[]` config model (name, kind, base_url, credential_source host_login/vault/broker, vault_secret, sign_tags, signing_key) validated at load; readiness check (gh/glab auth status, git ls-remote) with 15-second deadline; connection test; `GET /api/git/hosts` + `POST /api/git/hosts/{name}/test` (config-read capability); token never in any response (`[redacted]`); no push path consumes it yet |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
+
+## Git hosts
+
+A **git host** is one named git host in the `git.hosts` list that the daemon may push to: a GitHub, a GitLab, a Gitea, a Bitbucket, or a plain git remote. Each entry carries the host `kind`, its base URL (required for the self-hosted kinds — `gitea`, `bitbucket`, `git`; empty means github.com or gitlab.com for the public ones), how its token is obtained — the **credential source** — and whether the tags the daemon creates for it are signed.
+
+**Credential sources.** `host_login` (the default) uses the login already on the machine — `gh auth login` / `glab auth login` — and adds nothing to the environment. `vault` reads the token from the secrets-vault entry named in `vault_secret` and places it in the one host command's environment as `GH_TOKEN` (github), `GITLAB_TOKEN` (gitlab) or `DATAWATCH_GIT_TOKEN` (everything else) — never in the daemon's own environment, the config, or any error message. `broker` lets the credential broker supply the token; the daemon names the source so a push or tag audit line can carry it.
+
+**Readiness.** `GET /api/git/hosts` reads every host plus a live readiness check: for github, `gh auth status` (account, scopes, the `repo`/`workflow` scope booleans); for gitlab, `glab auth status` (the `api` scope); for the other kinds, a `git ls-remote` reachability probe. A missing login or scope is reported as a plain-language `problem` with a `fix_command`. Every external command is bounded by a 15-second deadline.
+
+**Connection test.** `POST /api/git/hosts/{name}/test` is the readiness check plus one read-only probe (`gh api user`, `glab api user`, or `git ls-remote`) and reports the account connected as. An unknown name is a 404.
+
+**The token rule.** No read — REST, CLI, MCP, comm, PWA — returns a token. A vault host shows its entry's **name** (`vault_secret`), and any token-shaped value or `user:password@` credential that reaches an answer is written out as `[redacted]`.
+
+The list is validated at config load (every problem reported together; one invalid entry fails the load), and as of this release no push path consumes it yet — it is the credential and host model building toward the daemon's own push-and-tag in [plans/2026-11-03-autonomy-handover-plan.md](plans/2026-11-03-autonomy-handover-plan.md), Phase 4. How to: [howto/git-hosts.md](howto/git-hosts.md); operations: [operations.md](operations.md) § Git hosts.
 
 ## Documentation index
 
@@ -2429,6 +2446,7 @@ Infrastructure:
 - [`howto/container-workers.md`](howto/container-workers.md) — Docker / Kubernetes ephemeral workers
 - [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
 - [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password + Vault backends
+- [`howto/git-hosts.md`](howto/git-hosts.md) — git push targets: the `git.hosts` list (kind, base URL, credential source, tag signing), readiness + connection test over REST, the token-never-returned rule, and what is not here yet
 - [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
 - [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker (selecting a host re-renders the current view in place), all-servers aggregation
 - [`howto/compute-nodes.md`](howto/compute-nodes.md) — GPU/CPU node registry, kind taxonomy, observer peer binding
