@@ -1,5 +1,7 @@
 # [sync] CodeQL alert gate stops at once when the rate-limit reset is out of reach — defect fix parity (datawatch app)
 
+**Decision 2026-11-09: not filed, no app surface.** The change is to the CodeQL alert gate script only, so the datawatch app has nothing to match. Four near-identical drafts were generated for one change.
+
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened when
 the operator files it. Filing the issue does not change a line of this repo.
 This draft is a file write only: it never runs any hosting CLI and creates
