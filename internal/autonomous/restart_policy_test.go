@@ -207,7 +207,7 @@ func TestBuildRestartInterruptionCountsRunningAndVerifyingAndLiveSessions(t *tes
 		{ID: "pA", Story: []Story{{Tasks: []Task{mk("t1", TaskInProgress, "s1"), mk("t5", TaskQueued, ""), mk("t6", TaskWaitingCapacity, ""), mk("t7", TaskRunningTests, "")}}}},
 	}
 	sessions := []SessionInfo{{ID: "s2", Alive: true}, {ID: "s1", Alive: true}, {ID: "dead", Alive: false}, {ID: "s9", Alive: true}}
-	got := BuildRestartInterruption(prds, sessions)
+	got := BuildRestartInterruption(prds, sessions, nil, nil, "")
 	if got.RunningTaskCnt != 3 || got.LiveSessionCnt != 3 {
 		t.Fatalf("counts = %d tasks, %d sessions; want 3 and 3: %+v", got.RunningTaskCnt, got.LiveSessionCnt, got)
 	}
@@ -222,7 +222,7 @@ func TestBuildRestartInterruptionCountsRunningAndVerifyingAndLiveSessions(t *tes
 	if strings.Join(got.LiveSessions, ",") != "s1,s2,s9" {
 		t.Fatalf("live sessions = %v", got.LiveSessions)
 	}
-	if empty := BuildRestartInterruption(nil, nil); empty.RunningTasks == nil || empty.LiveSessions == nil || !empty.Quiet() {
+	if empty := BuildRestartInterruption(nil, nil, nil, nil, ""); empty.RunningTasks == nil || empty.LiveSessions == nil || !empty.Quiet() {
 		t.Fatalf("empty report must carry empty lists, not null: %+v", empty)
 	}
 }
