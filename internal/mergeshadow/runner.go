@@ -231,7 +231,7 @@ func classifyConflicts(cls Classifier, paths []string) []Conflict {
 func toGates(results []GateResult) []Gate {
 	out := make([]Gate, 0, len(results))
 	for _, r := range results {
-		out = append(out, Gate{Name: r.Name, Status: string(r.Status), Duration: r.Duration, Detail: r.Detail})
+		out = append(out, Gate{Name: r.Name, Status: string(r.Status), Duration: r.Duration, Detail: gateDetail(r)})
 	}
 	return out
 }
@@ -336,4 +336,13 @@ func semverAbove(a, b [3]int) bool {
 		}
 	}
 	return false
+}
+
+// gateDetail is the Detail recorded on the plan's Gate. A load_sensitive gate
+// also carries its finding, the first failing lines, so the plan keeps them.
+func gateDetail(r GateResult) string {
+	if r.Status != GateLoadSensitive || r.Finding == "" {
+		return r.Detail
+	}
+	return joinDetail(r.Detail, "finding: "+strings.ReplaceAll(r.Finding, "\n", " | "))
 }
