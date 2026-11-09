@@ -188,7 +188,10 @@ daemon:
 Every ship steps the project's version by one: `patch`, `minor` or `major` —
 or steps no version at all (`none`). How much a merge steps is its
 **release size**, and the daemon resolves it for each Automaton, most
-specific layer first:
+specific layer first. The resolution is stored and readable now; the merge's
+version step that applies it is wired in the work that follows, so until then
+a set size does not change what a ship bumps (see the note at the top of
+[release size and milestones](release-size-and-milestones.md)):
 
 | Layer | What decides it |
 |---|---|

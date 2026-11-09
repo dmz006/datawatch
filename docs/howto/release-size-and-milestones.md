@@ -235,11 +235,13 @@ a rounding fix found along the way (`bug`) and the switch-over that deletes the
 old engine (`feature`). Nothing about them is special; none of them sets a
 `release_size`, so each resolves through the layers.
 
-**3. They ship as minors and patches.** As each member merges, the daemon
-resolves its size. Before the arc completes, the milestone layer has nothing to
-say, so layer 3 and 4 decide:
+**3. They ship as minors and patches.** When each member merges, its size is
+resolved the same way: the daemon has the layers, but the version step that
+applies the result is not wired yet (see the note at the top), so the table
+below is the intended result, not what a ship bumps today. Before the arc
+completes, the milestone layer has nothing to say, so layer 3 and 4 decide:
 
-| Member | Kind | Resolved size | Layer | Version |
+| Member | Kind | Resolved size | Layer | Intended version |
 |---|---|---|---|---|
 | Schema change | feature | minor | project map or built-in | 3.7.2 to 3.8.0 |
 | Calculation core | feature | minor | project map or built-in | 3.8.0 to 3.9.0 |
