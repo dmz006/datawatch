@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.112.9 — Switch the page to the chosen federated host from the server picker
+
+### Fixed
+
+- **Choosing a federated host in the per-tab server picker now actually switches the page you're on to that host.** Found 2026-11-08, reported by the operator. Before, the picker bar (Sessions, Alerts, Automata, Observer, Settings, Dashboard) set the active server and reconnected but the view you were looking at kept the previous server's data until you re-opened it. Selecting a federated host now re-renders the current page in place against that host (`internal/server/web/app.js`), so its content and "Showing: <name>" line reflect the chosen host. The local chip (labelled with the daemon's hostname, not the word "Local") or **All** takes you back; Observer and Settings only offer the local and federated chips (no **All**). Re-selecting the already-active host is a no-op; the "Connected to: <name>" toast and the **Back to <hostname>** button are unchanged.
+  - **How it shows up:** tap a federated-host chip on any picker tab and the current tab updates to that host's data — no need to leave and re-open it.
+  - **Migration:** none — applies from the next chip selection with no setting to change; the [multi-server howto](docs/howto/multi-servers.md) ("Switch between servers") already covers the picker chips and the "Showing: <name>" line. No live verification on a two-host setup had been run when this was recorded — the PWA tests cover the re-render (`internal/server/web/app-select-server-controls.test.js`) — so confirm it on the build in use first; the checklist is in [operations.md](docs/operations.md) ("Still to review (operator)", multi-server section).
+
 ## v9.112.8 — Sessions tiles show every session's system tag chips on the first load
 
 ### Fixed

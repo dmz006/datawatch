@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.112.8 (2026-11-08).** The Sessions page shows every session's placement tag chips on the first load and keeps them through later list updates. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.112.9 (2026-11-08).** Choosing a federated host in the server picker now re-renders the page you are on (About, Settings tabs, Automata, Alerts, Dashboard, Observer) for that host. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
