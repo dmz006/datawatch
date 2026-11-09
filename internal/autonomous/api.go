@@ -953,6 +953,7 @@ func (a *API) Cancel(id string) error {
 	a.M.Store().WithLock(func() {
 		old = prd.Status
 		prd.Status = PRDCancelled
+		clearPlannerFields(prd) // cancel ends any planning in flight
 	})
 	// Unlike CancelStory/CancelTask, this whole-PRD cancel previously left
 	// no trace in prd.Decisions — an operator (or a future session) had no
