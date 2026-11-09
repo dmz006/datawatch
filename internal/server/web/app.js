@@ -9736,6 +9736,8 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     DOCS_DEFINITIONS + '#merge-conflict-policy'],
   [['autonomous.merge_pipeline.conflict_model', 'settings_merge_pipeline_conflict_model', 'merge_pipeline_conflict_model'],
     DOCS_DEFINITIONS + '#merge-conflict-model'],
+  [['merge_lock_'], DOCS_DEFINITIONS + '#merge-lock'],
+  [['merge_validator_'], DOCS_DEFINITIONS + '#release-bump-validator'],
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
 ];
 
@@ -29072,6 +29074,49 @@ function _mergePipelineSelect(id, onchange, options, selected) {
   const opts = options.map(([v, label]) => `<option value="${escHtml(v)}"${v === selected ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
   return `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="${onchange}(this.value)">${opts}</select>`;
 }
+// ── Merge lock and last validator lines ─────────────────────────────────────
+// _mergeStatusBlockHtml(status) draws the read-only lines of GET
+// /api/autonomous/merge under the Merge pipeline card: one line while the merge
+// lock on the base repository is held (Automaton, branches, since) and one line
+// for the last release-bump validator result, with each failing check under
+// it. Nothing is drawn when both are absent. Each line carries a ? link to its
+// definitions entry, found by the merge_lock_ and merge_validator_ keys in
+// DOCS_MERGE_PIPELINE_LINKS. Every value is escaped.
+function _mergeHelpLink(key, tipKey) {
+  if (localStorage.getItem('cs_show_docs_links') === '0') return '';
+  const target = docsLinkForKey(key) || DOCS_DEFINITIONS;
+  const tip = escHtml(t(tipKey));
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="merge-status-help" title="${tip}" aria-label="${tip}" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+}
+function _mergeLockLineHtml(lock) {
+  const branches = (Array.isArray(lock.branches) ? lock.branches : []).filter(b => typeof b === 'string' && b);
+  const names = branches.length ? branches.join(', ') : t('merge_lock_no_branches');
+  const since = (typeof lock.since === 'string' && lock.since !== '') ? _triageTime(lock.since) : '';
+  const text = t('merge_lock_line', [String(lock.automaton_id || '—'), names, since || '—']);
+  return `<div class="merge-status-lock" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(text)}${_mergeHelpLink('merge_lock_line', 'merge_lock_help')}</div>`;
+}
+function _mergeValidatorLineHtml(v) {
+  const pass = v.pass === true;
+  const at = (typeof v.checked_at === 'string' && v.checked_at !== '') ? _triageTime(v.checked_at) : '';
+  const text = t(pass ? 'merge_validator_pass' : 'merge_validator_fail', [String(v.version || '—'), at || '—']);
+  const line = `<div class="merge-status-validator" style="font-size:12px;color:${pass ? 'var(--text2)' : 'var(--error,#c00)'};overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_validator_pass', 'merge_validator_help')}</div>`;
+  const checks = (Array.isArray(v.checks) ? v.checks : [])
+    .filter(c => c && typeof c === 'object' && c.pass !== true)
+    .map(c => {
+      const name = String(c.name || '—');
+      const detail = String(c.detail || '');
+      const msg = detail ? t('merge_validator_check', [name, detail]) : t('merge_validator_check_bare', [name]);
+      return `<div class="merge-validator-check" style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;margin-left:12px;">${escHtml(msg)}${_mergeHelpLink('merge_validator_check', 'merge_validator_help')}</div>`;
+    }).join('');
+  return line + checks;
+}
+function _mergeStatusBlockHtml(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const lines = [];
+  if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
+  if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
+}
 window.mergePipelineCardHtml = function(view, opts) {
   opts = opts || {};
   const head = `<div class="cap-title">${escHtml(t('merge_pipeline_card_title'))}${defsLink('merge_pipeline_card_title')}</div>`;
@@ -29103,6 +29148,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<label for="mergePipelineProject" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_project'))}</label>` +
     `<input id="mergePipelineProject" class="form-input" list="mergePipelineProjects" value="${escHtml(project)}" style="flex:1;min-width:120px;max-width:100%;font-size:12px;" onchange="window.mergePipelineSelectProject(this.value)" autocomplete="off" />` +
     `<datalist id="mergePipelineProjects">${projects.map(p => `<option value="${escHtml(p)}"></option>`).join('')}</datalist></div>`;
+  const statusBlock = _mergeStatusBlockHtml(opts.mergeStatus);
   const srcKey = _mergePipelineKey(MERGE_PIPELINE_SOURCE_KEYS, view.source);
   const srcName = srcKey ? view.source : 'none';
   const srcLabel = srcKey ? t(srcKey) : t('merge_pipeline_source_none');
@@ -29139,7 +29185,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<button type="button" class="btn-primary merge-pipeline-save" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineSaveRecord()">${escHtml(t('merge_pipeline_save_record'))}</button>` +
     `<button type="button" class="btn-secondary merge-pipeline-clear" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineClearRecord()">${escHtml(t('merge_pipeline_clear_record'))}</button></div>` +
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
-  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${editor}</div>`;
+  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${statusBlock}${editor}</div>`;
 };
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the
@@ -29882,7 +29928,7 @@ const MERGE_BADGE_STATES = ['pending', 'needs_look'];
 const MERGE_MIN_REFETCH_MS = 5000;
 // _mergeStatus is the last good GET /api/autonomous/merge read, indexed by
 // Automaton id. A failed read keeps it, so a flaky poll never blinks a badge.
-const _mergeStatus = { byId: {}, at: 0, inflight: null };
+const _mergeStatus = { byId: {}, body: null, at: 0, inflight: null };
 window._mergeStatus = _mergeStatus;
 function _mergeIndex(body) {
   const byId = {};
@@ -29921,6 +29967,7 @@ window.loadMergeStatus = function() {
   if (_mergeStatus.at && (Date.now() - _mergeStatus.at) < MERGE_MIN_REFETCH_MS) return Promise.resolve(_mergeStatus.byId);
   _mergeStatus.inflight = Promise.resolve().then(() => apiFetch('/api/autonomous/merge')).then(body => {
     _mergeStatus.byId = _mergeIndex(body);
+    _mergeStatus.body = (body && typeof body === 'object') ? body : null;
     _mergeStatus.at = Date.now();
     return _mergeStatus.byId;
   }).catch(() => _mergeStatus.byId).then(byId => { _mergeStatus.inflight = null; return byId; });
@@ -34673,12 +34720,14 @@ function _automationMergePipelineLoader() {
   _mergePipelineLoadLists();
   return window._listLoaders.automation_merge_pipeline || listLoader({
     key: 'automation_merge_pipeline', el: 'automationMergePipelineCard', get url() { return _mergePipelineUrl(); }, pollMs: 0,
-    fetch: _mergePipelineFetch,
+    // The merge status (lock and last validator) is read with the pipeline;
+    // a failed status read leaves its lines out and never fails the card.
+    fetch: (url, o) => Promise.all([_mergePipelineFetch(url, o), window.loadMergeStatus().catch(() => null)]).then(r => r[0]),
     failedText: msg => t('merge_pipeline_failed', [msg]),
     active: () => !!document.getElementById('automationMergePipelineCard'),
     render: view => {
       if (view && view.project) window._mergePipelineShown = view.project;
-      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects });
+      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects, mergeStatus: window._mergeStatus.body });
     },
   });
 }
