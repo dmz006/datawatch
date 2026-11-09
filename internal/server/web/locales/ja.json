@@ -4301,5 +4301,16 @@
   "automation.review.judgeOutcome.foundProblem": "判定で問題が見つかりました",
   "automation.review.judgeOutcome.next.couldNotStart": "対応は不要です。再試行されます。",
   "automation.review.judgeOutcome.next.timedOut": "対応は不要です。再試行されます。または「イベント」を確認してください。",
-  "automation.review.judgeOutcome.next.foundProblem": "検出内容を開いてください。"
+  "automation.review.judgeOutcome.next.foundProblem": "検出内容を開いてください。",
+  "automata_std_col_title": "タイトル",
+  "automata_std_col_kind": "種類",
+  "automata_std_col_summary": "概要",
+  "automata_std_col_when": "提示される条件",
+  "automata_std_col_enabled": "オン／オフ",
+  "automata_std_col_mode": "モード",
+  "automata_std_on": "オン",
+  "automata_std_off": "オフ",
+  "automata_std_load_failed": "読み込み失敗:",
+  "automata_std_howto": "標準タスクのハウツー",
+  "automata_std_mode_note": "現在、モードはモデルセッションに固定されています。変更は、この設定ができた時点で、設定の標準タスク設定から行えるようになります。設定キーは"
 }
