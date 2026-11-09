@@ -136,3 +136,73 @@ func TestLaunch_ScriptFormShortTaskInline(t *testing.T) {
 		t.Errorf("no .datawatch folder may exist for an inline task, stat err: %v", err)
 	}
 }
+
+// TestLaunch_ScriptFormLongTaskByFile pins the script form for an oversize
+// task: once the inline command would exceed llm.MaxSendKeysCommand, the task
+// moves to a 0o600 file under the project's .datawatch folder and the recorded
+// command passes that file path as the first script argument instead of the
+// task text. The fake tmux exits 0 without running the command, so the task
+// file stays in place for the assertions.
+func TestLaunch_ScriptFormLongTaskByFile(t *testing.T) {
+	dir := t.TempDir()
+	fakeTmux := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(fakeTmux, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	records := make(chan CommandRecord, 4)
+	SetRecorder(func(rec CommandRecord) { records <- rec })
+	t.Cleanup(func() { SetRecorder(nil) })
+
+	// Repeated text with newlines, trimmed to exactly 20000 bytes.
+	const unit = "long task line of repeated text\n"
+	task := strings.Repeat(unit, 20000/len(unit)+1)[:20000]
+
+	b := &Backend{scriptPath: "/nonexistent/script-xyz.sh"}
+	if err := b.Launch(context.Background(), task, "cs-long", dir, ""); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	var rec CommandRecord
+	select {
+	case rec = <-records:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the command record")
+	}
+
+	if rec.TaskFile == "" {
+		t.Fatal("oversize task must be written to a task file, got empty TaskFile")
+	}
+	rel, err := filepath.Rel(filepath.Join(dir, ".datawatch"), rec.TaskFile)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		t.Errorf("task file %q must lie under %s/.datawatch (rel %q, err %v)", rec.TaskFile, dir, rel, err)
+	}
+
+	got, err := os.ReadFile(rec.TaskFile)
+	if err != nil {
+		t.Fatalf("read task file: %v", err)
+	}
+	if string(got) != task {
+		t.Errorf("task file content mismatch: got %d bytes, want %d bytes", len(got), len(task))
+	}
+
+	info, err := os.Stat(rec.TaskFile)
+	if err != nil {
+		t.Fatalf("stat task file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("task file permissions = %o, want 600", perm)
+	}
+
+	if len(rec.Command) > llm.MaxSendKeysCommand {
+		t.Errorf("command length %d exceeds MaxSendKeysCommand %d", len(rec.Command), llm.MaxSendKeysCommand)
+	}
+	wantPrefix := "'/nonexistent/script-xyz.sh' '" + rec.TaskFile + "' '"
+	if !strings.HasPrefix(rec.Command, wantPrefix) {
+		t.Errorf("command must pass the task file path as the first script argument\n got: %q\nwant prefix: %q", rec.Command, wantPrefix)
+	}
+	if strings.Contains(rec.Command, "long task line") {
+		t.Errorf("command must not contain the task text")
+	}
+}
