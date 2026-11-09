@@ -319,6 +319,8 @@ get_my_scope
 get_my_session_id
 get_stats
 get_version
+git_hosts_status
+git_hosts_test
 guardrail_library_list
 guardrail_profile_create
 guardrail_profile_delete
