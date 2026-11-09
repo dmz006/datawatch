@@ -105,6 +105,19 @@ type TaskAttempt struct {
 	// Escalated is true when this attempt ran on an escalation step rather
 	// than the task's normally resolved worker.
 	Escalated bool `json:"escalated,omitempty"`
+	// StartupTokens is the token size the attempt's worker started with.
+	// Zero when the launch carried no starting context.
+	StartupTokens int `json:"startup_tokens"`
+	// WorkerProfile names the worker profile the attempt's worker started
+	// with; empty when the attempt ran with no profile.
+	WorkerProfile string `json:"worker_profile"`
+	// WorkerRole names the role of the attempt's worker session.
+	WorkerRole string `json:"worker_role"`
+	// StartupTokenSource says how StartupTokens was obtained:
+	// "estimated" when it is the estimate from the generated starting
+	// context (see EstimateTokens in startup_tokens.go), or "reported" when
+	// the worker or its runner reported the usage itself.
+	StartupTokenSource string `json:"startup_token_source"`
 	// RunnerExitStatus is pi's exit status when the pane showed it; nil when
 	// no pi exit status was seen.
 	RunnerExitStatus *int `json:"runner_exit_status,omitempty"`
