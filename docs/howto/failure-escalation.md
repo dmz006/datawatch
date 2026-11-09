@@ -41,6 +41,10 @@ and it should not quietly fail either. Failure escalation does three things:
 3. **Asks you.** The task is held with the status `review_needed` and a report of
    every attempt. Nothing else is spent on it until you retry it, change it, or
    cancel it.
+4. **Stops early when another attempt cannot help.** A failure with no route to a
+   fix through another attempt is held for review at once, with the reason,
+   instead of burning the rest of the budget
+   ([No-retry failures](#no-retry-failures)).
 
 This is the decision the daemon used to make for you by failing the task. Now
 you make it, with the evidence in front of you.
@@ -345,6 +349,51 @@ A task reaching `max_failures` is **held**, not failed. What you see:
   started: the one that is running picks up your decision.
 - **The report.** The task keeps every attempt, and its review report is a plain
   text summary of each one, with the total time spent.
+
+## No-retry failures
+
+Some failures have no route to a fix through another attempt. When the verifier
+rejects an attempt and the failure is one of them, the failed attempt is
+recorded — carrying the reason — and the task is **held for review at once**:
+no further attempt is scheduled, and the rest of the failure budget is not
+spent. This only runs with the policy on; with `enabled: false` every failure
+takes the ordinary retry, then fail path as before.
+
+A failure has no retry when any of these holds:
+
+| Condition | Why another attempt will not help |
+|---|---|
+| The verifier failed the task because **no files changed**, and the task writes nothing (read-only, or no planned files) | A re-run of a task that writes nothing has no new work to verify. |
+| The task's **verification script is missing** from the worktree | The same missing script fails the re-run the same way. |
+| The **same failure summary has already failed twice** (case and surrounding whitespace apart) | A third identical failure means retrying is not fixing anything. |
+
+What you see is the [When a task needs review](#when-a-task-needs-review) hold
+with one difference: the reason is the point.
+
+- **The alert.** One error-level alert, titled "Automaton task needs review
+  (no retry)", raises when the task is held. It names the Automaton and the
+  task, the reason — for example `verification script … is missing from the
+  worktree` or `this failure summary has already failed twice; a third
+  identical attempt will not change the outcome` — the last worker, and the
+  ways to act: change the task so it can be verified (give it files to write,
+  a verification script, or a changeable spec), or cancel it. One alert per
+  hold, as the usual one.
+- **The record.** The failed attempt carries the reason in its
+  `no_retry_reason` field, and the held task's review entry shows the same
+  reason — that is where you see it in `datawatch autonomous status` and on
+  the task row, next to the badge.
+- **The report.** It leads with the reason and then lists the recorded
+  attempt, whose last one is marked with the no-retry line.
+- **The actions.** The same five as the retry-limit hold: retry, edit spec and
+  retry, change worker, narrow scope, cancel, on every surface. For a no-retry
+  hold the useful moves are the ones that change the basis: give the task
+  files to write, put its verification script in the worktree, or replace the
+  spec — an unchanged retry re-enters the hold on the same basis, since the
+  cause was never touched.
+
+Every other failure keeps the ladder, the counts and the hold exactly as
+described above: the no-retry check runs on each verifier rejection, and only
+fires on those three conditions.
 
 ## The five operator actions
 
