@@ -1156,3 +1156,44 @@ func TestReleaseSettingsLoadFromYAML(t *testing.T) {
 		t.Errorf("ReleaseCIWindowMinutes = %d", cfg.Git.ReleaseCIWindowMinutes)
 	}
 }
+
+func TestValidateReleaseSettings(t *testing.T) {
+	pathCases := []struct {
+		name, in string
+		wantErr  bool
+	}{
+		{"direct_push accepted", "direct_push", false},
+		{"pull_request accepted", "pull_request", false},
+		{"unknown rejected", "squash", true},
+	}
+	for _, c := range pathCases {
+		t.Run("release_path/"+c.name, func(t *testing.T) {
+			err := ValidateReleasePath(c.in)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("ValidateReleasePath(%q) = %v, wantErr %v", c.in, err, c.wantErr)
+			}
+			if err != nil && (!strings.Contains(err.Error(), "release_path") || !strings.Contains(err.Error(), "direct_push") || !strings.Contains(err.Error(), "pull_request")) {
+				t.Errorf("error %q must name the setting and list allowed values", err)
+			}
+		})
+	}
+	winCases := []struct {
+		name    string
+		in      int
+		wantErr bool
+	}{
+		{"positive accepted", 60, false},
+		{"zero rejected", 0, true},
+	}
+	for _, c := range winCases {
+		t.Run("release_ci_window_minutes/"+c.name, func(t *testing.T) {
+			err := ValidateReleaseCIWindowMinutes(c.in)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("ValidateReleaseCIWindowMinutes(%d) = %v, wantErr %v", c.in, err, c.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "release_ci_window_minutes") {
+				t.Errorf("error %q must name the setting", err)
+			}
+		})
+	}
+}

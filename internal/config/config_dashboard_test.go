@@ -24,7 +24,7 @@ func TestDashboardHideInactiveCardsYAMLRoundTrip(t *testing.T) {
 		w := want
 		t.Run(tname(want), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "datawatch.yaml")
-			src := &Config{}
+			src := &Config{Git: GitConfig{ReleaseCIWindowMinutes: 60}}
 			src.Dashboard.HideInactiveCards = &w
 			if err := Save(src, path); err != nil {
 				t.Fatalf("Save: %v", err)
