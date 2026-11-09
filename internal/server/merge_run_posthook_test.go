@@ -85,8 +85,9 @@ func newPostShipRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	// The branch carries the README's Current release line for the release it
-	// ships, which the release-bump validator checks.
-	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# App\n\nCurrent release: v1.2.4\n"), 0o644); err != nil {
+	// ships, in the vX.Y.Z (YYYY-MM-DD) shape the release line expects, which
+	// the release-bump validator checks.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# App\n\nCurrent release: v1.2.4 (2026-11-01)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	postShipGit(t, dir, "add", "-A")
