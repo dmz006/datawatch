@@ -4561,7 +4561,7 @@ paths:
         Live config object for the decompose-lint feature: `decompose_lint`
         (`autonomous.decompose_lint`: mode, max_retries, rules, disabled_rules),
         `task_templates` (`autonomous.task_templates`: enabled, templates,
-        per-project overrides) and `decompose_guidance`
+        per-project overrides, mode) and `decompose_guidance`
         (`autonomous.decompose_guidance`: the literal text or file path), as one
         object. A federated peer needs the autonomous read capability.
       operationId: autonomousDecomposeLintConfigGet
@@ -4579,7 +4579,7 @@ paths:
         Validated partial replace of the decompose-lint config. The body may
         contain any of `decompose_lint` (a full
         `{mode, max_retries, rules, disabled_rules}` object), `task_templates`
-        (a full `{enabled, templates, projects}` object) and
+        (a full `{enabled, templates, projects, mode}` object) and
         `decompose_guidance` (a string); each present key replaces its whole
         block, omitted keys are left untouched. Every supplied block is
         validated before any of them is applied (legal mode from off|shadow|
