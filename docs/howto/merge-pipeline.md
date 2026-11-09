@@ -221,9 +221,34 @@ In order:
 6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version.
 7. `commit-release-bump` (`commit_release_bump`) — one commit of the version files and the changelog.
 8. `tag-release` (`tag_release`) — tag that commit with the new version.
-9. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator: every version file carries the same version, the first changelog heading is that version, it is exactly one patch, minor or major step above the newest local `v` tag, the tag is free on the remote, and the README's `Current release:` line names it. A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
+9. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator over the bump the earlier steps made (see [The release-bump validator](#the-release-bump-validator) below). A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
 10. `push-release` (`push_release`) — push main and the tag; fast-forward only.
 11. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
+
+### The release-bump validator
+
+The `validate-release-bump` step runs after the bump commit and the release
+tag exist, and before the push. It only reads: it never writes a file, a tag
+or a remote. Every check runs, even after one fails, so the result names each
+check that failed. The five checks, in the order they run:
+
+| Check name | What it requires |
+|---|---|
+| `version_variables_equal` | Every file in `version_files` (by default `cmd/datawatch/main.go` and `internal/server/api.go`) carries the same `X.Y.Z` in its `var Version = "..."` line. A file with no such line fails the check. |
+| `changelog_heading_matches` | The first `## vX.Y.Z` heading in `CHANGELOG.md` is that version. |
+| `one_step_above_last_tag` | The version is exactly one patch, minor or major step above the newest local `vX.Y.Z` tag. The run's own release tag is not counted as the previous release. |
+| `tag_not_taken` | The tag `vX.Y.Z` is not on `origin`, and any local tag of that name points at HEAD. If `origin` cannot be queried, the check fails. |
+| `readme_line_matches` | The first `Current release:` line in `README.md` names that version. |
+
+The run record keeps the whole result under `validator`: `pass`, `version`,
+`checked_at`, and one entry per check with its `name`, `pass` and `detail`.
+A run that stopped before this step has no `validator` field.
+
+The same checks can be run by hand, read-only, from a repository checkout with
+`bash scripts/verify-release-bump.sh`. It prints one `PASS` or `FAIL` line per
+check, in the order above, and exits 0 only when all five pass. Set
+`VERIFY_RELEASE_REMOTE` to query a remote other than `origin`; if that remote is
+not configured, only local tags are checked and the tag line says so.
 
 ## How the release version is chosen
 
