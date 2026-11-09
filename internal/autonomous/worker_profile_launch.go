@@ -77,6 +77,12 @@ func (m *Manager) recordWorkerProfileDecision(prd *PRD, t *Task) {
 	in.TaskName = t.WorkerProfile
 	in.AutomatonName = prd.WorkerProfile
 	_, _, d := workerprofile.ResolveForLaunch(in)
+	m.recordWorkerProfileDecisionFrom(prd, t, d)
+}
+
+// recordWorkerProfileDecisionFrom records the fallback for an already
+// resolved decision; see recordWorkerProfileDecision.
+func (m *Manager) recordWorkerProfileDecisionFrom(prd *PRD, t *Task, d workerprofile.Decision) {
 	// No requested name, or the requested name resolved: not a fallback.
 	if d.Requested == "" || d.Requested == d.Applied {
 		return
