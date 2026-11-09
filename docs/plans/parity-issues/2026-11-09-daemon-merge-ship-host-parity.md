@@ -51,15 +51,26 @@ merge verbs) builds the `mergepipeline.Runner` with the gh-based
 so `Runner.configuredHost()` is always false in production: the
 host-aware `parity_issue` hook (`RunParityIssueOnHost`) is unreachable
 from the daemon, the built-in `tag` hook tags an unsigned annotated tag
-(`git tag -a`) even when the host entry says `sign_tags: true`, and every
+(`ExecShipRunner.Tag` runs `git tag -a`, `internal/mergepipeline/run.go:758`)
+even when the host entry says `sign_tags: true` — the signing-aware helper
+`CreateTagForHost` (`internal/git/tag.go:92`) has no caller outside its
+tests — and every
 ship step runs `gh`/`git` with whatever login is ambient on the machine
 rather than the credential source named in `git.hosts`. (2) `PublishRelease`
 —the facade's release operation — has no caller: nothing in the merge loop
-publishes a release on the host after tagging and pushing. (3) `SetHostAuditLog`
-is never called from non-test code, so `RecordHostAudit` returns without
-writing and the entire host audit trail — the Phase 4 promise of one
-credential-sourced entry per PR, issue, release and tag — is dead in the
-daemon. (4) The repo CI watch's host path
+publishes a release on the host after tagging and pushing. (3) None of the
+audited facade operations is reached from a production path: the audit
+sink itself is live — `cmd/datawatch/main.go:4033` wires the operator
+audit log through `gitpkg.SetHostAuditLog` at daemon start, so
+`RecordHostAudit` writes whenever it is called — but its callers are
+unreachable: `PublishRelease`, the signing-aware tag helper
+`CreateTagForHost` and the `OpenChangeRequest` facade entry have no
+non-test callers at all, and `FileIssue` is only reachable through
+`RunParityIssueOnHost`, which gap (1) keeps off. The net effect is the
+same as a dead sink — the Phase 4 promise of one credential-sourced entry
+per MR, issue, release and tag yields zero `host_git_operation` rows from
+the daemon's ship path — but the fix is to route the daemon's operations
+through the facade, not to add wiring. (4) The repo CI watch's host path
 (`pollRefOnHost`) records runs only: no superseded naming, no cancel/rerun
 decisions, no alert — the action phase is documented as
 "GitHub-specific" and is skipped for host-path runs, so a GitLab-host
@@ -84,15 +95,20 @@ The slice's own contract, as built and tested:
 | Pipeline host hook | `builtinPostShipHook` routes `parity_issue` through `RunParityIssueOnHost` when `configuredHost()` succeeds and through the `ShipRunner` (gh) otherwise — the split is correct and tested with `Runner.Hosts` set directly. |
 
 Where it stops, precisely: the daemon itself never populates `Runner.Hosts`
-or `Runner.RemoteURL`, never calls `PublishRelease`, and never calls
-`SetHostAuditLog`, so from the operator's point of view (REST
-`GET /api/autonomous/merge-pipeline`, `POST /api/autonomous/merge/run`,
-the MCP merge-pipeline tools, the comm merge verbs, the CLI, the PWA's
-dashboard console reading `GET /api/autonomous/repo-ci-watch`) the ship
-step is indistinguishable from the pre-slice gh-based behavior: an
-unsigned tag, a push to `origin`, a `gh`-filed parity issue, no release on
-the host, and no `host_git_operation` entries in the audit log — on every
-host kind. And on a GitLab-host repository the repo CI watch answers the
+or `Runner.RemoteURL`, never calls `PublishRelease`, never calls
+`CreateTagForHost` (its only tagging path is `ExecShipRunner.Tag`, an
+unsigned `git tag -a`), and never takes the host-aware parity-issue
+branch — so no audited facade operation, and therefore no
+`RecordHostAudit` call, ever happens in the daemon's ship path, even
+though the operator audit log *is* wired there (`SetHostAuditLog` at
+daemon start, `cmd/datawatch/main.go:4033`). From the operator's point of
+view (REST `GET /api/autonomous/merge-pipeline`,
+`POST /api/autonomous/merge/run`, the MCP merge-pipeline tools, the comm
+merge verbs, the CLI, the PWA's dashboard console reading
+`GET /api/autonomous/repo-ci-watch`) the ship step is indistinguishable
+from the pre-slice gh-based behavior: an unsigned tag, a push to `origin`,
+a `gh`-filed parity issue, no release on the host, and no
+`host_git_operation` entries in the audit log — on every host kind. And on a GitLab-host repository the repo CI watch answers the
 same read shape (runs, statuses, filterable by `status`) but never
 reaches the state that would have produced the alert, the superseded
 naming or the cancel/rerun decision, with no field in the record saying
@@ -124,19 +140,24 @@ across the five kinds as far as each kind's capability allows:
   when `sign_tags: true`, annotated otherwise — so `sign_tags`/`signing_key`
   in `git.hosts` means what the config and the howto say they mean: today
   `CreateTagForHost` and `TagCreateArgsForHost` exist and pass their tests
-  but the daemon's ship step never calls them.
+  but have no non-test caller at all, so the daemon's only tagging path
+  is `ExecShipRunner.Tag`'s unsigned `git tag -a`.
 - **The loop publishes the release on the host** (`git.PublishRelease`
   through the resolved host) as the ship step's final leaving-the-machine
   action for hosts that support it, and records the worded refusal for
   kinds that don't — a ship currently leaves the tag on the remote without
   a release, which is the halfway state between "the operator ships by
   hand" and "the daemon ships".
-- **`SetHostAuditLog` is wired once at daemon start** with the operator
-  audit log (and its existing read surfaces), so every `host_git_operation`
-  entry the facade would already record — PR/MR, issue, release, tag,
-  with credential source, never the token — actually lands in the audit
-  trail the operator reads. The entry shape is already the agreed one
-  (`internal/audit/host_git_events.go`); this is wiring, not modeling.
+- **The audit trail lands with no new wiring.**
+  `SetHostAuditLog` is already called at daemon start
+  (`cmd/datawatch/main.go:4033`), so the audit sink is live; once the
+  items above route the parity issue, the tag and the release through the
+  audited facade calls, every completed operation — PR/MR, issue,
+  release, tag — records its `host_git_operation` entry with the
+  credential source and never the token into the audit trail the operator
+  already reads. The entry shape is already the agreed one
+  (`internal/audit/host_git_events.go`); what is missing is reaching the
+  operations, not modeling.
 - **The repo CI watch's host path reaches the same decisions the gh path
   does**, within the kind's capability: a failed GitLab-host run is
   classified (infra / security / policy / code_or_test / judging / hung use
@@ -173,9 +194,12 @@ verifiable) from a `sign_tags: true` entry and one annotated tag from a
 default entry, with the existing unsigned-behavior tests preserved for the
 unconfigured path. (3) the release step: `PublishRelease` as the ship
 step's final action with the worded refusal recorded for plain-git
-kinds. (4) `SetHostAuditLog` wired at daemon start — acceptance is one
-`host_git_operation` entry per completed operation in the audit log, each
-carrying the credential source and no token. (5) the host CI-watch
+kinds. (4) the audit trail is then observable without new wiring —
+`SetHostAuditLog` is already called at daemon start
+(`cmd/datawatch/main.go:4033`), so once (1)–(3) route the parity issue,
+the tag and the release through the audited facade calls, the acceptance
+criterion is one `host_git_operation` entry per completed operation in
+the audit log, each carrying the credential source and no token. (5) the host CI-watch
 decision — apply the translatable actions with the stated note, or
 declare observe-only — landed with its record shape and the howto line,
 since it changes what `GET /api/autonomous/repo-ci-watch` reports for
