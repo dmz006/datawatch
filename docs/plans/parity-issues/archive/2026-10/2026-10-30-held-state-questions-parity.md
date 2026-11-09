@@ -81,7 +81,7 @@ bundles then mirror them in place of the placeholders. The mode words
 ## Filed issue
 
 Filed: https://github.com/dmz006/datawatch-app/issues/316
-(2026-10-30, via `env -u TMUX -u TMUX_TMPDIR gh issue create -R dmz006/datawatch-app --title '[sync] Held-state questions: Held queue section and mode setting' --body-file docs/plans/parity-issues/2026-10-30-held-state-questions-parity.md`).
+(2026-10-30, via `env -u TMUX -u TMUX_TMPDIR gh issue create -R dmz006/datawatch-app --title '[sync] Held-state questions: Held queue section and mode setting' --body-file docs/plans/parity-issues/archive/2026-10/2026-10-30-held-state-questions-parity.md`).
 
 Exact issue text as filed (title: `[sync] Held-state questions: Held queue section and mode setting`):
 

@@ -88,7 +88,7 @@ user-facing surfaces`):
 docs/plans/2026-10-29-upstream-monitoring-proposal.md
 docs/plans/2026-11-01-upstream-monitoring-maintainer-guide.md
 docs/plans/README.md
-docs/plans/reports/upstream-watch-live-smoke.md
+docs/plans/reports/archive/2026-11/upstream-watch-live-smoke.md
 scripts/check-version-bump.sh
 scripts/tests/test_upstream_watch.py
 scripts/upstream_watch.py
@@ -104,7 +104,7 @@ No untracked files. Tracker-ID filename check: no match.
 - New docs (`2026-11-01-upstream-monitoring-maintainer-guide.md`, the delivered-note added to
   `2026-10-29-upstream-monitoring-proposal.md`, the row-198 update in `docs/plans/README.md`):
   no datawatch release number (`x.y.z`) anywhere in the changed/new text. The live-smoke report
- (`docs/plans/reports/upstream-watch-live-smoke.md`) cites **upstream** tool versions only, as
+ (`docs/plans/reports/archive/2026-11/upstream-watch-live-smoke.md`) cites **upstream** tool versions only, as
   observed advisory evidence (e.g. pnpm 10.33.0, Go stdlib 1.26.6) — not datawatch release numbers.
 
 ## Named failures (not fixed, per instructions)
@@ -116,7 +116,7 @@ No untracked files. Tracker-ID filename check: no match.
   written it can only be satisfied by a script with no shebang at all.
 - **F-2** — scope allowlist in `.datawatch/verify/upstream-monitoring-final.sh`:
   `docs/plans/[^/]+\.md` does not match the nested report
-  `docs/plans/reports/upstream-watch-live-smoke.md` (verified: the path fails the exact
+  `docs/plans/reports/archive/2026-11/upstream-watch-live-smoke.md` (verified: the path fails the exact
   `grep -E '^docs/plans/[^/]+\.md$'`). The task's manual scope wording ("files under docs/plans")
   does cover it, so the two specs disagree; the final script's regex is the failing check.
 - **F-3** — literal `python3 -I -m unittest scripts/tests/test_upstream_watch.py`
