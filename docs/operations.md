@@ -1164,7 +1164,15 @@ A listed refusal carries its note in the reason (`allowed: false` entries, e.g. 
 
 ### Git hosts
 
-`git.hosts` is the list of git hosts the daemon may push to: one entry per host (a GitHub, a GitLab, a Gitea, a Bitbucket, or a plain git remote) with its `kind`, `base_url` (required for the self-hosted kinds), `credential_source` (`host_login` default, `vault`, or `broker`), `vault_secret` (the vault entry **name** holding the token, when the source is `vault`), and `sign_tags`/`signing_key` for signed tags. The list is validated at config load — every problem in the list is reported together, and one invalid entry fails the load. It is the credential and host model the autonomy handover plan builds the daemon's own push-and-tag on (Phase 4); **no push path consumes it yet**, so in this release the live surface is the config block plus two read-only REST reads.
+`git.hosts` is the list of git hosts the daemon may push to: one entry per host (a GitHub, a GitLab, a Gitea, a Bitbucket, or a plain git remote) with its `kind`, `base_url` (required for the self-hosted kinds), `credential_source` (`host_login` default, `vault`, or `broker`), `vault_secret` (the vault entry **name** holding the token, when the source is `vault`), and `sign_tags`/`signing_key` for signed tags. The list is validated at config load — every problem in the list is reported together, and one invalid entry fails the load. It is the credential and host model the autonomy handover plan builds the daemon's own push-and-tag on (Phase 4). With this change the daemon's per-host git work is implemented behind it — it can open a PR on GitHub and a merge request on GitLab (a GitLab PRD used to hit a not-implemented stub; it now opens the MR via `glab mr create`), create issues on both via `gh issue create` / `glab issue create`, create releases on both via `gh release create` / `glab release create`, and clone and push to every kind (for GitLab HTTPS remotes, git's local credential helper is set to `glab auth git-credential`, so the push rides the `glab` host login; the plain-git kinds push over plain `git`; on those kinds pull requests, issues and releases stay manual — there is no forge API, and the daemon says so instead of attempting it). The per-project release-and-merge loop that consumes the host list is the follow-up, so in this release the live surface is the config block plus the two read-only REST reads, with those per-host operations already usable.
+
+**Per-host operations.**
+
+- `github` — `gh pr create` (PR URL), `gh issue create` (issue URL), `gh release create <tag>` (release URL)
+- `gitlab` — `glab mr create` (MR URL), `glab issue create` (issue URL), `glab release create <tag>` (release URL), clone/push via the `glab` credential helper (SSH unchanged)
+- `gitea` / `bitbucket` / `git` — clone/push via plain `git`; PR, issue and release return the explicit "no forge API integration; open the change in the host's web interface" answer
+
+Every CLI call is bounded (30-second cap), runs with the credential source's environment slice, and never stores or logs a token. GitLab token minting is still unimplemented (the broker's mint flow is GitHub-only).
 
 **Write.**
 
@@ -1190,7 +1198,7 @@ A listed refusal carries its note in the reason (`allowed: false` entries, e.g. 
 
 **Removing a host.** Edit the `git:` block: delete the entry, drop an empty `hosts: []`, reload. An unconfigured name immediately becomes a 404 on the readiness and test reads.
 
-**Review items for the operator.** No push path consumes `git.hosts` yet (the daemon push-and-tag is the follow-up in [plans/2026-11-03-autonomy-handover-plan.md](plans/2026-11-03-autonomy-handover-plan.md), Phase 4 — until then `sign_tags`/`signing_key` are configured but unused); the Git hosts settings card with an in-UI Test connection button is not built; and the two REST reads authenticate as config-read, so deciding whether the connection test deserves its own capability gate is open. See [howto/git-hosts.md](howto/git-hosts.md).
+**Review items for the operator.** No release-and-merge loop consumes `git.hosts` yet — `sign_tags`/`signing_key` are configured but unused until the daemon push-and-tag lands (the follow-up in [plans/2026-11-03-autonomy-handover-plan.md](plans/2026-11-03-autonomy-handover-plan.md), Phase 4); the plain-git kinds (`gitea`, `bitbucket`, `git`) have no forge API, so pull requests, issues and releases on them are manual; GitLab token minting is unimplemented (broker mint is GitHub-only); the Git hosts settings card with an in-UI Test connection button is not built; and the two REST reads authenticate as config-read, so deciding whether the connection test deserves its own capability gate is open. See [howto/git-hosts.md](howto/git-hosts.md).
 
 ## 5. Signal Account Management
 

@@ -15,7 +15,7 @@ exec_steps:
 
 With this change you also get **readiness and connection-test answers** over the daemon's web API: one read lists every configured host with its login state, account, scopes and a plain-language fix when something is missing; another runs the connection test for one host. Both are read-only — and neither read returns a token. A vault-backed host is shown by its secret **name** only.
 
-> **Where this sits:** `git.hosts` is the credential and host model the autonomy handover plan builds the daemon's own push-and-tag on ([docs/plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4 — "the daemon pushes and tags, configurable, per project"). It is the config model, the readiness check and the REST surface; **no push path consumes it yet** — until the daemon push lands, the hosts you configure here are the ones its checks and, later, its pushes will use.
+> **Where this sits:** `git.hosts` is the credential and host model the autonomy handover plan builds the daemon's own push-and-tag on ([docs/plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4 — "the daemon pushes and tags, configurable, per project"). With this change the daemon's per-host git work is implemented behind this model: it can open a PR or merge request on GitHub **and** GitLab, create issues on both, create releases on both, and clone and push to every host kind — including the self-hosted kinds, where clone/push are plain `git` and pull requests, issues and releases stay manual (see ["What the daemon does on each host kind"](#what-the-daemon-does-on-each-host-kind) below). The release-and-merge loop that consumes the `git.hosts` list per project is the follow-up; until it lands, the hosts you configure here are the ones its checks use and, later, its pushes will use.
 
 ## Base requirements
 
@@ -85,6 +85,22 @@ The source tells the daemon where the token comes from when a command runs again
 - **`host_login` (default, recommended).** The login already configured on the host — `gh auth login` for GitHub, `glab auth login` for GitLab. The process environment passes through unchanged and nothing is added. This is the way you run it on your own machine, and the way the [autonomy handover plan](../plans/2026-11-03-autonomy-handover-plan.md) decided it should stay the recommendation.
 - **`vault`** (the fallback for servers and clusters). The token is read from the secrets vault entry named in `vault_secret` and placed in the command's environment under `GH_TOKEN` (github), `GITLAB_TOKEN` (gitlab) or `DATAWATCH_GIT_TOKEN` (gitea, bitbucket, git) — only in that one run's environment slice, never in the daemon's own environment, never in the config, never in an error message. An error names the host and the secret — never a secret value.
 - **`broker`.** The credential broker supplies tokens to worker sessions; the daemon adds no host-side token itself. The source is still reported so a later audit log can name it — the invariant the plan sets: *every push or tag audit-logged with the credential source and never the token*.
+
+## What the daemon does on each host kind
+
+The daemon's git work is done by the per-host providers in `internal/git`, each matching the host's own tooling — the same login the readiness check above verifies. What each host family supports, after this change:
+
+| Host `kind` | Open a PR / MR | Create an issue | Create a release | Clone / push |
+| --- | --- | --- | --- | --- |
+| `github` | `gh pr create` → returns the PR URL | `gh issue create` → issue URL | `gh release create <tag>` → release URL | `git` with the `gh` login |
+| `gitlab` | `glab mr create` → returns the merge request URL — **new with this change**; it was a not-implemented stub before | `glab issue create` → issue URL — **new** | `glab release create <tag>` → release URL — **new** | `git clone` / `git push`; for HTTPS remotes the repository's local git config sets the credential helper to `glab auth git-credential`, so git uses the `glab` host login directly — no token is read, stored or logged by datawatch. An SSH remote changes nothing and relies on the SSH agent |
+| `gitea`, `bitbucket`, `git` | — no forge API: the daemon says so explicitly ("this host has no forge API integration; open the change in the host's web interface") | — same | — same | plain `git clone` / `git push` against the base URL (or a full remote), using the host's own credentials |
+
+Notes the operator should keep in mind:
+
+- **Every CLI call is bounded** (a 30-second cap on the `gh`/`glab` commands) and the commands run with the environment the credential source provides — a `vault`-sourced host's token appears only in that one run's environment, exactly as in the [credential-source table](#what-the-credential_source-choices-mean-at-use-time).
+- **GitLab token minting is still not implemented** — the broker's mint flow is GitHub-only (`gh auth token`) as of this change; GitLab and the plain-git kinds return a not-implemented error for mint/revoker rather than failing silently.
+- **The release-creation and clone/push capabilities are in the git package, not yet in a release loop.** Opening a PR/MR and creating issues is already wired into the daemon (PRD completion opens the PR via the PRD's own git provider — a GitLab PRD now opens a merge request instead of failing — and the project-rules `file_upstream_issue` action creates an issue, which today resolves the `github` provider); the per-project release, tag and merge loop is the Phase 4 follow-up listed under ["What is not here yet"](#what-is-not-here-yet-flagged-for-the-operator).
 
 ## Walkthrough
 
@@ -198,10 +214,12 @@ With this change the dedicated surfaces for git hosts are the config file (the w
 
 These are deliberate gaps in *this* change, not bugs — they follow the plan's order (see [docs/plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4). They are flagged here so the docs state them:
 
-1. **No push path consumes `git.hosts` yet.** The config model, readiness check and two REST reads land first; the daemon's own push-and-tag (release path, direct push vs pull-request, signed tags) is the follow-up plan. Until then, `sign_tags`/`signing_key` are configured but nothing signs with them.
-2. **No host write surface beyond the config file.** The config model exposes `GetGitHostField` / `SetGitHostField` as the dotted-key addressing (`git.hosts.<name>.<field>`) for later surfaces — MCP `config_set`, CLI, a comm verb, or a config file edit — but none of those is wired to git hosts in this tree, and a host is created by writing the list, not by a dotted key (`name` is the key). The Git hosts **settings card** with an in-UI **Test connection** button is still to be built.
-3. **`GET /api/git/hosts` and `POST …/test` authenticate as config-read.** They require the config-read federation capability; there is no separate git-hosts capability yet. Whether an operator wants the connection test behind its own gate is a review item.
-4. **`vault` credentials and the broker are documented here by their contract**, not by a UI: the vault entry is created via the [secrets surface](secrets-manager.md), and the broker supplies tokens to worker sessions on its own. Confirm the `vault_secret` entry name matches what your vault holds before relying on `credential_source: vault`.
+1. **No release-and-merge loop consumes `git.hosts` yet.** The config model, readiness check, the two REST reads and the per-host providers (PR/MR open, issue and release creation, clone/push — see ["What the daemon does on each host kind"](#what-the-daemon-does-on-each-host-kind)) land in this change; the daemon's own per-project push-and-tag loop (release path, direct push vs pull-request, signed tags) is the follow-up in [plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4. Until it lands, `sign_tags`/`signing_key` are configured but nothing signs with them, and release creation is a capability the loop will call rather than one that runs today.
+2. **No forge API for the plain-git kinds.** For `gitea`, `bitbucket` and `git` hosts the daemon opens the change in *your* browser: pull requests, issues and releases return the explicit "no forge API integration" answer instead of being attempted. Clone and push work; everything that needs the host's web API is manual.
+3. **GitLab token minting is unimplemented.** The broker's mint flow is GitHub-only (`gh auth token`); a mint/revoker request for `gitlab` or a plain-git kind returns a not-implemented error rather than a token.
+4. **No host write surface beyond the config file.** The config model exposes `GetGitHostField` / `SetGitHostField` as the dotted-key addressing (`git.hosts.<name>.<field>`) for later surfaces — MCP `config_set`, CLI, a comm verb, or a config file edit — but none of those is wired to git hosts in this tree, and a host is created by writing the list, not by a dotted key (`name` is the key). The Git hosts **settings card** with an in-UI **Test connection** button is still to be built.
+5. **`GET /api/git/hosts` and `POST …/test` authenticate as config-read.** They require the config-read federation capability; there is no separate git-hosts capability yet. Whether an operator wants the connection test behind its own gate is a review item.
+6. **`vault` credentials and the broker are documented here by their contract**, not by a UI: the vault entry is created via the [secrets surface](secrets-manager.md), and the broker supplies tokens to worker sessions on its own. Confirm the `vault_secret` entry name matches what your vault holds before relying on `credential_source: vault`.
 
 ## Further reading
 
@@ -209,5 +227,5 @@ These are deliberate gaps in *this* change, not bugs — they follow the plan's 
 - [`datawatch-definitions.md`](../datawatch-definitions.md) — the **Git hosts** entry (what a git host is, the credential sources, the token rule).
 - [`operations.md`](../operations.md) — the **Git hosts** operations section (how to add a host, how to read and test it, how to rotate a vault credential, how to remove a host, and the "not here yet" list).
 - [`secrets-manager`](secrets-manager.md) — creating and managing the vault entry a `vault`-sourced host names.
-- [`merge-pipeline.md`](merge-pipeline.md) / [`automata-checks-and-ship.md`](automata-checks-and-ship.md) — where the daemon's push-and-tag will run, once the follow-up plan lands.
+- [`merge-pipeline.md`](merge-pipeline.md) / [`automata-checks-and-ship.md`](automata-checks-and-ship.md) — where the daemon's push-and-tag loop will run once the Phase 4 follow-up lands, and where PR/MR opening and issue creation already run today.
 - [plans/2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md) — Phase 4, the plan this host model is building toward.

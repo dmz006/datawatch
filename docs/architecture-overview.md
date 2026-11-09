@@ -92,7 +92,7 @@ graph TD
         K8sDrv["K8s driver (kubectl)"]
         AgentProxy["/api/proxy/agent/{id}/...\nreverse proxy + WS relay"]
         TokenBroker["Token broker\n(internal/auth)\nmint + revoke + sweep + audit"]
-        GitProvider["Git provider abstraction\n(internal/git)\ngh CLI; gitlab stub"]
+        GitProvider["Git provider abstraction\n(internal/git)\ngh + glab CLI; plain git"]
         WorkerPods["Worker container/Pod\n(datawatch start --foreground\nin agent-* + lang-* image)"]
     end
 
