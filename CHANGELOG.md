@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.119.0 — Keep the plans folder and registry tidy automatically
+
+- Plans folder tidy now archives `docs/plans/reports` and `docs/plans/parity-issues` by month into `archive/YYYY-MM/` subfolders (`scripts/plans_monthly_archive.py`, wired into `scripts/tidy-plans.sh`); the broken-link check resolves the archive subfolders.
+- Closed registry rows move to a monthly roadmap archive (`docs/plans/roadmap-archive-YYYY-MM.md`) with one live link per archived month and links to archived rows rewritten.
+- New daily tidy runner `scripts/plans-tidy-daily.sh` (simulates in a throwaway worktree, commits only `docs/plans`, writes a daily report, an alert file on failure and a run stamp) and a daily Automation definition `scripts/plans-tidy-automation.json`.
+- The release smoke tidy gate accepts a fresh daily run.
+- New how-to `docs/howto/plans-folder-tidy.md` and glossary entries. No PWA or app surface.
+
 ## v9.118.3 — Shell backend hands long script tasks over by file
 
 ### Fixed
