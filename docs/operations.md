@@ -6133,6 +6133,21 @@ MCP agents use `rules_context_status` (read-only) and `rules_context_set`. A fil
 
 ---
 
+## Task template modes (`autonomous.task_templates.mode`)
+
+Every decomposed story gets the built-in pack's closing tasks appended, and `autonomous.task_templates.mode` — a global map of **template id → mode**, not per-project — decides who performs each appended task: **`llm`** — a worker session runs it, verifier included, like any other task (the default for `docs_set` and `final_gate`); **`daemon`** — the daemon performs the task itself and completes it, spending no model session and running no verifier (the default for `changelog_entry`, `parity_issue_draft`, `bounded_load_step` and `version_bump_left_to_merge`); **`off`** — the template is not appended to the story at all. In daemon mode, `changelog_entry` and `parity_issue_draft` write their generated artefact with the same edit-protection rules as the generated-artefacts feature: a file already edited, or a kind switched off in the generated-artefact settings, is skipped with the reason recorded in the task's decision note, and the task still completes; a write it cannot make (for example no project directory) marks the task failed. `bounded_load_step` and `version_bump_left_to_merge` write nothing — their spec text is recorded as the story's decision note. A daemon-run task shows in the story record as completed with its decision note, and has **no worker session** in the session list; the structural checks (decompose lint, per-task verification script, report, file tokens) skip it, because a handler performs it, not a judge.
+
+**Changing a mode — read the block back, write the whole block.** Every surface that writes the `task_templates` config block replaces it **whole**: a write that carries only `mode` resets `enabled` to false and drops your `templates` and `projects` overrides. The neighboring blocks are safe — a REST or MCP write that does not carry `decompose_lint` or `decompose_guidance` leaves those untouched. So: read the live config, change the `mode` map in the returned `task_templates` block, and write that whole block back. There is no per-project mode; the `projects` map only switches template application on or off per project.
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Read the current modes and block | `autonomous.task_templates.mode.<id>` | `datawatch autonomous lint config` | Settings, decompose-lint settings | `GET /api/autonomous/decompose-lint/config` | `autonomous lint config` |
+| Change one template's mode | Edit the `mode` map, writing the **whole** `task_templates` block back | n/a — `autonomous lint config-set` covers only the `decompose_lint` block | Settings, decompose-lint settings — the panel's write carries the whole block | `PUT /api/autonomous/decompose-lint/config` with the full `task_templates` object (`enabled`, `templates`, `projects`, `mode`) | n/a — the MCP `autonomous_decompose_lint_config_set` tool takes the same whole block |
+
+The walkthrough is [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#template-mode-who-runs-the-task); the terms, including the daemon-mode behavior of each template, are in [datawatch-definitions.md](datawatch-definitions.md#decompose-lint).
+
+---
+
 ## Model request progress (a hung request told from a slow one)
 
 A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).
