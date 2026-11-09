@@ -273,6 +273,11 @@ type Config struct {
 	// guidance text or a file path the decompose prompt loads (see
 	// decompose_guidance.go). No omitempty, same round-trip reason.
 	DecomposeGuidance string `json:"decompose_guidance"`
+	// PlanningRestartPolicy mirrors autonomous.planning_restart_policy
+	// (reattach, restart or draft). Boot-resume reads it through the live
+	// Config to decide what a planning Automaton does after a restart (see
+	// bootResumePlanning in api.go). Empty means reattach.
+	PlanningRestartPolicy string `json:"planning_restart_policy,omitempty"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and
@@ -1575,6 +1580,10 @@ type Manager struct {
 	sessionLastLifeFn func(sessionID string) time.Time
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
+	// planningReattachFn starts a reader on a planner session that survived a
+	// daemon restart (see SetPlanningReattachFn). Nil means no reader can be
+	// attached, so boot-resume falls back to resetting planning to draft.
+	planningReattachFn func(prdID, sessionID, outputFile string)
 
 	// Cost sources (see automation_cost.go): the spend ledger and the
 	// per-session lifetime total used when a window predates the ledger.
@@ -1899,10 +1908,48 @@ func (m *Manager) SetDecomposeSessionsFn(fn func(prdID string) []string) {
 	m.decomposeSessionsFn = fn
 }
 
-// killOrphanDecomposeSessions kills any live planning session for the PRD.
-// After a daemon restart the decompose goroutine that would consume its output
-// is gone, so the session is an orphan burning compute.
-func (m *Manager) killOrphanDecomposeSessions(prdID string) int {
+// SetPlanningReattachFn wires the reader that a boot-resume re-attaches to a
+// planner session still alive after a restart. fn receives the PRD id, the
+// recorded planner session id and the recorded output file (as stored: it may
+// be relative to the PRD's project directory). fn must return promptly and do
+// its waiting in the background; it finishes the decompose by calling
+// IngestPlannerOutput, or FailPlanningReattach when no output arrives.
+func (m *Manager) SetPlanningReattachFn(fn func(prdID, sessionID, outputFile string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.planningReattachFn = fn
+}
+
+// reattachPlanner hands a live planner session to the wired reader. It reports
+// false, doing nothing, when no reader is wired.
+func (m *Manager) reattachPlanner(prdID, sessionID, outputFile string) bool {
+	m.mu.Lock()
+	fn := m.planningReattachFn
+	m.mu.Unlock()
+	if fn == nil {
+		return false
+	}
+	fn(prdID, sessionID, outputFile)
+	return true
+}
+
+// liveDecomposeSessions returns the live planning session ids linked to prdID,
+// or nil when no lookup is wired.
+func (m *Manager) liveDecomposeSessions(prdID string) []string {
+	m.mu.Lock()
+	find := m.decomposeSessionsFn
+	m.mu.Unlock()
+	if find == nil {
+		return nil
+	}
+	return find(prdID)
+}
+
+// killOrphanDecomposeSessions kills the live planning sessions for the PRD,
+// except any id listed in keep (a session a reader now owns). After a daemon
+// restart the decompose goroutine that would consume its output is gone, so an
+// unowned session is an orphan burning compute.
+func (m *Manager) killOrphanDecomposeSessions(prdID string, keep ...string) int {
 	m.mu.Lock()
 	find, kill := m.decomposeSessionsFn, m.sessionKillerFn
 	m.mu.Unlock()
@@ -1912,6 +1959,9 @@ func (m *Manager) killOrphanDecomposeSessions(prdID string) int {
 	n := 0
 	why := fmt.Sprintf("orphan planning session for PRD %s: the decompose goroutine that reads it did not survive the daemon restart", prdID)
 	for _, id := range find(prdID) {
+		if sessionIn(keep, id) {
+			continue
+		}
 		if err := kill(id, "autonomous.boot-resume.orphan-decompose", why); err != nil {
 			log.Printf("[autonomous] boot-resume: kill orphan decompose session %s (prd=%s): %v", id, prdID, err)
 			continue

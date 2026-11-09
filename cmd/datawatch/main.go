@@ -4533,6 +4533,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
 			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
+			PlanningRestartPolicy:            acfgIn.PlanningRestartPolicy,
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
@@ -7444,6 +7445,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}()
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(sessionEndFromAutonomous(mgr))
+			wirePlanningReattach(amgr, cfg)
 			amgr.SetDecomposeSessionsFn(func(prdID string) []string {
 				var ids []string
 				for _, s := range mgr.ListSessions() {
