@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.113.0 (2026-11-09).** The size of a release step is now decided by layered rules: an explicit size on the Automaton, an Automation milestone, a per-kind size map, then built-in defaults, with a breaking-change flag and settings for major trigger, cadence and version scheme. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.114.0 (2026-11-09).** A failed task attempt now costs as little as possible: the first attempt runs on a backend chosen by task kind, escalation to the stronger backend waits for a set number of failures, a retry continues in the same session when it can, and failures a retry cannot fix are held for review at once. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
