@@ -203,3 +203,24 @@ func TestMergeComm_ParityListHasVerbs(t *testing.T) {
 		t.Errorf("the autonomous help must list the merge verbs; got:\n%s", got)
 	}
 }
+
+func TestMergeComm_LockAndValidatorLinesOnlyWhenPresent(t *testing.T) {
+	with := `{"mode":"on","alert_minutes":30,"automata":[],"shadow_decisions":[],` +
+		`"merge_lock":{"repo":"/r","run_id":"run-7","automaton_id":"prd-3","branches":["automaton/prd-3"],"since":"2026-11-01T08:00:00Z"},` +
+		`"last_validator":{"pass":false,"version":"1.2.3","checked_at":"2026-11-01T08:00:00Z","checks":[{"name":"changelog","pass":false,"detail":"missing entry"}]}}`
+	_, port := laneFillCommDaemon(t, http.StatusOK, with)
+	got := strings.Join(setupPeerRouter(t, port).HandleTestMessage("autonomous merge"), " ")
+	for _, want := range []string{"Merge lock held: run run-7 for Automaton prd-3", "Last release-bump validation: failed (version 1.2.3)", "failing check changelog: missing entry"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("reply lacks %q: %q", want, got)
+		}
+	}
+
+	_, port = laneFillCommDaemon(t, http.StatusOK, mergeCommSample)
+	got = strings.Join(setupPeerRouter(t, port).HandleTestMessage("autonomous merge"), " ")
+	for _, bad := range []string{"Merge lock", "release-bump validation"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("reply has %q with nothing set: %q", bad, got)
+		}
+	}
+}

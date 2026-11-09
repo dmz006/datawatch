@@ -720,3 +720,90 @@ test('the card stores no setInterval on a DOM element', () => {
   assert.ok(start > 0 && end > start);
   assert.ok(!/setInterval/.test(src.slice(start, end)), 'the card must not start a timer of its own');
 });
+
+// ── merge lock and last validator lines ─────────────────────────────────────
+
+const LOCK = { repo: '/repo', run_id: 'run-1', automaton_id: 'auto-1', branches: ['feat/x', 'feat/y'], since: '2026-11-08T10:00:00Z' };
+const PASS_V = { pass: true, version: '9.1.0', checked_at: '2026-11-08T11:00:00Z', checks: [
+  { name: 'version_variables_equal', pass: true, detail: '' },
+  { name: 'tag_not_taken', pass: true, detail: '' },
+] };
+const FAIL_V = { pass: false, version: '9.1.0', checked_at: '2026-11-08T11:00:00Z', checks: [
+  { name: 'version_variables_equal', pass: true, detail: '' },
+  { name: 'tag_not_taken', pass: false, detail: 'tag v9.1.0 already exists' },
+  { name: 'readme_line_matches', pass: false, detail: '' },
+] };
+
+test('no merge lock and no validator result renders no status block', () => {
+  const bare = render(view());
+  assert.ok(!bare.includes('merge-status'), bare);
+  assert.equal(render(view(), { mergeStatus: {} }), bare);
+  assert.equal(render(view(), { mergeStatus: null }), bare);
+  assert.equal(render(view(), { mergeStatus: { merge_lock: null, last_validator: null } }), bare);
+});
+
+test('a held merge lock renders one line naming the Automaton, branches and since', () => {
+  const html = render(view(), { mergeStatus: { merge_lock: LOCK } });
+  assert.ok(html.includes('class="merge-status-lock"'), html);
+  assert.ok(html.includes('Merge lock held: Automaton auto-1, branches feat/x, feat/y, since '), html);
+  assert.ok(!html.includes('merge-status-validator'), html);
+  assert.ok(html.includes(DEFS + 'merge-lock'), 'the lock line links to the merge lock entry');
+  assert.equal(html.split('class="merge-status-lock"').length - 1, 1);
+});
+
+test('a failing validator renders its version and each failing check', () => {
+  const html = render(view(), { mergeStatus: { last_validator: FAIL_V } });
+  assert.ok(html.includes('class="merge-status-validator"'), html);
+  assert.ok(html.includes('Last release check failed: version 9.1.0, '), html);
+  assert.ok(html.includes('Failed check tag_not_taken: tag v9.1.0 already exists'), html);
+  assert.ok(html.includes('Failed check readme_line_matches'), html);
+  assert.ok(!html.includes('Failed check version_variables_equal'), 'passing checks are not listed');
+  assert.equal(html.split('class="merge-validator-check"').length - 1, 2);
+  assert.ok(html.includes(DEFS + 'release-bump-validator'), 'the validator line links to the validator entry');
+});
+
+test('a passing validator renders one line with no failing checks', () => {
+  const html = render(view(), { mergeStatus: { last_validator: PASS_V } });
+  assert.ok(html.includes('Last release check passed: version 9.1.0, '), html);
+  assert.ok(!html.includes('merge-validator-check'), html);
+  assert.ok(!html.includes('merge-status-lock'), html);
+});
+
+test('the lock and the validator render together, lock first', () => {
+  const html = render(view(), { mergeStatus: { merge_lock: LOCK, last_validator: PASS_V } });
+  assert.ok(html.indexOf('merge-status-lock') > 0 && html.indexOf('merge-status-lock') < html.indexOf('merge-status-validator'), html);
+});
+
+test('merge lock and validator values from the API are escaped', () => {
+  const html = render(view(), { mergeStatus: {
+    merge_lock: { ...LOCK, automaton_id: HOSTILE, branches: [HOSTILE] },
+    last_validator: { ...FAIL_V, version: HOSTILE, checks: [{ name: HOSTILE, pass: false, detail: HOSTILE }] },
+  } });
+  assert.ok(!html.includes(HOSTILE), html);
+  assert.ok(html.includes('&lt;img src=x'), html);
+});
+
+test('the merge lock and validator keys link to their definitions entries', () => {
+  assert.ok(docsLink('merge_lock_line').endsWith(DEFS + 'merge-lock'), docsLink('merge_lock_line'));
+  assert.ok(docsLink('merge_validator_check').endsWith(DEFS + 'release-bump-validator'), docsLink('merge_validator_check'));
+});
+
+test('every merge_lock_ and merge_validator_ key the app references exists in all five bundles', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const referenced = new Set();
+  for (const m of src.matchAll(/['"`](merge_(?:lock|validator)_[a-z_]+)['"`]/g)) referenced.add(m[1]);
+  assert.ok(referenced.size >= 8, 'too few references found: ' + referenced.size);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of referenced) assert.ok(typeof b[k] === 'string' && b[k] !== '', k + ' missing in ' + lang);
+  }
+});
+
+test('no merge lock or validator string uses the word PRD', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of Object.keys(b).filter(k => k.startsWith('merge_lock_') || k.startsWith('merge_validator_'))) {
+      assert.ok(!/\bPRD/i.test(b[k]), k + ' uses PRD in ' + lang);
+    }
+  }
+});
