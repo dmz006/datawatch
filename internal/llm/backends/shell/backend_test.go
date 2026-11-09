@@ -63,27 +63,32 @@ func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
 	// Oversize via the project dir, which every Launch branch inlines
 	// (interactive `cd '...'` and the script form alike).
 	hugeDir := strings.Repeat("p", llm.MaxSendKeysCommand+1000)
+	// The script form with an oversize task moves the task to a file, so its
+	// oversize project dir can only fail at the task-file write (the dir cannot
+	// be created). That error is returned before any exec, which is what this
+	// test pins for that form.
 	cases := []struct {
-		name string
-		b    *Backend
+		name    string
+		b       *Backend
+		wantErr string
 	}{
-		{"InteractiveShell", &Backend{scriptPath: ""}},
-		{"Script", &Backend{scriptPath: "/nonexistent/script-xyz.sh"}},
+		{"InteractiveShell", &Backend{scriptPath: ""}, "command too long"},
+		{"Script", &Backend{scriptPath: "/nonexistent/script-xyz.sh"}, "write oversize task file"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.b.Launch(context.Background(), strings.Repeat("t", 100), "cs-guard", hugeDir, "")
 			if err == nil {
-				t.Fatal("expected the shared length guard to reject the oversize command")
+				t.Fatal("expected the launch to reject the oversize command")
 			}
-			if !strings.Contains(err.Error(), "command too long") {
-				t.Errorf("expected a \"command too long\" guard error, got: %v", err)
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("expected a %q error, got: %v", tc.wantErr, err)
 			}
-			if !strings.Contains(err.Error(), strconv.Itoa(llm.MaxSendKeysCommand)) {
+			if tc.name == "InteractiveShell" && !strings.Contains(err.Error(), strconv.Itoa(llm.MaxSendKeysCommand)) {
 				t.Errorf("guard error must name the %d-byte limit, got: %v", llm.MaxSendKeysCommand, err)
 			}
 			if strings.Contains(err.Error(), "tmux send-keys") {
-				t.Errorf("guard rejection happens before any exec, so no exec error should be present, got: %v", err)
+				t.Errorf("rejection happens before any exec, so no exec error should be present, got: %v", err)
 			}
 		})
 	}
