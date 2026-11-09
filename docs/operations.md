@@ -1620,37 +1620,41 @@ inherited `inherited_tags` and the placement `system_tags` (see
 — which is what lets the PWA draw the placement chips on the session cards
 at first load of the Sessions page, without a fetch of each full record.
 The placement chip paints from the tag name, so it shows even before the
-tag registry has loaded. The hold rule is per key: a row, `session_state`
-push or full record that omits `system_tags` keeps the placement chips the
-page already holds for that session — and a summary row omits the key
-whenever the session has no placement tags, because the field is
-`omitempty` on that row shape, so a summary row never carries an empty
-list. A row that carries the key wins even when it is empty, and full
-records always send the field, so a session that loses its last placement
-tag drops its chips on that update; a page reload always agrees with the
-server. Example query:
+tag registry has loaded. `system_tags` is always present in every session
+row shape the server sends — the summary row, a `session_state` push, a
+list record and a full record: a session with no placement tags is sent as
+`"system_tags": []`, never as a missing key or null (pinned for the summary
+row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). A row
+that carries the key wins even when it is empty, so a session that loses
+its last placement tag drops its chips on that update; a row that omits
+the key (a shape the server does not send, e.g. an older server) is
+treated as "no update" and keeps the chips the page already holds. A page
+reload always agrees with the server. Example query:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/sessions?view=summary&states=active" | jq '.[] | {id,state,task}'
 ```
 
-**Operator review still owed:** the two datawatch-app parity drafts for this
-fix — the server row shape
-([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md))
-and the PWA drawing discipline
+**Operator review still owed:** the datawatch-app parity drafts for this
+family — the row shape at first load
+([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md)),
+the PWA drawing discipline
 ([plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md))
-— are tracked in this repo but **not filed yet**; the operator opens the
-issue on the app tracker when ready. Nothing else is owed on this daemon:
-no setting, no migration.
-
-**What the operator still owes (review, not code):** the removal half of
-this behavior — a tile that loses its last placement tag drops its chips
-once a row for that session carries an explicit empty `system_tags` (full
-records always do), while a row that omits the key keeps them — is pinned
-on the PWA by `internal/server/web/app-session-tile-last-placement-tag.test.js`
-and tracked for the app by the third draft in the same folder,
-[plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md](plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md). All three drafts stay unfiled until the operator opens them on the app tracker. Nothing on this daemon is open: the hold rule and the removal rule are implemented and pinned, no wire change is owed, and the CHANGELOG (`v9.112.8`) already records the removal behavior.
+and the removal half
+([plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md](plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md))
+— are tracked in this repo but **not filed yet**; the operator opens them
+on the app tracker when ready. Two of them predate the summary-row change
+that made `system_tags` always-present with an empty array for "no
+placement tags", and still describe the older per-shape split (summary rows
+omitting the key; full records alone sending `[]`) or "nothing on the
+wire changed": correct that wording before filing,
+[2026-11-08-summary-row-empty-system-tags-parity.md](plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md)
+included — its Option A / Option B question is now settled in favour of
+always-present. Nothing on this daemon is open: no setting and no
+migration, the behavior is implemented and pinned, and the CHANGELOG
+(`v9.112.8`) already records it.
 
 ### Allowed project roots
 
