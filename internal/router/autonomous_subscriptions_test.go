@@ -511,7 +511,7 @@ func TestAutonomousHelp_ListsSubscriptionVerbs(t *testing.T) {
 		"subscribe <kinds|short-names> [prd=<id>] [task=<id>]",
 		"unsubscribe <id>",
 		"requirements-report [text|json]",
-		"node-versions <name>}",
+		"node-versions <name>|standard-tasks}",
 	} {
 		if !strings.Contains(joined, frag) {
 			t.Errorf("help text misses %q:\n%s", frag, joined)
