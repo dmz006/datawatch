@@ -479,11 +479,15 @@ tree:
 
 ### Stamping, re-stamping and the startup backfill
 
-- **Every session the machine starts is stamped at placement** with the
-  tags of its placement record: node (`compute:`), backend, lane, role,
-  project and, for an Automaton's work, its Automaton, Automation, stage and
-  kind (and the peer, when the placement names one). The tags live in the
-  session's `system_tags`, which the machine owns.
+- **Every session the daemon starts is stamped at placement** with the axes
+  its record supports: node (`compute:`), backend, lane, role, project and,
+  for an Automaton's work, its Automaton, Automation, stage and kind (and
+  the peer, when the placement names one). The stamp rides the daemon's
+  start hook, so it runs on every start path — a session you start, a
+  scheduled start, a comm-channel start, an Automaton's work — and a session
+  that belongs to no Automaton carries no `automaton:` or `automation:`
+  tag, just the axes its record supports. The tags live in the session's
+  `system_tags`, which the machine owns.
 - **Every session you start carries the axes its record supports.** A
   start through `POST /api/sessions/start` (REST, the MCP `start_session`
   tool or `datawatch session new`) stamps the new session with its
@@ -506,6 +510,13 @@ tree:
   role, kind, stage, automaton or automation axes because it records
   none of those facts. Turn an axis off and its tag is no longer written
   on any session.
+- **A restarted session re-stamps from its record.** Restarting a session
+  (the PWA Restart button, `POST /api/sessions/{id}/restart`, the MCP
+  `restart_session` tool, the CLI `datawatch session restart`, or the
+  restart path that reuses a completed or failed session's ID) runs the
+  same placement stamp a fresh start does, so a restarted session keeps
+  the role, kind, stage and automaton axes its record holds — no sweep is
+  needed after a restart. A restart that fails changes no tags.
 - **An existing session with no recorded launch facts keeps the tags it
   already has.** Records written before launch facts existed load with
   empty values, and the sweep re-derives them the way it always has: role
