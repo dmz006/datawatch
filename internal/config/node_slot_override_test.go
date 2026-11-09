@@ -19,7 +19,7 @@ func TestNodeSlotOverrideRejectsNegative(t *testing.T) {
 		t.Errorf("error %q does not name the node and the field", err)
 	}
 
-	zero := &Config{ComputeNodes: []ComputeNodeYAML{{Name: "gpubox", Kind: "ollama", SessionSlots: 0}}}
+	zero := &Config{Git: GitConfig{ReleaseCIWindowMinutes: 60}, ComputeNodes: []ComputeNodeYAML{{Name: "gpubox", Kind: "ollama", SessionSlots: 0}}}
 	applyDefaults(zero)
 	if err := validateLoaded(zero); err != nil {
 		t.Errorf("validateLoaded with session_slots 0: %v, want nil", err)

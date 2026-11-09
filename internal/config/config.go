@@ -501,6 +501,32 @@ func ValidateGitSecretScanMode(mode string) error {
 	}
 }
 
+// Release paths (autonomous.release_path).
+const (
+	ReleasePathDirectPush  = "direct_push"
+	ReleasePathPullRequest = "pull_request"
+)
+
+// ValidateReleasePath requires autonomous.release_path to be direct_push or
+// pull_request.
+func ValidateReleasePath(v string) error {
+	switch v {
+	case "", ReleasePathDirectPush, ReleasePathPullRequest: // "" = unset, reads the default
+		return nil
+	default:
+		return fmt.Errorf("autonomous.release_path must be \"direct_push\" or \"pull_request\", got %q", v)
+	}
+}
+
+// ValidateReleaseCIWindowMinutes requires git.release_ci_window_minutes to be
+// greater than zero.
+func ValidateReleaseCIWindowMinutes(n int) error {
+	if n <= 0 {
+		return fmt.Errorf("git.release_ci_window_minutes must be greater than 0 (a whole number of minutes), got %d", n)
+	}
+	return nil
+}
+
 // ValidateGitSecretScanDetectors rejects a detector name that is not one of
 // the built-ins (GitSecretScanDefaultDetectors). A misspelt name would make
 // the push-time scan fail, which must never be possible to configure for a
@@ -7854,6 +7880,12 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validatePluginServices(cfg.Plugins.Services, "plugins.services"); err != nil {
+		return err
+	}
+	if err := ValidateReleasePath(cfg.Autonomous.ReleasePath); err != nil {
+		return err
+	}
+	if err := ValidateReleaseCIWindowMinutes(cfg.Git.ReleaseCIWindowMinutes); err != nil {
 		return err
 	}
 	if err := ValidateSnapshotNeverStage(cfg.Autonomous.SnapshotNeverStage); err != nil {
