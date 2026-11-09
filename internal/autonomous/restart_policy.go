@@ -24,8 +24,38 @@ type InterruptedTask struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
+// PlanningAutomaton is one Automaton (PRD) still in planning: its decompose is
+// in flight, so a restart would interrupt the planner.
+type PlanningAutomaton struct {
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"`
+}
+
+// VerifyingTask is one task in the verifying state. Covered is true when a
+// live session already owns it (the worker or its adopted verifier), so a
+// boot-time re-attach keeps it without a new verifier.
+type VerifyingTask struct {
+	PRDID             string `json:"prd_id"`
+	TaskID            string `json:"task_id"`
+	SessionID         string `json:"session_id,omitempty"`
+	VerifierSessionID string `json:"verifier_session_id,omitempty"`
+	Covered           bool   `json:"covered"`
+}
+
+// RunningJudge is one guardrail-judge session in flight and the unit it
+// judges. Covered is true when the boot reconcile would adopt it (it is the
+// surviving judge of a unit that still needs one), so it is re-attached.
+type RunningJudge struct {
+	SessionID string `json:"session_id"`
+	UnitID    string `json:"unit_id"`
+	Covered   bool   `json:"covered"`
+}
+
 // RestartInterruption is the read-only answer to "what would a restart
-// interrupt now": the running tasks and the live sessions, with their ids.
+// interrupt now": the running tasks and the live sessions, with their ids,
+// plus the planning Automata, verifying tasks and guardrail judges a restart
+// would have to re-attach or reset. NeedsForce is true unless the planning
+// restart policy is reattach and every verifying task and judge is covered.
 type RestartInterruption struct {
 	RunningTasks    []InterruptedTask `json:"running_tasks"`
 	LiveSessions    []string          `json:"live_sessions"`
@@ -35,26 +65,59 @@ type RestartInterruption struct {
 	LaunchDraining  bool              `json:"launch_draining"`
 	QuietTimeoutSec int               `json:"quiet_timeout_seconds"`
 	OnTimeout       string            `json:"on_timeout"`
+
+	PlanningAutomata []PlanningAutomaton `json:"planning_automata"`
+	VerifyingTasks   []VerifyingTask     `json:"verifying_tasks"`
+	RunningJudges    []RunningJudge      `json:"running_judges"`
+	PlanningCnt      int                 `json:"planning_automaton_count"`
+	VerifyingTaskCnt int                 `json:"verifying_task_count"`
+	RunningJudgeCnt  int                 `json:"running_judge_count"`
+	NeedsForce       bool                `json:"needs_force"`
 }
 
 // Quiet reports whether no task is running.
 func (r RestartInterruption) Quiet() bool { return r.RunningTaskCnt == 0 }
 
-// BuildRestartInterruption counts the tasks in an executing or verifying
-// state and the live sessions. It is pure: the Manager supplies the PRDs and
-// the session list.
-func BuildRestartInterruption(prds []*PRD, sessions []SessionInfo) RestartInterruption {
-	out := RestartInterruption{RunningTasks: []InterruptedTask{}, LiveSessions: []string{}}
+// BuildRestartInterruption is pure: the Manager supplies the PRDs, the session
+// list, the live guardrail judges and a read-only lookup of each judged unit
+// (see judgeUnitLookup). policy is the raw planning_restart_policy value.
+//
+// It counts the tasks in an executing or verifying state and the live
+// sessions, lists the PRDs in planning, the verifying tasks and the running
+// judges, and marks each verifying task and judge covered when a re-attach
+// path keeps it (see verifyingCovered and judgeCovered).
+func BuildRestartInterruption(prds []*PRD, sessions []SessionInfo, judges []JudgeSession, lookup func(unitID string) (JudgeUnitInfo, bool), policy string) RestartInterruption {
+	out := RestartInterruption{
+		RunningTasks: []InterruptedTask{}, LiveSessions: []string{},
+		PlanningAutomata: []PlanningAutomaton{}, VerifyingTasks: []VerifyingTask{}, RunningJudges: []RunningJudge{},
+	}
+	alive := map[string]bool{}
+	for _, si := range sessions {
+		if si.Alive && si.ID != "" {
+			alive[si.ID] = true
+		}
+	}
+	aliveFn := func(id string) bool { return alive[id] }
 	for _, p := range prds {
 		if p == nil {
 			continue
 		}
+		if p.Status == PRDPlanning {
+			out.PlanningAutomata = append(out.PlanningAutomata, PlanningAutomaton{ID: p.ID, Title: p.Title})
+		}
 		for _, s := range p.Story {
-			for _, t := range s.Tasks {
+			for i := range s.Tasks {
+				t := &s.Tasks[i]
 				switch t.Status {
 				case TaskInProgress, TaskRunningTests, TaskVerifying:
 					out.RunningTasks = append(out.RunningTasks, InterruptedTask{
 						PRDID: p.ID, TaskID: t.ID, Status: string(t.Status), SessionID: t.SessionID,
+					})
+				}
+				if t.Status == TaskVerifying {
+					out.VerifyingTasks = append(out.VerifyingTasks, VerifyingTask{
+						PRDID: p.ID, TaskID: t.ID, SessionID: t.SessionID, VerifierSessionID: t.VerifierSessionID,
+						Covered: verifyingCovered(aliveFn, t),
 					})
 				}
 			}
@@ -67,6 +130,15 @@ func BuildRestartInterruption(prds []*PRD, sessions []SessionInfo) RestartInterr
 		}
 		return a.TaskID < b.TaskID
 	})
+	sort.Slice(out.PlanningAutomata, func(i, j int) bool { return out.PlanningAutomata[i].ID < out.PlanningAutomata[j].ID })
+	sort.Slice(out.VerifyingTasks, func(i, j int) bool {
+		a, b := out.VerifyingTasks[i], out.VerifyingTasks[j]
+		if a.PRDID != b.PRDID {
+			return a.PRDID < b.PRDID
+		}
+		return a.TaskID < b.TaskID
+	})
+	out.RunningJudges = judgeInterruptions(judges, lookup)
 	for _, si := range sessions {
 		if si.Alive && si.ID != "" {
 			out.LiveSessions = append(out.LiveSessions, si.ID)
@@ -75,11 +147,77 @@ func BuildRestartInterruption(prds []*PRD, sessions []SessionInfo) RestartInterr
 	sort.Strings(out.LiveSessions)
 	out.RunningTaskCnt = len(out.RunningTasks)
 	out.LiveSessionCnt = len(out.LiveSessions)
+	out.PlanningCnt = len(out.PlanningAutomata)
+	out.VerifyingTaskCnt = len(out.VerifyingTasks)
+	out.RunningJudgeCnt = len(out.RunningJudges)
+	out.NeedsForce = restartNeedsForce(policy, out.VerifyingTasks, out.RunningJudges)
 	return out
 }
 
+// verifyingCovered reports whether a verifying task is kept by a live session
+// on a re-attach path: the boot resume returns KeepLive (its worker session is
+// alive) or Reattach (its adopted verifier is alive). Every other outcome
+// resets, consumes or reverifies, which is not a re-attach.
+func verifyingCovered(alive func(sessionID string) bool, t *Task) bool {
+	switch ResolveVerifyingResume(alive, nil, nil, nil, t) {
+	case VerifyingResumeKeepLive, VerifyingResumeReattach:
+		return true
+	}
+	return false
+}
+
+// judgeInterruptions lists the live judges and marks each one covered when the
+// boot reconcile keeps it: it is not ended by PlanJudgeReconcile, and its unit
+// still needs a judgment. Pure: it runs the plan over the supplied lookup.
+func judgeInterruptions(judges []JudgeSession, lookup func(unitID string) (JudgeUnitInfo, bool)) []RunningJudge {
+	out := []RunningJudge{}
+	ended := map[string]bool{}
+	if lookup != nil {
+		for _, a := range PlanJudgeReconcile(judges, lookup) {
+			if a.Kind == judgeActionEnd {
+				ended[a.SessionID] = true
+			}
+		}
+	}
+	for _, s := range judges {
+		if s.ID == "" {
+			continue
+		}
+		covered := false
+		if lookup != nil && s.UnitID != "" && !ended[s.ID] {
+			if info, ok := lookup(s.UnitID); ok && info.NeedsJudge {
+				covered = true
+			}
+		}
+		out = append(out, RunningJudge{SessionID: s.ID, UnitID: s.UnitID, Covered: covered})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].SessionID < out[j].SessionID })
+	return out
+}
+
+// restartNeedsForce reports whether a restart needs the force flag: always
+// unless the planning restart policy is reattach and every verifying task and
+// every running judge is covered by a re-attach path.
+func restartNeedsForce(policy string, verifying []VerifyingTask, judges []RunningJudge) bool {
+	if config.NormalizePlanningRestartPolicy(policy) != config.PlanningRestartPolicyReattach {
+		return true
+	}
+	for _, v := range verifying {
+		if !v.Covered {
+			return true
+		}
+	}
+	for _, j := range judges {
+		if !j.Covered {
+			return true
+		}
+	}
+	return false
+}
+
 // RestartInterruptions reports what a restart now would interrupt, with the
-// configured policy filled in. Read-only.
+// configured policy filled in. Read-only: it reads the PRD store, the session
+// lister and the judge host, and mutates none of them.
 func (m *Manager) RestartInterruptions() RestartInterruption {
 	var prds []*PRD
 	m.store.WithLock(func() {
@@ -88,13 +226,17 @@ func (m *Manager) RestartInterruptions() RestartInterruption {
 		}
 	})
 	m.mu.Lock()
-	listFn, cfg := m.sessionListerFn, m.cfg
+	listFn, cfg, jhost := m.sessionListerFn, m.cfg, m.judgeHost
 	m.mu.Unlock()
 	var sessions []SessionInfo
 	if listFn != nil {
 		sessions = listFn()
 	}
-	out := BuildRestartInterruption(prds, sessions)
+	var judges []JudgeSession
+	if jhost != nil {
+		judges = jhost.LiveJudges()
+	}
+	out := BuildRestartInterruption(prds, sessions, judges, m.judgeUnitLookup(), cfg.PlanningRestartPolicy)
 	out.Policy = config.NormalizeRestartPolicy(cfg.RestartPolicy)
 	out.QuietTimeoutSec = config.NormalizeRestartQuietTimeoutSeconds(cfg.RestartQuietTimeoutSeconds)
 	out.OnTimeout = config.NormalizeRestartOnTimeout(cfg.RestartOnTimeout)
