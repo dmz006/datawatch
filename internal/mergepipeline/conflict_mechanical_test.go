@@ -1,0 +1,49 @@
+package mergepipeline
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestMechanicalLineRules(t *testing.T) {
+	t.Run("version line", func(t *testing.T) {
+		c := hunkText("head\n", "const Version = \"1.2.4\"\n", "const Version = \"1.2.3\"\n", "const Version = \"1.3.0\"\n", "tail\n")
+		got, settled, _, err := ResolveMechanicalFile(ClassVersionLine, "v.go", c, "", "")
+		if err != nil || !settled {
+			t.Fatalf("settled=%v err=%v", settled, err)
+		}
+		if got != "head\nconst Version = \"1.2.4\"\ntail\n" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("readme release line", func(t *testing.T) {
+		c := hunkText("# X\n", "Latest release: v2.0.1\n", "Latest release: v2.0.0\n", "Latest release: v2.1.0\n", "text\n")
+		got, settled, _, err := ResolveMechanicalFile(ClassReadmeLine, "README.md", c, "", "")
+		if err != nil || !settled || got != "# X\nLatest release: v2.0.1\ntext\n" {
+			t.Fatalf("got %q settled=%v err=%v", got, settled, err)
+		}
+	})
+	t.Run("non-line hunk stays unsettled", func(t *testing.T) {
+		c := hunkText("", "Intro rewritten by us\n", "Intro\n", "Intro rewritten by them\n", "")
+		got, settled, _, err := ResolveMechanicalFile(ClassReadmeLine, "README.md", c, "", "")
+		if err != nil || settled {
+			t.Fatalf("settled=%v err=%v", settled, err)
+		}
+		if !strings.Contains(got, "<<<<<<<") {
+			t.Fatalf("markers lost: %q", got)
+		}
+	})
+	t.Run("other class", func(t *testing.T) {
+		_, settled, _, err := ResolveMechanicalFile(ClassCode, "a.go", "x", "", "")
+		if err != nil || settled {
+			t.Fatalf("settled=%v err=%v", settled, err)
+		}
+	})
+	t.Run("changelog", func(t *testing.T) {
+		c := hunkText("", "m\n", "", "f\n", "")
+		got, settled, _, err := ResolveMechanicalFile(ClassChangelog, "CHANGELOG.md", c, "", "")
+		if err != nil || !settled || got != "m\nf\n" {
+			t.Fatalf("got %q settled=%v err=%v", got, settled, err)
+		}
+	})
+}
