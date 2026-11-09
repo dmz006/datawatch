@@ -151,6 +151,7 @@ autonomous_prd_set_thinking_level
 autonomous_prd_set_type
 autonomous_prd_set_verification_llm
 autonomous_prd_set_verifier_policy
+autonomous_prd_set_worker_profile
 autonomous_progress
 autonomous_progress_trend
 autonomous_protected_paths
@@ -589,3 +590,4 @@ websearch_provider_test
 websearch_provider_update
 websearch_providers_list
 websearch_stats
+worker_profile_status
