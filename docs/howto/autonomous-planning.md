@@ -298,6 +298,14 @@ plan-coverage gate and the decompose lint both refuse a read-only task with
 neither, whether it is read-only by the marker or by the `read_only` flag,
 because a failure of it would otherwise leave nothing to inspect.
 
+The built-in task templates follow this rule. A decomposed Automaton's
+closing **final gate** task is read-only, carries no `verification_script`,
+and verifies through the report it writes under `.datawatch/reports/`. The
+**release version note** task is a plain note: it never edits a file, so the
+verifier reads it rather than runs it. Both pass the verifier as generated.
+See [decompose lint and task templates](automaton-decompose-lint.md#5-task-templates-and-per-project-overrides)
+for the full built-in pack and the per-project overrides.
+
 A task that does change files needs no marker; it lists them instead, for
 example `internal/config/config.go` and `internal/config/config_test.go` for a
 task titled "Add the retry setting to the config loader".

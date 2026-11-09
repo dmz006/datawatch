@@ -968,6 +968,12 @@ exempt:
   [plan-requirement coverage gate](#plan-requirement-coverage-gate-autonomousplan_coverage_check)
   section below.
 
+The built-in task templates already satisfy both checks. The final gate
+task is read-only with a `report_path` under `.datawatch/reports/` and no
+verification script; the release version note is a non-editing note that the
+verifier reads. Operators who add their own read-only template must give it
+one of the two as well.
+
 To fix the plan, add either a `verification_script` or a `report_path` to
 the task. The path must be a clean repo-relative path under
 `.datawatch/reports/`, and a `verification_script`, when used, must name
