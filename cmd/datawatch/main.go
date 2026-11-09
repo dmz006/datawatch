@@ -6783,10 +6783,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var lifecycleAuditFn func(string, map[string]any)
 			if wiredAuditLog != nil {
 				lifecycleAuditFn = func(a string, d map[string]any) {
-					// The Events view renders Subject; a judge outcome's
-					// plain-language headline becomes that subject.
+					// The Events view renders Subject; a judge outcome's and a
+					// release mode change's plain-language headline become that subject.
 					subject := ""
-					if a == auditpkg.ActionJudgeOutcome {
+					if a == auditpkg.ActionJudgeOutcome || a == auditpkg.ActionReleaseModeChanged {
 						subject, _ = d["headline"].(string)
 					}
 					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Subject: subject, Details: d})
