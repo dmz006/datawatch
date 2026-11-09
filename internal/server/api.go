@@ -7331,7 +7331,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// whole PUT with an error naming the key.
 	for k, v := range patch {
 		if field, ok := strings.CutPrefix(k, mergeShadowKeyPrefix); ok {
-			if verr := validateMergeShadowValue(field, v); verr != nil {
+			if verr := ValidateMergeShadowValue(field, v); verr != nil {
 				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}

@@ -14,12 +14,14 @@ import (
 // key shares.
 const mergeShadowKeyPrefix = "autonomous.merge_shadow."
 
-// validateMergeShadowValue checks one autonomous.merge_shadow.<field> value.
+// ValidateMergeShadowValue checks one autonomous.merge_shadow.<field> value.
 // enabled must be a boolean (or a "true"/"false" string, matching how comm
 // channel scalars land here); gate_timeout must parse as a positive Go
 // duration; plan_keep must be a whole number >= 1. A field this does not
-// know is an error, so a rejected PUT names the bad key.
-func validateMergeShadowValue(field string, v any) error {
+// know is an error, so a rejected PUT names the bad key. The daemon API and
+// the CLI (`datawatch config set`) both call this one function, so a value
+// refused on one surface is refused on the other.
+func ValidateMergeShadowValue(field string, v any) error {
 	switch field {
 	case "enabled":
 		if _, ok := v.(bool); ok {
@@ -48,6 +50,20 @@ func validateMergeShadowValue(field string, v any) error {
 		return fmt.Errorf("%s%s: unknown key (use enabled, gate_timeout or plan_keep)", mergeShadowKeyPrefix, field)
 	}
 	return nil
+}
+
+// mergeShadowFields is the closed set of autonomous.merge_shadow.* fields.
+var mergeShadowFields = map[string]bool{
+	"enabled":      true,
+	"gate_timeout": true,
+	"plan_keep":    true,
+}
+
+// IsMergeShadowConfigKey reports whether key is one of the three
+// autonomous.merge_shadow.* settings and returns its field name.
+func IsMergeShadowConfigKey(key string) (field string, ok bool) {
+	field, ok = strings.CutPrefix(key, mergeShadowKeyPrefix)
+	return field, ok && mergeShadowFields[field]
 }
 
 // isWholePositive reports whether a decoded JSON number is a whole number
