@@ -140,6 +140,35 @@ func (g *GitHub) CreateIssue(ctx context.Context, opts IssueOptions) (string, er
 	return strings.TrimSpace(out), nil
 }
 
+// CreateRelease shells out to `gh release create <tag>` and returns
+// the release URL gh prints on stdout. It is not part of the Provider
+// interface; callers hold a *GitHub directly.
+func (g *GitHub) CreateRelease(ctx context.Context, opts ReleaseOptions) (string, error) {
+	if opts.Repo == "" {
+		return "", fmt.Errorf("CreateRelease: Repo required")
+	}
+	if opts.Tag == "" {
+		return "", fmt.Errorf("CreateRelease: Tag required")
+	}
+	args := []string{
+		"release", "create", opts.Tag,
+		"--repo", opts.Repo,
+		"--title", opts.Title,
+		"--notes", opts.Notes,
+	}
+	out, err := g.run(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("gh release create: %w\n%s", err, strings.TrimSpace(out))
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "https://") {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("gh release create: no release URL in output:\n%s", strings.TrimSpace(out))
+}
+
 // run is gh exec with a 30s cap; combined stdout+stderr returned.
 func (g *GitHub) run(ctx context.Context, args ...string) (string, error) {
 	bin := g.Bin
