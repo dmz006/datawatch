@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/llm"
 )
@@ -91,5 +92,47 @@ func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
 				t.Errorf("rejection happens before any exec, so no exec error should be present, got: %v", err)
 			}
 		})
+	}
+}
+
+// TestLaunch_ScriptFormShortTaskInline pins the script form for a short task:
+// the task stays inline in the command (no task file is written, and no
+// .datawatch folder appears in the project directory), and the recorded
+// command matches the inline format exactly. A fake tmux that exits 0 stands
+// in for the real one, so no tmux server is started.
+func TestLaunch_ScriptFormShortTaskInline(t *testing.T) {
+	dir := t.TempDir()
+	fakeTmux := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(fakeTmux, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	records := make(chan CommandRecord, 4)
+	SetRecorder(func(rec CommandRecord) { records <- rec })
+	t.Cleanup(func() { SetRecorder(nil) })
+
+	const task = "short task"
+	b := &Backend{scriptPath: "/nonexistent/script-xyz.sh"}
+	if err := b.Launch(context.Background(), task, "cs-short", dir, ""); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	var rec CommandRecord
+	select {
+	case rec = <-records:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the command record")
+	}
+
+	want := "'/nonexistent/script-xyz.sh' 'short task' '" + dir + "'; echo 'DATAWATCH_COMPLETE: shell done'"
+	if rec.Command != want {
+		t.Errorf("command mismatch\n got: %q\nwant: %q", rec.Command, want)
+	}
+	if rec.TaskFile != "" {
+		t.Errorf("short task must stay inline, got TaskFile %q", rec.TaskFile)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".datawatch")); !os.IsNotExist(err) {
+		t.Errorf("no .datawatch folder may exist for an inline task, stat err: %v", err)
 	}
 }
