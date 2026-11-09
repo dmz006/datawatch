@@ -132,3 +132,71 @@ func TestStandardTaskRESTRead(t *testing.T) {
 		t.Errorf("POST status = %d, want 405", rec.Code)
 	}
 }
+
+// standardTasksFixturePath is the shared expected list every surface reads.
+const standardTasksFixturePath = "../../testdata/standard-tasks/expected.json"
+
+// standardTasksFixture is the shared expected standard-task list.
+type standardTasksFixture struct {
+	Enabled bool `json:"enabled"`
+	Tasks   []struct {
+		ID      string `json:"id"`
+		Title   string `json:"title"`
+		Kind    string `json:"kind"`
+		Enabled bool   `json:"enabled"`
+		Mode    string `json:"mode"`
+	} `json:"tasks"`
+}
+
+// TestStandardTaskSurfacesAgree loads the shared fixture and asserts the REST
+// response matches it field for field: id, title, kind, enabled and mode.
+// The other surfaces (MCP, CLI, comm reply) compare the subset they print.
+func TestStandardTaskSurfacesAgree(t *testing.T) {
+	raw, err := os.ReadFile(standardTasksFixturePath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var want standardTasksFixture
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+
+	s := &Server{cfg: config.DefaultConfig()}
+	req := httptest.NewRequest(http.MethodGet, "/api/autonomous/standard-tasks", nil)
+	rec := httptest.NewRecorder()
+	standardTasksMux(s).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Enabled bool                      `json:"enabled"`
+		Tasks   []autonomous.StandardTask `json:"tasks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode REST: %v", err)
+	}
+	if got.Enabled != want.Enabled {
+		t.Errorf("enabled = %v, want %v", got.Enabled, want.Enabled)
+	}
+	if len(got.Tasks) != len(want.Tasks) {
+		t.Fatalf("REST rows = %d, fixture rows = %d", len(got.Tasks), len(want.Tasks))
+	}
+	for i, w := range want.Tasks {
+		g := got.Tasks[i]
+		if g.ID != w.ID {
+			t.Errorf("row %d id = %q, want %q", i, g.ID, w.ID)
+		}
+		if g.Title != w.Title {
+			t.Errorf("row %d title = %q, want %q", i, g.Title, w.Title)
+		}
+		if g.Kind != w.Kind {
+			t.Errorf("row %d kind = %q, want %q", i, g.Kind, w.Kind)
+		}
+		if g.Enabled != w.Enabled {
+			t.Errorf("row %d enabled = %v, want %v", i, g.Enabled, w.Enabled)
+		}
+		if g.Mode != w.Mode {
+			t.Errorf("row %d mode = %q, want %q", i, g.Mode, w.Mode)
+		}
+	}
+}
