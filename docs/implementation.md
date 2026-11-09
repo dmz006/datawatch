@@ -588,6 +588,8 @@ Defined in `internal/config/config.go` (`AutonomousConfig.WorkerProfiles`, `Work
 
 Refused at load time: a user profile named like a built-in; a profile that fails `workerprofile.Validate`; a name on a profile that does not match its key; a defaults value or the global name that names no known profile; an unknown role or kind key.
 
+**Launch behaviour.** A worker, verifier or judge launch resolves its profile by name, in this order: task, Automaton, project, `autonomous.worker_profile`, the kind default, the role default. With nothing configured at any tier, no profile is applied and the session starts with the full harness. Once a role or kind default is configured, a configured role default applies to kinds with no configured kind entry. A profile that cannot be applied at launch falls back to the full harness, and the attempt records the fallback with its reason. An unknown name set on a task or an Automaton is recorded as a decision on the task record and in the Automaton's decision list. The profile in force for each role and task kind, and the tier that set it, reads back on `GET /api/config` (`autonomous.in_force`), MCP `worker_profile_status`, `datawatch config get`, the comm channel `configure` keys and the web settings group. The operator guide is [howto/worker-session-profiles.md](howto/worker-session-profiles.md).
+
 ### Pre-spawn scope lint mode (`autonomous.scope_lint`)
 
 `autonomous.scope_lint` (`config.AutonomousConfig.ScopeLint`, JSON
