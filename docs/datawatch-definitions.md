@@ -67,6 +67,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Post-ship hooks](#post-ship-hooks)
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge lock](#merge-lock)
+  - [Release-bump validator](#release-bump-validator)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
   - [Onboarding report](#onboarding-report)
@@ -2107,6 +2108,8 @@ Generated artefacts are the small documents drawn from the change record when an
 ### Merge pipeline
 
 The merge pipeline is the ordered list of steps that takes finished branches to shipped: checks, merge, version bump, changelog, tag, push and deploy. Each project has one. A branch ships into main: the built-in pipeline brings each branch onto main and runs the project's merge-version check before anything merges — a branch that set a version of its own is refused — and the `set-release-version` step computes the release version after the merge: the next patch above main as it stands at that point. The push is fast-forward-only (it refuses to push a head that would rewrite the remote), and if the remote's main moved since the merge the run redoes from the rebase step so the version is recomputed; the run record keeps the shipped version as `release_version`. A run whose branches are all already in main releases nothing new: the release steps are recorded as `skipped` and the deploy step still runs. The release steps are safe to run twice — a step that finds its work already done, the version files already carrying the version, the changelog already holding the heading or the tag already on that commit, is a no-op — and a release tag that points at another commit fails the tag step and is named, never moved. It is shown as the Merge pipeline card in Settings > Automation, which names the source in effect, the reason, the steps in order, the conflict policy and the conflict model, and lets you edit or remove the daemon record. It is read with `GET /api/autonomous/merge-pipeline`, the `autonomous_merge_pipeline_get` MCP tool, `datawatch autonomous merge-pipeline show` and the comm channel verb `autonomous merge-pipeline`. A pipeline is checked before it is kept or used, and every problem is named (`autonomous_merge_pipeline_validate`, `datawatch autonomous merge-pipeline validate`). See [howto/merge-pipeline.md](howto/merge-pipeline.md) for the walkthrough, including [how the release version is chosen](howto/merge-pipeline.md#how-the-release-version-is-chosen).
+
+### Release-bump validator
 
 **Release-bump validator** — the read-only check the merge pipeline runs in its `validate-release-bump` step, after the release bump commit and tag and before the push. It runs five named checks: `version_variables_equal`, `changelog_heading_matches`, `one_step_above_last_tag`, `tag_not_taken` and `readme_line_matches`. A failing check fails the step, names every check that failed and stops the push; the result is kept on the run record as `validator`. The same checks can be run by hand with `scripts/verify-release-bump.sh`. See [howto/merge-pipeline.md](howto/merge-pipeline.md#the-release-bump-validator).
 
