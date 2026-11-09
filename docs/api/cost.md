@@ -154,6 +154,7 @@ Response fields:
 | `rows[].estimated_usage_points` | Bundled rows: the usage points that amount represents against the allowance |
 | `rows[].share_of_monthly_price` | Bundled rows: the fraction of the plan's monthly price (0.05 = 5%) |
 | `rows[].units` | `release` rows only: shipped units for that release (blank when the record has none) |
+| `startup_by_profile` / `startup_by_role` | Start-up tables: one row per worker profile (or role) with `key`, `attempts`, `avg_startup_tokens` (omitted when no attempt carries a size), and the estimated / reported / no-data counts. Unprofiled and no-role attempts land under their own keys. See [howto/cost-report.md](../howto/cost-report.md#the-start-up-tables) |
 | `retention_days` | The 31-day ledger the dollar figures rest on |
 | `retention_note` | A human sentence for the same fact |
 | `lifetime_fallback` | Whether some dollar figures rest on rates recorded outside that window |

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -259,6 +260,8 @@ Subcommands:
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetKindCmd(),
+		newAutonomousPRDSetReleaseSizeCmd(),
+		newAutonomousPRDSetBreakingChangeCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
 		newAutonomousDefectCmd(),
@@ -1906,6 +1909,42 @@ func parseKindArg(arg string) (string, error) {
 		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug, other or maintenance", strings.TrimSpace(arg))
 	}
 	return k, nil
+}
+
+func newAutonomousPRDSetReleaseSizeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-release-size <id> <patch|minor|major|none|clear>",
+		Short: "Set the release size of an Automaton (clear resolves it again)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			size := ""
+			if !strings.EqualFold(strings.TrimSpace(args[1]), "clear") {
+				v, ok := autonomous.NormalizeReleaseSize(args[1])
+				if !ok {
+					return fmt.Errorf("unknown release size %q: use patch, minor, major, none or clear", strings.TrimSpace(args[1]))
+				}
+				size = v
+			}
+			body, _ := json.Marshal(map[string]string{"release_size": size})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_release_size", body)
+		},
+	}
+}
+
+func newAutonomousPRDSetBreakingChangeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-breaking-change <id> <true|false>",
+		Short: "Set or clear the breaking-change flag of an Automaton",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			breaking, err := strconv.ParseBool(args[1])
+			if err != nil {
+				return fmt.Errorf("breaking change must be true or false, got %q", args[1])
+			}
+			body, _ := json.Marshal(map[string]bool{"breaking_change": breaking})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_breaking_change", body)
+		},
+	}
 }
 
 func newAutonomousPRDSetKindCmd() *cobra.Command {

@@ -10,6 +10,7 @@ import (
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
 
@@ -37,7 +38,7 @@ func MergePipelineToolNames() []string {
 
 func (s *Server) toolAutonomousMergePipelineGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_pipeline_get",
-		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
+		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the release settings in effect (the release size by kind, the major release trigger, the release cadence and the version scheme), the release approval mode in effect for each release size (patch, minor, major), the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional — the project name; default is the merge base repository")),
 		mcpsdk.WithString("format", mcpsdk.Enum("text", "json"), mcpsdk.Description("Optional — text (default) or json")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
@@ -313,7 +314,23 @@ func (s *Server) handleAutonomousMergePipelineValidate(_ context.Context, req mc
 
 // mergePipelineConfigFields are the settings of the autonomous.merge_pipeline
 // block; each is an autonomous_config_set argument named merge_pipeline_<name>.
-var mergePipelineConfigFields = []string{"file_name", "source_order", "fallback_on_bad_file", "conflict_policy", "conflict_model", "version_files"}
+// The release approval fields are dotted in the daemon (release_approval.<size>),
+// so mergePipelineConfigKey maps their underscore argument names to that form.
+var mergePipelineConfigFields = []string{
+	"file_name", "source_order", "fallback_on_bad_file", "conflict_policy", "conflict_model", "version_files",
+	"release_size_map", "major_trigger", "release_cadence", "version_scheme",
+	"release_approval_patch", "release_approval_minor", "release_approval_major",
+}
+
+// mergePipelineConfigKey is the daemon key for one field name: a
+// release_approval_<size> field is release_approval.<size>, every other field
+// keeps its name.
+func mergePipelineConfigKey(field string) string {
+	if rest := strings.TrimPrefix(field, "release_approval_"); rest != field {
+		return "release_approval." + rest
+	}
+	return field
+}
 
 // mergePipelineConfigOptions are the autonomous_config_set arguments for the
 // autonomous.merge_pipeline block. They are sent as dotted keys on PUT
@@ -329,6 +346,13 @@ func mergePipelineConfigOptions() []mcpsdk.ToolOption {
 		mcpsdk.WithString("merge_pipeline_conflict_policy", mcpsdk.Description("autonomous.merge_pipeline.conflict_policy — what a merge does on a conflict; the daemon names the valid policies in its refusal")),
 		mcpsdk.WithString("merge_pipeline_conflict_model", mcpsdk.Description("autonomous.merge_pipeline.conflict_model — the model that proposes conflict resolutions, a name from the LLM registry; empty means none")),
 		mcpsdk.WithArray("merge_pipeline_version_files", mcpsdk.Description("autonomous.merge_pipeline.version_files — files that hold the version, relative to the project. The value replaces the whole list."), mcpsdk.WithStringItems()),
+		mcpsdk.WithString("merge_pipeline_release_size_map", mcpsdk.Description("autonomous.merge_pipeline.release_size_map — the release size each Automaton kind adds, as kind=size pairs such as feature=minor,bug=patch, or a JSON object. Sizes are patch, minor, major or none; the pairs add to or override the built-in map (feature minor, bug patch). An empty value adds nothing.")),
+		mcpsdk.WithString("merge_pipeline_major_trigger", mcpsdk.Enum("manual", "milestone", "never"), mcpsdk.Description("autonomous.merge_pipeline.major_trigger — when a major release step is raised: manual (the default, only when the operator names it), milestone (when the Automation the Automaton belongs to is a completed milestone) or never")),
+		mcpsdk.WithString("merge_pipeline_release_cadence", mcpsdk.Description("autonomous.merge_pipeline.release_cadence — how often a release is cut: per_merge (the only value available today; the default). batch and manual are refused until they exist, and the refusal names the value to use.")),
+		mcpsdk.WithString("merge_pipeline_version_scheme", mcpsdk.Description("autonomous.merge_pipeline.version_scheme — how versions are numbered: semver (the only value available today; the default). Other schemes are refused until they exist, and the refusal names the value to use.")),
+		mcpsdk.WithString("merge_pipeline_release_approval_patch", mcpsdk.Description("autonomous.merge_pipeline.release_approval.patch — approval for a patch release: auto (ships without waiting), ask (asks the operator before it ships) or manual (left for the operator to ship). Default auto. Empty clears the size back to the global value or the default.")),
+		mcpsdk.WithString("merge_pipeline_release_approval_minor", mcpsdk.Description("autonomous.merge_pipeline.release_approval.minor — approval for a minor release: auto, ask or manual. Default auto. Empty clears the size back to the global value or the default.")),
+		mcpsdk.WithString("merge_pipeline_release_approval_major", mcpsdk.Description("autonomous.merge_pipeline.release_approval.major — approval for a major release: auto, ask or manual. Default ask. Empty clears the size back to the global value or the default.")),
 	}
 }
 
@@ -351,14 +375,38 @@ func mergePipelineConfigArgs(req mcpsdk.CallToolRequest) (map[string]any, error)
 		prefix += "projects." + project + "."
 	}
 	for _, k := range mergePipelineConfigFields {
-		if v, ok := args["merge_pipeline_"+k]; ok {
-			out[prefix+k] = v
+		v, ok := args["merge_pipeline_"+k]
+		if !ok {
+			continue
 		}
+		key := prefix + mergePipelineConfigKey(k)
+		if strings.HasPrefix(k, "release_approval_") {
+			if err := mergePipelineReleaseApprovalArg(key, v); err != nil {
+				return nil, err
+			}
+		}
+		out[key] = v
 	}
 	if project != "" && len(out) == 0 {
 		return nil, fmt.Errorf("merge_pipeline_project was given with no merge_pipeline_* setting to apply to it")
 	}
 	return out, nil
+}
+
+// mergePipelineReleaseApprovalArg checks a release approval argument with the
+// config package's validator, the same check the daemon runs on PUT
+// /api/config, so a bad mode is refused here with its full key named and
+// nothing is sent. null and the empty text clear the size; a value that is
+// not text is refused.
+func mergePipelineReleaseApprovalArg(key string, v any) error {
+	if v == nil {
+		return nil
+	}
+	s, isStr := v.(string)
+	if !isStr {
+		return fmt.Errorf("%s: %v is invalid; use auto, ask or manual", key, v)
+	}
+	return config.ValidateReleaseApprovalModeKey(key, strings.TrimSpace(s))
 }
 
 // mergePipelineFileArg reads the file argument of validate: true or the text

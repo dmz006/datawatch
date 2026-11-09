@@ -1469,6 +1469,46 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-kind", prettyJSON(out))
+	case "set-release-size", "set_release_size":
+		const sizeUsage = "usage: autonomous set-release-size <automaton-id> <patch|minor|major|none|clear>"
+		if len(args) < 3 {
+			r.reply("autonomous set-release-size failed", sizeUsage)
+			return
+		}
+		size := ""
+		if !strings.EqualFold(strings.TrimSpace(args[2]), "clear") {
+			v, ok := autonomous.NormalizeReleaseSize(args[2])
+			if !ok {
+				r.reply("autonomous set-release-size failed", "unknown release size "+strconv.Quote(args[2])+"; "+sizeUsage)
+				return
+			}
+			size = v
+		}
+		body, _ := json.Marshal(map[string]string{"release_size": size})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_release_size", string(body))
+		if err != nil {
+			r.reply("autonomous set-release-size failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-release-size", prettyJSON(out))
+	case "set-breaking-change", "set_breaking_change":
+		const breakUsage = "usage: autonomous set-breaking-change <automaton-id> <true|false>"
+		if len(args) < 3 {
+			r.reply("autonomous set-breaking-change failed", breakUsage)
+			return
+		}
+		breaking, err := strconv.ParseBool(args[2])
+		if err != nil {
+			r.reply("autonomous set-breaking-change failed", "breaking change must be true or false; "+breakUsage)
+			return
+		}
+		body, _ := json.Marshal(map[string]bool{"breaking_change": breaking})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_breaking_change", string(body))
+		if err != nil {
+			r.reply("autonomous set-breaking-change failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-breaking-change", prettyJSON(out))
 	case "shipped", "shipped-record", "shipped_record", "record-shipped", "record_shipped":
 		r.handleAutonomousShippedVerb(args)
 	case "defect-intake", "defect_intake", "defect-batches", "defect_batches", "defect-split", "defect_split":

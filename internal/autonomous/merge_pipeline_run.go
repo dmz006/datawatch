@@ -60,15 +60,21 @@ type MergeStepRun struct {
 
 // MergePipelineRun is one run of a merge pipeline.
 type MergePipelineRun struct {
-	ID       string         `json:"id"`
-	Project  string         `json:"project"`
-	Branches []string       `json:"branches"`
-	Source   string         `json:"source"`
-	Reason   string         `json:"reason,omitempty"`
-	Start    time.Time      `json:"start"`
-	End      *time.Time     `json:"end"`
-	Result   string         `json:"result"`
-	Steps    []MergeStepRun `json:"steps"`
+	ID       string   `json:"id"`
+	Project  string   `json:"project"`
+	Branches []string `json:"branches"`
+	Source   string   `json:"source"`
+	Reason   string   `json:"reason,omitempty"`
+	// ReleaseVersion is the version the run releases, computed once by the
+	// set-release-version step and used by the later steps of the run.
+	ReleaseVersion string `json:"release_version,omitempty"`
+	// Validator is the release-bump validator's result when the run reached
+	// its validate-release-bump step; nil otherwise.
+	Validator *MergeValidatorResult `json:"validator,omitempty"`
+	Start     time.Time             `json:"start"`
+	End       *time.Time            `json:"end"`
+	Result    string                `json:"result"`
+	Steps     []MergeStepRun        `json:"steps"`
 }
 
 // MergeRunRecorder receives a run each time it changes. *MergeRunRecords is
@@ -177,6 +183,23 @@ func (m *Manager) mergeRuns() *MergeRunRecords {
 		m.mergeRunStore = NewMergeRunRecords(m.store.dir)
 	}
 	return m.mergeRunStore
+}
+
+// MergeLocks returns the merge lock store, opened under the daemon store
+// directory on first use. A store that cannot be opened (for instance a
+// corrupt lock file) is returned as an error and is not cached, so the next
+// call tries again; a caller must treat that as a refusal, never as free.
+func (m *Manager) MergeLocks() (*MergeLocks, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mergeLockStore == nil {
+		locks, err := NewMergeLocks(m.store.dir)
+		if err != nil {
+			return nil, err
+		}
+		m.mergeLockStore = locks
+	}
+	return m.mergeLockStore, nil
 }
 
 // RecordMergeRun makes the Manager a MergeRunRecorder, so a pipeline run's

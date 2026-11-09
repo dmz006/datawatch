@@ -1021,6 +1021,17 @@ paths:
         `autonomous.task_no_progress_seconds` (whole seconds >= 0, default 0 = off; stops an
         attempt with no output, file change, commit or CPU-using child process for this long,
         recommended 1800),
+        `autonomous.task_templates.mode` (an object of template id to `llm`, `daemon` or `off`;
+        empty keeps the shipped defaults: `daemon` for changelog_entry, parity_issue_draft,
+        bounded_load_step and version_bump_left_to_merge, `llm` for docs_set and final_gate;
+        `daemon` is refused for final_gate and for any id that is not daemon-capable; set it
+        and a bad value rejects the whole PUT with 400),
+        `autonomous.script_gate_timeout_seconds` (whole seconds >= 0, default 900; the time cap
+        on one script gate run, where 0 means no cap; a negative value is rejected with 400),
+        `autonomous.project_gate_command` (one line of shell text, at most 1024 bytes, default
+        unset; the build-and-test command the script gate runs; a line break or NUL byte is
+        rejected with 400; a project's `projects.<name>.policy.project_gate_command` overrides it,
+        and an explicit empty string there unsets it for that project only),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
@@ -1063,6 +1074,23 @@ paths:
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
         `backend:model[@attempts],...`; empty clears the ladder),
+        `autonomous.first_attempt` (a JSON object mapping a task kind —
+        implementation, docs, note or final_gate — to an object with an
+        optional `backend` and an optional `model` string),
+        `autonomous.first_attempt_escalate_after_failures` (whole number of
+        0 to 20, unset reads as 1: the number of failures after which the
+        next attempt stops using that kind's first-attempt backend and
+        model), and
+        `autonomous.retry_resume_max_context_tokens` (whole number of 0 to
+        2000000, unset reads as 150000: the cap on prior context a retry
+        may resume with; 0 = every retry starts a fresh session).
+        GET returns the three under `autonomous`. An out-of-range number,
+        a task kind outside implementation/docs/note/final_gate, or a
+        backend that needs a model (pi, pi-prompt or ollama) whose entry
+        names no model rejects the whole PUT with 400 and a message that
+        names the key and the allowed values, and nothing is written; a
+        patch that omits one of the keys leaves that key's stored value
+        untouched.
         `autonomous.merge_pipeline.file_name` (a file name inside the project, default
         `.datawatch/merge-pipeline.yaml`), `autonomous.merge_pipeline.source_order` (a JSON
         array or comma list of `file` and `record`, default `file,record`),
@@ -4552,7 +4580,7 @@ paths:
         Live config object for the decompose-lint feature: `decompose_lint`
         (`autonomous.decompose_lint`: mode, max_retries, rules, disabled_rules),
         `task_templates` (`autonomous.task_templates`: enabled, templates,
-        per-project overrides) and `decompose_guidance`
+        per-project overrides, mode) and `decompose_guidance`
         (`autonomous.decompose_guidance`: the literal text or file path), as one
         object. A federated peer needs the autonomous read capability.
       operationId: autonomousDecomposeLintConfigGet
@@ -4570,7 +4598,7 @@ paths:
         Validated partial replace of the decompose-lint config. The body may
         contain any of `decompose_lint` (a full
         `{mode, max_retries, rules, disabled_rules}` object), `task_templates`
-        (a full `{enabled, templates, projects}` object) and
+        (a full `{enabled, templates, projects, mode}` object) and
         `decompose_guidance` (a string); each present key replaces its whole
         block, omitted keys are left untouched. Every supplied block is
         validated before any of them is applied (legal mode from off|shadow|
@@ -9153,7 +9181,7 @@ components:
         name: {type: string, description: "A name that is unique within the pipeline"}
         kind: {type: string, enum: [test, lint, version_bump, changelog, ship, tag, deploy, post_ship_hook, custom], description: "What the step is for"}
         command: {type: string, description: "A shell command line to run in the project"}
-        action: {type: string, enum: [check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, commit_release_bump, tag_release, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
+        action: {type: string, enum: [rebase_onto_main, check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, set_readme_release_line, commit_release_bump, tag_release, validate_release_bump, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
         dir: {type: string, description: "A directory inside the project to run in; empty means the project root"}
         on_failure: {type: string, enum: [stop, continue], description: "What the pipeline does when the step fails; stop by default"}
         requires_make_target: {type: string, description: "Run the step only when the project's Makefile defines this target"}

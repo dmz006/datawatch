@@ -27,6 +27,7 @@ import (
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // SpawnRequest is what the executor hands to SpawnFn for each task.
@@ -1307,6 +1308,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	if t.SpawnPRD {
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
+	// A daemon-run template task is performed by the daemon: no session is spawned.
+	if handled, err := m.runDaemonTemplateTask(ctx, prd, t); handled {
+		return err
+	}
+	// A final gate whose checks the daemon can run is run by the daemon too.
+	if handled, err := m.runScriptGateTask(ctx, prd, t); handled {
+		return err
+	}
 	// A restart drain holds a task that has not started until the drain ends.
 	if err := m.waitLaunchDrain(ctx); err != nil {
 		return err
@@ -1393,6 +1402,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// session and an in-flight status was left that way by an earlier daemon
 	// run. Later passes (including re-queued ones) carry their own session.
 	inherited := true
+	// verifierRetryPending is set only when the previous attempt ended with a
+	// failed verification; it lets the next attempt consider resuming that
+	// session (see tryRetryResume). Stalls, start and infra failures never set it.
+	verifierRetryPending := false
 	for attempt := 0; attempt < budget; attempt++ {
 		// Ceiling step of the retry policy: a second ceiling failure in a row
 		// moves the task to review instead of another attempt.
@@ -1406,6 +1419,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		run = attemptRun{RefsBefore: len(t.AttemptRefs), AttemptsBefore: len(t.Attempts)}
 		inheritedSession := inherited
 		inherited = false
+		resumeCandidate := verifierRetryPending
+		verifierRetryPending = false
 		// Tree state before a read-only task starts; compared after it ends.
 		roBaseline, roBaselineOK := "", false
 
@@ -1520,6 +1535,30 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 		// prevNode is the node the previous attempt's lease named, passed to
 		// admission as the tie breaker for this attempt's placement.
+		// Retry after a verifier failure: resume the previous session with the
+		// failure summary when the retry decision says so. A resumed attempt
+		// spawns nothing and waits on the same session, like a live session
+		// adopted on restart. The decision's outcome is carried on the run so the
+		// attempt's record says whether it resumed and why.
+		if !skipSpawn && resumeCandidate && attempt > 0 {
+			run.Resumed, run.ResumeReason = m.tryRetryResume(prd, t, hint)
+		}
+		if run.Resumed {
+			skipSpawn = true
+			run.SessionID, run.Adopted = t.SessionID, false
+			m.adoptCapacity(prd, t)
+			now := m.attemptNow()
+			oldStatus := t.Status
+			m.store.WithLock(func() {
+				t.StartedAt = &now
+				t.Status = TaskVerifying
+				t.RetryCount = attempt
+				t.PriorAttemptCount++
+			})
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			}
+		}
 		prevNode := ""
 		if !skipSpawn {
 			// Never reset or restore a worktree a live session of this task owns
@@ -1603,6 +1642,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			story := findStory(prd, t.StoryID)
 			auto := m.AutomationForPRD(prd)
 			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			// autonomous.first_attempt: a first attempt of a kind with a
+			// configured pair runs on that pair, unless the task or its
+			// Automaton pinned a worker. Retries never use it.
+			var firstAttemptReason string
+			backend, model, execSource, firstAttemptReason = applyFirstAttempt(m.cfg, t, m.escalationFailureCount(t), backend, model, execSource)
+			if firstAttemptReason != "" {
+				log.Printf("[autonomous] prd=%s task=%s %s: backend=%s model=%s", prd.ID, t.ID, firstAttemptReason, backend, model)
+			}
 			effort := resolveTaskEffort(t, story, prd, auto)
 			// Failure escalation: the ladder step that the failed attempts so
 			// far select replaces the worker for this attempt only. Backend,
@@ -1683,6 +1730,25 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			_ = m.store.SaveTask(t)
 			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
 			run.Escalated = escalated
+			run.BackendReason = describeAttemptBackendReason(execSource, taskAttemptKind(t), m.escalationFailureCount(t))
+			// Launch record: the worker profile the launch names (most-specific
+			// task-level name first) and the starting context it generates. The
+			// attempt record estimates the worker's startup token size from it
+			// (the estimated source); a launch without a named profile carries
+			// both empty and records zero tokens.
+			profileName := t.WorkerProfile
+			if profileName == "" {
+				profileName = prd.WorkerProfile
+			}
+			run.WorkerProfile = profileName
+			run.WorkerRole = "worker"
+			if p, ok := workerprofile.Builtin(run.WorkerProfile); ok {
+				run.LaunchContext = BuildWorkerStartingContext(StartingContextInput{
+					Role:     run.WorkerRole,
+					Profile:  p,
+					TaskSpec: t.Spec,
+				})
+			}
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
@@ -1821,11 +1887,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
 				RetryHint:        retryHint,
-				ProjectProfile:   snapProjectProfile,               // v5.26.19
-				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
-				Branch:           snapGit.Branch,                   // BL407 Phase 4
-				Git:              snapAutoCommits && !readOnly,     // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,                   // BL244
+				ProjectProfile:   snapProjectProfile,           // v5.26.19
+				ClusterProfile:   prd.ClusterProfile,           // v5.26.19
+				Branch:           snapGit.Branch,               // BL407 Phase 4
+				Git:              snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:   contextPrepend,               // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
 				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
@@ -2340,9 +2406,21 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if tb, note := m.scopeBreadthFor(ctx, prd, t, vr); tb || note != "" {
 			scopeTooBroad, scopeNote = tb, note
 		}
+		// No-retry: if this failure has no route to a fix through another
+		// attempt, record the attempt carrying the reason and hold the task for
+		// operator review without starting another attempt. This runs before the
+		// attempt is recorded below, so the recorded failures it sees are exactly
+		// the ones before this one. Only with the escalation (review-hold) policy
+		// on; otherwise the task takes the ordinary retry/failed path.
+		if esc.Enabled {
+			if reason, noRetry := m.noRetryFailHold(prd, t, vr); noRetry {
+				return m.holdForNoRetry(ctx, prd, t, run, lastFailureCategory, vr.Summary, reason)
+			}
+		}
 		if !textCounted {
 			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr, EndReason: attemptEndVerifierFailed})
 		}
+		verifierRetryPending = true
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
@@ -3192,6 +3270,9 @@ const (
 	// ExecutorSourceEscalation marks an attempt whose worker was chosen by a
 	// failure escalation step rather than by the levels above.
 	ExecutorSourceEscalation = "escalation"
+	// ExecutorSourceFirstAttempt marks a first attempt whose worker was chosen
+	// by autonomous.first_attempt for the task's kind.
+	ExecutorSourceFirstAttempt = "first_attempt"
 )
 
 // recordAdmittedWorker stores the worker an attempt is admitted with on a task

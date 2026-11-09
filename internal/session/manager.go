@@ -35,6 +35,7 @@ import (
 	"github.com/dmz006/datawatch/internal/platformcontext"
 	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -2056,6 +2057,17 @@ type StartOptions struct {
 	AutoGitInit   *bool             // per-session override for auto git init (nil = use manager default)
 	Env           map[string]string // environment variable overrides (for profile-based launches)
 
+	// WorkerProfile is the resolved worker profile this session starts
+	// with (empty = the session is not profile-based). At start time the
+	// manager asks the backend for a per-field outcome when it implements
+	// the duck-typed `interface{ RecordApplied(workerprofile.WorkerProfile) []workerprofile.FieldOutcome }`
+	// optional interface, and records the list on the session start record
+	// (Session.AppliedFields) so the operator can see exactly which
+	// profile fields the backend dropped. Claude Code applies the profile
+	// in its own launch path and does not implement the interface, so it
+	// is left untouched.
+	WorkerProfile workerprofile.WorkerProfile
+
 	// Effort (BL41) — operator-supplied thoroughness hint:
 	// "quick", "normal", "thorough". Empty falls through to
 	// session.default_effort config. Recorded on Session.Effort only;
@@ -2513,6 +2525,19 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && len(opt.Skills) > 0 {
 		sess.Skills = append([]string(nil), opt.Skills...)
+	}
+	// Record which worker-profile fields this backend honours at launch
+	// (workerprofile.RecordApplied semantics: one outcome per field, in
+	// stable order, each dropped field carrying the "backend cannot honour
+	// this field" reason) so the session start record shows the operator
+	// what the backend dropped. Duck-typed so backends that apply the
+	// profile in their own launch path (Claude Code) are left untouched.
+	if opt != nil && opt.WorkerProfile.Name != "" {
+		if rec, ok := backendObj.(interface {
+			RecordApplied(workerprofile.WorkerProfile) []workerprofile.FieldOutcome
+		}); ok {
+			sess.AppliedFields = rec.RecordApplied(opt.WorkerProfile)
+		}
 	}
 	if opt != nil && opt.LLMRef != "" {
 		sess.LLMRef = opt.LLMRef

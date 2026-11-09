@@ -122,7 +122,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.112.10"
+var Version = "9.118.3"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1101,6 +1101,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Session store writes are coalesced by a background writer; flush and
 	// stop it on every exit path.
 	defer func() { _ = mgr.Close() }()
+	// Remove shell task files left behind by an earlier daemon in the project
+	// directories of the sessions known at startup. The session store is
+	// loaded by NewManager, so the list is complete here and before any shell
+	// task can launch. A sweep error is logged and never stops startup.
+	{
+		var sweepDirs []string
+		for _, s := range mgr.ListSessions() {
+			if s != nil {
+				sweepDirs = append(sweepDirs, s.ProjectDir)
+			}
+		}
+		removed, sweepErr := shell.SweepStaleTaskFiles(sweepDirs)
+		if sweepErr != nil {
+			fmt.Printf("[warn] shell task file sweep: %v\n", sweepErr)
+		}
+		if removed > 0 {
+			fmt.Printf("[shell] removed %d stale task file(s)\n", removed)
+		}
+	}
 	// Daemon-observed trace events for the ollama, openwebui and shell
 	// backends: register the recorder hooks against the trace store.
 	var traceObserver *observe.Observer
@@ -4514,6 +4533,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PlanningRouting:                  acfgIn.PlanningRouting,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
+			FirstAttempt:                     autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
 			PlanningModel:                    acfgIn.PlanningModel,
 			VerificationModel:                acfgIn.VerificationModel,
 			GuardrailModel:                   acfgIn.GuardrailModel,
@@ -4563,6 +4583,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// of the Automation this installation takes kind-bug filings on;
 			// empty by default — filings are then recorded not_configured.
 			DefectIntakeAutomation: acfgIn.DefectIntakeAutomation,
+			// autonomous.first_attempt_escalate_after_failures: failed attempts
+			// before a task leaves the first-attempt pair (0 reads as 1).
+			FirstAttemptEscalateAfterFailures: acfgIn.FirstAttemptEscalateAfterFailures,
+			// autonomous.retry_resume_max_context_tokens: a retry after a failed
+			// verification resumes the previous session only at or under this size.
+			// 0 is meaningful (every retry starts fresh).
+			RetryResumeMaxContextTokens: acfgIn.RetryResumeMaxContextTokens,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -7460,6 +7487,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			mgr.SetOnSessionCreated(func(s *session.Session) {
 				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
 			})
+			// Retry resume reads the previous session's context size. TokensIn is the
+			// session's running input total: it overstates the live context, so the
+			// limit errs toward a fresh session rather than an oversized resume.
+			amgr.SetSessionContextTokensFn(func(sessionID string) int {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return 0
+				}
+				return s.TokensIn
+			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
 				s, ok := mgr.GetSession(sessionID)
@@ -8961,6 +8998,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// BL367 — autonomous quality gate stats in WS broadcast.
 		if autonomousMgrRef != nil {
 			amgrRef := autonomousMgrRef
+			// Worker startup averages per profile and role (worker_startup block).
+			statsCollector.SetWorkerStartupStatsFunc(func(s *statspkg.SystemStats) {
+				s.WorkerStartup = statspkg.BuildWorkerStartupStats(workerStartupAttempts(amgrRef))
+			})
 			statsCollector.SetAutonomousStatsFunc(func(s *statspkg.SystemStats) {
 				st := amgrRef.Status()
 				s.QualityGateRuns = st.QualityGateRuns
@@ -11353,6 +11394,14 @@ func newStatsCmd() *cobra.Command {
 				}
 			}
 
+			// Worker startup averages per profile and role (worker_startup block).
+			var workerStartup statspkg.WorkerStartupStats
+			if raw, err := json.Marshal(s["worker_startup"]); err == nil {
+				_ = json.Unmarshal(raw, &workerStartup)
+			}
+			fmt.Println()
+			fmt.Println(statspkg.WorkerStartupText(workerStartup))
+
 			if cs, ok := s["comm_stats"].([]interface{}); ok && len(cs) > 0 {
 				fmt.Println()
 				fmt.Println("── Communication Channels ──")
@@ -11956,6 +12005,17 @@ func newConfigSetCmd() *cobra.Command {
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
 			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
+			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
+			"autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet). Each also takes the form autonomous.merge_pipeline.projects.<project>.<key> for one project.\n\n" +
+			"Merge pipeline release approval keys: autonomous.merge_pipeline.release_approval.<size> " +
+			"(the global value) and autonomous.merge_pipeline.projects.<project>.release_approval.<size> " +
+			"(one project's value; unset inherits the global value), where <size> is patch, minor or major " +
+			"and the value is one of:\n" +
+			"  auto    - ship the release without waiting for the operator (default for patch and minor)\n" +
+			"  ask     - ask the operator before the release ships (default for major)\n" +
+			"  manual  - leave the release for the operator to ship\n" +
+			"Any other value is refused and the error names the key.\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
@@ -11972,7 +12032,12 @@ func newConfigSetCmd() *cobra.Command {
 			"Automata placement tag keys: autonomous.tags.placement.enabled (true|false; the master switch), " +
 			"and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind) " +
 			"autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template " +
-			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).",
+			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).\n\n" +
+			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
+			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
+			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
+			"starts with worker_profile is refused as unknown.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -12000,7 +12065,14 @@ func newConfigGetCmd() *cobra.Command {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
+	if isWorkerProfileConfigKeyFamily(key) {
+		return runWorkerProfileConfigSet(cfg, key, value)
+	}
 	url := loopbackBaseURL(cfg) + "/api/config"
+	if isMergePipelineReleaseApprovalKey(key) {
+		// auto|ask|manual only; refused here before anything is sent.
+		return runMergePipelineReleaseApprovalSet(url, cfg.Server.Token, key, value)
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and
@@ -12016,11 +12088,23 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		fmt.Printf("Set %s = %s\n", key, value)
 		return nil
 	}
+	if isAttemptCostDottedKey(key) {
+		// A per-kind backend or model is a string, so it is sent as one even
+		// when it looks like a number (a model named "3"); the daemon refuses
+		// a bad kind or a backend that needs a model with its own message.
+		b, _ := json.Marshal(map[string]any{key: value})
+		if err := putConfig(url, cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
-		// A liveness value that is valid JSON and was refused keeps the daemon's
-		// message; quoting it again would replace it with a bad-JSON error.
-		if isLivenessConfigKey(key) && json.Valid([]byte(value)) {
+		// A liveness, merge-pipeline release or attempt-cost value that is valid
+		// JSON and was refused keeps the daemon's message; quoting it again would
+		// replace it with a bad-JSON error.
+		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
@@ -12035,6 +12119,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
+	key = workerProfileGetKey(key)
 	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if cfg.Server.Token != "" {

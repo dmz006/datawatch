@@ -238,4 +238,5 @@ precedence rule in practice).
 
 - [guardrail-library.md](guardrail-library.md) — the sibling guardrail-resolution mechanism this mirrors
 - [autonomous-planning.md](autonomous-planning.md) — Automaton lifecycle
+- [failed-attempt-cost.md](failed-attempt-cost.md) — what a failed attempt costs, the first-attempt worker, resuming a retry and the attempt-cost settings
 - [api/autonomous.md](../api/autonomous.md) — REST reference

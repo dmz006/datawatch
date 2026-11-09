@@ -16,16 +16,30 @@ import (
 // summary lists it. It carries identity, counts and the worker of the last
 // attempt, never the task spec or the attempt report.
 type ReviewNeededEntry struct {
-	TaskID       string    `json:"task_id"`
-	TaskTitle    string    `json:"task_title,omitempty"`
-	StoryID      string    `json:"story_id"`
-	FailureCount int       `json:"failure_count"`
-	LastBackend  string    `json:"last_backend,omitempty"`
-	LastModel    string    `json:"last_model,omitempty"`
-	HeldAt       time.Time `json:"held_at"`
+	TaskID       string `json:"task_id"`
+	TaskTitle    string `json:"task_title,omitempty"`
+	StoryID      string `json:"story_id"`
+	FailureCount int    `json:"failure_count"`
+	LastBackend  string `json:"last_backend,omitempty"`
+	LastModel    string `json:"last_model,omitempty"`
+	// LastBackendReason is the BackendReason of the last attempt; empty when no
+	// attempt was recorded or the attempt predates the field.
+	LastBackendReason string `json:"last_backend_reason,omitempty"`
+	// LastResumed is true when the last attempt resumed the previous session on
+	// its retry; false for a fresh attempt or an attempt stored before the field.
+	LastResumed bool `json:"last_resumed,omitempty"`
+	// LastResumeReason is the retry-resume reason of the last attempt; empty
+	// when no retry decision was recorded for it.
+	LastResumeReason string    `json:"last_resume_reason,omitempty"`
+	HeldAt           time.Time `json:"held_at"`
 	// HeldCause names the infrastructure failure when the task is held because
 	// its infrastructure retries ran out. It is empty for any other hold.
 	HeldCause string `json:"held_cause,omitempty"`
+	// NoRetryReason is the operator-readable reason the task was sent to
+	// review WITHOUT another attempt (a no-retry failure), e.g. "the task
+	// writes nothing; give it files or a verification script". It is empty for
+	// a hold reached by other means.
+	NoRetryReason string `json:"no_retry_reason,omitempty"`
 }
 
 // reviewNeededEntries lists the tasks of prd held in TaskReviewNeeded, in story
@@ -67,9 +81,19 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 	}
 	if last := lastTaskAttempt(t); last != nil {
 		e.LastBackend, e.LastModel = last.Backend, last.Model
+		e.LastBackendReason = last.BackendReason
+		e.LastResumed, e.LastResumeReason = last.Resumed, last.ResumeReason
+		if last.NoRetryReason != "" {
+			e.NoRetryReason = last.NoRetryReason
+		}
 	}
 	if fr := t.FailureReason; fr != nil && fr.Source == infraRetryHoldSource {
 		e.HeldCause = fr.Detail
+	}
+	if e.NoRetryReason == "" {
+		if fr := t.FailureReason; fr != nil && fr.Source == noRetryHoldSource {
+			e.NoRetryReason = fr.Detail
+		}
 	}
 	return e
 }

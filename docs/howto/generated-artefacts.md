@@ -175,6 +175,18 @@ One row for the registry table in `docs/plans/README.md`:
 `NNN` is the row number, which a person fills in at merge. The status never
 names a version number.
 
+### Relationship to the daemon-mode task templates
+
+The `changelog_entry` and `parity_issue_draft` task templates (described in
+[automaton-decompose-lint.md](automaton-decompose-lint.md)) are daemon-mode
+by default. When the daemon runs them as part of a story, it renders the
+same artefact content from the change record and writes the file, using the
+same template files and edit-protection rules described here. The
+generated-artefacts system fires *after* a task finishes (event-driven);
+the daemon-mode task template fires as a story task (plan-driven). Both
+routes produce the same file, and an edit to the file is protected either
+way.
+
 ## 3. Editing an artefact, and why an edit is never overwritten
 
 Open the file and edit it. That is the whole procedure. Three things make the

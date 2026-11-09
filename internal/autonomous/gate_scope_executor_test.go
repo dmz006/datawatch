@@ -463,32 +463,21 @@ func TestGateScope_FullRunsConfiguredCommandUnchanged(t *testing.T) {
 	}
 }
 
-// --- 4. TaskKindFinalGate tag forces the full suite ---
+// --- 4. TaskKindFinalGate tag is run by the daemon, not the quality gate ---
 
-func TestGateScope_FinalGateTagForcesFull(t *testing.T) {
+// A final_gate task never reaches the worker quality gate: the daemon runs
+// its declared gate itself, and a gate with nothing runnable is failed with
+// the reason. The full-suite rule for the tag is covered by
+// TestGateScope_IsFinaleGateTaskHelper and the pipeline planner tests.
+func TestGateScope_FinalGateTagIsRunByDaemon(t *testing.T) {
 	runner := gsDefaultRunner()
-	scopedCmd, _, _ := pipeline.ScopedTestCommand(gsFullCmd, []string{gsAppPkg, gsUtilPkg, gsSmokePkg})
-	tester := &gsTester{byCmd: map[string]pipeline.TestResult{
-		gsFullCmd:      gsOK(gsFullCmd),
-		scopedCmd:      gsOK(scopedCmd), // must NOT be used by a final gate task
-		"go vet ./...": gsOK("go vet ./..."),
-	}}
+	tester := &gsTester{byCmd: map[string]pipeline.TestResult{gsFullCmd: gsOK(gsFullCmd), "go vet ./...": gsOK("go vet ./...")}}
 	prd := gsRun(t, runner, tester, gsFullCmd, pipeline.GateScopeTouchedPlusSmoke, gsSmokePatterns,
 		Config{Enabled: true, AutoFixRetries: 0}, nil,
 		[]Story{{Title: "S", Tasks: []Task{{Title: "final", Spec: "s", Kind: TaskKindFinalGate}}}})
 	tk := gsTask(t, prd, 0)
-	if tk.Status != TaskCompleted {
-		t.Fatalf("task = %s (err=%q), want completed", tk.Status, tk.Error)
-	}
-	if tester.ran(scopedCmd) {
-		t.Fatalf("final gate task must run the full command, not the scoped one %q (all: %v)", scopedCmd, tester.commands())
-	}
-	if !tester.ran(gsFullCmd) {
-		t.Fatalf("final gate task must have run the full command %q (all: %v)", gsFullCmd, tester.commands())
-	}
-	plan := gsPlan(t, tk)
-	if !plan.Full || !strings.Contains(plan.FullReason, "final gate task") {
-		t.Fatalf("plan = %+v, want Full with the final-gate reason", plan)
+	if tk.Status != TaskFailed || !strings.Contains(tk.Error, "nothing runnable") {
+		t.Fatalf("task = %s (err=%q), want failed with the nothing-runnable reason", tk.Status, tk.Error)
 	}
 }
 

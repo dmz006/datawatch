@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -158,10 +159,14 @@ func TestMergePipelineComm_VerbAndConfigureKeysListed(t *testing.T) {
 		t.Errorf("verbs: %v", v)
 	}
 	keys := MergePipelineConfigureKeys()
-	if len(keys) != 13 {
+	if len(keys) != 20 {
 		t.Errorf("keys: %v", keys)
 	}
-	for _, want := range []string{"autonomous.merge_pipeline.post_ship.enabled", "autonomous.merge_pipeline.post_ship.hooks"} {
+	for _, want := range []string{
+		"autonomous.merge_pipeline.release_approval.patch", "autonomous.merge_pipeline.release_approval.minor",
+		"autonomous.merge_pipeline.release_approval.major",
+		"autonomous.merge_pipeline.post_ship.enabled", "autonomous.merge_pipeline.post_ship.hooks",
+	} {
 		found := false
 		for _, k := range keys {
 			if k == want {
@@ -176,5 +181,106 @@ func TestMergePipelineComm_VerbAndConfigureKeysListed(t *testing.T) {
 		if !strings.HasPrefix(k, "autonomous.merge_pipeline.") {
 			t.Errorf("unexpected key %q", k)
 		}
+	}
+}
+
+// releaseApprovalConfigure sends one configure message through handleConfigure
+// and returns the reply and the key=value pairs the daemon would be handed.
+func releaseApprovalConfigure(t *testing.T, text string) (string, []string) {
+	t.Helper()
+	var (
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		sent  string
+		calls []string
+	)
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) {
+		mu.Lock()
+		sent = s
+		mu.Unlock()
+		wg.Done()
+	}}}
+	r.SetConfigureFunc(func(k, v string) error {
+		calls = append(calls, k+"="+v)
+		return nil
+	})
+	wg.Add(1)
+	r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+	wg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	return sent, calls
+}
+
+// TestMergePipelineComm_ReleaseApprovalValidConfigure checks each release size
+// takes each approval mode through configure and reaches the daemon unchanged.
+func TestMergePipelineComm_ReleaseApprovalValidConfigure(t *testing.T) {
+	for _, size := range []string{"patch", "minor", "major"} {
+		for _, mode := range []string{"auto", "ask", "manual"} {
+			key := "autonomous.merge_pipeline.release_approval." + size
+			reply, calls := releaseApprovalConfigure(t, key+"="+mode)
+			if len(calls) != 1 || calls[0] != key+"="+mode {
+				t.Errorf("%s=%s: daemon handed %v", key, mode, calls)
+			}
+			if !strings.Contains(reply, "Set "+key+" = "+mode) {
+				t.Errorf("%s=%s: reply %q", key, mode, reply)
+			}
+		}
+	}
+}
+
+// TestMergePipelineComm_ReleaseApprovalRefusesInvalid checks a value that is
+// not auto, ask or manual is refused in chat, naming the key, and never sent.
+func TestMergePipelineComm_ReleaseApprovalRefusesInvalid(t *testing.T) {
+	for _, text := range []string{
+		"autonomous.merge_pipeline.release_approval.patch=fast",
+		"autonomous.merge_pipeline.release_approval.minor=Auto",
+		"autonomous.merge_pipeline.release_approval.major=yes",
+		"autonomous.merge_pipeline.projects.demo.release_approval.major=never",
+	} {
+		reply, calls := releaseApprovalConfigure(t, text)
+		if len(calls) != 0 {
+			t.Errorf("%s reached the daemon: %v", text, calls)
+		}
+		key := text[:strings.Index(text, "=")]
+		if !strings.Contains(reply, "Configure failed") || !strings.Contains(reply, key) ||
+			!strings.Contains(reply, `use "auto", "ask" or "manual"`) {
+			t.Errorf("%s: reply %q", text, reply)
+		}
+	}
+}
+
+// TestMergePipelineComm_ReleaseApprovalPerProjectConfigure checks the
+// per-project form takes a valid mode for each size, including a project name
+// that contains dots.
+func TestMergePipelineComm_ReleaseApprovalPerProjectConfigure(t *testing.T) {
+	for _, c := range []struct{ key, mode string }{
+		{"autonomous.merge_pipeline.projects.demo.release_approval.patch", "manual"},
+		{"autonomous.merge_pipeline.projects.demo.release_approval.minor", "ask"},
+		{"autonomous.merge_pipeline.projects.demo.release_approval.major", "auto"},
+		{"autonomous.merge_pipeline.projects.my.app.release_approval.minor", "ask"},
+	} {
+		reply, calls := releaseApprovalConfigure(t, c.key+"="+c.mode)
+		if len(calls) != 1 || calls[0] != c.key+"="+c.mode {
+			t.Errorf("%s: daemon handed %v", c.key, calls)
+		}
+		if !strings.Contains(reply, "Set "+c.key+" = "+c.mode) {
+			t.Errorf("%s: reply %q", c.key, reply)
+		}
+	}
+}
+
+// TestMergePipelineComm_ReleaseApprovalShowReply checks the show reply carries
+// the Release approval line with the modes in effect for the project.
+func TestMergePipelineComm_ReleaseApprovalShowReply(t *testing.T) {
+	body := strings.Replace(mergePipelineCommView, `"overrides":null}`,
+		`"overrides":null,"release_approval_in_effect":{"patch":"auto","minor":"ask","major":"manual"}}`, 1)
+	rec, port := mergePipelineCommDaemon(t, http.StatusOK, body)
+	got := mergePipelineSay(t, port, "autonomous merge-pipeline demo")
+	if rec.query != "project=demo" {
+		t.Errorf("sent query %q", rec.query)
+	}
+	if !strings.Contains(got, "Release approval: patch auto, minor ask, major manual") {
+		t.Errorf("reply lacks the release approval line: %q", got)
 	}
 }

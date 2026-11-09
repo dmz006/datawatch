@@ -120,6 +120,7 @@ autonomous_prd_scan_fix
 autonomous_prd_scan_results
 autonomous_prd_scan_rules
 autonomous_prd_set_authorized_paths
+autonomous_prd_set_breaking_change
 autonomous_prd_set_continue_on_story_failure
 autonomous_prd_set_failure_escalation
 autonomous_prd_set_git
@@ -132,6 +133,7 @@ autonomous_prd_set_memory_seed
 autonomous_prd_set_notify_events
 autonomous_prd_set_priority
 autonomous_prd_set_quality_gates
+autonomous_prd_set_release_size
 autonomous_prd_set_skills
 autonomous_prd_set_story_llm
 autonomous_prd_set_story_node
@@ -149,6 +151,7 @@ autonomous_prd_set_thinking_level
 autonomous_prd_set_type
 autonomous_prd_set_verification_llm
 autonomous_prd_set_verifier_policy
+autonomous_prd_set_worker_profile
 autonomous_progress
 autonomous_progress_trend
 autonomous_protected_paths
@@ -587,3 +590,4 @@ websearch_provider_test
 websearch_provider_update
 websearch_providers_list
 websearch_stats
+worker_profile_status

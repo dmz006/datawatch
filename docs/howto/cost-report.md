@@ -241,6 +241,29 @@ Reading rules that follow from it:
   federation peers reported to this daemon. Off by default: a report about your
   daemon shows your daemon.
 
+## The start-up tables
+
+Alongside the grouped rows, the report carries two start-up tables over the same
+window: **by profile** (`startup_by_profile`) and **by role** (`startup_by_role`).
+Each row counts the worker attempts that ran with that profile or role, and gives
+the average **startup tokens** — the size of the starting context the worker was
+launched with. Read them to see which worker profile or role starts with the most
+context.
+
+- Each attempt's size is an **estimate** taken at launch from the generated
+  starting context: one token per four bytes, rounded up. The row shows how many
+  of its attempts were estimated and how many reported a size at runtime.
+- Attempts with no size (records from before start-up sizes were captured) are
+  counted as **no data**, never as zero, and do not pull the average down.
+- Attempts that ran with no profile are grouped under the unprofiled row; attempts
+  with no role under the no-role row.
+- The tables are advice-free. They do not change any profile or setting.
+
+The same averages appear as the `worker_startup` block of the stats snapshot
+(`datawatch stats`, `GET /api/stats`, the `get_stats` MCP tool), and the usage
+calculator's start-up advice line is computed from the by-profile table — see
+[usage-calculator.md](usage-calculator.md#the-start-up-advice-line).
+
 ## The settings
 
 | Key | Default | Meaning |
