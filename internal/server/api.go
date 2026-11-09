@@ -204,7 +204,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.112.4"
+var Version = "9.118.2"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -256,16 +256,16 @@ type Server struct {
 	// valid until oldTokenExpiry (a 60s grace window from rotation) so a
 	// client that already has the previous token isn't cut off mid-flight;
 	// after that it's hard-revoked, same as if it had never existed.
-	tokenMu            sync.RWMutex
-	oldToken           string
-	oldTokenExpiry     time.Time
-	availableBackends  []string // registered LLM backend names
-	cfg                *config.Config
-	cfgPath            string
+	tokenMu           sync.RWMutex
+	oldToken          string
+	oldTokenExpiry    time.Time
+	availableBackends []string // registered LLM backend names
+	cfg               *config.Config
+	cfgPath           string
 	// dataDir is this instance's explicit data-directory override (set by
 	// the daemon at startup; empty in bare test fixtures). statePath
 	// resolves it first, then cfg.DataDir, then the config default.
-	dataDir string
+	dataDir            string
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
@@ -995,6 +995,10 @@ type AutonomousAPI interface {
 	SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error)
 	SetPRDPriority(prdID string, n int) (any, error)
 	SetPRDKind(prdID, kind string) (any, error)
+	SetPRDReleaseSize(prdID, size string) (any, error)
+	SetPRDBreakingChange(prdID string, breaking bool) (any, error)
+	// Per-Automaton worker profile name (built-in or user-defined; empty clears it).
+	SetPRDWorkerProfile(prdID, name string) (any, error)
 
 	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
 	SetPRDLanePreference(prdID, pref string) (any, error)
@@ -5941,6 +5945,13 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // directly via their own vision pipeline.
 // If the file cannot be read or described, the tag is left as-is.
 //
+// Trailing-space rule: every bare '@<path>' form (no vision backend, and the
+// timeout, error and empty-description fallbacks) gets exactly one space appended
+// after the path when the matched [image:<path>] tag ends at the very end of the
+// input text, so the session's @ file-reference is terminated. A tag followed by
+// any text is unchanged (the following text supplies the separation). Successful
+// descriptions, unreadable files and path-traversal rejections are unaffected.
+//
 // Each vision describe request is bounded: it runs under a context derived from
 // s.cfg.Vision.EffectiveDescribeTimeout() (5s when s.cfg is nil) and is executed in
 // a goroutine so a backend that ignores its context cannot block the caller past the
@@ -5954,17 +5965,13 @@ func (s *Server) expandImageTags(text string) string {
 	if s.visioner == nil {
 		// No server-side vision backend — convert to @ notation so Claude Code
 		// sessions pick up the image via their built-in file-reading capability.
-		re := regexp.MustCompile(`\[image:([^\]]+)\]`)
-		return re.ReplaceAllString(text, "@$1")
+		return replaceImageTags(text, func(match, rawPath string, atEnd bool) string {
+			return bareImageRef(rawPath, atEnd)
+		})
 	}
 	root := s.fileServiceRoot()
-	re := regexp.MustCompile(`\[image:([^\]]+)\]`)
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		sub := re.FindStringSubmatch(match)
-		if len(sub) < 2 {
-			return match
-		}
-		imgPath := strings.TrimSpace(sub[1])
+	return replaceImageTags(text, func(match, rawPath string, atEnd bool) string {
+		imgPath := strings.TrimSpace(rawPath)
 		if err := checkPathTraversal(root, imgPath); err != nil {
 			return match
 		}
@@ -5993,10 +6000,40 @@ func (s *Server) expandImageTags(text string) string {
 		if res.err != nil || res.desc == "" {
 			// Bounded describe failed, timed out, or produced nothing — fall back
 			// to the @ notation so the image is still available to the session.
-			return "@" + imgPath
+			return bareImageRef(imgPath, atEnd)
 		}
 		return "[image: " + res.desc + " | path: " + imgPath + "]"
 	})
+}
+
+var imageTagRe = regexp.MustCompile(`\[image:([^\]]+)\]`)
+
+// replaceImageTags rewrites each [image:<path>] tag in text using fn, which gets
+// the whole match, the raw captured path, and whether the match ends at the very
+// end of text.
+func replaceImageTags(text string, fn func(match, rawPath string, atEnd bool) string) string {
+	locs := imageTagRe.FindAllStringSubmatchIndex(text, -1)
+	if len(locs) == 0 {
+		return text
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range locs {
+		b.WriteString(text[last:m[0]])
+		b.WriteString(fn(text[m[0]:m[1]], text[m[2]:m[3]], m[1] == len(text)))
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+// bareImageRef returns the bare '@<path>' form, with exactly one trailing space
+// when the tag was at the very end of the input.
+func bareImageRef(path string, atEnd bool) string {
+	if atEnd {
+		return "@" + path + " "
+	}
+	return "@" + path
 }
 
 // visionDescribeTimeout returns the per-request describe deadline: the configured
@@ -6460,6 +6497,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// never resume, -1 = no age limit: both survive, so no
 			// omitempty on the struct tag.
 			"resume_max_age_seconds": s.cfg.Autonomous.ResumeMaxAgeSeconds,
+			// Attempt-cost settings: which worker (backend+model) runs each
+			// task kind's first attempt, how many failures push a task off
+			// that pair, and the cap on prior context a retry may resume
+			// with (0 = every retry starts a fresh session).
+			"first_attempt":                         firstAttemptDisplay(s.cfg.Autonomous.FirstAttempt),
+			"first_attempt_escalate_after_failures": s.cfg.Autonomous.FirstAttemptEscalateAfterFailures,
+			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
 			// Snapshot-never-stage list (path patterns the autonomous
 			// snapshot must never `git add`): nil (unset) reads the built-in
 			// defaults (config.DefaultSnapshotNeverStage), so render the
@@ -6476,6 +6520,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// stronger-verifier settings. Rendered whole so an unset policy
 			// shows its zero values rather than a missing object.
 			"verifier_policy": verifierPolicyForDisplay(s.cfg.Autonomous.VerifierPolicy),
+			// Worker session profiles (autonomous.worker_profiles / .worker_profile_defaults
+			// / .worker_profile) — the user profiles keyed by name, the role/kind
+			// defaults and the global profile name; unset tables read as empty
+			// objects and the unset global name reads as "". Built-in profile
+			// names (minimal, digest, full, datawatch-tools) are reserved and
+			// never appear in worker_profiles.
+			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
+			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
+			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
 			// Host load check: effective mode, multiple and minutes.
 			"host_load_alert": hostLoadAlertForDisplay(s.cfg.Autonomous.HostLoadAlert),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
@@ -6681,6 +6734,17 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
 			"parallel": parallelSurface(s.cfg.Autonomous.Parallel),
+			// Task template modes: the stored {template id: mode} map (nil
+			// renders as {}, not null); an unset id reads its shipped default
+			// (llm) via EffectiveTaskTemplateMode.
+			"task_templates": map[string]interface{}{
+				"mode": taskTemplateModeSurface(s.cfg.Autonomous.TaskTemplates.Mode),
+			},
+			// Script gate: raw stored values; an unset timeout reads the 900-
+			// second default and an unset command stays empty, both via the
+			// Effective* accessors.
+			"script_gate_timeout_seconds": s.cfg.Autonomous.ScriptGateTimeoutSeconds,
+			"project_gate_command":        s.cfg.Autonomous.ProjectGateCommand,
 			// Decision record keys: effective values (the shipped defaults when a
 			// key is absent).
 			"decisions": decisionRecordSurface(s.cfg.Autonomous.Decisions),
@@ -7554,6 +7618,49 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The task template modes (autonomous.task_templates.mode as a whole
+	// {template id: mode} object, and the dotted form
+	// autonomous.task_templates.mode.<id>) are llm, daemon or off. The merged
+	// map is validated by the same rule the config file load uses
+	// (TaskTemplatesConfig.Validate), so an unknown mode, daemon on a
+	// non-daemon-capable template, or daemon on final_gate rejects the whole
+	// PUT before a value is applied.
+	if taskTemplateModePatchTouched(patch) {
+		candidate, cerr := taskTemplateModePatchCandidate(s.cfg.Autonomous.TaskTemplates.Mode, patch)
+		if cerr != nil {
+			http.Error(w, cerr.Error(), http.StatusBadRequest)
+			return
+		}
+		tc := config.TaskTemplatesConfig{Mode: candidate}
+		if verr := tc.Validate(); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The script gate timeout (autonomous.script_gate_timeout_seconds) is a
+	// whole number of seconds >= 0 (0 = no cap). A negative or non-whole
+	// value rejects the whole PUT by the same rule the config file load
+	// uses (validateScriptGateTimeout), so nothing is stored.
+	if v, ok := patch["autonomous.script_gate_timeout_seconds"]; ok {
+		if _, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr != nil {
+			http.Error(w, "autonomous.script_gate_timeout_seconds: must be a whole number of seconds >= 0 (0 = no cap)", http.StatusBadRequest)
+			return
+		}
+	}
+	// The project gate command (autonomous.project_gate_command) is a single
+	// line of shell text (empty = unset). Same whole-PUT rejection, by the
+	// same rule the config file load uses (ValidateProjectGateCommand).
+	if v, ok := patch["autonomous.project_gate_command"]; ok {
+		cmd, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.project_gate_command: must be a string (empty = unset)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateProjectGateCommand("autonomous", cmd); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// The held state ids cover tasks parked in one of the five known states.
 	// An absent key means all five, an explicit empty list means none; an
 	// unknown id names the valid ones and rejects the whole PUT before
@@ -7749,6 +7856,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Worker session profile settings (autonomous.worker_profiles,
+	// autonomous.worker_profile_defaults, autonomous.worker_profile):
+	// simulate the patch onto a copy of the current config and run the
+	// load-time validator over the result, so a built-in profile name, an
+	// unknown profile reference or an unknown role/kind key rejects the whole
+	// PUT (400 with the validation message) before anything is applied — the
+	// same rule the config file load uses.
+	if err := validateWorkerProfilePatch(s.cfg, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// Does this PUT touch the tags.placement block at all? The sweep trigger
 	// after the save keys off this, so a request that changes no placement
 	// key never sweeps.
@@ -7757,6 +7875,50 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(k, "autonomous.tags.placement") {
 			placementChanged = true
 			break
+		}
+	}
+	// Attempt-cost settings: when the patch sends any of the three keys,
+	// validate the merged candidate (sent values layered over the stored
+	// ones) with the shared config.ValidateAttemptCostSettings BEFORE
+	// anything is applied. An unknown task kind, a number outside 0..max,
+	// or a backend that needs a model without one names the key in a 400
+	// and leaves every stored value untouched — the whole PUT is refused
+	// and nothing is written. Keys the patch does not send keep their
+	// stored values (the PUT's normal patch semantics).
+	if err := expandAttemptCostDottedKeys(patch, s.cfg.Autonomous.FirstAttempt); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if attemptCostPatchTouched(patch) {
+		next := s.cfg.Autonomous
+		next.FirstAttempt = cloneAttemptChoices(next.FirstAttempt)
+		if raw, ok := patch["autonomous.first_attempt"]; ok {
+			fa, shapeOK := parseFirstAttempt(raw)
+			if !shapeOK {
+				http.Error(w, "autonomous.first_attempt: expected an object mapping a task kind (implementation, docs, note, final_gate) to {backend, model}", http.StatusBadRequest)
+				return
+			}
+			next.FirstAttempt = fa
+		}
+		if raw, ok := patch["autonomous.first_attempt_escalate_after_failures"]; ok {
+			n, numOK := toInt(raw)
+			if !numOK {
+				http.Error(w, "autonomous.first_attempt_escalate_after_failures: expected a whole number", http.StatusBadRequest)
+				return
+			}
+			next.FirstAttemptEscalateAfterFailures = n
+		}
+		if raw, ok := patch["autonomous.retry_resume_max_context_tokens"]; ok {
+			n, numOK := toInt(raw)
+			if !numOK {
+				http.Error(w, "autonomous.retry_resume_max_context_tokens: expected a whole number", http.StatusBadRequest)
+				return
+			}
+			next.RetryResumeMaxContextTokens = n
+		}
+		if verr := config.ValidateAttemptCostSettings(next); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
 		}
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
@@ -8130,6 +8292,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		if service, ok := strings.CutPrefix(k, "plugins.services.per_service."); ok && service != "" {
 			if ov, verr := normalizePluginServiceOverride(service, v); verr == nil {
 				applyPluginServiceOverride(cfg, service, ov)
+			}
+			continue
+		}
+		// autonomous.task_templates.mode.<id> — the per-template mode in
+		// dotted key form (one key per template id), handled before the
+		// switch like its dynamic-map siblings above. Validated in
+		// handlePutConfig by the shared rule set; a direct applyConfigPatch
+		// caller's bad value is left unchanged.
+		if id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode."); ok && id != "" {
+			if mode, isStr := v.(string); isStr {
+				tc := config.TaskTemplatesConfig{Mode: map[string]string{id: mode}}
+				if tc.Validate() == nil {
+					if cfg.Autonomous.TaskTemplates.Mode == nil {
+						cfg.Autonomous.TaskTemplates.Mode = map[string]string{}
+					}
+					cfg.Autonomous.TaskTemplates.Mode[id] = mode
+				}
 			}
 			continue
 		}
@@ -9218,6 +9397,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= -1 {
 				cfg.Autonomous.ResumeMaxAgeSeconds = n
 			}
+		// Attempt-cost settings: handlePutConfig ran these through the
+		// shared config.ValidateAttemptCostSettings before this switch, so
+		// the switch only stores what was allowed; an unreadable value is
+		// left as-is (such a PUT would have been refused anyway).
+		case "autonomous.first_attempt":
+			if fa, ok := parseFirstAttempt(v); ok {
+				cfg.Autonomous.FirstAttempt = fa
+			}
+		case "autonomous.first_attempt_escalate_after_failures":
+			// 0 is meaningful: escalate on the first failure.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.FirstAttemptEscalateAfterFailures = n
+			}
+		case "autonomous.retry_resume_max_context_tokens":
+			// 0 is meaningful: always start a fresh session.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.RetryResumeMaxContextTokens = n
+			}
 		case "autonomous.max_engines_per_node":
 			// Clamped to 1 like config load does: values below 1 become 1
 			// rather than being skipped, so the stored value is always valid.
@@ -9255,6 +9452,25 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.TaskOverrideStatuses = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
+			}
+		// Worker session profile settings — the PUT /api/config path
+		// pre-validates the combined state with validateWorkerProfilePatch,
+		// so a direct applyConfigPatch caller's badly-shaped value is left
+		// unchanged rather than stored.
+		case "autonomous.worker_profiles":
+			if m, ok := parseWorkerProfilesValue(v); ok {
+				if len(m) == 0 {
+					m = nil
+				}
+				cfg.Autonomous.WorkerProfiles = m
+			}
+		case "autonomous.worker_profile_defaults":
+			if d, ok := parseWorkerProfileDefaultsValue(v); ok {
+				cfg.Autonomous.WorkerProfileDefaults = d
+			}
+		case "autonomous.worker_profile":
+			if s, ok := v.(string); ok {
+				cfg.Autonomous.WorkerProfile = s
 			}
 		case "autonomous.override_queued_tasks":
 			// Boolean: true enables overriding the LLM of a not-yet-started
@@ -9723,6 +9939,39 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig to shadow or on.
 			if mode, ok := v.(string); ok {
 				cfg.Autonomous.Questions.DecisionGateMode = mode
+			}
+		// autonomous.task_templates.mode — the whole {template id: mode}
+		// object (llm, daemon, off). Validated in handlePutConfig against
+		// the merged map by the shared load-time rule; a direct
+		// applyConfigPatch caller's bad value is left unchanged.
+		case "autonomous.task_templates.mode":
+			if m, ok := v.(map[string]interface{}); ok {
+				next := make(map[string]string, len(m))
+				for id, mv := range m {
+					if s, isStr := mv.(string); isStr {
+						next[id] = s
+					}
+				}
+				tc := config.TaskTemplatesConfig{Mode: next}
+				if tc.Validate() == nil {
+					cfg.Autonomous.TaskTemplates.Mode = next
+				}
+			}
+		// The script gate time cap in whole seconds (0 = no cap). Validated
+		// in handlePutConfig by the shared load-time rule; a value that
+		// fails here is left unchanged.
+		case "autonomous.script_gate_timeout_seconds":
+			if n, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr == nil {
+				cfg.Autonomous.ScriptGateTimeoutSeconds = n
+			}
+		// The project gate command: a single line of shell text (empty =
+		// unset). Validated in handlePutConfig by the shared load-time rule;
+		// a value that fails here is left unchanged.
+		case "autonomous.project_gate_command":
+			if s, ok := v.(string); ok {
+				if config.ValidateProjectGateCommand("autonomous", s) == nil {
+					cfg.Autonomous.ProjectGateCommand = s
+				}
 			}
 		case "autonomous.questions.held_mode":
 			// Validated in handlePutConfig to off, shadow or on. The gate
@@ -10720,7 +10969,7 @@ func validatePluginServicesPatch(current config.PluginServicesConfig, patch map[
 					next.PerService[name] = ov
 				}
 			}
-		case strings.HasPrefix(k, "plugins.services.per_service."): 
+		case strings.HasPrefix(k, "plugins.services.per_service."):
 			name, _ := strings.CutPrefix(k, "plugins.services.per_service.")
 			if name == "" {
 				continue
@@ -11468,6 +11717,65 @@ func planTierTableForDisplay(table map[string]int) map[string]int {
 		return map[string]int{}
 	}
 	return table
+}
+
+// attemptCostPatchTouched reports whether the PUT patch carries any of the
+// three autonomous attempt-cost keys. Only then does handlePutConfig run the
+// shared config.ValidateAttemptCostSettings check — so a patch that changes
+// unrelated keys is never refused because of values it did not send.
+func attemptCostPatchTouched(patch map[string]interface{}) bool {
+	for _, k := range []string{
+		"autonomous.first_attempt",
+		"autonomous.first_attempt_escalate_after_failures",
+		"autonomous.retry_resume_max_context_tokens",
+	} {
+		if _, ok := patch[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// parseFirstAttempt turns a decoded JSON value into the first_attempt table.
+// ok is false when the value is not an object; each entry is decoded as an
+// optional backend and an optional model string (a non-object entry becomes
+// an empty choice, which the shared validator then vets for kind and model
+// rules, so parsing here only checks the top-level shape).
+func parseFirstAttempt(v interface{}) (map[string]config.FirstAttemptChoice, bool) {
+	obj, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]config.FirstAttemptChoice, len(obj))
+	for kind, entry := range obj {
+		choice := config.FirstAttemptChoice{}
+		if e, ok := entry.(map[string]interface{}); ok {
+			choice.Backend, _ = e["backend"].(string)
+			choice.Model, _ = e["model"].(string)
+		}
+		out[kind] = choice
+	}
+	return out, true
+}
+
+// cloneAttemptChoices copies one kind→choice table so a candidate config can
+// be validated in handlePutConfig without the live s.cfg sharing the map.
+func cloneAttemptChoices(m map[string]config.FirstAttemptChoice) map[string]config.FirstAttemptChoice {
+	out := make(map[string]config.FirstAttemptChoice, len(m))
+	for kind, choice := range m {
+		out[kind] = choice
+	}
+	return out
+}
+
+// firstAttemptDisplay renders autonomous.first_attempt for GET /api/config:
+// a nil table (nothing configured for any kind) becomes an empty object
+// rather than null, so the JSON is always an object.
+func firstAttemptDisplay(m map[string]config.FirstAttemptChoice) map[string]config.FirstAttemptChoice {
+	if m == nil {
+		return map[string]config.FirstAttemptChoice{}
+	}
+	return m
 }
 
 // priorityByKindForDisplay renders the kind → capacity-priority table in
@@ -14625,6 +14933,72 @@ func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
 		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
 		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
 	}
+}
+
+// taskTemplateModeSurface renders the stored task template mode map on the
+// GET /api/config surface: nil becomes {} (an empty object, not null), so
+// an unset mode map visibly has no per-template overrides and an absent id
+// reads its shipped default (llm) via EffectiveTaskTemplateMode.
+func taskTemplateModeSurface(m map[string]string) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for id, mode := range m {
+		out[id] = mode
+	}
+	return out
+}
+
+// taskTemplateModePatchTouched reports whether a PUT /api/config patch sets
+// any task template mode key: the whole map under
+// autonomous.task_templates.mode, or a dotted form under
+// autonomous.task_templates.mode.<id>.
+func taskTemplateModePatchTouched(patch map[string]interface{}) bool {
+	if _, ok := patch["autonomous.task_templates.mode"]; ok {
+		return true
+	}
+	for k := range patch {
+		if id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode."); ok && id != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// taskTemplateModePatchCandidate merges the stored task template mode map
+// with a PUT's entries: the whole object under
+// autonomous.task_templates.mode (each value a string) and each dotted key
+// under autonomous.task_templates.mode.<id>. A non-object mode map, a
+// non-string entry, or an empty template id is an error; the result is the
+// map to validate (TaskTemplatesConfig.Validate) and store.
+func taskTemplateModePatchCandidate(stored map[string]string, patch map[string]interface{}) (map[string]string, error) {
+	candidate := make(map[string]string, len(stored))
+	for id, mode := range stored {
+		candidate[id] = mode
+	}
+	if v, ok := patch["autonomous.task_templates.mode"]; ok {
+		obj, isObj := v.(map[string]interface{})
+		if !isObj {
+			return nil, errors.New(`autonomous.task_templates.mode: must be an object of template id to mode ("llm", "daemon" or "off")`)
+		}
+		for id, mv := range obj {
+			mode, isStr := mv.(string)
+			if !isStr || id == "" {
+				return nil, fmt.Errorf(`autonomous.task_templates.mode[%q]: template id and mode must be non-empty strings ("llm", "daemon" or "off")`, id)
+			}
+			candidate[id] = mode
+		}
+	}
+	for k, v := range patch {
+		id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode.")
+		if !ok || id == "" {
+			continue
+		}
+		mode, isStr := v.(string)
+		if !isStr {
+			return nil, fmt.Errorf(`autonomous.task_templates.mode[%q]: must be a string ("llm", "daemon" or "off")`, id)
+		}
+		candidate[id] = mode
+	}
+	return candidate, nil
 }
 
 // validateParallelPatch checks every autonomous.parallel.* value present

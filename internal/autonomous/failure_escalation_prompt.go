@@ -155,6 +155,9 @@ func formatEscalationAttemptFull(a TaskAttempt) string {
 	if a.FailureSummary != "" {
 		fmt.Fprintf(&b, "  Failure: %s\n", truncateEscalationText(a.FailureSummary, escalationPromptMaxSummaryChars))
 	}
+	if a.NoRetryReason != "" {
+		fmt.Fprintf(&b, "  No retry — retry skipped because: %s\n", truncateEscalationText(a.NoRetryReason, escalationPromptMaxSummaryChars))
+	}
 	if a.VerifierSummary != "" {
 		fmt.Fprintf(&b, "  Verifier summary: %s\n", truncateEscalationText(a.VerifierSummary, escalationPromptMaxSummaryChars))
 	}

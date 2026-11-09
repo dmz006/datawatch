@@ -89,7 +89,8 @@ func TestDescribeTimeout_BackendError_FallsBackToAtPath(t *testing.T) {
 	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{err: errors.New("backend exploded")})
 
-	if got, want := s.expandImageTags("[image:" + p + "]"), "@"+p; got != want {
+	// The lone tag ends at the end of the input, so the bare @-ref gets a trailing space.
+	if got, want := s.expandImageTags("[image:"+p+"]"), "@"+p+" "; got != want {
 		t.Errorf("backend error:\ngot  %q\nwant %q", got, want)
 	}
 }

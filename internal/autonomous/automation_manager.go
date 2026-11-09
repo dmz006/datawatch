@@ -34,6 +34,10 @@ type AutomationInput struct {
 	// stored setting, and a non-nil override's unset fields inherit the
 	// daemon's.
 	AutoTags *AutoTagsOverride `json:"auto_tags,omitempty"`
+	// Milestone marks the Automation as a milestone arc. Create takes it as
+	// given (omitted means false); an update changes it only when the field is
+	// present, so nil keeps the stored value.
+	Milestone *bool `json:"milestone,omitempty"`
 }
 
 // CreateAutomation creates a new draft Automation from operator input,
@@ -61,6 +65,9 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		VerificationEffort:  in.VerificationEffort,
 		DecisionAssistant:   in.DecisionAssistant,
 		AutoTags:            in.AutoTags,
+	}
+	if in.Milestone != nil {
+		a.Milestone = *in.Milestone
 	}
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
@@ -192,6 +199,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		}
 		if in.AutoTags != nil {
 			a.AutoTags = in.AutoTags
+		}
+		if in.Milestone != nil {
+			a.Milestone = *in.Milestone
 		}
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID

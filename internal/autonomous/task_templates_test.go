@@ -88,6 +88,7 @@ func TestTaskTemplatesBuiltInPackPassesDefaultLintPack(t *testing.T) {
 			Kind:               def.Kind,
 			ReadOnly:           def.ReadOnly,
 			VerificationScript: def.VerificationScript,
+			ReportPath:         reportPathForTemplate(rendered),
 			FilesPlanned:       splitTemplateFiles(def.Files),
 		})
 	}
@@ -458,8 +459,8 @@ func TestFinalGateTemplateReportPathOnFinalGate(t *testing.T) {
 	if want := ".datawatch/reports/final-gate-feature-x-final-gate.txt"; gate.ReportPath != want {
 		t.Fatalf("report path = %q, want %q", gate.ReportPath, want)
 	}
-	if !taskHasUsableReportPath(*gate) || strings.TrimSpace(gate.VerificationScript) == "" {
-		t.Fatal("final gate must carry a usable report path and a script")
+	if !taskHasUsableReportPath(*gate) || strings.TrimSpace(gate.VerificationScript) != "" {
+		t.Fatal("final gate must carry a usable report path and no verification script")
 	}
 	if !strings.Contains(gate.Spec, "only file") {
 		t.Fatalf("spec must state the report is the only file written: %q", gate.Spec)
@@ -468,6 +469,34 @@ func TestFinalGateTemplateReportPathOnFinalGate(t *testing.T) {
 		if f.Task == gate.ID && strings.Contains(f.RuleID, "unverifiable") {
 			t.Fatalf("final gate trips lint rule %s", f.RuleID)
 		}
+	}
+}
+
+// TestFinalGateTemplateHasReportAndNoCommandString asserts the built-in
+// final-gate task, as taskForTemplate builds it, is read-only, carries a
+// usable report path and has no VerificationScript. The gate used to carry
+// a command string there, which the verifier prestart rejects as not a file.
+func TestFinalGateTemplateHasReportAndNoCommandString(t *testing.T) {
+	var def *config.TaskTemplateDef
+	for _, d := range BuiltInTaskTemplates() {
+		if d.ID == TemplateFinalGate {
+			d := d
+			def = &d
+		}
+	}
+	if def == nil {
+		t.Fatal("built-in final gate template missing")
+	}
+	story := testTaskTemplateStory(t)
+	gate := taskForTemplate(story, *def, nil, nil)
+	if !gate.ReadOnly {
+		t.Fatal("final gate task must be read-only")
+	}
+	if !taskHasUsableReportPath(gate) {
+		t.Fatalf("final gate task report path %q is not usable", gate.ReportPath)
+	}
+	if gate.VerificationScript != "" {
+		t.Fatalf("final gate task must have no verification script, got %q", gate.VerificationScript)
 	}
 }
 
@@ -500,5 +529,67 @@ func TestFinalGateTemplateReportPathBadUserTemplateRefused(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("valid user template not instantiated")
+	}
+}
+
+// TestTaskTemplateCopiesVerificationScriptReason checks that a template's
+// explicit verification-script exemption reason is copied onto the task it
+// instantiates, and that a template without one leaves the task field empty.
+func TestTaskTemplateCopiesVerificationScriptReason(t *testing.T) {
+	story := testTaskTemplateStory(t)
+	def := config.TaskTemplateDef{
+		ID:                       "exempt-reason",
+		Title:                    "Exempt task",
+		Spec:                     "Write the release note.",
+		VerificationScriptReason: "docs-only change; no script can verify prose",
+	}
+	task := taskForTemplate(story, def, nil, map[string]string{})
+	if task.VerificationScriptReason != def.VerificationScriptReason {
+		t.Fatalf("VerificationScriptReason = %q, want %q",
+			task.VerificationScriptReason, def.VerificationScriptReason)
+	}
+
+	bare := config.TaskTemplateDef{ID: "no-reason", Spec: "Do the thing."}
+	if got := taskForTemplate(story, bare, nil, map[string]string{}).VerificationScriptReason; got != "" {
+		t.Fatalf("template without reason produced VerificationScriptReason = %q, want empty", got)
+	}
+}
+
+// TestNoteTemplateExemptionReason asserts every built-in template of Kind
+// note carries a non-empty B124 exemption reason, and that a task built
+// from each one passes the structural plan check's verification rule
+// (no missing_verification finding), since a note changes no files and
+// has no script to verify.
+func TestNoteTemplateExemptionReason(t *testing.T) {
+	slots := config.TaskTemplateSlots{
+		Feature:   "task templates",
+		Files:     "internal/autonomous/task_templates.go",
+		FilesList: "- internal/autonomous/task_templates.go",
+	}
+	story := Story{ID: "s1", PRDID: "p1", Status: StoryPending}
+	noteCount := 0
+	for _, def := range BuiltInTaskTemplates() {
+		if def.Kind != "note" {
+			continue
+		}
+		noteCount++
+		if strings.TrimSpace(def.VerificationScriptReason) == "" {
+			t.Errorf("note template %q has empty VerificationScriptReason", def.ID)
+		}
+		rendered := RenderTaskTemplateDef(def, slots)
+		task := taskForTemplate(story, rendered, nil, map[string]string{})
+		if task.VerificationScriptReason == "" {
+			t.Errorf("note template %q: task lost VerificationScriptReason", def.ID)
+		}
+		story.Tasks = append(story.Tasks, task)
+	}
+	if noteCount == 0 {
+		t.Fatal("expected at least one built-in note template")
+	}
+	report := CheckPlanStructure(&PRD{ID: "p1"}, []Story{story})
+	for _, f := range report.Findings {
+		if f.Kind == FindingMissingVerification {
+			t.Errorf("unexpected missing_verification finding on note task %s: %s", f.TaskID, f.Detail)
+		}
 	}
 }

@@ -2,11 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 const mergePipelineCLIView = `{"project":"demo","definition":{"steps":[{"name":"run tests","kind":"test","command":"make test"},{"name":"ship","kind":"ship","action":"push_release","on_failure":"stop"}]},"source":"record","reason":"the repository has no pipeline file","record_updated_at":"2026-11-01T10:00:00Z","settings":{"file_name":".datawatch/merge-pipeline.yaml","source_order":["file","record","default"],"fallback_on_bad_file":"record","version_files":["cmd/main.go"]},"conflict_policy":"stop_and_ask","conflict_policy_in_effect":"stop_and_ask","conflict_model":"","conflict_model_in_effect":"","overrides":{"file_name":"ci/p.yaml"}}`
@@ -324,5 +330,110 @@ func TestMergePipelineCLIPostShipSetValidation(t *testing.T) {
 	d := newLaneFillCLIDaemon(t, http.StatusOK, `{"status":"ok"}`)
 	if _, err := runLaneFillCmd(t, cmd, []string{"post-ship", "set", "hooks", "[]"}); err != nil || !strings.Contains(d.body, `"autonomous.merge_pipeline.post_ship.hooks":"[]"`) {
 		t.Errorf("an empty hooks array must pass: err=%v body=%q", err, d.body)
+	}
+}
+
+// releaseApprovalConfigDaemon is a fake daemon for `config set` on the merge
+// pipeline release approval keys. It records each PUT body and counts them.
+func releaseApprovalConfigDaemon(t *testing.T) (*config.Config, *[]map[string]any) {
+	t.Helper()
+	var sent []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		sent = append(sent, m)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{}
+	cfg.Server.Port = port
+	return cfg, &sent
+}
+
+func TestMergePipelineCLI_ReleaseApprovalValidSet(t *testing.T) {
+	cfg, sent := releaseApprovalConfigDaemon(t)
+	keys := []string{
+		"autonomous.merge_pipeline.release_approval.patch",
+		"autonomous.merge_pipeline.release_approval.minor",
+		"autonomous.merge_pipeline.release_approval.major",
+		"autonomous.merge_pipeline.projects.demo.release_approval.patch",
+		"autonomous.merge_pipeline.projects.demo.release_approval.minor",
+		"autonomous.merge_pipeline.projects.demo.release_approval.major",
+	}
+	for _, key := range keys {
+		for _, value := range []string{config.ReleaseApprovalAuto, config.ReleaseApprovalAsk, config.ReleaseApprovalManual} {
+			*sent = nil
+			if err := runConfigSet(cfg, key, value); err != nil {
+				t.Fatalf("%s=%s: %v", key, value, err)
+			}
+			if len(*sent) != 1 || (*sent)[0][key] != value {
+				t.Errorf("%s=%s: daemon received %v", key, value, *sent)
+			}
+		}
+	}
+}
+
+func TestMergePipelineCLI_ReleaseApprovalRefusesInvalidValue(t *testing.T) {
+	cfg, sent := releaseApprovalConfigDaemon(t)
+	key := "autonomous.merge_pipeline.projects.demo.release_approval.major"
+	for _, value := range []string{"always", "", "Auto", "manual now", "true"} {
+		*sent = nil
+		err := runConfigSet(cfg, key, value)
+		if err == nil {
+			t.Fatalf("value %q must be refused", value)
+		}
+		for _, want := range []string{key, `"auto"`, `"ask"`, `"manual"`} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("value %q: error %q lacks %q", value, err, want)
+			}
+		}
+		if len(*sent) != 0 {
+			t.Errorf("value %q reached the daemon: %v", value, *sent)
+		}
+	}
+}
+
+func TestMergePipelineCLI_ReleaseApprovalKeyShapes(t *testing.T) {
+	for key, want := range map[string]bool{
+		"autonomous.merge_pipeline.release_approval.patch":               true,
+		"autonomous.merge_pipeline.release_approval.major":               true,
+		"autonomous.merge_pipeline.projects.demo.release_approval.minor": true,
+		"autonomous.merge_pipeline.release_approval.hotfix":              false,
+		"autonomous.merge_pipeline.release_approval.":                    false,
+		"autonomous.merge_pipeline.projects..release_approval.patch":     false,
+		"autonomous.merge_pipeline.projects.demo.patch":                  false,
+		"autonomous.merge_pipeline.conflict_policy":                      false,
+	} {
+		if got := isMergePipelineReleaseApprovalKey(key); got != want {
+			t.Errorf("isMergePipelineReleaseApprovalKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+}
+
+func TestMergePipelineCLI_ReleaseApprovalHelpEntry(t *testing.T) {
+	help := newConfigSetCmd().Long
+	for _, want := range []string{
+		"autonomous.merge_pipeline.release_approval.<size>",
+		"autonomous.merge_pipeline.projects.<project>.release_approval.<size>",
+		"patch, minor or major",
+		"auto    - ship the release without waiting for the operator (default for patch and minor)",
+		"ask     - ask the operator before the release ships (default for major)",
+		"manual  - leave the release for the operator to ship",
+	} {
+		if !strings.Contains(help, want) {
+			t.Errorf("config set help lacks %q:\n%s", want, help)
+		}
 	}
 }

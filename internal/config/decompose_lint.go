@@ -11,6 +11,7 @@ package config
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -143,8 +144,15 @@ type DecomposeLintMatch struct {
 	// emits nothing to inspect when it fails. Use it with
 	// verification_script_empty to flag such tasks. Absent (false) = do
 	// not check.
-	ReportPathEmpty bool   `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
-	FilesRegex      string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	ReportPathEmpty bool `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
+	// VerificationScriptUnexecutable asserts the task's verification
+	// script is not a runnable file: a command string, or (when the
+	// project directory is known) a path that is missing, not
+	// executable, shebang-less or outside the project. A script the
+	// task lists in its own files is not flagged. Absent (false) = do
+	// not check.
+	VerificationScriptUnexecutable bool   `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
+	FilesRegex                     string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.
@@ -167,6 +175,52 @@ type TaskTemplatesConfig struct {
 	// or alias. Each override may carry an enabled flag; an absent
 	// flag (nil) means "follow the global enabled".
 	Projects map[string]TaskTemplateProjectOverride `yaml:"projects,omitempty" json:"projects,omitempty"`
+	// Mode maps a template id to how its task is handled: llm, daemon
+	// or off. An absent id falls back to DefaultTaskTemplateModes, then
+	// to llm (see EffectiveTaskTemplateMode).
+	Mode map[string]string `yaml:"mode,omitempty" json:"mode,omitempty"`
+}
+
+// TaskTemplateMode says who carries out a template's task.
+type TaskTemplateMode string
+
+const (
+	// TaskTemplateModeLLM: a model session does the task.
+	TaskTemplateModeLLM TaskTemplateMode = "llm"
+	// TaskTemplateModeDaemon: the daemon does the task itself, no model.
+	TaskTemplateModeDaemon TaskTemplateMode = "daemon"
+	// TaskTemplateModeOff: the task is not generated.
+	TaskTemplateModeOff TaskTemplateMode = "off"
+)
+
+// taskTemplateModeValues lists the allowed mode values for messages.
+const taskTemplateModeValues = "llm, daemon, off"
+
+// DaemonCapableTaskTemplateIDs returns the template ids that have a
+// daemon action.
+func DaemonCapableTaskTemplateIDs() []string {
+	return []string{"changelog_entry", "parity_issue_draft", "bounded_load_step", "version_bump_left_to_merge"}
+}
+
+// DefaultTaskTemplateModes returns the shipped mode per built-in id.
+func DefaultTaskTemplateModes() map[string]TaskTemplateMode {
+	m := map[string]TaskTemplateMode{
+		"docs_set":   TaskTemplateModeLLM,
+		"final_gate": TaskTemplateModeLLM,
+	}
+	for _, id := range DaemonCapableTaskTemplateIDs() {
+		m[id] = TaskTemplateModeDaemon
+	}
+	return m
+}
+
+func isDaemonCapableTaskTemplate(id string) bool {
+	for _, d := range DaemonCapableTaskTemplateIDs() {
+		if d == id {
+			return true
+		}
+	}
+	return false
 }
 
 // TaskTemplateProjectOverride is one entry of TaskTemplatesConfig
@@ -197,6 +251,12 @@ type TaskTemplateDef struct {
 	// (the build and test commands its spec asserts) so it is not an
 	// unverifiable read-only task while it changes nothing.
 	VerificationScript string `yaml:"verification_script,omitempty" json:"verification_script,omitempty"`
+	// VerificationScriptReason is the explicit reason a task from the
+	// template has no verification script (a note that changes no files
+	// carries one). It is copied onto the task so the verifier and the
+	// structural plan check can tell a deliberate exemption from a
+	// forgotten script.
+	VerificationScriptReason string `yaml:"verification_script_reason,omitempty" json:"verification_script_reason,omitempty"`
 	// ReportPath, for a read-only template, is the one repo-relative
 	// file under .datawatch/reports/ the task may write its verdict
 	// and evidence to. It takes the same slots as the other string
@@ -415,7 +475,45 @@ func (t TaskTemplatesConfig) Validate() error {
 		}
 		seen[id] = true
 	}
+	ids := make([]string, 0, len(t.Mode))
+	for id := range t.Mode {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		key := "autonomous.task_templates.mode[" + id + "]"
+		if strings.TrimSpace(id) == "" || id != strings.TrimSpace(id) {
+			return fmt.Errorf("%s: template id must be non-empty with no surrounding space", key)
+		}
+		if err := ValidateDecomposeLintRuleID(id); err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		switch TaskTemplateMode(t.Mode[id]) {
+		case TaskTemplateModeLLM, TaskTemplateModeOff:
+		case TaskTemplateModeDaemon:
+			if id == "final_gate" {
+				return fmt.Errorf("%s: daemon is not allowed for final_gate (allowed values: llm, off)", key)
+			}
+			if !isDaemonCapableTaskTemplate(id) {
+				return fmt.Errorf("%s: daemon needs a daemon-capable id (%s); allowed values for this id: llm, off", key, strings.Join(DaemonCapableTaskTemplateIDs(), ", "))
+			}
+		default:
+			return fmt.Errorf("%s: unknown mode %q (allowed values: %s)", key, t.Mode[id], taskTemplateModeValues)
+		}
+	}
 	return nil
+}
+
+// EffectiveTaskTemplateMode resolves the mode for a template id: the
+// configured value, else the shipped default for the id, else llm.
+func (a *AutonomousConfig) EffectiveTaskTemplateMode(id string) TaskTemplateMode {
+	if v, ok := a.TaskTemplates.Mode[id]; ok && v != "" {
+		return TaskTemplateMode(v)
+	}
+	if d, ok := DefaultTaskTemplateModes()[id]; ok {
+		return d
+	}
+	return TaskTemplateModeLLM
 }
 
 // EffectiveDecomposeLintMode resolves the decompose-lint mode in

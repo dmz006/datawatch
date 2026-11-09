@@ -29,7 +29,12 @@ Automations, 500 alerts.)
 `GET /api/sessions?view=summary` returns an array of rows. Each row carries
 only what a list card renders — identity, state, backend, project, activity
 times, a one-line `status_line` from the latest response (capped), token and
-cost totals, and the parent id. No task text, no prompts, no transcripts.
+cost totals, and the parent id — and the session's tag chips: its own
+`tags`, the `inherited_tags` from the Automaton that started it, and the
+placement `system_tags` (see [automata-tags](automata-tags.md#placement-tags-the-system-tags)).
+Because the chips arrive with the first page, the PWA draws them on the
+cards at first load instead of waiting for the full record. No task text,
+no prompts, no transcripts.
 
 By default the response holds every non-terminal session plus the 50 most
 recently updated terminal ones; when the cap drops anything you get an

@@ -47,8 +47,11 @@ func (l *escalationSpawnLog) workers() []string {
 }
 
 // alwaysFailVerify fails every attempt, so a task runs until its budget is spent.
-func alwaysFailVerify(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
-	return VerificationResult{OK: false, Summary: "tests still fail"}, nil
+func alwaysFailVerify(_ context.Context, _ *PRD, t *Task) (VerificationResult, error) {
+	// A distinct summary per attempt: a no-retry hold triggers on three identical
+	// failure summaries, so a fixed summary would park the task on the third
+	// attempt and stop these retry-limit tests short of their budget.
+	return VerificationResult{OK: false, Summary: fmt.Sprintf("tests still fail (attempt %d)", len(t.Attempts)+1)}, nil
 }
 
 // runEscalationPRD runs prd to a terminal state with the given spawn log and

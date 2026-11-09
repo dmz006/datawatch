@@ -353,6 +353,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		// listChanged=false for prompts (added in S4 when prompts land).
 		server.WithResourceCapabilities(false, false),
 		server.WithPromptCapabilities(false),
+		// mcp-go v1.x refuses RequestSampling/RequestElicitation for clients on
+		// protocol 2026-07-28+ unless this is set; the repo relies on both.
+		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
 	)
 
 	// BL302 S3 — enable sampling so connected clients see the capability
@@ -698,6 +701,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetPriority(), tracked(s.handleAutonomousPRDSetPriority))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetKind(), tracked(s.handleAutonomousPRDSetKind))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetReleaseSize(), tracked(s.handleAutonomousPRDSetReleaseSize))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetBreakingChange(), tracked(s.handleAutonomousPRDSetBreakingChange))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetWorkerProfile(), tracked(s.handleAutonomousPRDSetWorkerProfile))
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
 	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
@@ -1039,6 +1045,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDeleteSession(), tracked(s.handleDeleteSession))
 	mcpSrv.AddTool(s.toolRestartSession(), tracked(s.handleRestartSession))
 	mcpSrv.AddTool(s.toolGetStats(), tracked(s.handleGetStats))
+	mcpSrv.AddTool(s.toolWorkerProfileStatus(), tracked(s.handleWorkerProfileStatus))
 	mcpSrv.AddTool(s.toolGetConfig(), tracked(s.handleGetConfig))
 
 	// v6.0.4 (BL210-remaining) — detection filters, backends, session state,

@@ -23,7 +23,7 @@ const (
 // writeFilesReportStories is a two-story, six-task plan shaped like a real
 // decomposed PRD. Only the last task is a write task with no files.
 func writeFilesReportStories() []Story {
-	script := "go test ./..."
+	script := "scripts/verify.sh"
 	return []Story{
 		{
 			Title: "Report the finding",
@@ -79,6 +79,7 @@ func newWriteFilesReportPRD(t *testing.T, mode string) (*Manager, *PRD, string) 
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
+	writeFixtureVerifyScript(t, projectDir)
 	m := newGateManager(t, mode, 1.0, gateCleanPlan)
 	prd, err := m.CreatePRD(writeFilesReportSpec, projectDir, "claude-code", "", EffortNormal)
 	if err != nil {

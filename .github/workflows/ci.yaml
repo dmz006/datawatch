@@ -83,7 +83,7 @@ jobs:
         run: go test ./... -count=1 -timeout 12m
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
           args: --timeout=5m
@@ -136,7 +136,7 @@ jobs:
             ./cmd/datawatch/
           echo "Built: bin/datawatch-linux-amd64-${STAMPED}"
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: datawatch-build-${{ github.run_number }}
           path: bin/datawatch-linux-amd64-*

@@ -99,3 +99,30 @@ func TestMergeCLI_RendererHandlesEmptyList(t *testing.T) {
 		t.Errorf("off mode: %s", got)
 	}
 }
+
+func TestMergeCLI_LockAndValidatorOnlyWhenPresent(t *testing.T) {
+	with := `{"mode":"on","alert_minutes":30,"automata":[],"shadow_decisions":[],` +
+		`"merge_lock":{"repo":"/r","run_id":"run-7","automaton_id":"prd-3","branches":["automaton/prd-3"],"since":"2026-11-01T08:00:00Z"},` +
+		`"last_validator":{"pass":true,"version":"1.2.3","checked_at":"2026-11-01T08:00:00Z","checks":[]}}`
+	newLaneFillCLIDaemon(t, http.StatusOK, with)
+	out, err := runLaneFillCmd(t, newAutonomousMergeCmd(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Merge lock held: run run-7 for Automaton prd-3", "Last release-bump validation: passed (version 1.2.3)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+
+	newLaneFillCLIDaemon(t, http.StatusOK, mergeCLISample)
+	out, err = runLaneFillCmd(t, newAutonomousMergeCmd(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"Merge lock", "release-bump validation"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("output has %q with nothing set:\n%s", bad, out)
+		}
+	}
+}

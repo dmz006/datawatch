@@ -26,6 +26,9 @@ const (
 	DefaultStepTimeout = 10 * time.Minute
 	unreleasedHeading  = "## [Unreleased]"
 	checkVersionScript = "check-merge-version.sh"
+	// maxMainMovedRedos bounds how many times a run starts over from the
+	// rebase step after the push finds the remote's main moved.
+	maxMainMovedRedos = 3
 )
 
 // ShipRunner does the steps that leave the machine or change what runs on it:
@@ -45,6 +48,16 @@ type ShipRunner interface {
 	// with an argument list (never a shell string) and a --body-file from
 	// a temporary file.
 	FileIssue(ctx context.Context, dir, repo, title, body string) error
+}
+
+// MergeLocker keeps two merge runs from shipping into the same repository at
+// once. *autonomous.MergeLocks is the production one.
+type MergeLocker interface {
+	// Acquire takes the lock for repo. It refuses, with an error and the
+	// holder's status, when another run owns the repository.
+	Acquire(repo string, h autonomous.MergeLockHolder) (autonomous.MergeLockStatus, error)
+	// Release frees repo when runID holds it.
+	Release(repo, runID string) error
 }
 
 // RunRequest is one merge to run.
@@ -79,6 +92,26 @@ type Runner struct {
 	Ship ShipRunner
 	// Recorder receives the run after every step; nil records nothing.
 	Recorder autonomous.MergeRunRecorder
+	// Release gate wiring, set by the caller from the release approval
+	// settings (config.MergePipelineConfig.EffectiveReleaseApproval). With
+	// ReleaseApproval empty the gate is not wired and the run ships as
+	// before.
+	//
+	// ReleaseSize is the size of this release: patch, minor, or major. The
+	// caller sets it from the place the release-version step learns the
+	// version (VersionFiles); empty means the size could not be read and the
+	// effective approval resolves to ask rather than shipping.
+	ReleaseSize string
+	// ReleaseApproval is the effective approval mode for a release of this
+	// size: auto, ask, or manual.
+	ReleaseApproval string
+	// ReleaseAnswers reads the operator's answer to the release question;
+	// nil means no answer is readable and an ask-mode run holds until one
+	// is.
+	ReleaseAnswers ReleaseAnswerReader
+	// Locks holds the repository lock for the length of a run; nil means no
+	// lock is taken.
+	Locks MergeLocker
 
 	MainBranch string // default main
 	// PostShip is the operator's autonomous.merge_pipeline.post_ship block.
@@ -94,6 +127,7 @@ type Runner struct {
 	// the release-version step fails rather than guess at a path.
 	VersionFiles  []string
 	ChangelogFile string // default CHANGELOG.md
+	ReadmeFile    string // default README.md; read by validate-release-bump
 	ScriptDir     string // relative to Dir; default scripts
 	Now           func() time.Time
 }
@@ -123,6 +157,13 @@ func (r *Runner) changelog() string {
 	return DefaultChangelogFile
 }
 
+func (r *Runner) readme() string {
+	if r.ReadmeFile != "" {
+		return r.ReadmeFile
+	}
+	return defaultReadmeFile
+}
+
 func (r *Runner) scriptDir() string {
 	d := r.ScriptDir
 	if d == "" {
@@ -141,7 +182,48 @@ type runState struct {
 	// pushReleaseOK is set when a step with Action ActionPushRelease
 	// reported ok; the post-ship hooks run only when it is set.
 	pushReleaseOK bool
+	// failedSteps counts the steps that failed; a failed check never ships
+	// in any mode.
+	failedSteps int
+	// gate and gateSet hold the release gate verdict, decided at most once,
+	// before the first step that leaves the machine.
+	gate    gateVerdict
+	gateSet bool
+	// baseHead is the local main head the current attempt starts from: the
+	// head recorded when the lock was acquired, then the head each redo
+	// brings local main up to.
+	baseHead string
+	// observedMain is main's head as the run last saw it. ownCommits holds
+	// every commit this run added to main; foreignMain is set when main moved
+	// in a way the run did not make (not a fast-forward of what it saw).
+	observedMain string
+	ownCommits   map[string]bool
+	foreignMain  bool
+	// tagMade is the local tag this run created, empty when it made none.
+	tagMade string
+	// redos counts the redos this run has made.
+	redos int
+	// nothingNew is set when the merge step found every branch already in
+	// main. The release steps after it are then skipped: nothing new is
+	// released.
+	nothingNew bool
 }
+
+// releaseSteps are the actions a run with nothing new to merge skips. They
+// release, or leave the machine with, a version nobody asked for. The
+// deploy step is not listed: it is a daemon restart, not a release.
+var releaseSteps = map[string]bool{
+	ActionSetReleaseVersion:    true,
+	ActionInsertChangelog:      true,
+	ActionSetReadmeReleaseLine: true,
+	ActionCommitReleaseBump:    true,
+	ActionTagRelease:           true,
+	ActionValidateReleaseBump:  true,
+	ActionPushRelease:          true,
+}
+
+// nothingNewNote is the detail recorded on a release step a run skipped.
+const nothingNewNote = "nothing new was released: every branch was already merged into main"
 
 func newRunID() string {
 	b := make([]byte, 6)
@@ -192,26 +274,74 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if len(req.Branches) == 0 {
 		return finish(autonomous.MergeRunFailed, errors.New("at least one branch is required"))
 	}
+	if r.Locks != nil {
+		holder := autonomous.MergeLockHolder{RunID: st.run.ID, AutomatonID: req.AutomatonID, Branches: req.Branches}
+		status, err := r.Locks.Acquire(r.Dir, holder)
+		if err != nil {
+			st.run.Reason = redact(lockRefusal(status, err))
+			return finish(autonomous.MergeRunFailed, fmt.Errorf("merge refused: %w", err))
+		}
+		defer func() {
+			if rerr := r.Locks.Release(r.Dir, st.run.ID); rerr != nil {
+				log.Printf("[merge-pipeline] release the merge lock on %s: %v", r.Dir, rerr)
+			}
+		}()
+	}
 	st.m = &Merger{Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions, VersionFiles: r.VersionFiles}
+	if err := st.startTracking(ctx); err != nil {
+		st.run.Reason = redact(err.Error())
+		return finish(autonomous.MergeRunFailed, err)
+	}
 	st.record()
 	if err := st.preflight(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
 		return finish(autonomous.MergeRunFailed, err)
 	}
 
+	steps := res.Definition.Steps
+	restart := rebaseStepIndex(steps)
 	failures := 0
-	for _, step := range res.Definition.Steps {
+	for i := 0; i < len(steps); {
+		step := steps[i]
+		if st.nothingNew && releaseSteps[step.Action] {
+			_, _, _ = st.recordStep(ctx, st.source, step, DefaultStepTimeout, func(context.Context) (string, string, error) {
+				return autonomous.MergeStepSkipped, nothingNewNote, nil
+			})
+			i++
+			continue
+		}
 		ok, err := st.runStep(ctx, step)
+		if oerr := st.observeMain(ctx); oerr != nil {
+			st.run.Reason = redact(oerr.Error())
+			return finish(autonomous.MergeRunFailed, oerr)
+		}
 		if ok {
 			if step.Action == ActionPushRelease {
 				st.pushReleaseOK = true
 			}
+			i++
+			continue
+		}
+		if step.Action == ActionPushRelease && errors.Is(err, ErrMainMoved) {
+			if st.redos >= maxMainMovedRedos {
+				reason := fmt.Sprintf("main kept moving: the remote's main moved again after %d redos, so the run stopped", st.redos)
+				st.run.Reason = redact(reason)
+				return finish(autonomous.MergeRunFailed, fmt.Errorf("%s: %w", reason, err))
+			}
+			st.redos++
+			if rerr := st.recordRedo(ctx, st.redos); rerr != nil {
+				st.run.Reason = redact(rerr.Error())
+				return finish(autonomous.MergeRunFailed, fmt.Errorf("redo %d of %d: %w", st.redos, maxMainMovedRedos, rerr))
+			}
+			i = restart
 			continue
 		}
 		failures++
+		st.failedSteps++
 		if step.EffectiveOnFailure() != OnFailureContinue {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
+		i++
 	}
 	// The run reached here, so it is ok or completed_with_failures: that is
 	// when the configured post-ship hooks run. They record themselves as
@@ -221,6 +351,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return finish(autonomous.MergeRunCompletedWithFailures, nil)
 	}
 	return finish(autonomous.MergeRunOK, nil)
+}
+
+// lockRefusal is the plain-language reason a run was refused its repository
+// lock. When the refusal names a holder, the reason names its run and
+// Automaton, so the record shows who is shipping.
+func lockRefusal(holder autonomous.MergeLockStatus, err error) string {
+	if holder.RunID != "" || holder.AutomatonID != "" {
+		return fmt.Sprintf("another merge holds this repository: run %s (Automaton %s)", holder.RunID, holder.AutomatonID)
+	}
+	return "the merge lock could not be taken: " + err.Error()
 }
 
 // preflight requires the main branch checked out and a clean tree, as the
@@ -316,7 +456,7 @@ func (s *runState) runPostShipHooks(ctx context.Context) {
 	if !cfg.Enabled || !s.pushReleaseOK || len(cfg.Hooks) == 0 {
 		return
 	}
-	version, verr := s.r.currentVersion()
+	version, verr := s.releaseVersionOf()
 	for _, hk := range cfg.Hooks {
 		if !hk.Enabled {
 			continue
@@ -377,6 +517,24 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
 		return autonomous.MergeStepSkipped, "the project's Makefile has no " + step.RequiresMakeTarget + " target", nil
 	}
+	// The release gate applies to every step that leaves the machine, and
+	// only to those: it is decided at most once per run, before the first
+	// such step runs, and its verdict, in the run's plain wording, is
+	// recorded on the steps it holds back.
+	gate, gerr := gateVerdict{}, error(nil)
+	applies := stepLeavesMachine(step)
+	if applies {
+		gate, gerr = s.gateForLeaving()
+		if gerr != nil {
+			// Asking the release decision failed; guessing is not an
+			// option, so the step fails and the run stops short of the
+			// ship.
+			return autonomous.MergeStepFailed, "the release gate could not be applied: " + gerr.Error(), gerr
+		}
+		if gate.holds {
+			return autonomous.MergeStepSkipped, gate.skipNote, nil
+		}
+	}
 	var detail string
 	var err error
 	switch {
@@ -393,7 +551,21 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 		}
 		return autonomous.MergeStepFailed, detail, err
 	}
+	if applies && gate.approvedNote != "" {
+		detail = gate.approvedNote + "; " + detail
+	}
 	return autonomous.MergeStepOK, detail, nil
+}
+
+// stepLeavesMachine reports whether the step runs through the ShipRunner:
+// the ship actions, or one of the ship kinds. These are the steps the
+// release gate decides about.
+func stepLeavesMachine(step Step) bool {
+	switch step.Action {
+	case ActionTagRelease, ActionPushRelease, ActionDeployLatest:
+		return true
+	}
+	return leavesTheMachine(step.Kind)
 }
 
 // leavesTheMachine reports the kinds that only run through the ShipRunner.
@@ -450,35 +622,146 @@ func (s *runState) hook(ctx context.Context, step Step) (string, error) {
 func (s *runState) action(ctx context.Context, step Step) (string, error) {
 	r := s.r
 	switch step.Action {
+	case ActionRebaseOntoMain:
+		return s.rebaseOntoMain(ctx)
 	case ActionCheckBranchVersions:
 		return s.checkBranchVersions(ctx)
 	case ActionMergeBranches:
 		return s.mergeBranches(ctx)
 	case ActionSetReleaseVersion:
-		cur, err := r.currentVersion()
-		if err != nil {
-			return "", err
-		}
-		next, err := nextPatch(cur)
-		if err != nil {
-			return "", err
-		}
-		if err := r.writeVersion(next); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("version %s -> %s", cur, next), nil
+		return s.setReleaseVersion()
 	case ActionInsertChangelog:
-		v, err := r.currentVersion()
+		v, err := s.releaseVersionOf()
 		if err != nil {
 			return "", err
 		}
 		return r.insertChangelog(v, s.req.Title)
+	case ActionSetReadmeReleaseLine:
+		return s.setReadmeReleaseLine()
 	case ActionCommitReleaseBump:
 		return s.commitBump(ctx)
+	case ActionValidateReleaseBump:
+		return s.validateReleaseBump(ctx)
 	case ActionTagRelease, ActionPushRelease, ActionDeployLatest:
 		return s.ship(ctx, step.Action)
 	}
 	return "", fmt.Errorf("unknown action %q", step.Action)
+}
+
+// rebaseOntoMain brings each requested branch onto the local main. The main
+// branch is fetched first when the project has a remote; the fetch only
+// updates the remote-tracking data and never touches a local branch. Each
+// branch not already based on main is rebased in a throwaway worktree and
+// then moved to the result. A conflict aborts that rebase, leaves the branch
+// where it was and fails the step; branches rebased before it stay rebased.
+func (s *runState) rebaseOntoMain(ctx context.Context) (string, error) {
+	main := s.r.mainBranch()
+	var notes []string
+	remote, err := s.fetchMain(ctx, main)
+	if err != nil {
+		return "", err
+	}
+	if remote == "" {
+		notes = append(notes, "no remote; the main branch was not fetched")
+	} else {
+		notes = append(notes, "fetched "+main+" from "+remote)
+	}
+	// fail builds the step's failure: the failure line leads the detail, the
+	// account of the fetch and of earlier branches follows it.
+	fail := func(line string, err error) (string, error) {
+		return strings.Join(append([]string{line}, notes...), "\n"), err
+	}
+	var rebased, onMain []string
+	for _, b := range s.req.Branches {
+		if strings.HasPrefix(b, "-") {
+			return fail(fmt.Sprintf("invalid branch name %q; nothing was rebased", b), fmt.Errorf("invalid branch name %q", b))
+		}
+		ref := "refs/heads/" + b
+		old, err := s.m.revParse(ctx, s.r.Dir, ref)
+		if err != nil {
+			return fail(fmt.Sprintf("branch %q does not exist", b), fmt.Errorf("branch %q does not exist: %w", b, err))
+		}
+		anc, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", "refs/heads/"+main, ref)
+		if err != nil {
+			return fail(fmt.Sprintf("checking whether %q is on %s failed", b, main), err)
+		}
+		if anc.Code == 0 {
+			onMain = append(onMain, b)
+			continue
+		}
+		if err := s.rebaseBranch(ctx, b, old, main); err != nil {
+			line := fmt.Sprintf("rebase of %q onto %s stopped; that branch was left untouched: %s", b, main, firstLine(err.Error()))
+			if len(rebased) > 0 {
+				notes = append(notes, "already rebased and left in place: "+strings.Join(rebased, ", "))
+			}
+			return fail(line, fmt.Errorf("rebase of %q onto %s failed: %w", b, main, err))
+		}
+		rebased = append(rebased, b)
+	}
+	if len(rebased) > 0 {
+		notes = append(notes, "rebased onto "+main+": "+strings.Join(rebased, ", "))
+	}
+	if len(onMain) > 0 {
+		notes = append(notes, "already on "+main+": "+strings.Join(onMain, ", "))
+	}
+	return strings.Join(notes, "\n"), nil
+}
+
+// fetchMain fetches the main branch from the project's remote and returns the
+// remote's name. It returns an empty name, and fetches nothing, when the
+// project has no remote.
+func (s *runState) fetchMain(ctx context.Context, main string) (string, error) {
+	out, err := s.m.gitOK(ctx, s.r.Dir, "remote")
+	if err != nil {
+		return "", err
+	}
+	names := strings.Fields(out)
+	if len(names) == 0 {
+		return "", nil
+	}
+	remote := names[0]
+	for _, n := range names {
+		if n == "origin" {
+			remote = n
+		}
+	}
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "fetch", "--quiet", remote, main); err != nil {
+		return "", fmt.Errorf("fetch %s from %s: %w", main, remote, err)
+	}
+	return remote, nil
+}
+
+// rebaseBranch rebases branch onto the local main inside a throwaway
+// worktree, then points the branch at the result, but only while it still
+// names old. On any failure the rebase is aborted, nothing moves, and the
+// worktree is removed.
+func (s *runState) rebaseBranch(ctx context.Context, branch, old, main string) error {
+	tmp, err := os.MkdirTemp(s.r.Dir, ".datawatch-rebase-")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "remove", "--force", tmp)
+		_ = os.RemoveAll(tmp)
+		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "prune")
+	}()
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "worktree", "add", "--quiet", "--detach", tmp, old); err != nil {
+		return err
+	}
+	res, err := s.m.git(ctx, tmp, "rebase", "refs/heads/"+main)
+	if err != nil || res.Code != 0 {
+		_, _ = s.m.git(context.Background(), tmp, "rebase", "--abort")
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("the rebase hit a conflict or failed (exit %d)", res.Code)
+	}
+	head, err := s.m.gitOK(ctx, tmp, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	_, err = s.m.gitOK(ctx, s.r.Dir, "update-ref", "refs/heads/"+branch, strings.TrimSpace(head), old)
+	return err
 }
 
 func (s *runState) checkBranchVersions(ctx context.Context) (string, error) {
@@ -502,8 +785,17 @@ func (s *runState) checkBranchVersions(ctx context.Context) (string, error) {
 // mergeBranches merges each branch in order. A branch the conflict policy
 // could not settle stops the step; branches already merged stay in place.
 func (s *runState) mergeBranches(ctx context.Context) (string, error) {
-	var merged []string
+	var merged, already []string
+	s.nothingNew = false
 	for _, b := range s.req.Branches {
+		in, err := s.branchInMain(ctx, b)
+		if err != nil {
+			return "", err
+		}
+		if in {
+			already = append(already, b)
+			continue
+		}
 		out, err := s.m.MergeBranch(ctx, MergeRequest{Branch: b, AutomatonID: s.req.AutomatonID})
 		if err != nil {
 			return s.mergeStopNote(merged, b, err.Error()), fmt.Errorf("merge of %q failed: %w", b, err)
@@ -519,7 +811,32 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 			return s.mergeStopNote(merged, b, note), fmt.Errorf("merge of %q hit a conflict that was not settled", b)
 		}
 	}
-	return "merged: " + strings.Join(merged, ", "), nil
+	if len(merged) == 0 && len(already) > 0 {
+		s.nothingNew = true
+		return "nothing new: already merged into " + s.r.mainBranch() + ": " + strings.Join(already, ", "), nil
+	}
+	note := "merged: " + strings.Join(merged, ", ")
+	if len(already) > 0 {
+		note += "\nalready merged into " + s.r.mainBranch() + ": " + strings.Join(already, ", ")
+	}
+	return note, nil
+}
+
+// branchInMain reports whether branch is already contained in the checked-out
+// main: the merge would add nothing.
+func (s *runState) branchInMain(ctx context.Context, branch string) (bool, error) {
+	res, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", "refs/heads/"+branch, "HEAD")
+	if err != nil {
+		return false, fmt.Errorf("checking whether %q is on %s failed: %w", branch, s.r.mainBranch(), err)
+	}
+	switch res.Code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("checking whether %q is on %s failed (exit %d)", branch, s.r.mainBranch(), res.Code)
+	}
 }
 
 func (s *runState) mergeStopNote(merged []string, failed, why string) string {
@@ -531,12 +848,17 @@ func (s *runState) mergeStopNote(merged []string, failed, why string) string {
 }
 
 func (s *runState) commitBump(ctx context.Context) (string, error) {
-	v, err := s.r.currentVersion()
+	v, err := s.releaseVersionOf()
 	if err != nil {
 		return "", err
 	}
 	args := append([]string{"add", "--"}, s.r.versionFiles()...)
 	args = append(args, s.r.changelog())
+	// The README joins the bump when the project has one: its Current
+	// release: line is rewritten by set-readme-release-line.
+	if _, err := os.Stat(filepath.Join(s.r.Dir, filepath.FromSlash(s.r.readme()))); err == nil {
+		args = append(args, s.r.readme())
+	}
 	if _, err := s.m.gitOK(ctx, s.r.Dir, args...); err != nil {
 		return "", err
 	}
@@ -554,23 +876,90 @@ func (s *runState) commitBump(ctx context.Context) (string, error) {
 	return "committed " + msg, nil
 }
 
+// validateReleaseBump runs the release-bump validator over the repository as
+// the earlier steps left it: the bump is committed and the release tag is
+// made, but nothing is pushed yet. The result is stored on the run record
+// whether it passes or not. A failing check fails the step and names every
+// check that failed, so the push step never runs.
+func (s *runState) validateReleaseBump(ctx context.Context) (string, error) {
+	exclude := ""
+	if s.run.ReleaseVersion != "" {
+		exclude = "v" + s.run.ReleaseVersion
+	}
+	res := ValidateReleaseBump(ctx, ValidateInput{
+		Dir:           s.r.Dir,
+		VersionFiles:  s.r.versionFiles(),
+		ChangelogFile: s.r.changelog(),
+		ReadmeFile:    s.r.readme(),
+		ExcludeTag:    exclude,
+	})
+	s.run.Validator = &res
+	var failed []string
+	var lines []string
+	for _, c := range res.Checks {
+		if c.Pass {
+			continue
+		}
+		failed = append(failed, c.Name)
+		lines = append(lines, c.Name+": "+c.Detail)
+	}
+	if len(failed) > 0 {
+		detail := "release bump validator failed; nothing was pushed\n" + strings.Join(lines, "\n")
+		return detail, fmt.Errorf("release bump validator failed: %s", strings.Join(failed, ", "))
+	}
+	return fmt.Sprintf("release bump validated: all %d checks passed for v%s", len(res.Checks), res.Version), nil
+}
+
 func (s *runState) ship(ctx context.Context, action string) (string, error) {
 	if s.r.Ship == nil {
 		return "", errors.New("no ship runner is wired, so the step was not run")
 	}
-	v, err := s.r.currentVersion()
-	if err != nil && action != ActionDeployLatest {
+	if action == ActionDeployLatest {
+		return doneOr("deployed the new build", s.r.Ship.Deploy(ctx, s.r.Dir))
+	}
+	v, err := s.releaseVersionOf()
+	if err != nil {
 		return "", err
 	}
 	tag := "v" + v
 	switch action {
 	case ActionTagRelease:
-		return doneOr("tagged "+tag, s.r.Ship.Tag(ctx, s.r.Dir, tag, "Release "+tag))
-	case ActionPushRelease:
-		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
+		return s.tagRelease(ctx, tag)
 	default:
-		return doneOr("deployed the new build", s.r.Ship.Deploy(ctx, s.r.Dir))
+		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
 	}
+}
+
+// tagRelease makes the release tag on HEAD, unless it is already there. A tag
+// that already points at HEAD is left alone and the step succeeds, so a step
+// run twice changes nothing. A tag that points at another commit fails the
+// step, naming the tag and that commit, because moving it could rewrite a
+// release someone has already published. Only a tag this call creates is
+// recorded in tagMade, so a redo never deletes a tag the run did not make.
+func (s *runState) tagRelease(ctx context.Context, tag string) (string, error) {
+	dir := s.r.Dir
+	head, err := s.m.gitOK(ctx, dir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("read HEAD before tagging %s: %w", tag, err)
+	}
+	head = strings.TrimSpace(head)
+	res, err := s.m.git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("check for tag %s: %w", tag, err)
+	}
+	if res.Code == 0 {
+		at := strings.TrimSpace(res.Out)
+		if at == head {
+			return "already tagged " + tag + " at HEAD; nothing to do", nil
+		}
+		return "", fmt.Errorf("tag %s already exists on commit %s, not HEAD %s; refusing to move it", tag, at, head)
+	}
+	note, err := doneOr("tagged "+tag, s.r.Ship.Tag(ctx, dir, tag, "Release "+tag))
+	if err != nil {
+		return "", err
+	}
+	s.tagMade = tag
+	return note, nil
 }
 
 // doneOr returns the success note, or no note with the error.
@@ -579,6 +968,166 @@ func doneOr(note string, err error) (string, error) {
 		return "", err
 	}
 	return note, nil
+}
+
+// ---- main moved under the run ----
+
+// rebaseStepIndex returns the index of the first rebase-onto-main step, the
+// point a redo starts again from. A pipeline with no such step starts over
+// from its first step.
+func rebaseStepIndex(steps []Step) int {
+	for i, s := range steps {
+		if s.Action == ActionRebaseOntoMain {
+			return i
+		}
+	}
+	return 0
+}
+
+// mainHead returns the commit the local main branch points at.
+func (s *runState) mainHead(ctx context.Context) (string, error) {
+	return s.m.revParse(ctx, s.r.Dir, "refs/heads/"+s.r.mainBranch())
+}
+
+// startTracking records local main's head when the run takes the repository
+// lock. That head is the base every attempt of the run is measured from.
+func (s *runState) startTracking(ctx context.Context) error {
+	head, err := s.mainHead(ctx)
+	if err != nil {
+		return fmt.Errorf("read %s before the run: %w", s.r.mainBranch(), err)
+	}
+	s.baseHead, s.observedMain = head, head
+	s.ownCommits = map[string]bool{}
+	return nil
+}
+
+// observeMain takes each commit main gained since the run last looked at it
+// as this run's own. A move that does not extend the last head it saw marks
+// main as moved outside the run, which a redo will not undo.
+func (s *runState) observeMain(ctx context.Context) error {
+	cur, err := s.mainHead(ctx)
+	if err != nil {
+		return err
+	}
+	if cur == s.observedMain {
+		return nil
+	}
+	anc, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", s.observedMain, cur)
+	if err != nil {
+		return err
+	}
+	if anc.Code != 0 {
+		s.foreignMain = true
+		s.observedMain = cur
+		return nil
+	}
+	out, err := s.m.gitOK(ctx, s.r.Dir, "rev-list", s.observedMain+".."+cur)
+	if err != nil {
+		return err
+	}
+	for _, c := range strings.Fields(out) {
+		s.ownCommits[c] = true
+	}
+	s.observedMain = cur
+	return nil
+}
+
+// undoable reports whether local main can be reset to the base: every
+// commit above the base must be one this run made.
+func (s *runState) undoable(ctx context.Context) error {
+	if s.foreignMain {
+		return errors.New("main was moved by something other than this run")
+	}
+	out, err := s.m.gitOK(ctx, s.r.Dir, "rev-list", s.baseHead+"..refs/heads/"+s.r.mainBranch())
+	if err != nil {
+		return err
+	}
+	for _, c := range strings.Fields(out) {
+		if !s.ownCommits[c] {
+			return fmt.Errorf("commit %s on %s was not made by this run", c, s.r.mainBranch())
+		}
+	}
+	return nil
+}
+
+// redoFromRebase undoes this run's local merge, bump and tag, brings local
+// main up to the remote's main, and clears what the run computed from the old
+// main, so the next attempt computes its version from the new one. It leaves
+// the run with the synced head as its base.
+func (s *runState) redoFromRebase(ctx context.Context) (string, error) {
+	main := s.r.mainBranch()
+	if err := s.observeMain(ctx); err != nil {
+		return "", err
+	}
+	if err := s.undoable(ctx); err != nil {
+		return "", fmt.Errorf("local %s cannot be reset to %s: %w", main, shortSHA(s.baseHead), err)
+	}
+	var notes []string
+	if s.tagMade != "" {
+		tag := s.tagMade
+		if _, err := s.m.gitOK(ctx, s.r.Dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag); err == nil {
+			if _, err := s.m.gitOK(ctx, s.r.Dir, "tag", "-d", tag); err != nil {
+				return "", fmt.Errorf("delete the local tag %s: %w", tag, err)
+			}
+		}
+		notes = append(notes, "deleted the local tag "+tag)
+		s.tagMade = ""
+	}
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "reset", "--hard", "--quiet", s.baseHead); err != nil {
+		return "", fmt.Errorf("reset %s to %s: %w", main, shortSHA(s.baseHead), err)
+	}
+	notes = append(notes, "reset "+main+" to "+shortSHA(s.baseHead))
+	remote, err := s.fetchMain(ctx, main)
+	if err != nil {
+		return "", err
+	}
+	if remote == "" {
+		return "", errors.New("the project has no remote to bring " + main + " up to")
+	}
+	if _, err := s.m.gitOK(ctx, s.r.Dir, "merge", "--ff-only", "--quiet", "refs/remotes/"+remote+"/"+main); err != nil {
+		return "", fmt.Errorf("local %s cannot fast-forward to %s/%s: %w", main, remote, main, err)
+	}
+	head, err := s.mainHead(ctx)
+	if err != nil {
+		return "", err
+	}
+	s.baseHead, s.observedMain = head, head
+	s.ownCommits = map[string]bool{}
+	s.foreignMain = false
+	s.run.ReleaseVersion = ""
+	s.run.Validator = nil
+	s.pushReleaseOK = false
+	notes = append(notes, "brought "+main+" up to "+remote+"/"+main+" at "+shortSHA(head),
+		"the run starts again from the rebase step")
+	return strings.Join(notes, "; "), nil
+}
+
+// recordRedo runs one redo as a recorded step, so the run record names every
+// redo and what it did. A redo that cannot finish fails the run.
+func (s *runState) recordRedo(ctx context.Context, n int) error {
+	step := Step{Name: fmt.Sprintf("main-moved-redo-%d", n), Kind: KindCustom, OnFailure: OnFailureStop}
+	result, _, err := s.recordStep(ctx, "redo", step, DefaultStepTimeout, func(c context.Context) (string, string, error) {
+		note, err := s.redoFromRebase(c)
+		if err != nil {
+			return autonomous.MergeStepFailed, err.Error(), err
+		}
+		return autonomous.MergeStepOK, fmt.Sprintf("redo %d of %d: %s", n, maxMainMovedRedos, note), nil
+	})
+	if result == autonomous.MergeStepFailed {
+		if err == nil {
+			err = errors.New("the redo failed")
+		}
+		return err
+	}
+	return nil
+}
+
+// shortSHA shortens a commit id for a note.
+func shortSHA(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 // ---- version and changelog files ----
@@ -611,14 +1160,69 @@ func (r *Runner) currentVersion() (string, error) {
 	return string(m[1]), nil
 }
 
-func nextPatch(v string) (string, error) {
-	m := semver3.FindStringSubmatch(v)
-	if m == nil {
-		return "", fmt.Errorf("%q is not an X.Y.Z version", v)
+// setReleaseVersion computes the run's release version from main's version
+// as it stands now, after the rebase and merge steps, and writes it to every
+// version file. It runs once per run; the result is stored on the run record
+// and the later steps read it from there.
+func (s *runState) setReleaseVersion() (string, error) {
+	if s.run.ReleaseVersion != "" {
+		// Already computed for this run: when the files carry it, there is
+		// nothing to write, and the bytes stay as they are.
+		ok, err := s.r.versionFilesCarry(s.run.ReleaseVersion)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return "already at " + s.run.ReleaseVersion + "; version files not written", nil
+		}
+		return "", fmt.Errorf("the release version was already set to %s for this run", s.run.ReleaseVersion)
 	}
-	var patch int
-	_, _ = fmt.Sscanf(m[3], "%d", &patch)
-	return fmt.Sprintf("%s.%s.%d", m[1], m[2], patch+1), nil
+	cur, err := s.r.currentVersion()
+	if err != nil {
+		return "", err
+	}
+	next, err := NextVersion(cur, ReleaseSize(s.r.ReleaseSize))
+	if err != nil {
+		return "", err
+	}
+	if err := s.r.writeVersion(next); err != nil {
+		return "", err
+	}
+	s.run.ReleaseVersion = next
+	return fmt.Sprintf("version %s -> %s", cur, next), nil
+}
+
+// releaseVersionOf returns the version this run releases: the one the
+// set-release-version step computed for the run. A pipeline with no such step
+// has no run version, so it reads main's version as it stands, as before.
+func (s *runState) releaseVersionOf() (string, error) {
+	if s.run.ReleaseVersion != "" {
+		return s.run.ReleaseVersion, nil
+	}
+	return s.r.currentVersion()
+}
+
+// versionFilesCarry reports whether every version file carries v on its
+// version line. A file that cannot be read or has no version line is an
+// error, not a miss.
+func (r *Runner) versionFilesCarry(v string) (bool, error) {
+	if len(r.versionFiles()) == 0 {
+		return false, errNoVersionFiles
+	}
+	for _, f := range r.versionFiles() {
+		_, data, err := r.readInside(f)
+		if err != nil {
+			return false, err
+		}
+		m := versionLine.FindSubmatch(data)
+		if m == nil {
+			return false, fmt.Errorf("no `var Version = \"...\"` line in %s", f)
+		}
+		if string(m[1]) != v {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // writeVersion sets the version line in every version file, writing none of
@@ -682,6 +1286,52 @@ func (r *Runner) insertChangelog(version, title string) (string, error) {
 	return "inserted the heading for v" + version, nil
 }
 
+// readmeReleaseShape matches the version and date on a Current release: line,
+// such as "**Current release: v1.2.3 (2026-11-08).**". Groups are the version
+// and the date.
+var readmeReleaseShape = regexp.MustCompile(`Current release: v([0-9]+\.[0-9]+\.[0-9]+) \(([0-9]{4}-[0-9]{2}-[0-9]{2})\)`)
+
+// setReadmeReleaseLine rewrites the version and date on the README's Current
+// release: line to the run's release version and the runner's date. Nothing
+// else in the line or the file changes. A line that already names the version
+// is left alone, so a repeated run leaves the file as the earlier run did.
+func (s *runState) setReadmeReleaseLine() (string, error) {
+	v, err := s.releaseVersionOf()
+	if err != nil {
+		return "", err
+	}
+	name := s.r.readme()
+	p, data, err := s.r.readInside(name)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(data), "\n")
+	at := -1
+	for i, l := range lines {
+		if _, ok := releaseLineRest(l); ok {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return "", fmt.Errorf("no %s line in %s; nothing changed", currentReleasePrefix, name)
+	}
+	loc := readmeReleaseShape.FindStringSubmatchIndex(lines[at])
+	if loc == nil {
+		return "", fmt.Errorf("the %s line in %s has no vX.Y.Z (YYYY-MM-DD) to rewrite; nothing changed", currentReleasePrefix, name)
+	}
+	line := lines[at]
+	if line[loc[2]:loc[3]] == v {
+		return "the " + currentReleasePrefix + " line in " + name + " already names v" + v, nil
+	}
+	date := s.r.now().Format("2006-01-02")
+	lines[at] = line[:loc[2]] + v + line[loc[3]:loc[4]] + date + line[loc[5]:]
+	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644); err != nil { // #nosec G306 -- README, normal mode
+		return "", err
+	}
+	return "set the " + currentReleasePrefix + " line in " + name + " to v" + v + " (" + date + ")", nil
+}
+
 // ---- keeping secrets out of records and logs ----
 
 var secretPatterns = []*regexp.Regexp{
@@ -729,14 +1379,79 @@ func (e ExecShipRunner) Tag(ctx context.Context, dir, tag, message string) error
 	return err
 }
 
-// Push implements ShipRunner.
+// ErrMainMoved is returned by Push when the remote's branch has commits that
+// HEAD does not contain. Nothing is pushed then: the push would have to
+// rewrite the remote, and the merge run must be rebased onto the new head.
+var ErrMainMoved = errors.New("remote main moved")
+
+// Push implements ShipRunner. It fetches the remote's branch first and
+// refuses with ErrMainMoved unless that branch is an ancestor of HEAD. The
+// push itself never forces, so it can only fast-forward the remote. A project
+// with no remote skips the guard and pushes as it always has.
 func (e ExecShipRunner) Push(ctx context.Context, dir, branch, tag string) error {
+	m := &Merger{Dir: dir}
 	remote := e.Remote
 	if remote == "" {
 		remote = "origin"
 	}
-	_, err := e.run(ctx, dir, "git", "push", remote, branch, tag)
+	if hasRemote, err := e.hasRemotes(ctx, m, dir); err != nil {
+		return err
+	} else if hasRemote {
+		if err := e.checkFastForward(ctx, m, dir, remote, branch); err != nil {
+			return err
+		}
+	}
+	args := []string{"push", remote, branch}
+	if tag != "" {
+		args = append(args, tag)
+	}
+	_, err := e.run(ctx, dir, "git", args...)
 	return err
+}
+
+// hasRemotes reports whether the repository at dir has any remote.
+func (e ExecShipRunner) hasRemotes(ctx context.Context, m *Merger, dir string) (bool, error) {
+	out, err := m.gitOK(ctx, dir, "remote")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// checkFastForward fetches branch from remote and returns ErrMainMoved,
+// naming both heads, unless the fetched head is an ancestor of HEAD. A
+// remote with no such branch has nothing to overwrite, so it passes.
+func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, remote, branch string) error {
+	ls, err := m.gitOK(ctx, dir, "ls-remote", "--heads", remote, "refs/heads/"+branch)
+	if err != nil {
+		return fmt.Errorf("list %s on %s: %w", branch, remote, err)
+	}
+	fields := strings.Fields(ls)
+	if len(fields) == 0 {
+		return nil
+	}
+	remoteHead := fields[0]
+	if _, err := m.gitOK(ctx, dir, "fetch", "--quiet", remote, branch); err != nil {
+		return fmt.Errorf("fetch %s from %s: %w", branch, remote, err)
+	}
+	head, err := m.gitOK(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	head = strings.TrimSpace(head)
+	res, err := m.git(ctx, dir, "merge-base", "--is-ancestor", remoteHead, head)
+	if err != nil {
+		return err
+	}
+	switch res.Code {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("%w: %s on %s is at %s, which HEAD (%s) does not contain; nothing was pushed",
+			ErrMainMoved, branch, remote, remoteHead, head)
+	default:
+		return fmt.Errorf("check %s against HEAD: exit %d: %s", branch, res.Code, strings.TrimSpace(tail(res.Out, 500)))
+	}
 }
 
 // Deploy implements ShipRunner.

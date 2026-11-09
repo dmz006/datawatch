@@ -58,6 +58,27 @@ const (
 // An explicit 0 turns confirmation off.
 const MergeConflictConfirmFirstNDefault = 5
 
+// How a release of a given size is approved.
+const (
+	// ReleaseApprovalAuto ships the release without waiting for the operator.
+	ReleaseApprovalAuto = "auto"
+	// ReleaseApprovalAsk asks the operator before the release ships.
+	ReleaseApprovalAsk = "ask"
+	// ReleaseApprovalManual leaves the release for the operator to ship.
+	ReleaseApprovalManual = "manual"
+)
+
+// ReleaseApprovalModes holds the approval mode for each release size.
+// An unset size inherits.
+type ReleaseApprovalModes struct {
+	// Patch is the approval mode for patch releases: "auto", "ask" or "manual".
+	Patch string `yaml:"patch,omitempty" json:"patch,omitempty"`
+	// Minor is the approval mode for minor releases: "auto", "ask" or "manual".
+	Minor string `yaml:"minor,omitempty" json:"minor,omitempty"`
+	// Major is the approval mode for major releases: "auto", "ask" or "manual".
+	Major string `yaml:"major,omitempty" json:"major,omitempty"`
+}
+
 // Post-ship hook built-in names. A hook uses exactly one of a built-in and
 // a command; the built-in says which setting provides its target.
 const (
@@ -87,6 +108,68 @@ const (
 	MergePipelineDefaultConflictModel = "claude-opus-5-5"
 )
 
+// Release sizing. A release size is the step a merge adds to the version; the
+// release approval modes are keyed by the patch, minor and major sizes.
+const (
+	ReleaseSizePatch = "patch"
+	ReleaseSizeMinor = "minor"
+	ReleaseSizeMajor = "major"
+	// ReleaseSizeNone means the merge makes no release.
+	ReleaseSizeNone = "none"
+)
+
+// Automaton kinds the release size map names by default.
+const (
+	ReleaseKindFeature = "feature"
+	ReleaseKindBug     = "bug"
+)
+
+// When a major release step is raised.
+const (
+	// MajorTriggerManual raises a major only when the operator names it.
+	MajorTriggerManual = "manual"
+	// MajorTriggerMilestone raises a major when the Automation (arc) a
+	// merge belongs to is marked a milestone and complete.
+	MajorTriggerMilestone = "milestone"
+	// MajorTriggerNever never raises a major.
+	MajorTriggerNever = "never"
+)
+
+// How often a release is cut.
+const (
+	// ReleaseCadencePerMerge cuts a release for every merge. The only
+	// cadence accepted in this version.
+	ReleaseCadencePerMerge = "per_merge"
+	// ReleaseCadenceBatch is reserved; not available yet.
+	ReleaseCadenceBatch = "batch"
+	// ReleaseCadenceManual is reserved; not available yet.
+	ReleaseCadenceManual = "manual"
+)
+
+// How versions are numbered.
+const (
+	// VersionSchemeSemver numbers versions as major.minor.patch. The only
+	// scheme accepted in this version.
+	VersionSchemeSemver = "semver"
+)
+
+// Defaults for the release settings.
+const (
+	MergePipelineDefaultMajorTrigger   = MajorTriggerManual
+	MergePipelineDefaultReleaseCadence = ReleaseCadencePerMerge
+	MergePipelineDefaultVersionScheme  = VersionSchemeSemver
+)
+
+// MergePipelineDefaultReleaseSizeMap returns the built-in kind-to-size map:
+// feature is a minor, bug is a patch. Kinds not listed read as no entry
+// (the caller decides); a major is never a built-in default.
+func MergePipelineDefaultReleaseSizeMap() map[string]string {
+	return map[string]string{
+		ReleaseKindFeature: ReleaseSizeMinor,
+		ReleaseKindBug:     ReleaseSizePatch,
+	}
+}
+
 // MergePipelineDefaultSourceOrder returns the default: the file, then the record.
 func MergePipelineDefaultSourceOrder() []string {
 	return []string{MergePipelineSourceFile, MergePipelineSourceRecord}
@@ -102,6 +185,14 @@ type MergePipelineOverride struct {
 	ConflictMode          string   `yaml:"conflict_mode,omitempty" json:"conflict_mode,omitempty"`
 	ConflictConfirmFirstN *int     `yaml:"conflict_confirm_first_n,omitempty" json:"conflict_confirm_first_n,omitempty"`
 	VersionFiles          []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
+	// ReleaseSizeMap adds or overrides kind-to-size entries for this
+	// project; kinds it does not name keep the global or built-in size.
+	ReleaseSizeMap map[string]string `yaml:"release_size_map,omitempty" json:"release_size_map,omitempty"`
+	MajorTrigger   string            `yaml:"major_trigger,omitempty" json:"major_trigger,omitempty"`
+	ReleaseCadence string            `yaml:"release_cadence,omitempty" json:"release_cadence,omitempty"`
+	VersionScheme  string            `yaml:"version_scheme,omitempty" json:"version_scheme,omitempty"`
+	// ReleaseApproval holds this project's approval mode per release size.
+	ReleaseApproval ReleaseApprovalModes `yaml:"release_approval,omitempty" json:"release_approval,omitempty"`
 }
 
 // MergePipelineConfig is the autonomous.merge_pipeline block.
@@ -132,11 +223,28 @@ type MergePipelineConfig struct {
 	// Unset means none: a pipeline that bumps the version fails that step
 	// until the operator names the files.
 	VersionFiles []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
+	// ReleaseSizeMap maps an Automaton kind to the release size its merge
+	// adds: patch, minor, major or none. Entries here add to or override the
+	// built-in map (feature=minor, bug=patch); unset reads the built-in map.
+	// A major entry is accepted only because the operator wrote it.
+	ReleaseSizeMap map[string]string `yaml:"release_size_map,omitempty" json:"release_size_map,omitempty"`
+	// MajorTrigger is "manual" (default), "milestone" or "never": when a
+	// major release step is raised.
+	MajorTrigger string `yaml:"major_trigger,omitempty" json:"major_trigger,omitempty"`
+	// ReleaseCadence is "per_merge" (default). "batch" and "manual" are
+	// reserved and refused until they are available.
+	ReleaseCadence string `yaml:"release_cadence,omitempty" json:"release_cadence,omitempty"`
+	// VersionScheme is "semver" (default). Other schemes are refused until
+	// they are available.
+	VersionScheme string `yaml:"version_scheme,omitempty" json:"version_scheme,omitempty"`
 	// PostShip holds the post-ship hook list: the small steps that run
 	// after the ship's deploy step. Off by default; a hook is a named
 	// built-in or a shell command, and every target a built-in touches is
 	// a setting in this block, never a value in code.
 	PostShip PostShipConfig `yaml:"post_ship,omitempty" json:"post_ship,omitempty"`
+	// ReleaseApproval holds the approval mode per release size. Unset sizes
+	// inherit; a project's override in Projects takes precedence.
+	ReleaseApproval ReleaseApprovalModes `yaml:"release_approval,omitempty" json:"release_approval,omitempty"`
 	// Projects holds per-project overrides keyed by project name.
 	Projects map[string]MergePipelineOverride `yaml:"projects,omitempty" json:"projects,omitempty"`
 }
@@ -146,7 +254,9 @@ func (c MergePipelineConfig) IsZero() bool {
 	return c.FileName == "" && c.SourceOrder == nil && c.FallbackOnBadFile == "" &&
 		c.ConflictPolicy == "" && c.ConflictModel == nil && c.ConflictMode == "" &&
 		c.ConflictConfirmFirstN == nil && c.VersionFiles == nil &&
-		c.PostShip.IsZero() && len(c.Projects) == 0
+		c.ReleaseSizeMap == nil && c.MajorTrigger == "" && c.ReleaseCadence == "" &&
+		c.VersionScheme == "" &&
+		c.PostShip.IsZero() && c.ReleaseApproval == (ReleaseApprovalModes{}) && len(c.Projects) == 0
 }
 
 // Clone returns a deep copy.
@@ -156,7 +266,9 @@ func (c MergePipelineConfig) Clone() MergePipelineConfig {
 	out.VersionFiles = cloneStrings(c.VersionFiles)
 	out.ConflictModel = cloneStringPtr(c.ConflictModel)
 	out.ConflictConfirmFirstN = cloneIntPtr(c.ConflictConfirmFirstN)
+	out.ReleaseSizeMap = cloneStringMap(c.ReleaseSizeMap)
 	out.PostShip = c.PostShip.Clone()
+	// ReleaseApproval holds only strings, so the struct copy above is a deep copy.
 	if c.Projects != nil {
 		out.Projects = make(map[string]MergePipelineOverride, len(c.Projects))
 		for k, v := range c.Projects {
@@ -164,6 +276,7 @@ func (c MergePipelineConfig) Clone() MergePipelineConfig {
 			v.VersionFiles = cloneStrings(v.VersionFiles)
 			v.ConflictModel = cloneStringPtr(v.ConflictModel)
 			v.ConflictConfirmFirstN = cloneIntPtr(v.ConflictConfirmFirstN)
+			v.ReleaseSizeMap = cloneStringMap(v.ReleaseSizeMap)
 			out.Projects[k] = v
 		}
 	}
@@ -176,6 +289,18 @@ func cloneIntPtr(p *int) *int {
 	}
 	v := *p
 	return &v
+}
+
+// cloneStringMap copies a map; nil stays nil so an unset map stays unset.
+func cloneStringMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 func cloneStrings(s []string) []string {
@@ -251,6 +376,50 @@ func (c MergePipelineConfig) EffectiveConflictPolicy(project string) string {
 	return ConflictPolicyMechanicalAndModel
 }
 
+// Built-in release approval defaults, used when neither the project nor the
+// global setting names a mode for a size.
+const (
+	DefaultReleaseApprovalPatch = ReleaseApprovalAuto
+	DefaultReleaseApprovalMinor = ReleaseApprovalAuto
+	DefaultReleaseApprovalMajor = ReleaseApprovalAsk
+)
+
+// EffectiveReleaseApproval returns the approval mode for a release of the
+// given size: the project's override, else the global value, else the
+// built-in default. An unknown or empty size returns ReleaseApprovalAsk, so a
+// release is never shipped quietly because the size was not understood.
+func (c MergePipelineConfig) EffectiveReleaseApproval(project, size string) string {
+	o := c.override(project).ReleaseApproval
+	var proj, glob, def string
+	switch size {
+	case ReleaseSizePatch:
+		proj, glob, def = o.Patch, c.ReleaseApproval.Patch, DefaultReleaseApprovalPatch
+	case ReleaseSizeMinor:
+		proj, glob, def = o.Minor, c.ReleaseApproval.Minor, DefaultReleaseApprovalMinor
+	case ReleaseSizeMajor:
+		proj, glob, def = o.Major, c.ReleaseApproval.Major, DefaultReleaseApprovalMajor
+	default:
+		return ReleaseApprovalAsk
+	}
+	if proj != "" {
+		return proj
+	}
+	if glob != "" {
+		return glob
+	}
+	return def
+}
+
+// EffectiveReleaseApprovalModes returns the resolved approval mode for all
+// three release sizes.
+func (c MergePipelineConfig) EffectiveReleaseApprovalModes(project string) ReleaseApprovalModes {
+	return ReleaseApprovalModes{
+		Patch: c.EffectiveReleaseApproval(project, ReleaseSizePatch),
+		Minor: c.EffectiveReleaseApproval(project, ReleaseSizeMinor),
+		Major: c.EffectiveReleaseApproval(project, ReleaseSizeMajor),
+	}
+}
+
 // EffectivePostShip returns the post-ship block as a copy. An unset
 // block reads as: disabled, no hooks, no targets.
 func (c MergePipelineConfig) EffectivePostShip() PostShipConfig {
@@ -292,6 +461,56 @@ func (c MergePipelineConfig) EffectiveConflictConfirmFirstN(project string) int 
 		return *c.ConflictConfirmFirstN
 	}
 	return MergeConflictConfirmFirstNDefault
+}
+
+// EffectiveReleaseSizeMap returns the kind-to-size map for project as a
+// fresh copy. Layers, lowest first: the built-in map, the global
+// release_size_map, then the project's release_size_map. A later layer
+// adds or overrides a kind; kinds no layer names have no entry.
+func (c MergePipelineConfig) EffectiveReleaseSizeMap(project string) map[string]string {
+	out := MergePipelineDefaultReleaseSizeMap()
+	for _, layer := range []map[string]string{c.ReleaseSizeMap, c.override(project).ReleaseSizeMap} {
+		for k, v := range layer {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// EffectiveMajorTrigger returns the major trigger for project: the project
+// value, else the global value, else MergePipelineDefaultMajorTrigger.
+func (c MergePipelineConfig) EffectiveMajorTrigger(project string) string {
+	if v := c.override(project).MajorTrigger; v != "" {
+		return v
+	}
+	if c.MajorTrigger != "" {
+		return c.MajorTrigger
+	}
+	return MergePipelineDefaultMajorTrigger
+}
+
+// EffectiveReleaseCadence returns the release cadence for project: the
+// project value, else the global value, else MergePipelineDefaultReleaseCadence.
+func (c MergePipelineConfig) EffectiveReleaseCadence(project string) string {
+	if v := c.override(project).ReleaseCadence; v != "" {
+		return v
+	}
+	if c.ReleaseCadence != "" {
+		return c.ReleaseCadence
+	}
+	return MergePipelineDefaultReleaseCadence
+}
+
+// EffectiveVersionScheme returns the version scheme for project: the project
+// value, else the global value, else MergePipelineDefaultVersionScheme.
+func (c MergePipelineConfig) EffectiveVersionScheme(project string) string {
+	if v := c.override(project).VersionScheme; v != "" {
+		return v
+	}
+	if c.VersionScheme != "" {
+		return c.VersionScheme
+	}
+	return MergePipelineDefaultVersionScheme
 }
 
 // PostShipHook is one entry of the post-ship hook list. Exactly one of
@@ -567,6 +786,32 @@ func validConfirmFirstN(key string, v *int) error {
 	return fmt.Errorf("%s: %d is invalid; use 0 or more (0 turns confirmation off)", key, *v)
 }
 
+// ValidateReleaseApprovalMode reports whether v is an accepted release approval
+// mode: "" (unset, inherits), "auto", "ask" or "manual". The error names the
+// valid values. Write paths (config route, MCP, comm, CLI) call it so the
+// check lives in one place.
+func ValidateReleaseApprovalMode(v string) error {
+	return validReleaseApprovalMode("release_approval", v)
+}
+
+// ValidateReleaseApprovalModeKey is ValidateReleaseApprovalMode with the full
+// config key named in the error, for write paths that carry the key (the MCP
+// autonomous_config_set arguments). It is the same check.
+func ValidateReleaseApprovalModeKey(key, v string) error {
+	return validReleaseApprovalMode(key, v)
+}
+
+// validReleaseApprovalMode is ValidateReleaseApprovalMode with the config key
+// named in the error, as Validate reports it.
+func validReleaseApprovalMode(key, v string) error {
+	switch v {
+	case "", ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual:
+		return nil
+	}
+	return fmt.Errorf("%s: %q is invalid; use %q, %q or %q", key, v,
+		ReleaseApprovalAuto, ReleaseApprovalAsk, ReleaseApprovalManual)
+}
+
 func validModelName(key string, v *string) error {
 	if v == nil || *v == "" {
 		return nil
@@ -575,6 +820,74 @@ func validModelName(key string, v *string) error {
 		return fmt.Errorf("%s: %q must be a registry entry name with no spaces", key, *v)
 	}
 	return nil
+}
+
+// validReleaseSizeMap checks each kind and size. A size must be patch,
+// minor, major or none; a major is accepted because the operator wrote it.
+func validReleaseSizeMap(key string, m map[string]string) error {
+	kinds := make([]string, 0, len(m))
+	for k := range m {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	for _, kind := range kinds {
+		if strings.TrimSpace(kind) == "" || strings.ContainsAny(kind, " \t\r\n") {
+			return fmt.Errorf("%s: kind %q must be a name with no spaces", key, kind)
+		}
+		switch m[kind] {
+		case ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor, ReleaseSizeNone:
+		default:
+			return fmt.Errorf("%s.%s: %q is invalid; use %q, %q, %q or %q", key, kind, m[kind],
+				ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor, ReleaseSizeNone)
+		}
+	}
+	return nil
+}
+
+func validMajorTrigger(key, v string) error {
+	switch v {
+	case "", MajorTriggerManual, MajorTriggerMilestone, MajorTriggerNever:
+		return nil
+	}
+	return fmt.Errorf("%s: %q is invalid; use %q, %q or %q", key, v,
+		MajorTriggerManual, MajorTriggerMilestone, MajorTriggerNever)
+}
+
+// validReleaseCadence accepts per_merge only. batch and manual are named
+// but refused until they are available; any other name is invalid.
+func validReleaseCadence(key, v string) error {
+	switch v {
+	case "", ReleaseCadencePerMerge:
+		return nil
+	case ReleaseCadenceBatch, ReleaseCadenceManual:
+		return fmt.Errorf("%s: release cadence %s is not available yet", key, v)
+	}
+	return fmt.Errorf("%s: %q is invalid; use %q", key, v, ReleaseCadencePerMerge)
+}
+
+// validVersionScheme accepts semver only; any other name is refused as not
+// available yet.
+func validVersionScheme(key, v string) error {
+	switch v {
+	case "", VersionSchemeSemver:
+		return nil
+	}
+	return fmt.Errorf("%s: version scheme %s is not available yet", key, v)
+}
+
+// validReleaseSettings checks the release keys of one layer (global or a
+// project), with keys prefixed by key.
+func validReleaseSettings(key string, sizes map[string]string, trigger, cadence, scheme string) error {
+	if err := validReleaseSizeMap(key+"release_size_map", sizes); err != nil {
+		return err
+	}
+	if err := validMajorTrigger(key+"major_trigger", trigger); err != nil {
+		return err
+	}
+	if err := validReleaseCadence(key+"release_cadence", cadence); err != nil {
+		return err
+	}
+	return validVersionScheme(key+"version_scheme", scheme)
 }
 
 // Validate rejects an invalid value, naming the key. An unset key is valid.
@@ -608,6 +921,18 @@ func (c MergePipelineConfig) Validate() error {
 	}
 	if err := validConfirmFirstN(p+"conflict_confirm_first_n", c.ConflictConfirmFirstN); err != nil {
 		return err
+	}
+	if err := validReleaseSettings(p, c.ReleaseSizeMap, c.MajorTrigger, c.ReleaseCadence, c.VersionScheme); err != nil {
+		return err
+	}
+	for _, sz := range []struct{ size, v string }{
+		{ReleaseSizePatch, c.ReleaseApproval.Patch},
+		{ReleaseSizeMinor, c.ReleaseApproval.Minor},
+		{ReleaseSizeMajor, c.ReleaseApproval.Major},
+	} {
+		if err := validReleaseApprovalMode(p+"release_approval."+sz.size, sz.v); err != nil {
+			return err
+		}
 	}
 	if err := c.PostShip.Validate(); err != nil {
 		return err
@@ -651,6 +976,18 @@ func (c MergePipelineConfig) Validate() error {
 		}
 		if err := validConfirmFirstN(k+"conflict_confirm_first_n", o.ConflictConfirmFirstN); err != nil {
 			return err
+		}
+		if err := validReleaseSettings(k, o.ReleaseSizeMap, o.MajorTrigger, o.ReleaseCadence, o.VersionScheme); err != nil {
+			return err
+		}
+		for _, sz := range []struct{ size, v string }{
+			{ReleaseSizePatch, o.ReleaseApproval.Patch},
+			{ReleaseSizeMinor, o.ReleaseApproval.Minor},
+			{ReleaseSizeMajor, o.ReleaseApproval.Major},
+		} {
+			if err := validReleaseApprovalMode(k+"release_approval."+sz.size, sz.v); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

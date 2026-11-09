@@ -127,3 +127,30 @@ func TestMergeMCP_ReadOnlyNoWriteTool(t *testing.T) {
 		t.Errorf("want exactly the two read tools, got %v", MergeToolNames())
 	}
 }
+
+func TestMergeMCP_MergeCarriesLockAndValidator(t *testing.T) {
+	body := `{"mode":"on","alert_minutes":30,"automata":[],"shadow_decisions":[],"pipeline_runs":[],` +
+		`"merge_lock":{"repo":"/r","run_id":"run-1","automaton_id":"a1","branches":["b"],"since":"2026-11-01T08:00:00Z"},` +
+		`"last_validator":{"pass":true,"version":"1.2.3","checked_at":"2026-11-01T08:00:00Z","checks":[]}}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+	res, err := s.handleAutonomousMerge(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	text := automationText(t, res)
+	for _, want := range []string{`"merge_lock":{`, `"run_id":"run-1"`, `"last_validator":{`, `"version":"1.2.3"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("proxied object lacks %s: %s", want, text)
+		}
+	}
+}
+
+func TestMergeMCP_DescriptionNamesLockAndValidator(t *testing.T) {
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	desc := s.toolAutonomousMerge().Description
+	for _, want := range []string{"merge_lock", "last_validator", "absent when empty"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description lacks %q", want)
+		}
+	}
+}

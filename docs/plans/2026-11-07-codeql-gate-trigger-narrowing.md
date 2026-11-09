@@ -88,7 +88,7 @@ path edit, unmodified and standing under that approval.
 
 There is no in-repo view to take: branch protection is a GitHub-side setting
 this repository cannot show, and its state is known only from the GitHub side.
-`docs/plans/2026-10-26-response-to-issues-207-210.md`
+`docs/plans/historical-plans/2026-10-26-response-to-issues-207-210.md`
 records main as unprotected, but that record is unverified.
 
 The consequence that matters: a required check that never runs on a skipped

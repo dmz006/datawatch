@@ -4,7 +4,7 @@
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Tracker:** BL644 (draft PRD `900d0001`)
 
-Confirmed: no — the option is not chosen. Operator, 2026-10-28, quoted: "file gap 1 as a PRD first", in answer to the gap list in `docs/plans/2026-10-28-ten-oh-arc-automation-draft.md`. This file records the problem and the options; nothing is decided and no implementation starts until a `Confirmed: yes` line replaces this one.
+Confirmed: no — the option is not chosen. Operator, 2026-10-28, quoted: "file gap 1 as a PRD first", in answer to the gap list in `docs/plans/historical-plans/2026-10-28-ten-oh-arc-automation-draft.md`. This file records the problem and the options; nothing is decided and no implementation starts until a `Confirmed: yes` line replaces this one.
 
 ## Problem
 

@@ -19,10 +19,10 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
-	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -150,6 +150,19 @@ type Config struct {
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
 	ExecutionBackend string `json:"execution_backend,omitempty"`
+	// FirstAttempt maps a task kind (implementation, docs, note, final_gate)
+	// to the backend and model its first attempt runs on. An absent entry
+	// keeps the normally resolved worker. Mirrors autonomous.first_attempt.
+	FirstAttempt map[string]config.FirstAttemptChoice `json:"first_attempt,omitempty"`
+	// FirstAttemptEscalateAfterFailures is how many failed attempts of a
+	// task move its next attempt off the first-attempt pair. Mirrors
+	// autonomous.first_attempt_escalate_after_failures. 0 and 1 both mean
+	// the first failure escalates (see firstAttemptEscalated).
+	FirstAttemptEscalateAfterFailures int `json:"first_attempt_escalate_after_failures,omitempty"`
+	// RetryResumeMaxContextTokens mirrors autonomous.retry_resume_max_context_tokens.
+	// A retry after a verifier failure resumes the previous session only while
+	// its context is at or under this limit. 0 means every retry starts fresh.
+	RetryResumeMaxContextTokens int `json:"retry_resume_max_context_tokens"`
 	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
 	PlanningEffort     string `json:"planning_effort,omitempty"`
 	VerificationEffort string `json:"verification_effort,omitempty"`
@@ -243,6 +256,12 @@ type Config struct {
 	// config. No omitempty and no normalization: 0 means the size rule is off
 	// and must round-trip as 0.
 	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
+	// ScriptGateTimeoutSeconds and ProjectGateCommand mirror
+	// autonomous.script_gate_timeout_seconds and autonomous.project_gate_command
+	// in config. No omitempty on the timeout: an explicit 0 (no cap) must
+	// round-trip as 0.
+	ScriptGateTimeoutSeconds int    `json:"script_gate_timeout_seconds"`
+	ProjectGateCommand       string `json:"project_gate_command,omitempty"`
 	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
 	// the strong judge backend a large diff is routed to first, empty = the
 	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
@@ -998,14 +1017,15 @@ func (c AutomationConfig) EffectiveDiskAlertPercent() int {
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:             false,
-		PollIntervalSeconds: 30,
-		MaxConcurrentTasks:  1,
-		MaxEnginesPerNode:   1,
-		GateDisagreement:    "warn",
-		FailureEscalation:   defaultFailureEscalationPolicy(),
-		AutoFixRetries:      1,
-		SecurityScan:        true,
+		Enabled:                  false,
+		PollIntervalSeconds:      30,
+		MaxConcurrentTasks:       1,
+		MaxEnginesPerNode:        1,
+		ScriptGateTimeoutSeconds: config.DefaultScriptGateTimeoutSeconds,
+		GateDisagreement:         "warn",
+		FailureEscalation:        defaultFailureEscalationPolicy(),
+		AutoFixRetries:           1,
+		SecurityScan:             true,
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
@@ -1321,9 +1341,9 @@ type Manager struct {
 	// /api/autonomous/status, returned verbatim by the autonomous_status
 	// MCP tool). Guarded by mu. Nil = the check is not wired.
 	hostLoadStatusFn func() HostLoadStatus
-	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose                  DecomposeFn
-	guardrail                  GuardrailFn
+	templates        *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose        DecomposeFn
+	guardrail        GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
 	guardrailClassify *guardrailClassify
 	// scopeBreadth is the scope-breadth classifier call site (nil = off).
@@ -1374,6 +1394,9 @@ type Manager struct {
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 	// mergeRunStore is the merge pipeline run history, opened on first use.
 	mergeRunStore *MergeRunRecords
+	// mergeLockStore is the per-repository merge lock store, opened on first
+	// use by MergeLocks.
+	mergeLockStore *MergeLocks
 
 	// Cleanup status (cleanup_status.go) — the in-memory + persisted
 	// record of the two safety-net passes and their disk readings.
@@ -1536,6 +1559,10 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionContextTokensFn — when set, a retry after a verifier failure reads
+	// the previous session's context size through it to decide resume (see
+	// retry_resume_flow.go). Nil = size unknown.
+	sessionContextTokensFn func(sessionID string) int
 	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
 	// belonging to a task with an empty or dead session link before resetting it.
 	sessionListerFn func() []SessionInfo
@@ -7313,6 +7340,65 @@ func (m *Manager) SetPRDKind(prdID, kind string) error {
 		}
 	}
 	return ErrPRDStale
+}
+
+// commitPRDSetting applies one operator setting to an Automaton under the same
+// revision check SetPRDKind uses: apply runs on the stored record and returns
+// the decision to log. The commit is retried while another writer moves the
+// revision, and ErrPRDStale is returned if every attempt loses the race.
+func (m *Manager) commitPRDSetting(prdID string, apply func(p *PRD) Decision) error {
+	for attempt := 0; attempt < kindSetAttempts; attempt++ {
+		rev, found := m.store.PRDRev(prdID)
+		if !found {
+			return fmt.Errorf("prd %q not found", prdID)
+		}
+		err := m.store.CommitPRDIfRev(prdID, rev, func(p *PRD) bool {
+			p.Decisions = append(p.Decisions, apply(p))
+			return true
+		})
+		if !errors.Is(err, ErrPRDStale) {
+			return err
+		}
+	}
+	return ErrPRDStale
+}
+
+// SetPRDReleaseSize sets the explicit release size of an Automaton: patch,
+// minor, major or none. An empty size clears it, so the size is resolved again
+// from the Automation, the project and the built-in default. An unknown size is
+// refused. The change is logged on the decision timeline.
+func (m *Manager) SetPRDReleaseSize(prdID, size string) error {
+	v, ok := NormalizeReleaseSize(size)
+	if !ok {
+		return fmt.Errorf("unknown release size %q: use patch, minor, major or none (empty clears)", strings.TrimSpace(size))
+	}
+	return m.commitPRDSetting(prdID, func(p *PRD) Decision {
+		from, to := p.ReleaseSize, v
+		if from == "" {
+			from = "derived"
+		}
+		if to == "" {
+			to = "derived"
+		}
+		p.ReleaseSize = v
+		return Decision{
+			At: time.Now(), Kind: "set_release_size", Actor: "operator",
+			Note: fmt.Sprintf("release size %s -> %s", from, to),
+		}
+	})
+}
+
+// SetPRDBreakingChange sets or clears the breaking-change flag of an
+// Automaton. A breaking change raises its release to the major approval mode,
+// so the flag is always logged on the decision timeline.
+func (m *Manager) SetPRDBreakingChange(prdID string, breaking bool) error {
+	return m.commitPRDSetting(prdID, func(p *PRD) Decision {
+		p.BreakingChange = breaking
+		return Decision{
+			At: time.Now(), Kind: "set_breaking_change", Actor: "operator",
+			Note: fmt.Sprintf("breaking change %t -> %t", !breaking, breaking),
+		}
+	})
 }
 
 // SetPRDDirs sets the per-PRD read-only and writable directory scope. Nil

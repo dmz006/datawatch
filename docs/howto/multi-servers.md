@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "per-tab picker", "switching servers", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
   - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
@@ -137,28 +137,73 @@ store raw tokens in config files.
 
 ## Switch between servers (per-tab picker)
 
-Every main view (Sessions, Alerts, Automata, Observer, Dashboard) has a
-**server chip bar** injected at the top. The chips are:
+Every main view (Sessions, Alerts, Automata, Observer, Settings, Dashboard)
+has a **server chip bar** injected at the top. The chips are:
 
 | Chip | Behaviour |
 |------|-----------|
 | **All** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
-| **Local** | Show only this daemon's data (default) |
+| **Local** (labelled with this daemon's hostname — never the word "Local") | Show only this daemon's data (default) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
-The active chip persists in `state.activeServer` for the duration of the session.
+Observer and Settings are the two tabs whose picker offers no **All** chip
+at all — only the local and federated chips.
+
+The active chip persists in `state.activeServer` for the duration of the
+session.
+
+**Selecting a chip acts on the page you are on, immediately.** Choosing a
+federated host re-renders the tab you are currently looking at — Sessions,
+Alerts, Automata, Observer, Settings or Dashboard — in place, against that
+server:
+the **Showing: \<name\>** line above the view updates to the host you
+picked and the list/content becomes that host's data, without you leaving
+and re-opening the view. Picking **Local** or **All** takes the same page
+back to that view the same way.
+
+On the **Dashboard** the switch is per panel rather than one list: each
+panel re-fetches for the active host. Only the **Automata** and **Cost**
+panels aggregate under **All** (`/api/autonomous/prds/aggregated`,
+`/api/cost/aggregated`); the other panels have no aggregated variant.
+
+> **Confirm this on your setup before relying on it.** The in-place switch
+> is recorded under **[Unreleased] → Fixed** in the
+> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry records
+> that no live verification had been run when it was recorded. It is
+> implemented in this tree's `internal/server/web/app.js` — `selectServer`
+> re-renders the tab you're on, and the **Automata** re-render spans the
+> whole tab, **Automation** sub-tab included — with PWA tests for the
+> re-render. Confirm it live on a two-host setup; the full checklist is in
+> [operations.md](../operations.md), under "Still to review (operator)"
+> in the multi-server section.
 
 Behaviours worth knowing:
 
 - **Re-selecting the active server is a no-op.** Tapping the chip that is
   already active does not reload the view, refetch data or reset scroll
   position and filters.
-- **Back to \<hostname\>.** When a remote server cannot be reached and
-  no sessions are loaded, the error panel offers an explicit
-  **Back to \<hostname\>** button (where \<hostname\> is this daemon's own
-  name) that returns you to local data in one tap. It appears only in that
-  unreachable-server state, not on every view; otherwise use the **Local**
-  chip.
+- **A real switch clears the previous server's data first.** On any
+  genuine picker switch (not a no-op re-selection), the old server's
+  session list is dropped before the view redraws — the tab cannot keep
+  showing the previous server's sessions. Sub-pages that carry no chip
+  bar at all (session detail, the New session form) are not re-rendered
+  by a switch; they keep their contents until you leave them.
+- **Back to \<hostname\>.** Extra one-tap ways to return to local data
+  (where \<hostname\> is this daemon's own name), in addition to the
+  always-present **Local** chip — they all perform the same "go back to
+  local" action:
+  - the error panel, when a remote server cannot be reached and no
+    sessions are loaded, offers an explicit **Back to \<hostname\>**
+    button;
+  - a clickable **🌐 \<name\>** indicator on the **Sessions toolbar** —
+    it appears while a remote server is the active one and clicking it
+    returns you to local data; it is the `.server-indicator` chip in
+    `renderSessionsView` in `internal/server/web/app.js`
+    (`onclick="selectServer(null)"`), covered by the PWA test
+    `internal/server/web/app-select-server-controls.test.js`;
+  - on the **Servers card** under Settings → Comms → Remote Servers, the
+    row for the active remote server carries a **Back to \<hostname\>**
+    button next to its Select/Connected button.
 - **Showing: \<name\> header line.** Every page carries a
   **Showing: \<name\>** line above the view naming the server whose data
   is on screen: the server's hostname, or **All servers** in all-servers
@@ -177,8 +222,12 @@ Selecting **All** uses two dedicated endpoints that fan out in parallel:
 Each item in the response carries a `server` field (e.g. `"server":"nas"`)
 identifying its origin. The PWA renders a **[nas]** tag on each card.
 
-Observer and Dashboard views use the picker to switch — they don't have a
-separate "All" aggregation; "All" falls back to local data on those views.
+The Observer and Settings pickers offer no **All** chip at all (only the
+local and federated chips). On the Dashboard, **All** aggregates per panel:
+the Automata and Cost panels use the aggregated endpoints above
+(`/api/autonomous/prds/aggregated`, `/api/cost/aggregated`); the other
+Dashboard panels have no aggregated variant and show the selected server's
+data.
 
 ## Proxy mode (specific server)
 

@@ -2,12 +2,14 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // mergeRunSpy is a Manager double for the run route: it records the runs the
@@ -90,5 +92,50 @@ func TestMergeRunRoute_BadBody(t *testing.T) {
 	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}, dataDir: t.TempDir()}
 	if rec := postMergeRun(s, http.MethodPost, `{`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad body = %d, want 400", rec.Code)
+	}
+}
+
+// lockedMergeRunSpy is a run-route double whose Manager also supplies the
+// merge lock store, or fails to open it.
+type lockedMergeRunSpy struct {
+	mergeRunSpy
+	locks   *autonomous.MergeLocks
+	lockErr error
+}
+
+func (m *lockedMergeRunSpy) MergeLocks() (*autonomous.MergeLocks, error) {
+	return m.locks, m.lockErr
+}
+
+func TestNewMergeRunnerWiresTheMergeLock(t *testing.T) {
+	locks, err := autonomous.NewMergeLocks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	withLocks := newMergeRunner(&lockedMergeRunSpy{locks: locks}, config.MergePipelineConfig{}, t.TempDir(), "demo", t.TempDir(), nil)
+	if withLocks.Locks == nil {
+		t.Fatal("the runner should take the Manager's lock store")
+	}
+	if _, err := withLocks.Locks.Acquire("/r", autonomous.MergeLockHolder{RunID: "r1", AutomatonID: "a1"}); err != nil {
+		t.Fatalf("the wired lock should be the Manager's store: %v", err)
+	}
+	if _, held := locks.Status("/r"); !held {
+		t.Fatal("the lock taken through the runner must be the Manager's own lock")
+	}
+}
+
+func TestNewMergeRunnerRefusesWhenLockStoreIsBroken(t *testing.T) {
+	broken := newMergeRunner(&lockedMergeRunSpy{lockErr: errors.New("corrupt")}, config.MergePipelineConfig{}, t.TempDir(), "demo", t.TempDir(), nil)
+	if broken.Locks == nil {
+		t.Fatal("a broken lock store must refuse runs, not leave them unlocked")
+	}
+	if _, err := broken.Locks.Acquire("/r", autonomous.MergeLockHolder{RunID: "r1"}); err == nil {
+		t.Fatal("a broken lock store must refuse every lock")
+	}
+}
+
+func TestNewMergeRunnerWithoutLockSourceTakesNoLock(t *testing.T) {
+	if r := newMergeRunner(&mergeRunSpy{}, config.MergePipelineConfig{}, t.TempDir(), "demo", t.TempDir(), nil); r.Locks != nil {
+		t.Fatal("a Manager without a lock store runs with no lock")
 	}
 }
