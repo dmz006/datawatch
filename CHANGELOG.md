@@ -8,6 +8,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - **`autonomous.planning_restart_policy` is settable and validated on every operator surface.** The setting chooses what a daemon restart does to an Automaton that is still in planning: `reattach` (default), `restart` or `draft`. The MCP `autonomous_config_set` tool takes `planning_restart_policy` and the CLI `autonomous config-set` takes it in its JSON body; both refuse any other value before sending anything. The comm `configure` command refuses an invalid value and names the valid ones. The configure help lists the key. The daemon's restart path does not read the value yet, so a restart still resets a planning Automaton to draft; see [docs/howto/restart-with-work-running.md](docs/howto/restart-with-work-running.md) for the current status.
 
+### Changed
+- **Boot-resume of a planning Automaton now ingests a finished plan and restarts planning once.** When the daemon restarts while an Automaton is in planning and its planner session has ended with a complete, parsable output file, the plan is ingested as a normal decompose result and a decision records that it was recovered from the output file. When the session is gone with no usable output, or `planning_restart_policy` is `restart`, planning starts again exactly once: the planner record is cleared, any live planner session no reader owns is killed (and the decision says so), and `planning_restarted_once` is set on the Automaton so a second restart falls back to draft.
+
 ## v9.112.10 — Built-in final gate and note tasks pass the verifier
 
 ### Added
