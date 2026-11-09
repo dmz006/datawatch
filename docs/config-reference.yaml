@@ -3994,6 +3994,14 @@ autonomous:
   # built-in at its position, new id appends. Template ids must be
   # well-shaped ([a-z0-9_.-]+) and unique — the daemon validates before
   # applying, and a duplicate id is a 400, not a merge.
+  # Time cap, in whole seconds, on one script gate run. 0 = no cap; a negative
+  # or fractional value is refused. Default 900. How-to:
+  # howto/automaton-daemon-task-modes.md.
+  script_gate_timeout_seconds: 900
+  # The project's own build-and-test command, run by the gate as one line of
+  # shell text. Empty = unset. A value with a line break or over 1024 bytes is
+  # refused. How-to: howto/automaton-daemon-task-modes.md.
+  project_gate_command: ""
   task_templates:
     # Global gate. Default true. false turns template apply off everywhere
     # (per-project overrides below can still force a project on/off).
