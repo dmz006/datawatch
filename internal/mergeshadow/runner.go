@@ -52,6 +52,9 @@ type Input struct {
 	ChangelogTasks []ChangelogTask
 	// GateTimeout bounds each gate. Zero or less uses the config default.
 	GateTimeout time.Duration
+	// Review is the review verdict on the work branch, nil when no review was
+	// recorded. A non-nil verdict must name the branch head (CheckReviewHead).
+	Review *ReviewVerdict
 }
 
 // Runner builds a shadow merge plan for one finished Automaton and stores it.
@@ -66,8 +69,10 @@ type Runner struct {
 // Run performs the shadow merge steps in order and stores the result:
 //
 //  0. list the Automaton's task branches and block the plan on any that holds
-//     commits the work branch does not (CheckUnmergedTaskBranches); when one
-//     does, steps 1 to 3 are not run;
+//     commits the work branch does not (CheckUnmergedTaskBranches), and, when
+//     a review verdict is given, block it when the verdict names a commit other
+//     than the branch head (CheckReviewHead); when any blocks, steps 1 to 3
+//     are not run;
 //  1. build the trial merge of the work branch into the base ref, in a
 //     throwaway worktree (TrialMergeWith);
 //  2. classify each conflicted path by file class;
@@ -116,6 +121,15 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A review that does not name the branch head is stale and blocks the
+	// plan the same way. It is checked only when a verdict was recorded.
+	if in.Review != nil {
+		reviewFindings, err := CheckReviewHead(ctx, in.RepoPath, in.Branch, in.Review.Commit)
+		if err != nil {
+			return nil, err
+		}
+		taskFindings = append(taskFindings, reviewFindings...)
+	}
 
 	// Steps 1 to 3: the trial merge, its conflicts and the gates on it.
 	var conflicts []Conflict
@@ -123,7 +137,7 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	var trialErr error
 	if len(taskFindings) > 0 {
 		conflicts = []Conflict{}
-		gateList = skippedGates("not run: an Automaton task branch has unmerged commits")
+		gateList = skippedGates("not run: the Automaton branch is blocked by step 0 findings")
 	} else {
 		_, trialErr = TrialMergeWith(ctx, in.RepoPath, base, in.Branch,
 			filepath.Join(in.DataDir, scratchDirName),
