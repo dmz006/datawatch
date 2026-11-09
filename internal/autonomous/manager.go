@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1952,6 +1953,55 @@ func (m *Manager) LinkTaskSession(prdID, taskID, sessionID string) {
 	}
 }
 
+// RecordPlannerSession names the live planner session producing prdID's plan
+// and the file it writes the plan to, so a restart can re-attach to it. The
+// output file is stored relative to the PRD's project directory when it lies
+// under it, and otherwise as recorded. Unknown PRD ids are ignored.
+func (m *Manager) RecordPlannerSession(prdID, sessionID, outputFile string) {
+	if m == nil || m.store == nil || prdID == "" {
+		return
+	}
+	m.store.MutatePRD(prdID, func(p *PRD) bool {
+		p.PlannerSessionID = sessionID
+		p.PlannerOutputFile = plannerOutputPath(p.ProjectDir, outputFile)
+		return true
+	})
+}
+
+// ClearPlannerSession empties the planner session and output file recorded on
+// prdID. It runs wherever planning ends (success, failure or cancel). Unknown
+// PRD ids and PRDs with nothing recorded are left untouched.
+func (m *Manager) ClearPlannerSession(prdID string) {
+	if m == nil || m.store == nil || prdID == "" {
+		return
+	}
+	m.store.MutatePRD(prdID, clearPlannerFields)
+}
+
+// clearPlannerFields empties the planner fields on p. The caller must hold the
+// store lock, or be inside Store.MutatePRD. It reports whether anything changed.
+func clearPlannerFields(p *PRD) bool {
+	if p.PlannerSessionID == "" && p.PlannerOutputFile == "" {
+		return false
+	}
+	p.PlannerSessionID = ""
+	p.PlannerOutputFile = ""
+	return true
+}
+
+// plannerOutputPath returns outputFile relative to projectDir when it is an
+// absolute path under projectDir, and otherwise returns outputFile unchanged.
+func plannerOutputPath(projectDir, outputFile string) string {
+	if outputFile == "" || projectDir == "" || !filepath.IsAbs(outputFile) || !filepath.IsAbs(projectDir) {
+		return outputFile
+	}
+	rel, err := filepath.Rel(filepath.Clean(projectDir), filepath.Clean(outputFile))
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return outputFile
+	}
+	return rel
+}
+
 // SetSessionOutputFn wires the recorded-output reader used at boot-resume to
 // detect a worker that finished while the daemon was down. ok=false means the
 // session record or its output is unavailable. Nil disables the check.
@@ -3129,6 +3179,8 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 		prd.Status = PRDPlanning
 		prd.UpdatedAt = time.Now()
 	})
+	// Planning ends on every return path; drop any planner session it recorded.
+	defer m.ClearPlannerSession(prdID)
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
@@ -3330,6 +3382,8 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 		prd.Status = PRDPlanning
 		prd.UpdatedAt = time.Now()
 	})
+	// Planning ends on every return path; drop any planner session it recorded.
+	defer m.ClearPlannerSession(prdID)
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
