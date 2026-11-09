@@ -3,6 +3,7 @@ package shell
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -211,5 +212,55 @@ func TestSweepStaleTaskFilesNoDirs(t *testing.T) {
 	n, err := SweepStaleTaskFiles(nil)
 	if n != 0 || err != nil {
 		t.Errorf("n=%d err=%v, want 0, nil", n, err)
+	}
+}
+
+// TestSweepStaleTaskFilesSpecScenario covers the startup sweep over two
+// project directories and one path that does not exist: only the two
+// shell-task files in the first project are removed, and keep.txt stays.
+func TestSweepStaleTaskFilesSpecScenario(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	folder := filepath.Join(first, ".datawatch")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"shell-task-a.txt", "shell-task-b.txt", "keep.txt"} {
+		if err := os.WriteFile(filepath.Join(folder, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := SweepStaleTaskFiles([]string{first, second, missing})
+	if err != nil {
+		t.Fatalf("SweepStaleTaskFiles: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("removed = %d, want 2", n)
+	}
+	for _, gone := range []string{"shell-task-a.txt", "shell-task-b.txt"} {
+		if _, err := os.Stat(filepath.Join(folder, gone)); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed (err=%v)", gone, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(folder, "keep.txt")); err != nil {
+		t.Errorf("keep.txt should survive: %v", err)
+	}
+}
+
+// TestTaskFileNameSafeForSessionWithColon checks that a session name with a
+// colon and a slash yields only safe characters, with the required prefix and
+// suffix.
+func TestTaskFileNameSafeForSessionWithColon(t *testing.T) {
+	got := taskFileName("cs:one/two")
+	if !strings.HasPrefix(got, "shell-task-") || !strings.HasSuffix(got, ".txt") {
+		t.Fatalf("taskFileName(cs:one/two) = %q, want shell-task-*.txt", got)
+	}
+	for _, r := range got {
+		ok := (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+			r == '_' || r == '-' || r == '.'
+		if !ok {
+			t.Errorf("taskFileName(cs:one/two) = %q contains unsafe rune %q", got, r)
+		}
 	}
 }
