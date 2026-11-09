@@ -25,7 +25,7 @@ import (
 
 func (s *Server) toolAutonomousStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_status",
-		mcpsdk.WithDescription("BL24 — return autonomous loop status (each Automaton row whose completion review blocked carries rules_review_outcome: action, findings, retries; running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default). The `queue` array lists every queued or capacity-waiting task with the plain-words reason it waits (task_id, prd_id, prd_title, task_title, cause, reason, since, resets_at when known, holder when the reason names one); the `holdings` array lists every running task with the pools it holds (host, llm:, node: and any tree lock key), node, session_id and since. Both are omitted when empty. The `review_needed` array lists every task held for operator review across all Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title, failure_count (failed attempts), last_backend and last_model (the worker of the last attempt) and held_at. It is omitted when no task is held; decide each one with autonomous_prd_resolve_task_review. The `memory_ceiling` object is the effective memory ceiling of a verification run with no project or task kind override: effective_mb (0 when none), source (default, project, task_kind or none), enforcement_path (scope for a systemd user scope, watchdog for the /proc watchdog, none when nothing enforces it) and the share_percent, floor_mb and cap_mb it is computed from; source is none while no ceiling settings are installed, and the settings are changed with config_set on resource_limits.memory_share_percent, resource_limits.memory_floor_mb and resource_limits.memory_cap_mb."))
+		mcpsdk.WithDescription("BL24 — return autonomous loop status (each Automaton row whose completion review blocked carries rules_review_outcome: action, findings, retries; running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default). The `queue` array lists every queued or capacity-waiting task with the plain-words reason it waits (task_id, prd_id, prd_title, task_title, cause, reason, since, resets_at when known, holder when the reason names one); the `holdings` array lists every running task with the pools it holds (host, llm:, node: and any tree lock key), node, session_id and since. Both are omitted when empty. The `review_needed` array lists every task held for operator review across all Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title, failure_count (failed attempts), last_backend and last_model (the worker of the last attempt), held_at, and the attempt record of that last attempt: last_backend_reason (why that backend was chosen), last_resumed (true when it resumed the previous session), last_resume_reason (the retry-resume decision) and no_retry_reason (why the task went to review without another attempt). The reason and resume fields are omitted when not recorded. It is omitted when no task is held; decide each one with autonomous_prd_resolve_task_review. The `memory_ceiling` object is the effective memory ceiling of a verification run with no project or task kind override: effective_mb (0 when none), source (default, project, task_kind or none), enforcement_path (scope for a systemd user scope, watchdog for the /proc watchdog, none when nothing enforces it) and the share_percent, floor_mb and cap_mb it is computed from; source is none while no ceiling settings are installed, and the settings are changed with config_set on resource_limits.memory_share_percent, resource_limits.memory_floor_mb and resource_limits.memory_cap_mb."))
 }
 func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/autonomous/status", nil)
@@ -73,7 +73,8 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"defect_intake_automation (string, empty by default) names the Automation that new kind:bug defect filings are recorded under; empty means the filing is recorded, not filed into any Automation. "+
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task. "+
 			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. "+
-			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set."),
+			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set. "+
+			"The attempt-cost keys are included too: first_attempt (object: task kind implementation, docs, note or final_gate → {backend, model}; an empty entry keeps today's choice), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session). Set them with the same-named arguments of autonomous_config_set."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -129,6 +130,11 @@ func mergeJudgePromptSettings(autoCfg []byte, prompt map[string]json.RawMessage)
 			merged[k.key] = v
 		}
 	}
+	for _, key := range attemptCostKeyNames {
+		if v, ok := prompt[key]; ok {
+			merged[key] = v
+		}
+	}
 	return json.Marshal(merged)
 }
 
@@ -159,7 +165,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 			"override_queued_tasks (default on; unset = on) is the master switch for those overrides on a locked Automaton status: when on, a story- or task-level set-llm call applies to the tasks that are still queued and lists the ones left alone (running/finished); when off, the same call is refused on a locked status. " +
 			"snapshot_never_stage sets the path patterns the autonomous snapshot must never `git add` (e.g. secret files, out-of-scope vendor trees); blank patterns are rejected, and when unset the built-in default list applies. " +
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. " +
-			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart."),
+			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart. " +
+			"The attempt-cost arguments are checked before anything is written, and a refused value changes nothing: first_attempt (object of task kind implementation, docs, note or final_gate → {backend, model}; replaces the whole map; backends pi, pi-prompt and ollama need a model), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session)."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_concurrent_tasks", mcpsdk.Description("Daemon-wide default for how many independent tasks of one Automaton run at once. An Automaton's own setting overrides it. 1 = sequential (the default); values below 1 are ignored.")),
@@ -175,6 +182,9 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
 		mcpsdk.WithBoolean("override_queued_tasks", mcpsdk.Description("Master switch for task/story-level LLM overrides on a locked Automaton status. On (the default; unset reads as on) a set-llm call applies to the still-queued tasks and lists the ones left alone; off refuses such calls on a locked status. Absent key = leave the stored value as-is.")),
 		mcpsdk.WithArray("snapshot_never_stage", mcpsdk.Description("Path patterns the autonomous snapshot must never `git add` (e.g. '.env', 'node_modules/'). Blank patterns are rejected; an explicit empty list clears the list (nothing is protected); when unset the built-in default list applies."), mcpsdk.WithStringItems()),
+		mcpsdk.WithObject(attemptCostFirstAttemptKey, mcpsdk.Description(attemptCostFirstAttemptDesc)),
+		mcpsdk.WithNumber(attemptCostEscalateKey, mcpsdk.Description(attemptCostEscalateDesc)),
+		mcpsdk.WithNumber(attemptCostResumeKey, mcpsdk.Description(attemptCostResumeDesc)),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
 		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
@@ -288,6 +298,15 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	promptPatch, perr := judgePromptPatch(req)
 	if perr != nil {
 		return mcpsdk.NewToolResultError(perr.Error()), nil
+	}
+	// Attempt-cost keys go to the same /api/config PUT as the judge prompt keys,
+	// after the shared validator has accepted the whole candidate.
+	attemptPatch, aerr := s.attemptCostSetPatch(req)
+	if aerr != nil {
+		return mcpsdk.NewToolResultError(aerr.Error()), nil
+	}
+	for k, v := range attemptPatch {
+		promptPatch[k] = v
 	}
 	for _, k := range []string{"enabled", "security_scan"} {
 		if v := req.GetBool(k, false); v {
