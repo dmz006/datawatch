@@ -4070,10 +4070,47 @@ autonomous:
   # built-in at its position, new id appends. Template ids must be
   # well-shaped ([a-z0-9_.-]+) and unique — the daemon validates before
   # applying, and a duplicate id is a 400, not a merge.
+  # Time cap, in whole seconds, on one script gate run. Default 900. 0 = no
+  # cap (the gate may run as long as its script needs); a negative value is
+  # refused at load time. The cap stops a runaway gate script, so keep it
+  # above the longest honest run of your build-and-test command. How-to:
+  # howto/automaton-daemon-task-modes.md.
+  script_gate_timeout_seconds: 900
+  # The project's own build-and-test command, run by the script gate as one
+  # line of shell text, for example "make test" or "npm test". Empty (the
+  # default) = unset. Not tied to any language. A value with a line break,
+  # a NUL byte or over 1024 bytes is refused. A project's policy block can
+  # override it per project (projects.<name>.policy.project_gate_command);
+  # an explicit empty string there unsets it for that project only. See the
+  # "Projects: per-project automation policy" section below. How-to:
+  # howto/automaton-daemon-task-modes.md.
+  project_gate_command: ""
   task_templates:
     # Global gate. Default true. false turns template apply off everywhere
     # (per-project overrides below can still force a project on/off).
     enabled: true
+    # Who carries out each template's task. Three values:
+    #   llm    — a model session does the task (the default for most templates)
+    #   daemon — the daemon does the task itself with no model call; only the
+    #            four daemon-capable ids accept it: changelog_entry,
+    #            parity_issue_draft, bounded_load_step and
+    #            version_bump_left_to_merge
+    #   off    — the task is not generated at all
+    # Shipped defaults per built-in template id:
+    #   changelog_entry             daemon
+    #   parity_issue_draft          daemon
+    #   bounded_load_step           daemon
+    #   version_bump_left_to_merge  daemon
+    #   docs_set                    llm
+    #   final_gate                  llm (daemon is refused: it is a read-only gate)
+    # An id you do not list here falls back to the shipped default for that id
+    # (an id outside the built-in pack falls back to llm). Keys must be
+    # well-shaped template ids; an unknown mode value, or daemon on an id that
+    # cannot take it, is a validation error, not a silent fallback.
+    # Empty (the default) keeps every shipped default. Example override, to
+    # send the changelog entry through a model session instead of the daemon:
+    #   changelog_entry: llm
+    mode: {}
     # Operator template definitions (empty = the built-in pack,
     # unmodified). {id, title, spec, files, kind, read_only, report_path,
     # depends_on, applies_when, verification_script_reason}.
@@ -4784,6 +4821,11 @@ projects:
       # uncommitted_work_scope: commit | worktree (worktree = default, stricter).
       # burn_guard_ask_on_change: confirmation question (true) or silent write
       # (false, daemon default) for burn-guard changes to this project's tasks.
+      # project_gate_command: the build-and-test command the script gate runs for
+      # this project, one line, same rules as autonomous.project_gate_command.
+      # Absent = inherit the daemon value; an explicit "" unsets it for this
+      # project only, so its gate runs no project command.
+      # project_gate_command: make test
 
 # ── Auto-Update ──
 # Automatic self-update configuration.

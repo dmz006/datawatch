@@ -247,6 +247,11 @@ func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, [
 		}
 		for _, s := range stories {
 			for _, t := range s.Tasks {
+				// A daemon-mode template task runs no session, so no
+				// per-task rule applies to it (daemon_mode_checks.go).
+				if daemonRunsTask(t) {
+					continue
+				}
 				if !cr.match.matchTask(t, dir) {
 					continue
 				}

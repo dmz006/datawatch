@@ -18442,6 +18442,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.judge_verdict_cache_enabled', label: 'Judge verdict cache', labelKey: 'settings_judge_verdict_cache', helpKey: 'settings_judge_verdict_cache_help', type: 'toggle', default: true },
     { key: 'autonomous.judge_prompt_file_threshold_lines', label: 'Judge prompt file threshold (lines, 0=always send in full)', labelKey: 'settings_judge_prompt_file_threshold', helpKey: 'settings_judge_prompt_file_threshold_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 100000, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_prompt_file_threshold_lines', this)" },
     { key: 'autonomous.judge_delivery_wait_per_thousand_lines_seconds', label: 'Judge extra wait per 1000 prompt lines (sec, 0=none)', labelKey: 'settings_judge_delivery_wait', helpKey: 'settings_judge_delivery_wait_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 3600, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_delivery_wait_per_thousand_lines_seconds', this)" },
+    // Daemon task modes and gate settings. The mode control renders one select
+    // per built-in template id (daemon only for the daemon-capable ids). A write
+    // the daemon refuses shows the daemon's own text.
+    { key: 'autonomous.task_templates.mode', label: 'Task template modes (llm, daemon or off, per template)', labelKey: 'settings_daemon_task_modes', helpKey: 'settings_daemon_task_modes_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'task_template_modes' },
+    { key: 'autonomous.script_gate_timeout_seconds', label: 'Script gate time cap (seconds, 0 = no cap, default 900)', labelKey: 'settings_daemon_script_gate_timeout', helpKey: 'settings_daemon_script_gate_timeout_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'number', min: 0, step: 1, placeholder: '900', default: '900', onchange: "saveDaemonTaskNumberField('autonomous.script_gate_timeout_seconds', this)" },
+    { key: 'autonomous.project_gate_command', label: 'Project gate command (one line of shell text, empty = unset)', labelKey: 'settings_daemon_project_gate_command', helpKey: 'settings_daemon_project_gate_command_help', helpLabelKey: 'settings_daemon_task_help_link_label', helpDocs: 'howto/automaton-daemon-task-modes.md', type: 'text', onchange: "saveDaemonTaskTextField('autonomous.project_gate_command', this)" },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/
@@ -20241,6 +20247,8 @@ function loadGeneralConfig() {
             // Populate once the card is in the DOM (GET the current config
             // from the dedicated endpoint; silent on daemons without it).
             setTimeout(() => { if (window.settingsDecomposeLintLoad) window.settingsDecomposeLintLoad(pid); }, 0);
+          } else if (f.type === 'task_template_modes') {
+            html += taskTemplateModesHTML(f, fLabel, val);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -21191,6 +21199,129 @@ function saveJudgePromptNumberField(key, el) {
   saveGeneralConfigPut(key, n);
 }
 window.saveJudgePromptNumberField = saveJudgePromptNumberField;
+
+// Daemon task modes. The built-in decomposition template ids, and the subset
+// the daemon can carry out (daemon is offered only for those; final_gate is
+// never daemon). They mirror config.DefaultTaskTemplateModes.
+const DAEMON_TASK_TEMPLATE_IDS = ['changelog_entry', 'parity_issue_draft', 'docs_set', 'bounded_load_step', 'final_gate', 'version_bump_left_to_merge'];
+const DAEMON_TASK_DAEMON_CAPABLE_IDS = ['changelog_entry', 'parity_issue_draft', 'bounded_load_step', 'version_bump_left_to_merge'];
+
+// Locale keys for the template and mode labels, spelled out in full so each
+// key is visible to the locale coverage check.
+const DAEMON_TASK_TEMPLATE_LABEL_KEYS = {
+  changelog_entry: 'settings_daemon_task_template_changelog_entry',
+  parity_issue_draft: 'settings_daemon_task_template_parity_issue_draft',
+  docs_set: 'settings_daemon_task_template_docs_set',
+  bounded_load_step: 'settings_daemon_task_template_bounded_load_step',
+  final_gate: 'settings_daemon_task_template_final_gate',
+  version_bump_left_to_merge: 'settings_daemon_task_template_version_bump_left_to_merge',
+};
+const DAEMON_TASK_MODE_LABEL_KEYS = {
+  llm: 'settings_daemon_task_mode_llm',
+  daemon: 'settings_daemon_task_mode_daemon',
+  off: 'settings_daemon_task_mode_off',
+};
+
+function daemonTaskModeOptions(id) {
+  return DAEMON_TASK_DAEMON_CAPABLE_IDS.includes(id) ? ['llm', 'daemon', 'off'] : ['llm', 'off'];
+}
+
+function daemonTaskDefaultMode(id) {
+  return DAEMON_TASK_DAEMON_CAPABLE_IDS.includes(id) ? 'daemon' : 'llm';
+}
+
+// taskTemplateModesHTML renders the autonomous.task_templates.mode control: a
+// heading with its ? help entry, then one select per built-in template id.
+// Each select saves its own dotted key on change.
+function taskTemplateModesHTML(f, fLabel, val) {
+  const stored = (val && typeof val === 'object' && !Array.isArray(val)) ? val : {};
+  const head = `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+    <div class="settings-label">${escHtml(fLabel)}${settingsHelpLink(f)}</div>
+    ${_settingsHelpTextHTML(f)}
+  </div>`;
+  const rows = DAEMON_TASK_TEMPLATE_IDS.map(id => {
+    const cur = stored[id] ? String(stored[id]) : daemonTaskDefaultMode(id);
+    const opts = daemonTaskModeOptions(id).map(m =>
+      `<option value="${escHtml(m)}" ${cur === m ? 'selected' : ''}>${escHtml(t(DAEMON_TASK_MODE_LABEL_KEYS[m]))}</option>`
+    ).join('');
+    return `<div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(t(DAEMON_TASK_TEMPLATE_LABEL_KEYS[id]))}</div>
+      <select class="form-select general-cfg-input" data-daemon-task-template="${escHtml(id)}" data-saved="${escHtml(cur)}" onchange="saveDaemonTaskModeSetting('${escHtml(id)}', this)">${opts}</select>
+    </div>`;
+  }).join('');
+  return head + rows;
+}
+
+// saveDaemonTaskSetting PUTs one dotted key to /api/config. On success it shows
+// a short confirmation and resolves true. On a refusal (the daemon answers 400
+// with its own text) it shows that text as the error, runs onRefused to put the
+// control back, and resolves false.
+function saveDaemonTaskSetting(key, value, onRefused) {
+  return fetch(_apiPath('/api/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast(t('settings_daemon_task_saved'), 'success', 1500);
+        return true;
+      }
+      return r.text().then(msg => {
+        const text = String(msg || '').trim() || t('settings_daemon_task_save_failed');
+        showToast(text, 'error', 8000);
+        if (onRefused) onRefused();
+        return false;
+      });
+    })
+    .catch(() => {
+      showToast(t('settings_daemon_task_save_failed'), 'error');
+      return false;
+    });
+}
+
+// saveDaemonTaskModeSetting saves one template's mode (autonomous.task_templates.mode.<id>).
+function saveDaemonTaskModeSetting(id, el) {
+  const mode = String(el && el.value ? el.value : '');
+  const prev = el && el.dataset ? (el.dataset.saved || '') : '';
+  saveDaemonTaskSetting('autonomous.task_templates.mode.' + id, mode, () => {
+    if (el) el.value = prev;
+  }).then(ok => {
+    if (ok && el && el.dataset) el.dataset.saved = mode;
+  });
+}
+
+// saveDaemonTaskNumberField saves the script gate time cap as typed. An empty
+// or non-numeric box is reported here and sends nothing; any other value goes to
+// the daemon, which refuses a negative or fractional value with its own text.
+function saveDaemonTaskNumberField(key, el) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isFinite(n)) {
+    showToast(t('settings_daemon_task_number_invalid'), 'error');
+    if (el && el.defaultValue !== undefined) el.value = el.defaultValue;
+    return;
+  }
+  saveDaemonTaskSetting(key, n, () => {
+    if (el) el.value = el.defaultValue !== undefined ? el.defaultValue : '';
+  }).then(ok => {
+    if (ok && el) el.defaultValue = String(n);
+  });
+}
+
+// saveDaemonTaskTextField saves the project gate command. Empty clears it; a
+// multi-line or over-long value is refused by the daemon with its own text.
+function saveDaemonTaskTextField(key, el) {
+  const value = String(el && el.value != null ? el.value : '').trim();
+  saveDaemonTaskSetting(key, value, () => {
+    if (el) el.value = el.defaultValue !== undefined ? el.defaultValue : '';
+  }).then(ok => {
+    if (ok && el) el.defaultValue = value;
+  });
+}
+window.saveDaemonTaskModeSetting = saveDaemonTaskModeSetting;
+window.saveDaemonTaskNumberField = saveDaemonTaskNumberField;
+window.saveDaemonTaskTextField = saveDaemonTaskTextField;
 
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and

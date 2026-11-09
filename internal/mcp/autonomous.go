@@ -74,13 +74,16 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task. "+
 			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. "+
 			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set. "+
-			"The attempt-cost keys are included too: first_attempt (object: task kind implementation, docs, note or final_gate → {backend, model}; an empty entry keeps today's choice), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session). Set them with the same-named arguments of autonomous_config_set."),
+			"The attempt-cost keys are included too: first_attempt (object: task kind implementation, docs, note or final_gate → {backend, model}; an empty entry keeps today's choice), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session). Set them with the same-named arguments of autonomous_config_set."+
+			daemonTaskKeysGetDescription),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	// The judge prompt delivery settings live in the daemon config, not in the
 	// manager config /api/autonomous/config returns, so they are merged in
 	// from /api/config (stored values; 0 = file route off / no extra wait).
+	// The three daemon task settings (task template modes, script gate timeout,
+	// project gate command) come from the same /api/config read.
 	prompt, err := s.judgePromptSettings()
 	if err != nil {
 		return nil, err
@@ -90,6 +93,10 @@ func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolR
 		return nil, err
 	}
 	out, err = mergeJudgePromptSettings(out, prompt)
+	if err != nil {
+		return nil, err
+	}
+	out, err = mergeDaemonTaskSettings(out, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +167,7 @@ func judgePromptPatch(req mcpsdk.CallToolRequest) (map[string]any, error) {
 func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_set", append([]mcpsdk.ToolOption{
 		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. " +
+			daemonTaskKeysSetDescription +
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. " +
 			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected. " +
 			"override_queued_tasks (default on; unset = on) is the master switch for those overrides on a locked Automaton status: when on, a story- or task-level set-llm call applies to the tasks that are still queued and lists the ones left alone (running/finished); when off, the same call is refused on a locked status. " +
@@ -290,7 +298,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
-	}, append(append(append(append(append(verifierPolicyConfigTools(), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
+	}, append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -306,6 +314,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		return mcpsdk.NewToolResultError(aerr.Error()), nil
 	}
 	for k, v := range attemptPatch {
+		promptPatch[k] = v
+	}
+	// The daemon task settings (task template modes, script gate timeout,
+	// project gate command) ride in the same /api/config PUT as the judge
+	// prompt keys. They are validated here too, before anything is written.
+	daemonPatch, derr := daemonTaskKeysPatch(req)
+	if derr != nil {
+		return toolError("autonomous_config_set", derr), nil
+	}
+	for k, v := range daemonPatch {
 		promptPatch[k] = v
 	}
 	for _, k := range []string{"enabled", "security_scan"} {
@@ -813,7 +831,7 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if len(promptPatch) > 0 {
 		o, err := s.proxyJSON(http.MethodPut, "/api/config", promptPatch)
 		if err != nil {
-			return nil, err
+			return toolError("autonomous_config_set", err), nil
 		}
 		promptOut = o
 		if len(body) == 0 && allocation == nil {
