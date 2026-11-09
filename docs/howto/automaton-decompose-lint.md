@@ -247,7 +247,7 @@ reach the verifier and pass it, instead of being rejected at pre-start.
 | `changelog_entry` | `daemon` | a changelog entry for the feature (`CHANGELOG.md`) |
 | `parity_issue_draft` | `daemon` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
 | `docs_set` | `llm` | the feature's docs into shape, over the story's own files |
-| `final_gate` | `llm` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
+| `final_gate` | `llm` | a **read-only** closing task that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. It carries **no** verification script of its own; the report is its output |
 | `version_bump_left_to_merge` | `daemon` | a plain *note* that the release version is the next patch above main, resolved at merge — never an edit of the tree; in daemon mode the daemon records the note as the decision and completes the task, no session |
 | `bounded_load_step` | `daemon` | a posture *note* — the task's spec is the bounded-load-step rule text so it can be found in search and the audit; writes no files |
 
@@ -258,9 +258,9 @@ decides *who* runs the task when it is appended to a story:
 
 | Mode | Meaning |
 |---|---|
-| `llm` | a worker session runs the task as a normal LLM task (no change from before the modes were introduced) |
+| `llm` | a worker session runs the task as a normal LLM task — except `final_gate`: the [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) performs it and closes it, so `llm` no longer spends a session there either |
 | `daemon` | the daemon performs the task itself — no model session, no worker — and records it as done |
-| `off` | the template is **not appended** to the story at all (the task does not appear) |
+| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the story has no closing gate at all |
 
 The mode is set per-template with `autonomous.task_templates.mode` (a
 map of template id → mode string):
@@ -275,7 +275,8 @@ autonomous:
       parity_issue_draft: daemon
       version_bump_left_to_merge: daemon
       bounded_load_step: daemon
-      # The two LLM-mode templates spawn a worker session.
+      # docs_set still spawns its worker session. final_gate stays llm but
+      # is the daemon's script gate that performs it — no session either way.
       docs_set: llm
       final_gate: llm
 ```
@@ -323,6 +324,12 @@ task-templates block you read back, and write that whole block back.
   `verification_script_reason` exemption (a note task changes no files),
   which is what carries them if one is switched back to `llm` mode and
   runs as a session.
+- **`final_gate` is not daemon mode — it is its own mechanism.** Its kind
+  routes it to the [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session),
+  which resolves the gate's declared checks and runs them, completing the
+  task on a clean pass and failing it on a failed check, a timeout, or
+  nothing runnable at all — never a model session, never a verifier, never
+  a retry loop, even in its default `llm` mode.
 
 Templates are applied in **shadow and enforce** (off applies nothing), and
 `autonomous.task_templates.enabled` (default **true**) gates them globally.
@@ -335,7 +342,7 @@ executable (for example `scripts/verify.sh`) — the verifier's pre-start
 check runs it *as a file*, so a command string such as `go build ./... &&
 go test ./...` is not a valid script and a task carrying it dies before it
 can run. The built-in pack never uses one for that reason: the final gate
-verifies through its read-only report, and the version note is read, not
+(whose declared checks the daemon's [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) now runs) still verifies through its report, and the version note is read, not
 run. A template whose `verification_script` looks like a command
 (whitespace, shell operators, an absolute path, a parent reference or the
 project root itself) is refused at config write with an error naming the
@@ -374,6 +381,15 @@ autonomous:
         depends_on: [operator_handoff_note]
 ```
 
+**Note on `handoff_gate`:** it is `kind: final_gate`, so the [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session)
+performs it — the first declared check wins (its own script, else the project
+gate command, else the story's other scripts), the task completes or fails,
+and no model session is spent. This handoff gate declares no script of its
+own, so make sure the story or the project gate command does — a gate with
+nothing runnable is a failed task, not an unclosed story, with the reason
+named. If you want it as a session task instead, give it a different kind
+(say `docs`) and it takes the usual `llm` path.
+
 ### Per-project overrides
 
 `autonomous.task_templates.projects` maps a **project directory or alias**
@@ -388,6 +404,67 @@ the `mode` map is global, per template id.
     "billing":
       enabled: true     # on, even if the global were off
 ```
+
+### The script gate: the final gate no longer spends a session
+
+A `final_gate` used to be model labor: a worker session, a verifier, and
+the report they wrote. The daemon needed no model for any of that, so it
+now performs the gate itself. When the executor reaches a task of kind
+`final_gate` — the template-appended one, a planner-written gate, or a
+custom template such as `handoff_gate` — it runs the **script gate**: it
+resolves the declared checks, runs them under one shared deadline, writes
+the verdict and evidence to the task's report path, and completes or
+fails the task. No worker session is spawned, no verifier runs and there
+is no retry loop, whatever the mode allowed for it. The mode keeps its
+meaning for the lint and the verifier exemption — what is gone is *who
+performs the verification*.
+
+**What runs — the first match wins, and only it runs:**
+
+1. the task's own `verification_script` — if it is a real file under
+   `.datawatch/verify/`; it runs alone; or
+2. the **project gate command** — the project's `policy
+   project_gate_command` first, else the global
+   `autonomous.project_gate_command` (the first set one wins); it runs as a
+   single command through `sh`, alone; or
+3. (only if neither of the above is available) the `verification_script`
+   of the story's **other** tasks, run in order until the first failure.
+
+Every script the gate runs must resolve inside the project's
+`.datawatch/verify/` — anything outside (or the project root itself) is
+refused and dropped from the run, and nothing is written. A command string
+is not a check at all: templates carrying one are refused before a task
+exists (§5), and the gate command is the one place a raw command is run —
+deliberately, and only through the gate.
+
+**Deadline and report.** One shared deadline covers the whole gate run —
+all checks together, not each one: `autonomous.script_gate_timeout_seconds`,
+default **900** seconds; `0` removes the cap, and a negative value is
+refused on write. Each check's combined stdout and stderr is appended to
+the report as it runs. The report is the task's own `report_path` —
+`.datawatch/reports/\<feature\>-final-gate.txt` for the
+template-appended gate — or, for a custom gate task that carries no path,
+`.datawatch/reports/final-gate.txt`. So the evidence of what ran is on
+disk before you read the task's status.
+
+**Verdict.** A clean pass completes the task. A failed check, a check that
+hit the deadline, or a gate the daemon could not run at all (no usable
+script, no gate command) fails it, with the reason on the task: **a gate
+with nothing runnable is a failed task, not an unclosed story**, and a
+decision record is added either way saying what the gate did.
+
+**Setup — three settings:**
+
+| Setting | Meaning |
+|---|---|
+| `autonomous.project_gate_command` | the global gate command, run through `sh` — the repo's canonical entry point, e.g. `make check`. Empty by default, in which case the gate runs the scripts it finds |
+| `policy project_gate_command` (per project) | the per-project gate command; wins over the global one for that project |
+| `autonomous.script_gate_timeout_seconds` | the shared deadline for the whole gate run (integer seconds; 900 default, 0 = no cap; negative refused) |
+
+The rule of thumb: declare what the gate should check — the gate command
+per project or globally for the canonical entry point, or precise scripts
+under `.datawatch/verify/` on the story's tasks — and the story's closing
+gate stops spending a session.
 
 ## 6. Decompose guidance — text or file
 
@@ -483,6 +560,10 @@ config`, `lint config-set mode=enforce max_retries=2 disabled_rules=a,b`,
 - **Never re-triggers on config change.** A pass is recorded with the
   pack it ran under; a rule change applies on the next decompose (or dry
   run).
+- **Never spawns a session for the final gate.** The [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session)
+  performs it: complete or failed, with the report. `off` removes the
+  gate itself — that is a template-mode choice, not a fallback to a
+  session.
 
 ## 9. A reasonable end-to-end sequence
 
@@ -495,3 +576,8 @@ config`, `lint config-set mode=enforce max_retries=2 disabled_rules=a,b`,
    and is “record, but let me decide”).
 5. If a class of finding is systemic, add a **guidance file** or template
    so the planner writes the plan right the first time.
+6. Once the decompose looks right, **set the gate up**: declare the
+   closing check the final gate should run — the project gate command (per
+   project or globally) or a script under `.datawatch/verify/` — so the
+   story's final gate runs it with the daemon doing it and closes without
+   a session.

@@ -234,6 +234,13 @@ the Automaton's per-kind map, then the daemon-wide map under
 `usage.burn_guard.effort_ceiling`. With the guard disabled every ceiling is a
 no-op.
 
+**`final_gate` is inert today.** The built-in final gate no longer runs as a
+session — the daemon's
+[script gate](automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session)
+performs it — so there is no session for the ceiling to cap. The setting
+remains valid (`final_gate` stays in the allowed kind list); it only has an
+effect on a `final_gate`-kind task that ever runs as a session again.
+
 The ceiling has its own tools rather than the generic settings call:
 
 - `automation_set_effort_ceiling` sets an Automaton's per-kind map (an empty map
