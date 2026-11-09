@@ -216,15 +216,17 @@ In order:
 1. `rebase-onto-main` (`rebase_onto_main`) — bring each branch onto main, fetching main from the remote (if any) first. A branch already on main is left alone; the rebase of a conflicting branch stops the run with that branch untouched.
 2. `check-branch-versions` (`check_branch_versions`) — run the project's merge-version check on every branch, nothing merged until each one passes.
 3. `check-internal-refs` (`check_internal_refs`) — present only if the project's Makefile defines that target.
-4. `merge-branches` (`merge_branches`) — merge each branch in order.
-5. `set-release-version` (`set_release_version`) — set the release version in every version file, after the merge.
-6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version.
+4. `merge-branches` (`merge_branches`) — merge each branch in order. A branch already contained in main is left in place and named as such in the step note. When every branch is already in main, the run has nothing new to release: the release steps 5 through 11 are each recorded as `skipped` (note `nothing new was released: every branch was already merged into main`), nothing is pushed, and the deploy step still runs.
+5. `set-release-version` (`set_release_version`) — set the release version in every version file, after the merge. A file that already carries the run's version is left alone.
+6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version. A changelog that already has a heading for it is left alone.
 7. `set-readme-release-line` (`set_readme_release_line`) — rewrite the version and date on the README's `Current release:` line to this release and today's date (UTC). The rest of the line and file is left alone. A line that already names the version is left alone too. A README with no such line stops the run and names the file.
-8. `commit-release-bump` (`commit_release_bump`) — one commit of the version files, the changelog and the README.
-9. `tag-release` (`tag_release`) — tag that commit with the new version.
+8. `commit-release-bump` (`commit_release_bump`) — one commit of the version files, the changelog and the README; with nothing staged no commit is made.
+9. `tag-release` (`tag_release`) — tag that commit with the new version. A tag already on that commit is left alone. A tag of that name pointing at another commit fails the step, naming the tag and both commits — the daemon never moves a release tag, so resolving it is an operator call.
 10. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator over the bump the earlier steps made (see [The release-bump validator](#the-release-bump-validator) below). A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
 11. `push-release` (`push_release`) — push main and the tag; fast-forward only.
 12. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
+
+**A step run twice changes nothing.** The release steps are safe to run twice: a step that finds its work already done — the version files already carry the version, the changelog already has the heading, the README line already names it, nothing is staged, the tag is already on that commit — succeeds as a no-op and leaves the files, the commit history and the tag list exactly as the earlier run left them. The one exception is a release tag someone moved to another commit: the tag step then fails and names both commits, and it is the operator who resolves the tag and re-runs.
 
 ### The release-bump validator
 
@@ -243,7 +245,7 @@ check that failed. The five checks, in the order they run:
 
 The run record keeps the whole result under `validator`: `pass`, `version`,
 `checked_at`, and one entry per check with its `name`, `pass` and `detail`.
-A run that stopped before this step has no `validator` field.
+A run that stopped before this step has no `validator` field; a run whose release steps are all `skipped` (nothing new to release) has none either.
 
 The same checks can be run by hand, read-only, from a repository checkout with
 `bash scripts/verify-release-bump.sh`. It prints one `PASS` or `FAIL` line per
@@ -261,6 +263,8 @@ empty, so a fresh project that runs the built-in pipeline fails at
 `set-release-version` until its version files are named. Whether the built-in
 default should name files, and whether the script should read the setting, are
 open decisions.
+
+A run whose release tag has been moved to another commit fails the `tag-release` step (the daemon never moves a release tag); resolving the tag — or re-running after it is dealt with — is an operator call.
 
 ## How the release version is chosen
 
@@ -318,6 +322,10 @@ work and starts again:
 A redo refuses to reset local main when any commit above the base is not one
 the run made, for example a commit someone made on local main during the run.
 The run then fails and nothing is reset.
+
+A redo can also end with nothing new to release: if main moved so that the
+run's branches are already contained in it, the release steps are recorded as
+`skipped` as above and the run finishes without a push.
 
 ## After the ship: post-ship hooks
 
