@@ -1481,6 +1481,13 @@ type Manager struct {
 	repoCICancelFn   func(ctx context.Context, ownerRepo string, runID int64) error
 	repoCIRerunFn    func(ctx context.Context, ownerRepo string, runID int64) error
 	repoCIDeleteFn   func(ctx context.Context, ownerRepo string, runID int64) error
+	// repoCIGitHosts are the configured git.hosts entries. A watched
+	// repository whose origin resolves to one of them is polled through
+	// the host CI facade (git.LatestRuns) instead of gh run list; see
+	// repo_ci_watch_host.go. Empty means every repository takes the gh
+	// path. repoCIHostRunsFn is the host-call seam (nil → git.LatestRuns).
+	repoCIGitHosts   []git.GitHostConfig
+	repoCIHostRunsFn func(ctx context.Context, host git.GitHostConfig, repo, ref string) ([]git.CIRun, error)
 	// securityFailureLogFn — the failed-run log source of the security
 	// failure pass. nil → defaultSecurityFailureLog (gh run view
 	// <runID> --log-failed); tests inject a canned log instead of

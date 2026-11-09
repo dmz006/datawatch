@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // pollCounters tallies the pass's external calls under a mutex.
@@ -559,5 +561,184 @@ func TestRepoCIWatchPollTagPeelAndRecord(t *testing.T) {
 	}
 	if tagRec.RefKind != "tag" || tagRec.RefName != "v1.1.0" || tagRec.SHA != fakeTagSHA {
 		t.Errorf("tag record: kind=%q name=%q sha=%s, want tag/v1.1.0/%s", tagRec.RefKind, tagRec.RefName, tagRec.SHA, fakeTagSHA)
+	}
+}
+
+// TestRepoCIWatchHost covers the two poll paths of one repository: an
+// origin that resolves to a configured git.hosts entry is listed through
+// the host call (git.LatestRuns, stubbed here) and never through gh; an
+// origin that does not resolve keeps the gh run-list path unchanged.
+func TestRepoCIWatchHost(t *testing.T) {
+	dir := t.TempDir()
+	const otherSHA = "cccc18bc26b80b0be05f9c7d2e4a3b2c1d0e9f8a7b6c"
+	cfg := RepoCIWatchConfig{Mode: "shadow", Repos: []string{dir}, PollSeconds: 60, TagCount: ptrInt(1)}
+
+	t.Run("configured host polls through the host call", func(t *testing.T) {
+		m, c, _ := newPollHarness(t, dir, cfg)
+		m.SetRepoCIGitHosts([]git.GitHostConfig{{Name: "corp-github", Kind: "github", BaseURL: "https://github.com"}})
+		var mu sync.Mutex
+		var hostCalls []string
+		m.repoCIHostRunsFn = func(_ context.Context, host git.GitHostConfig, repo, ref string) ([]git.CIRun, error) {
+			mu.Lock()
+			hostCalls = append(hostCalls, host.Name+"|"+repo+"|"+ref)
+			mu.Unlock()
+			switch ref {
+			case "main":
+				return []git.CIRun{
+					{ID: "101", Name: "ci", Status: "completed", Conclusion: "success", SHA: fakeHeadSHA, URL: "u101"},
+					// Another commit on the same branch: filtered out.
+					{ID: "102", Name: "ci", Status: "completed", Conclusion: "cancelled", SHA: otherSHA, URL: "u102"},
+					// Not a run ID: cannot be recorded, skipped.
+					{ID: "x", Name: "ci", Status: "completed", Conclusion: "success", SHA: fakeHeadSHA, URL: "ux"},
+				}, nil
+			case "v1.1.0":
+				return []git.CIRun{{ID: "201", Name: "ci", Status: "in_progress", SHA: fakeTagSHA, URL: "u201"}}, nil
+			}
+			return nil, nil
+		}
+		ghCalled := false
+		m.repoCIRunsFn = func(_ context.Context, _, _ string) ([]RepoCIWatchRun, error) {
+			ghCalled = true
+			return nil, nil
+		}
+		c.repoCIWatchPass()
+
+		want := []string{"corp-github|dmz006/datawatch|main", "corp-github|dmz006/datawatch|v1.1.0"}
+		if fmt.Sprint(hostCalls) != fmt.Sprint(want) {
+			t.Errorf("host calls = %v, want %v", hostCalls, want)
+		}
+		if ghCalled {
+			t.Error("gh run list was called on the host path; it must not be")
+		}
+		recs := recordByRunID(t, m)
+		if r, ok := recs["101"]; !ok || r.Status != "green" || r.Repo != "dmz006/datawatch" || r.SHA != fakeHeadSHA {
+			t.Errorf("run 101 record = %+v, want green on dmz006/datawatch at head", r)
+		}
+		if r, ok := recs["201"]; !ok || r.Status != "pending" || r.RefKind != "tag" || r.SHA != fakeTagSHA {
+			t.Errorf("run 201 record = %+v, want pending tag record", r)
+		}
+		if _, ok := recs["102"]; ok {
+			t.Error("run 102 is on another commit and must not be recorded")
+		}
+		if len(recs) != 2 {
+			t.Errorf("records = %d, want 2", len(recs))
+		}
+	})
+
+	t.Run("unconfigured origin keeps the gh path", func(t *testing.T) {
+		m, c, _ := newPollHarness(t, dir, cfg)
+		hostCalled := false
+		m.repoCIHostRunsFn = func(_ context.Context, _ git.GitHostConfig, _, _ string) ([]git.CIRun, error) {
+			hostCalled = true
+			return nil, nil
+		}
+		var ghShas []string
+		m.repoCIRunsFn = func(_ context.Context, ownerRepo, sha string) ([]RepoCIWatchRun, error) {
+			if ownerRepo != "dmz006/datawatch" {
+				t.Errorf("gh ownerRepo = %q, want dmz006/datawatch", ownerRepo)
+			}
+			ghShas = append(ghShas, sha)
+			if sha == fakeHeadSHA {
+				return []RepoCIWatchRun{greenRun(301)}, nil
+			}
+			return nil, nil
+		}
+		c.repoCIWatchPass()
+		if hostCalled {
+			t.Error("host call ran for a repository with no configured host")
+		}
+		if len(ghShas) != 2 || ghShas[0] != fakeHeadSHA {
+			t.Errorf("gh run lists = %v, want head then tag", ghShas)
+		}
+		if _, ok := recordByRunID(t, m)["301"]; !ok {
+			t.Error("gh-path run 301 was not recorded")
+		}
+	})
+
+	t.Run("host configured for another origin keeps the gh path", func(t *testing.T) {
+		m, c, _ := newPollHarness(t, dir, cfg)
+		m.SetRepoCIGitHosts([]git.GitHostConfig{{Name: "corp-gitlab", Kind: "gitlab", BaseURL: "https://gitlab.example.com"}})
+		hostCalled := false
+		m.repoCIHostRunsFn = func(_ context.Context, _ git.GitHostConfig, _, _ string) ([]git.CIRun, error) {
+			hostCalled = true
+			return nil, nil
+		}
+		ghCalls := 0
+		m.repoCIRunsFn = func(_ context.Context, _, _ string) ([]RepoCIWatchRun, error) {
+			ghCalls++
+			return nil, nil
+		}
+		c.repoCIWatchPass()
+		if hostCalled {
+			t.Error("host call ran for an origin on a different host")
+		}
+		if ghCalls != 2 {
+			t.Errorf("gh run lists = %d, want 2", ghCalls)
+		}
+	})
+
+	t.Run("host call failure is logged and the ref is skipped", func(t *testing.T) {
+		m, c, _ := newPollHarness(t, dir, cfg)
+		m.SetRepoCIGitHosts([]git.GitHostConfig{{Name: "corp-github", Kind: "github", BaseURL: "https://github.com"}})
+		m.repoCIHostRunsFn = func(_ context.Context, _ git.GitHostConfig, _, _ string) ([]git.CIRun, error) {
+			return nil, errors.New("gh unavailable")
+		}
+		c.repoCIWatchPass()
+		if n := len(m.ListRepoCIWatchRecords()); n != 0 {
+			t.Errorf("records = %d after failed host calls, want 0", n)
+		}
+	})
+}
+
+// TestRepoCIWatchHostRunMapping pins the host-run mapping onto the poll
+// pass's vocabulary and the remote-to-path parsing the host branch uses.
+func TestRepoCIWatchHostRunMapping(t *testing.T) {
+	cases := []struct {
+		in         git.CIRun
+		wantOK     bool
+		wantStatus string
+		wantConcl  string
+	}{
+		{git.CIRun{ID: "1", Status: "completed", Conclusion: "failure"}, true, "completed", "failure"},
+		{git.CIRun{ID: "2", Status: "success"}, true, "completed", "success"},
+		{git.CIRun{ID: "3", Status: "failed"}, true, "completed", "failure"},
+		{git.CIRun{ID: "4", Status: "canceled"}, true, "completed", "cancelled"},
+		{git.CIRun{ID: "5", Status: "skipped"}, true, "completed", "skipped"},
+		{git.CIRun{ID: "6", Status: "running"}, true, "in_progress", ""},
+		{git.CIRun{ID: "7", Status: "pending"}, true, "queued", ""},
+		{git.CIRun{ID: "8", Status: "manual"}, true, "queued", ""},
+		{git.CIRun{ID: "9", Status: "in_progress"}, true, "in_progress", ""},
+		{git.CIRun{ID: "", Status: "success"}, false, "", ""},
+		{git.CIRun{ID: "abc", Status: "success"}, false, "", ""},
+	}
+	for _, tc := range cases {
+		run, ok := repoCIWatchRunFromCI(tc.in)
+		if ok != tc.wantOK {
+			t.Errorf("%+v: ok = %v, want %v", tc.in, ok, tc.wantOK)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if run.Status != tc.wantStatus || run.Conclusion != tc.wantConcl {
+			t.Errorf("%+v: status/conclusion = %s/%s, want %s/%s", tc.in, run.Status, run.Conclusion, tc.wantStatus, tc.wantConcl)
+		}
+		if run.WorkflowName != tc.in.Name {
+			t.Errorf("%+v: workflow name = %q, want the run name", tc.in, run.WorkflowName)
+		}
+	}
+
+	paths := map[string]string{
+		"https://github.com/dmz006/datawatch.git":   "dmz006/datawatch",
+		"git@gitlab.example.com:group/sub/repo.git": "group/sub/repo",
+		"ssh://git.example.com/team/project":        "team/project",
+		"":                                          "",
+		"no-separator":                              "",
+		"https://[::1":                              "",
+	}
+	for in, want := range paths {
+		if got := repoCIHostRepoPath(in); got != want {
+			t.Errorf("repoCIHostRepoPath(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

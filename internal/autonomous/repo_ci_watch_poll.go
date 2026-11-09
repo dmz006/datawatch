@@ -94,6 +94,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // repoCIWatchJudgeFunc is the judge seam's signature: (repository path,
@@ -240,10 +242,23 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 		log.Printf("repo ci watch: %s: origin is not resolvable (%v); skipping this repository", repoDir, err)
 		return
 	}
-	ownerRepo := githubOwnerRepo(originURL)
-	if ownerRepo == "" {
-		log.Printf("repo ci watch: %s: origin %q is not a github origin; skipping this repository", repoDir, originURL)
-		return
+	// A repository whose origin resolves to a configured git.hosts entry
+	// is listed through the host facade (repo_ci_watch_host.go); every
+	// other repository keeps the gh path and its github-origin check.
+	hostCfg, onHost := p.m.repoCIConfiguredHost(originURL)
+	var ownerRepo string
+	if onHost {
+		ownerRepo = repoCIHostRepoPath(originURL)
+		if ownerRepo == "" {
+			log.Printf("repo ci watch: %s: origin %q has no project path for host %s; skipping this repository", repoDir, originURL, hostCfg.Name)
+			return
+		}
+	} else {
+		ownerRepo = githubOwnerRepo(originURL)
+		if ownerRepo == "" {
+			log.Printf("repo ci watch: %s: origin %q is not a github origin; skipping this repository", repoDir, originURL)
+			return
+		}
 	}
 	// 2. Resolve the head (origin/main) and the newest tag_count tags.
 	headSHA, err := d.head(p.ctx, repoDir)
@@ -272,8 +287,14 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 			}
 		}
 	}
-	// 3. One run list per SHA, then record every run.
+	// 3. One run list per SHA, then record every run. A configured host
+	// records runs only (repo_ci_watch_host.go): its action phase is
+	// GitHub-specific and is not run for host-path runs.
 	for _, ref := range refs {
+		if onHost {
+			p.pollRefOnHost(hostCfg, ownerRepo, repoDir, ref)
+			continue
+		}
 		p.pollRef(ownerRepo, repoDir, ref)
 	}
 }
@@ -284,6 +305,20 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 // the ref's green runs, so every same-ref record is stored and visible,
 // and then per record the cancel/rerun/delete decision (step 2) and the
 // alert.
+// pollRefOnHost is pollRef for a repository whose origin resolves to a
+// configured git host: the ref's runs come from the host facade
+// (hostRunsForRef, LatestRuns) and each is recorded. No action phase runs.
+func (p *repoCIWatchPollContext) pollRefOnHost(host git.GitHostConfig, repo, repoDir string, ref repoCIWatchRef) {
+	runs, err := p.hostRunsForRef(host, repo, ref)
+	if err != nil {
+		log.Printf("repo ci watch: %s %s@%s via host %s: listing runs failed: %v", repo, ref.name, ref.sha[:8], host.Name, err)
+		return
+	}
+	for _, run := range runs {
+		p.recordRun(repo, repoDir, ref, run)
+	}
+}
+
 func (p *repoCIWatchPollContext) pollRef(ownerRepo, repoDir string, ref repoCIWatchRef) {
 	runs, err := p.m.repoCIWatchDeps().runs(p.ctx, ownerRepo, ref.sha)
 	if err != nil {
