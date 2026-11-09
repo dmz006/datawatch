@@ -5,6 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.118.0 — Merge lock, release validator and idempotent merge steps
+
+### Added
+
+- **The merge pipeline checks the release bump before it pushes.** A new built-in step, `validate-release-bump` (action `validate_release_bump`), runs between `tag-release` and `push-release` in the default pipeline. It runs the five release-bump checks: version files agree, the changelog's first heading is the release, the release is one step above the newest local tag, its tag is free on the remote, and the README's `Current release:` line names it. A failing check fails the step and names every check that failed, so `push-release` never runs. The result is stored on the run record as `validator` (`pass`, `version`, `checked_at`, `checks`).
+  - **Migration:** the built-in pipeline now rewrites the README `Current release:` line itself in a `set-readme-release-line` step, so the line must already have the `vX.Y.Z (YYYY-MM-DD)` shape (for example `**Current release: v1.2.3 (2026-11-08).**`); a line without a date stops the run and names it.
+
+- **Merge runs into the same repository are serialized by a merge lock.** Two merge runs can no longer ship into one base repository at the same time. A run takes a lock on its repository before it starts and releases it when it ends, and a second run is refused with a plain reason that names the run holding the lock.
+  - **How it shows up:** while a merge runs, the merge status shows the held lock (`Merge lock held: run <id> for Automaton <id> (branches …) since <time>`). A refused run's reason says the lock is held by the named run. The lock is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a daemon restart, and a resumed run takes its own lock back.
+  - **Migration:** none. If `merge-locks.json` is unreadable or corrupt, merge runs are refused rather than run unlocked; repair or restore that file in the daemon store directory.
+- **The daemon's merge run finishes version-safe against a moving main.** Before merging anything, the run fetches the main branch and rebases each branch onto it (a rebase that hits a conflict stops the run with that branch left untouched), and the release version is computed after the merge, from main's version as it stands at that point — not the version the branch was cut from. The push step is fast-forward-only: it checks the remote's head against the local one first and refuses to push a head that would rewrite the remote.
+  - **When the remote's main has moved since the merge, the run redoes instead of failing:** it undoes the merge, version bump and tag it made locally, brings the local main up to the remote's, and starts again from the rebase step so the version is recomputed from the new main. It redoes up to three times, then stops with a plain reason; a move to the local main it did not make itself stops the run instead of being undone.
+  - **The steps are safe to run twice:** a branch already based on main is left alone by the rebase, and the changelog heading insertion does nothing when the heading for that version is already there.
+  - **How it shows up:** the run record gains `release_version` (the version the run released) and one recorded step per redo (`main-moved-redo-1`, …), each with a plain note of what it did. A refused push says why: the remote's branch sits at a head the push would not contain, and nothing was pushed.
+  - **Migration:** none. A project with its own merge pipeline file keeps it as-is; the built-in pipeline now starts with the rebase step and computes the version after the merge.
+- **Bounded load-step rule.** A task that asks for a CPU-load or stress step must bound it before it runs: niced (`nice -n 19`), workers capped at a quarter of the cores (minimum one), a hard timeout, and cleanup of its children on exit. The rule is applied in three places: the built-in `bounded_load_step` task template, the rules block the decompose planner reads, and a warn-severity `unbounded_load_step` finding in decompose lint for a spec that asks for an unbounded load step.
+  - **How it shows up:** a spec that asks for an unbounded load step shows the `unbounded_load_step` warning in decompose lint.
+  - **Migration:** none.
+
 ## v9.117.1 — Close the discussion folder path scanner alert
 
 ### Fixed

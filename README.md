@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.117.1 (2026-11-09).** The high code scanning alert for the discussion folder path is closed by checking the cleaned path at the point of use. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.118.0 (2026-11-09).** The merge pipeline now holds a per-repository merge lock, validates the release bump before the push, rebases onto a moving main, and runs its release steps safely twice, with the lock and last validator result shown in the PWA merge pipeline card. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
