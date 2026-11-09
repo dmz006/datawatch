@@ -103,6 +103,9 @@ func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaun
 	}
 
 	argv, _, _ := verifyScriptArgv(scriptPath, l) // scriptPath validated above to resolve inside projectDir
+	if rout, rcode, rerr, handled := runVerifyRecorded(argv, projectDir, scriptPath, l); handled {
+		return truncateScriptOutput(rout), rcode, rerr
+	}
 	out, runErr := runVerifyCommand(argv, projectDir, l)
 	output = truncateScriptOutput(out)
 	if runErr != nil {
