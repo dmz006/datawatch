@@ -337,6 +337,25 @@ git:
       # material. Each entry must be 16- or 64-char hex (write paths
       # validate). Only the hash is stored — never the secret.
       fingerprints: []
+  # Git hosts datawatch may push to. Each entry is one host. name is the key
+  # (git.hosts.<name>.<field>): a unique lowercase slug. Defaults apply at load;
+  # every problem in the list is reported together and fails the load.
+  hosts: []
+  #   - name: work-gitea
+  #     # Host type: github | gitlab | gitea | bitbucket | git (required).
+  #     kind: gitea
+  #     # Base URL. Required for gitea, bitbucket and git. For gitlab, required
+  #     # only when self-hosted (empty = gitlab.com). For github, empty = github.com.
+  #     base_url: https://git.example.test
+  #     # How the token is obtained: host_login (default), vault or broker.
+  #     credential_source: vault
+  #     # Name of the secrets-vault entry holding the token. Required when
+  #     # credential_source is vault. The entry NAME only, never the value.
+  #     vault_secret: gitea-token
+  #     # Sign the tags datawatch creates for this host (default false).
+  #     sign_tags: false
+  #     # Optional key id used when signing tags (empty = git default key).
+  #     signing_key: ""
 
 # ── Tracing ──
 # Normalized agent trace events (tool calls, model requests, state changes,

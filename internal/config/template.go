@@ -81,6 +81,18 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 			}
 		}
 	}
+	// Git hosts (git.hosts): the list of git hosts datawatch may push to.
+	b.WriteString("  # Git hosts datawatch may push to. Each entry is one host; the name is the\n")
+	b.WriteString("  # key (git.hosts.<name>.<field>), unique, lowercase slug. Empty list = none.\n")
+	b.WriteString("  #   hosts:\n")
+	b.WriteString("  #     - name: work-gitea          # lowercase slug, unique within the list\n")
+	b.WriteString("  #       kind: gitea               # github | gitlab | gitea | bitbucket | git (required)\n")
+	b.WriteString("  #       base_url: https://git.example.test  # required for gitea, bitbucket, git; gitlab only when self-hosted (empty = gitlab.com); github empty = github.com\n")
+	b.WriteString("  #       credential_source: vault  # host_login (default) | vault | broker\n")
+	b.WriteString("  #       vault_secret: gitea-token # vault entry NAME (required when credential_source is vault); never the value\n")
+	b.WriteString("  #       sign_tags: false          # sign the tags datawatch creates for this host (default false)\n")
+	b.WriteString("  #       signing_key: \"\"          # optional key id used for signed tags (empty = git default key)\n")
+
 	b.WriteString("\n")
 
 	section(&b, "Tracing", "Normalized agent trace events (tool calls, model requests, state changes).")
