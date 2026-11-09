@@ -1,6 +1,10 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"strings"
+)
 
 // Values of autonomous.planning_restart_policy: what a daemon restart does to
 // an Automaton that is still in planning (decompose running).
@@ -36,4 +40,23 @@ func ValidPlanningRestartPolicy(v string) bool {
 		return true
 	}
 	return false
+}
+
+// planningRestartPolicyLogf receives the startup warning raised when a loaded
+// autonomous.planning_restart_policy is not a recognised value. Tests replace
+// it to capture the output.
+var planningRestartPolicyLogf = func(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+}
+
+// normalizePlanningRestartPolicyLoaded returns the effective policy for a
+// value read from the config file. An unset value is left to the normalizer
+// silently. An unrecognised value is reported through warn and reads as the
+// default, reattach.
+func normalizePlanningRestartPolicyLoaded(v string, warn func(format string, args ...interface{})) string {
+	if strings.TrimSpace(v) != "" && !ValidPlanningRestartPolicy(v) && warn != nil {
+		warn("[warn] autonomous.planning_restart_policy: %q — using %q (allowed: %s, %s, %s)",
+			v, PlanningRestartPolicyReattach, PlanningRestartPolicyReattach, PlanningRestartPolicyRestart, PlanningRestartPolicyDraft)
+	}
+	return NormalizePlanningRestartPolicy(v)
 }

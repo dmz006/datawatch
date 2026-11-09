@@ -6590,6 +6590,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"duplicate_session_keep":               config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
 			"restart_policy":                       config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
+			"planning_restart_policy":              config.NormalizePlanningRestartPolicy(s.cfg.Autonomous.PlanningRestartPolicy),
 			"restart_quiet_timeout_seconds":        config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
 			"restart_on_timeout":                   config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
 			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
@@ -9966,7 +9967,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.OrphanGraceSeconds = n
 			}
 		case "autonomous.restart_policy", "autonomous.restart_on_timeout",
-			"autonomous.restart_quiet_timeout_seconds":
+			"autonomous.restart_quiet_timeout_seconds", "autonomous.planning_restart_policy":
 			// Validated in handlePutConfig (validateRestartPolicyPatch).
 			applyRestartPolicyKey(cfg, k, v)
 		case "autonomous.duplicate_session_keep":
