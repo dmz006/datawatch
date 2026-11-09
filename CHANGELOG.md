@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.118.1 — Decompose lint card keeps the task template block
+
+### Fixed
+
+- Saving the decompose lint card in the web Settings page no longer resets the task template mode settings and overrides. The card sent only the enabled flag of the task template block, which erased the operator's per-template mode map and overrides on every save; it now sends back the block it loaded, with only the enabled checkbox changed. Found while filing the daemon task modes release.
+- The config reference now lists the task template mode setting (`autonomous.task_templates.mode`), its values, default and the surfaces that set it.
+
 ## v9.118.0 — Merge lock, release validator and idempotent merge steps
 
 ### Added
