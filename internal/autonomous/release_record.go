@@ -60,6 +60,10 @@ type ReleaseRecord struct {
 	// CIWatchedAt is when the CI outcome was last observed. Nil until
 	// an outcome has been recorded.
 	CIWatchedAt *time.Time `json:"ci_watched_at,omitempty"`
+	// ReleaseSize is the size of this release: patch, minor or major.
+	// The release CI fall-back needs it to name the approval mode to
+	// change; an empty size makes the fall-back a no-op.
+	ReleaseSize string `json:"release_size,omitempty"`
 }
 
 // Key identifies a release record: one record per project and tag.
