@@ -12,6 +12,10 @@
 // line, registry row, parity-issue presence and gate results) against the
 // values the landed-state task read back from the default branch, and
 // compare_store.go persists one comparison per Automaton in the same style.
+//
+// defect_candidate.go turns each difference in a comparison into a
+// DefectCandidate with a stable key and persists it in the same style. It
+// only records candidates; filing them is left to the defect intake.
 package mergeshadow
 
 import "time"
