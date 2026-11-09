@@ -3,7 +3,7 @@
 **Date:** 2026-11-02
 **Version:** v9.67.0 (planning version, from the `Version` variable in `cmd/datawatch/main.go`)
 **Design record:** `docs/plans/2026-10-30-supervisor-duties-generic-and-project-split.md` — the "Post-merge extras" row: filing a parity issue in the companion app repository and updating the plans registry are "hooks a project turns on", not core steps. Tracker row 267 in `docs/plans/README.md`.
-**Related plan:** `docs/plans/2026-11-01-merge-pipeline-and-onboarding-report.md` (the pipeline these steps attach to).
+**Related plan:** `docs/plans/historical-plans/2026-11-01-merge-pipeline-and-onboarding-report.md` (the pipeline these steps attach to).
 
 ## Goal
 

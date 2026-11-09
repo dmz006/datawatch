@@ -73,7 +73,7 @@ The work is four stories. All four are Done. The version is assigned at merge ti
 Done. Every phase above is Done and covered by unit and integration tests on this branch
 (`docs/testing-tracker.md`, section "Model request progress"). Tested: yes. Validated: yes, by the
 sandbox live check (`docs/plans/2026-10-31-model-request-progress-live-check.md`). The final gate
-ran and passed (`docs/plans/2026-10-31-model-request-progress-final-gate-report.md`). The version is
+ran and passed (`docs/plans/historical-plans/2026-10-31-model-request-progress-final-gate-report.md`). The version is
 assigned at merge time: this branch changes neither `var Version` line, and the merge helper takes
 the next patch above `main` and bumps a minor version.
 

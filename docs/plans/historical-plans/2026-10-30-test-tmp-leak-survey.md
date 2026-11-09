@@ -30,7 +30,7 @@
    artifact dies with `t.TempDir`. Status: **Done**.
 3. **Gates and report** — leak guard, `clean-test-tmp`, tmux check, full
    survey, `go build`, `make lint`; results in
-   `docs/plans/2026-10-30-test-tmp-cleanliness-report.md`. Status: **Done**.
+   `docs/plans/historical-plans/2026-10-30-test-tmp-cleanliness-report.md`. Status: **Done**.
 
 ## How the survey works
 
@@ -125,7 +125,7 @@ leaving 0 entries.
 
 The full per-package after-state (every package `OK` with an empty private
 directory) is recorded in
-`docs/plans/2026-10-30-test-tmp-cleanliness-report.md`.
+`docs/plans/historical-plans/2026-10-30-test-tmp-cleanliness-report.md`.
 
 ## Reproduce
 

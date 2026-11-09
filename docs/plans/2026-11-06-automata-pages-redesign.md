@@ -77,11 +77,11 @@ automata pages". Also: "there will be more but this is first pass of redesign of
 - `2026-10-30-dashboard-purpose-proposal.md` (registry row 273, `Confirmed: no`): option 3 is a per-project view
   (same cards filtered to one project, "needs a project picker"); option 4 is configurable boards (console, health,
   project). Nothing was decided. This answer decides the project view part.
-- `2026-11-02-dashboard-card-audit.md`: the Gantt "Timeline" card is marked "Keep (primary project view)", so the
+- `historical-plans/2026-11-02-dashboard-card-audit.md`: the Gantt "Timeline" card is marked "Keep (primary project view)", so the
   Gantt work (Automaton `ef660001`) belongs on the project page.
 - Registry row 334 (shipped 9.88.0): per-project automation policy under `projects.<alias>.policy`, a tier between an
   Automaton's settings and the daemon defaults. The project page shows and edits it.
-- Registry row 268 and `2026-11-01-merge-pipeline-and-onboarding-report.md`: the merge pipeline as per-project
+- Registry row 268 and `historical-plans/2026-11-01-merge-pipeline-and-onboarding-report.md`: the merge pipeline as per-project
   configuration (`autonomous.merge_pipeline.*` with per-project overrides). The "no project" the operator saw on the
   merge pipeline card is this per-project setting with no project chosen.
 
@@ -139,7 +139,7 @@ our smoke tests are registering???, the ci & release card just making sure it's 
 report is not accurate with all of the token and burn rate and other stuff we've worked on it needs to be
 reassessed and search looks good but not sure if anything is really using it or not".
 
-This extends `2026-11-02-dashboard-card-audit.md` (cards kept or hidden on paper) and the purpose proposal; the card
+This extends `historical-plans/2026-11-02-dashboard-card-audit.md` (cards kept or hidden on paper) and the purpose proposal; the card
 decisions below are findings to settle, not yet decided.
 
 | Card | What was found (2026-11-06) |
