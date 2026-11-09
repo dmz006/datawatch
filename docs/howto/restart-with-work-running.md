@@ -15,7 +15,10 @@ The setting is stored, validated and reported by `GET /api/config`. The daemon's
 boot-resume does not read it yet. After a restart, a planning Automaton is still
 reset to draft, whatever the value. The `reattach` and `restart` behaviours
 described below apply once the restart path reads the setting. Until then, every
-value behaves like `draft`.
+value behaves like `draft`. This is flagged for operator review under the
+*Still to review (operator)* section in [operations.md](../operations.md);
+confirm on the build in use that a restarted daemon does not reset a
+mid-decompose PRD to `draft` before relying on `reattach` or `restart`.
 
 ## The three values
 
@@ -26,8 +29,8 @@ value behaves like `draft`.
 | `draft` | Resets the Automaton to draft, as the daemon does today. |
 
 An unset or unrecognised value reads as `reattach`. The write paths (REST, CLI,
-MCP and comm channel) refuse any value other than the three above, and name the
-valid values in the refusal.
+MCP, comm channel and the PWA Settings select) refuse any value other than the
+three above, and name the valid values in the refusal.
 
 ## How to set it
 
@@ -35,7 +38,7 @@ valid values in the refusal.
 |--------|-----|
 | **YAML** | In `~/.datawatch/config.yaml`, under `autonomous:`, set `planning_restart_policy: reattach` (or `restart` or `draft`). |
 | **CLI** | `datawatch autonomous config-set '{"planning_restart_policy":"restart"}'` |
-| **Web UI** | Not yet on a Settings card. Use one of the other methods. |
+| **Web UI** | PWA Settings, **Automata** tab, *Autonomous Automata planning* card — the **Planning restart policy** select with the three values `reattach`, `restart`, `draft`. Its localized help text (the `settings_planning_restart_policy*` keys in `internal/server/web/locales/*.json`) describes the values and links here. |
 | **REST API** | `PUT /api/config` with `{"autonomous.planning_restart_policy": "draft"}` |
 | **MCP** | `autonomous_config_set` with `planning_restart_policy` set to `reattach`, `restart` or `draft`. |
 | **Comm channel** | `configure autonomous.planning_restart_policy=restart` |
