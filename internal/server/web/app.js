@@ -34015,10 +34015,14 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_setup',
     bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationMergeShadowCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('setup')}`,
     mount() {
       listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationRequestWatchLoader()]);
+      // The merge shadow card is a plain one-shot read (no list chrome), so it
+      // has no loader entry; it renders nothing when the shadow is off or empty.
+      if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
       _automationSlotsMount('setup');
     },
     stop() {
