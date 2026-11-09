@@ -91,13 +91,13 @@ func WriteWorkerMCPConfig(dir string, sel workerprofile.MCPSelection, servers ma
 		_ = os.Remove(tmpName)
 	}()
 	if _, err := tmp.Write(out); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return "", fmt.Errorf("WriteWorkerMCPConfig: %w", err)
 	}
 	// 0600 before the rename so the live path never appears group/world
 	// readable, even for the brief moment after it exists.
 	if err := tmp.Chmod(0600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return "", fmt.Errorf("WriteWorkerMCPConfig: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

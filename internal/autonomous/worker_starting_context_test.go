@@ -110,7 +110,7 @@ func TestWorkerStartingContext_Full(t *testing.T) {
 		"task":   strings.Index(out, "\n\nTask\n"),
 	}
 	if order["digest"] == -1 || order["full"] == -1 || order["task"] == -1 ||
-		!(order["digest"] < order["full"] && order["full"] < order["task"]) {
+		order["digest"] >= order["full"] || order["full"] >= order["task"] {
 		t.Fatalf("full level must order digest before full rules before task:\n%s", out)
 	}
 }

@@ -124,7 +124,6 @@ func roleDefault(in ResolveInput) (WorkerProfile, Decision) {
 	reason := "role default applied"
 	name, ok := roleDefaults[role]
 	if !ok {
-		role = fallbackRole
 		name = roleDefaults[fallbackRole]
 		reason = "unknown role; worker role default applied"
 	}
