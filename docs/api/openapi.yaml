@@ -8279,6 +8279,45 @@ paths:
         "400":
           description: name or dir missing, dir not absolute, or a policy field holds a value the key does not know — the body names the offending field
           content: {"text/plain": {schema: {type: string}}}
+  /api/projects/{name}/rollup:
+    get:
+      summary: Project roll-up of arcs, Automata, task progress, points and throughput
+      description: |
+        Groups the project's Automata by the arc whose Automation holds them.
+        Each arc reports its Automata with their session ids, task progress
+        (done/total), cost in usage points and throughput. Automata of this
+        project that no arc holds are in `unassigned`; `total` sums everything.
+        Costs are points from the billing profile's point calibration, never
+        API dollars. Throughput counts Automata (completed, last updated in the
+        window) and tasks (completed, completed in the window) per day.
+      operationId: projectsRollup
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: window, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 365, default: 7}, description: "Window in days for throughput and cost"}
+      responses:
+        "200":
+          description: The project roll-up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  window_days: {type: integer}
+                  generated_at: {type: string, format: date-time}
+                  points_priced: {type: boolean, description: "True when at least one Automaton has a point figure"}
+                  arcs: {type: array, items: {$ref: "#/components/schemas/ProjectRollupGroup"}}
+                  unassigned: {$ref: "#/components/schemas/ProjectRollupGroup"}
+                  total: {$ref: "#/components/schemas/ProjectRollupGroup"}
+        "400":
+          description: window is not a whole number of days from 1 to 365
+        "404":
+          description: Unknown project
+        "405":
+          description: Method other than GET
+        "503":
+          description: Automations are not available
   /api/projects/{name}/policy/effective:
     get:
       summary: Effective policy for one project
@@ -8794,6 +8833,35 @@ components:
             example: "unauthorized"
 
   schemas:
+    ProjectRollupGroup:
+      type: object
+      description: "One arc, the unassigned bucket, or the whole-project total. Arc fields are set only on arc groups."
+      properties:
+        automation_id: {type: string}
+        priority: {type: integer}
+        state: {type: string, enum: [planned, active, done]}
+        automata:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              title: {type: string}
+              status: {type: string}
+              automation_id: {type: string}
+              finished: {type: boolean}
+              tasks: {type: object, properties: {done: {type: integer}, total: {type: integer}}}
+              points: {type: number}
+              session_ids: {type: array, items: {type: string}}
+        tasks: {type: object, properties: {done: {type: integer}, total: {type: integer}}}
+        points: {type: number}
+        throughput:
+          type: object
+          properties:
+            automata_finished: {type: integer}
+            tasks_finished: {type: integer}
+            automata_per_day: {type: number}
+            tasks_per_day: {type: number}
     RulesContextProject:
       type: object
       required: [project_dir]
