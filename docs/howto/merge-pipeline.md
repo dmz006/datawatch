@@ -191,6 +191,39 @@ issue, tag the release or send a notification. The hooks are off by default
 and a failed hook never blocks or fails the ship — the ship is already done.
 The operator guide is [How-to: Post-ship hooks](post-ship-hooks.md).
 
+## The shadow merge plan
+
+Phase 4 of the autonomy handover (review and merge by the daemon) moves the merge from "the supervisor works it out by hand" to "the daemon works it out and only then acts", using the same shadow-first rule as every other handover: the daemon plans the merge, the supervisor does the real one, and the two are compared — every difference is a defect. This section describes what exists as of the shadow-plan step; the rest of the phase lands separately.
+
+### What a plan says
+
+One shadow merge plan per Automaton, describing what its merge would do:
+
+| Field | Meaning |
+|---|---|
+| Release size | `patch`, `minor`, `major` or `none`. |
+| Planned version | The version the bump step would set. Empty when there is none. |
+| Changelog heading and body | The entry drawn from the Automaton's own changelog entry task, or empty when it has none — nothing is invented. |
+| Changelog source | The task the entry came from, or `missing` when no task carries a well-formed one. |
+| README line, registry row, parity issue | The mechanical release edits the merge would make. Empty when there are none. |
+| Conflicts | Each conflicting path with its file class, the resolution and who made it. |
+| Gates | Each lint/test gate with its status, how long it took and its detail. |
+| Findings | Each problem with a code, a message and whether it blocks. |
+
+### What a plan never does
+
+- It is never applied. Every stored plan has `applied` set to `false`, and the store refuses a plan marked applied — a shadow plan is a record, not a queue.
+- It touches nothing in your project. The trial merge that finds the conflicts runs in a throwaway worktree outside the project's tree, does the merge without committing it, and the scratch tree is removed on every exit path. No branch, tag or ref is created or moved, and nothing is pushed.
+- It invents nothing. The changelog text comes only from the Automaton's own changelog entry task when its output has the exact shape `## [version] - YYYY-MM-DD` with a non-empty body. Without one, the plan carries empty heading and body and the source `missing`.
+
+### Where plans live
+
+One plan per Automaton, as `merge-plans/<id>.json` under the daemon's data directory, written atomically (a temporary file renamed into place, so a crash never leaves a torn plan). Reads list the newest first, and a project's retention prunes the oldest plans beyond the most recent N (N is at least 1).
+
+### What is still yours to do
+
+As of this step the plan is an internal record for the supervisor's comparison — it has no read on any operator surface yet (no REST route, MCP tool, CLI verb or PWA card). The rest of the phase — the release approval modes per size of release (each `automatic`, `ask` or `manual`), the daemon's own push and tag under a release path, conflict resolution by file class with the confirmation counter, and the comparison itself — lands in the same phase and is documented as it does. Until the shadow comparison meets the evidence bar (ten merges where the daemon's plan equals the manual one or is better, including at least two with conflicts and two with PWA changes, no blocking comparison defect), the merge stays with the supervisor. The phase's modes, defaults and exit criteria are in [the autonomy handover plan](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4.
+
 ## Settings
 
 All keys are under `autonomous.merge_pipeline` and each can be overridden per
