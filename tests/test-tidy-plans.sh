@@ -99,6 +99,7 @@ new_repo() {
     cp "$REPO_DIR/scripts/tidy-plans.sh"        scripts/
     cp "$REPO_DIR/scripts/plans_links.py"       scripts/
     cp "$REPO_DIR/scripts/plans_registry_hygiene.py" scripts/
+    cp "$REPO_DIR/scripts/plans_monthly_archive.py" scripts/
     cp "$REPO_DIR/scripts/check-plans-links.sh" scripts/
   )
   NEW_REPO="$d"
