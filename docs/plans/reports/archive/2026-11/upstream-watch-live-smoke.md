@@ -39,4 +39,4 @@ All six checks **pass**; no `FAIL` lines and no offline-fixture fallback was req
 - Network was available; no `--offline-fixtures` fallback was needed.
 - `GITHUB_TOKEN`/`GH_TOKEN` were not required; unauthenticated feed calls were sufficient for this one-shot run (no rate-limit errors observed).
 - The scratch directory `.upstream-watch-smoke` (report.md, report.json, one captured stdout log) was **deleted** after the checks; it is the only non-tracked artifact the run produced and it did not survive.
-- This report (`docs/plans/reports/upstream-watch-live-smoke.md`) is the only tracked file written by the task.
+- This report (`docs/plans/reports/archive/2026-11/upstream-watch-live-smoke.md`) is the only tracked file written by the task.

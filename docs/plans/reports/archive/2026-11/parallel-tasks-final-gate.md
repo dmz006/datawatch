@@ -20,8 +20,8 @@ Branch `automaton/3ebd0001` (worktree `/home/<user>/.datawatch/prd-worktrees/3eb
   ```
   ERROR: embedded PWA docs drift from docs/ — run 'make sync-docs' and re-stage.
   >f+++++++++ plans/2026-11-01-parallel-worktree-live-smoke-report.md
-  >f+++++++++ plans/reports/parallel-tasks-datawatch-app-parity-issue.md
-  >f+++++++++ plans/reports/parallel-tasks-live-smoke.md
+  >f+++++++++ plans/reports/archive/2026-11/parallel-tasks-datawatch-app-parity-issue.md
+  >f+++++++++ plans/reports/archive/2026-11/parallel-tasks-live-smoke.md
   ```
   Three branch-added `docs/plans/` files are missing from the embedded PWA docs mirror (`make sync-docs` would fix it). Per the gate spec, no other file was edited to make the check pass; the failure is recorded as-is.
 - `bash scripts/check-howto-coverage.sh` — **PASS** (exit 0):
@@ -56,7 +56,7 @@ Branch `automaton/3ebd0001` (worktree `/home/<user>/.datawatch/prd-worktrees/3eb
 - Help links: the help link table in `internal/server/web/app.js:9007-9010` maps all four keys to the glossary — `'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks'`, `'autonomous.parallel.worktree_per_task'`, `'autonomous.parallel.merge_conflict_policy'` and `'autonomous.parallel.merge_conflict_model'` to `DOCS_DEFINITIONS + '#parallel-task-worktrees'`. Both target sections exist in `docs/datawatch-definitions.md` (`### Parallel task worktrees` at line 1986, `### Read-only tasks` at line 1996). The PWA tests assert "the group and every setting have a help link table entry that opens the glossary section" — PASS.
 - Definitions: `docs/datawatch-definitions.md` documents `worktree_per_task` (line 1988), `merge_conflict_policy` (line 1992), `merge_conflict_model` (line 1994) and `read_only_tasks` (line 1998). All four keys also appear in `docs/config-reference.yaml`, `docs/howto/automaton-parallel-tasks.md` and `docs/api/openapi.yaml` — PASS.
 
-**The parity issue draft exists.** `docs/plans/reports/parallel-tasks-datawatch-app-parity-issue.md` — "datawatch-app parity issue: parallel tasks inside one Automaton (v9.57.0)", "Ready for the merge step to file against `dmz006/datawatch-app`. Not filed from this branch." — PASS.
+**The parity issue draft exists.** `docs/plans/reports/archive/2026-11/parallel-tasks-datawatch-app-parity-issue.md` — "datawatch-app parity issue: parallel tasks inside one Automaton (v9.57.0)", "Ready for the merge step to file against `dmz006/datawatch-app`. Not filed from this branch." — PASS.
 
 ## Verdict
 

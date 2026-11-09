@@ -96,7 +96,7 @@ times each with zero failures. The heavier story-level proof for this story (300
 ## Start/Stop audit
 
 Full audit in `.datawatch/notes/start-stop-audit.txt` (and committed as
-`docs/plans/reports/start-stop-audit.md`); package `internal/autonomous`:
+`docs/plans/reports/archive/2026-11/start-stop-audit.md`); package `internal/autonomous`:
 
 | Pair | File | Stop waits? |
 |------|------|-------------|
