@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -296,5 +297,154 @@ func TestTagSweepStore_NameRoleKind(t *testing.T) {
 		if role != tc.wantRole || kind != tc.wantKind {
 			t.Errorf("sessionNameRoleKind(%q) = (%q, %q), want (%q, %q)", tc.name, role, kind, tc.wantRole, tc.wantKind)
 		}
+	}
+}
+
+// placementSweepFixture is a manager holding one PRD inside one Automation at
+// stage "build" — the stored facts a launch-derived or legacy session's
+// Automaton axis is read from.
+func placementSweepFixture(t *testing.T) (*Manager, *PRD) {
+	t.Helper()
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	prd, err := m.Store().CreatePRD("spec", "/work/alpha", "pi", "gpt", EffortMedium)
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	auto := &Automation{ID: "auto-1", Name: "build-automation", Members: []AutomationMember{{PRDID: prd.ID, Stage: "build"}}}
+	if _, err := m.automations.Create(auto); err != nil {
+		t.Fatalf("automation create: %v", err)
+	}
+	return m, prd
+}
+
+// hasTagWithPrefix reports whether any tag in tags starts with prefix.
+func hasTagWithPrefix(tags []string, prefix string) bool {
+	for _, tg := range tags {
+		if strings.HasPrefix(tg, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestTagSweepStore_LaunchFactsSweepIsIdempotent covers a session whose tags
+// were already launch-derived: the first sweep may settle them, and a second
+// sweep over the same records changes nothing.
+func TestTagSweepStore_LaunchFactsSweepIsIdempotent(t *testing.T) {
+	m, prd := placementSweepFixture(t)
+	src := newSweepSourceFake()
+	src.sessions = []*session.Session{{
+		ID:             "s1",
+		Name:           "autonomous:build-the-thing",
+		PRDID:          prd.ID,
+		ComputeNodeRef: "node-1",
+		BackendFamily:  "pi",
+		Model:          "gpt-5",
+		ProjectDir:     "/work/alpha",
+		LaunchRole:     "worker",
+		LaunchKind:     "task",
+		LaunchStage:    "build",
+	}}
+	m.SetTagSweepSessions(NewSessionTagSweepStore(m, src))
+	if res := m.SweepTags(false); res.Sessions.Failed != 0 {
+		t.Fatalf("first sweep failed: %+v", res)
+	}
+	settled := append([]string(nil), src.session("s1").SystemTags...)
+	if res := m.SweepTags(false); res.Sessions.Changed != 0 || res.Sessions.Failed != 0 || res.Sessions.Examined != 1 {
+		t.Fatalf("second sweep = %+v, want one examined, none changed", res.Sessions)
+	}
+	if !reflect.DeepEqual(src.session("s1").SystemTags, settled) {
+		t.Fatalf("second sweep changed launch-derived tags: %v, was %v", src.session("s1").SystemTags, settled)
+	}
+}
+
+// TestTagSweepStore_NoPRDIDGetsNoAutomatonTag covers a launch-fact session
+// that belongs to no Automaton: after a sweep it carries no automaton or
+// automation tag, though its other launch-derived tags are written.
+func TestTagSweepStore_NoPRDIDGetsNoAutomatonTag(t *testing.T) {
+	m, _ := placementSweepFixture(t)
+	src := newSweepSourceFake()
+	src.sessions = []*session.Session{{
+		ID:             "s1",
+		Name:           "autonomous:verify-the-thing",
+		SystemTags:     []string{"role:worker"},
+		ComputeNodeRef: "node-1",
+		BackendFamily:  "claude",
+		LaunchRole:     "verifier",
+		LaunchKind:     "review",
+	}}
+	m.SetTagSweepSessions(NewSessionTagSweepStore(m, src))
+	if res := m.SweepTags(false); res.Sessions.Failed != 0 {
+		t.Fatalf("sweep failed: %+v", res)
+	}
+	tags := src.session("s1").SystemTags
+	if hasTagWithPrefix(tags, "automaton:") || hasTagWithPrefix(tags, "automation:") {
+		t.Fatalf("session with no PRDID got an automaton/automation tag: %v", tags)
+	}
+	if !reflect.DeepEqual(tags, []string{"backend:claude", "compute:node-1", "kind:review", "lane:claude", "role:verifier"}) {
+		t.Fatalf("launch-fact tags = %v", tags)
+	}
+}
+
+// TestTagSweepStore_LaunchFactsKeepComputeTag covers a session with recorded
+// launch facts: its compute tag (from its stored node) survives a sweep, and a
+// session with no stored node takes the local node name instead of none.
+func TestTagSweepStore_LaunchFactsKeepComputeTag(t *testing.T) {
+	m, _ := placementSweepFixture(t)
+	src := newSweepSourceFake()
+	src.sessions = []*session.Session{
+		{ID: "remote", Name: "autonomous:a", ComputeNodeRef: "node-1", BackendFamily: "pi", SystemTags: []string{"role:worker"}, LaunchRole: "worker", LaunchKind: "task"},
+		{ID: "local", Name: "autonomous:b", BackendFamily: "pi", SystemTags: []string{"role:worker"}, LaunchRole: "worker", LaunchKind: "task"},
+	}
+	m.SetTagSweepSessions(NewSessionTagSweepStore(m, src))
+	if res := m.SweepTags(false); res.Sessions.Failed != 0 {
+		t.Fatalf("sweep failed: %+v", res)
+	}
+	if got := src.session("remote").SystemTags; !containsString(got, "compute:node-1") {
+		t.Fatalf("remote launch-fact session lost its compute tag: %v", got)
+	}
+	if got := src.session("local").SystemTags; !containsString(got, "compute:local") {
+		t.Fatalf("local launch-fact session got no compute:local tag: %v", got)
+	}
+}
+
+// TestTagSweepStore_LegacySessionTagsUnchanged covers the compatibility rule:
+// a session with no recorded launch facts (LaunchRole, LaunchKind and
+// LaunchStage all empty) keeps the derivation the sweep gave before launch
+// facts existed — its role and kind come from its name, its stage from its
+// Automaton's membership, and it takes no local-node fallback.
+func TestTagSweepStore_LegacySessionTagsUnchanged(t *testing.T) {
+	m, prd := placementSweepFixture(t)
+	src := newSweepSourceFake()
+	src.sessions = []*session.Session{{
+		ID:             "s1",
+		Name:           "autonomous:build-the-thing",
+		PRDID:          prd.ID,
+		ComputeNodeRef: "node-1",
+		BackendFamily:  "pi",
+		Model:          "gpt-5",
+		ProjectDir:     "/work/alpha",
+	}}
+	m.SetTagSweepSessions(NewSessionTagSweepStore(m, src))
+	if res := m.SweepTags(false); res.Sessions.Failed != 0 {
+		t.Fatalf("sweep failed: %+v", res)
+	}
+	want := DerivePlacementTags(Placement{
+		Node:       "node-1",
+		Backend:    "pi",
+		Model:      "gpt-5",
+		Lane:       "gpu",
+		Project:    "alpha",
+		Automaton:  prd.ID,
+		Automation: "auto-1",
+		Stage:      "build",
+		Role:       "worker",
+		Kind:       "task",
+	}, config.DefaultPlacementConfig())
+	if got := src.session("s1").SystemTags; !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy session tags = %v, want the pre-change derivation %v", got, want)
 	}
 }
