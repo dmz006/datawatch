@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/412 (release v9.114.0). -->
 # datawatch-app parity issue — failed-task attempt cost (cheap non-final attempts)
 
 **Not filed yet.** The supervisor files this on the `dmz006/datawatch-app` repository with `gh issue create` at merge. The issue title is the heading below ("Title") and the issue body is the text from "## Affected area" through the end of the body. Whoever files it records the issue number in the recording section at the end.

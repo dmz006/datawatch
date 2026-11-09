@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/409 (release v9.114.0). -->
 # [parity] First-attempt worker routing, per-attempt reason labels and the attempt-cost settings — mobile client parity (datawatch app)
 
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened when

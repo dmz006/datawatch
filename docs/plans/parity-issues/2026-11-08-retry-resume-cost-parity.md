@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/411 (release v9.114.0). -->
 # [parity] Retry resume: label a resumed retry, render the resume-outcome fields, and re-check per-attempt cost assumptions — mobile client parity (datawatch app)
 
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened when

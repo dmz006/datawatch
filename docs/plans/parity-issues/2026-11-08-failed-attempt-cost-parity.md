@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/408 (release v9.114.0). -->
 # datawatch-app parity issue draft: failed-attempt cost settings (READY TO FILE, NOT FILED)
 
 Date: 2026-11-08

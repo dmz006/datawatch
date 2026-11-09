@@ -1,3 +1,4 @@
+<!-- Filed 2026-11-09 as https://github.com/dmz006/datawatch-app/issues/410 (release v9.114.0). -->
 # [parity] No-retry holds: render `no_retry_reason`, treat the "(no retry)" alert as a hold, and explain why a bare retry re-holds — mobile client parity (datawatch app)
 
 **Not filed yet.** — this is the tracked draft; the GitHub issue is opened when the
