@@ -291,3 +291,101 @@ func TestResolveReturnsIndependentProfile(t *testing.T) {
 		t.Errorf("built-in profile changed through a resolved copy: %q", again.Name)
 	}
 }
+
+func TestRoleOverrideChangesOnlyThatRole(t *testing.T) {
+	// Override worker only. Every other role keeps its built-in default, and
+	// the kind layer still wins over the role layer when a kind applies.
+	overrides := map[string]string{"worker": "full"}
+	cases := []struct {
+		role  string
+		kind  string
+		want  string
+		layer Layer
+	}{
+		{"worker", "", "full", LayerRole},
+		{"planner", "", "full", LayerRole},
+		{"verifier", "", "digest", LayerRole},
+		{"judge", "", "minimal", LayerRole},
+		{"worker", "note", "minimal", LayerKind},
+	}
+	for _, c := range cases {
+		t.Run(c.role+"/"+c.kind, func(t *testing.T) {
+			p, d := Resolve(ResolveInput{Role: c.role, Kind: c.kind, RoleDefaults: overrides})
+			if p.Name != c.want || d.Layer != string(c.layer) {
+				t.Errorf("got profile %q layer %q, want %q layer %q", p.Name, d.Layer, c.want, c.layer)
+			}
+		})
+	}
+}
+
+func TestRoleOverrideAddsUnknownRole(t *testing.T) {
+	// A role absent from the built-in table takes the override, not the worker fallback.
+	p, d := Resolve(ResolveInput{Role: "reviewer", RoleDefaults: map[string]string{"reviewer": "minimal"}})
+	if p.Name != "minimal" || d.Layer != string(LayerRole) || d.Reason != "role default applied" {
+		t.Errorf("got %q decision %+v", p.Name, d)
+	}
+}
+
+func TestKindOverrideChangesOnlyThatKind(t *testing.T) {
+	// Override docs only. Built-in kinds keep their defaults, and a new kind
+	// can be added through the override.
+	overrides := map[string]string{"docs": "minimal", "research": "full"}
+	cases := []struct {
+		kind string
+		want string
+	}{
+		{"docs", "minimal"},
+		{"research", "full"},
+		{"implementation", "digest"},
+		{"note", "minimal"},
+		{"final_gate", "digest"},
+	}
+	for _, c := range cases {
+		t.Run(c.kind, func(t *testing.T) {
+			p, d := Resolve(ResolveInput{Role: "planner", Kind: c.kind, KindDefaults: overrides})
+			if p.Name != c.want || d.Layer != string(LayerKind) {
+				t.Errorf("got profile %q layer %q, want %q layer kind", p.Name, d.Layer, c.want)
+			}
+		})
+	}
+}
+
+func TestNilOverridesMatchBuiltinResult(t *testing.T) {
+	// With nil override maps, Resolve must match the built-in tables for every
+	// role and kind, including unknown ones and the empty kind.
+	roles := []string{"planner", "worker", "verifier", "judge", "no-such-role"}
+	kinds := []string{"implementation", "docs", "note", "final_gate", "unknown-kind", ""}
+	for _, role := range roles {
+		for _, kind := range kinds {
+			in := ResolveInput{Role: role, Kind: kind}
+			p, d := Resolve(in)
+
+			// Expected: the kind default when the kind is built in, else the role default.
+			wantName, wantLayer := roleDefaults[role], LayerRole
+			if !isKnownRole(role) {
+				wantName = roleDefaults[fallbackRole]
+			}
+			if n, ok := kindDefaults[kind]; ok {
+				wantName, wantLayer = n, LayerKind
+			}
+			if p.Name != wantName || d.Layer != string(wantLayer) {
+				t.Errorf("role %q kind %q: got %q layer %q, want %q layer %q",
+					role, kind, p.Name, d.Layer, wantName, wantLayer)
+			}
+
+			// Empty non-nil maps must behave the same as nil ones.
+			empty := in
+			empty.RoleDefaults = map[string]string{}
+			empty.KindDefaults = map[string]string{}
+			p2, d2 := Resolve(empty)
+			if !reflect.DeepEqual(p2, p) || d2 != d {
+				t.Errorf("role %q kind %q: empty maps changed result", role, kind)
+			}
+		}
+	}
+}
+
+func isKnownRole(role string) bool {
+	_, ok := roleDefaults[role]
+	return ok
+}

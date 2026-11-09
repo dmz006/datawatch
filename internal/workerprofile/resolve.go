@@ -58,6 +58,14 @@ type ResolveInput struct {
 	AutomatonName string
 	ProjectName   string
 	GlobalName    string
+	// RoleDefaults overrides the built-in role -> profile name defaults. A role
+	// found here uses this value; any other role uses the built-in table. A nil
+	// map leaves every role on the built-in default.
+	RoleDefaults map[string]string
+	// KindDefaults overrides the built-in task kind -> profile name defaults,
+	// with the same rules as RoleDefaults. A nil map leaves every kind on the
+	// built-in default.
+	KindDefaults map[string]string
 	// Lookup returns the profile with the given name, covering built-in and
 	// user-defined profiles. When nil, only built-in profiles are found.
 	Lookup func(name string) (WorkerProfile, bool)
@@ -95,7 +103,7 @@ func Resolve(in ResolveInput) (WorkerProfile, Decision) {
 		return roleFallback(in, n.name, n.layer)
 	}
 
-	if name, ok := kindDefaults[in.Kind]; ok {
+	if name, ok := kindLookup(in, in.Kind); ok {
 		if p, found := lookupProfile(in, name); found {
 			return p, Decision{
 				Applied: p.Name,
@@ -122,9 +130,9 @@ func roleFallback(in ResolveInput, requested string, layer Layer) (WorkerProfile
 func roleDefault(in ResolveInput) (WorkerProfile, Decision) {
 	role := in.Role
 	reason := "role default applied"
-	name, ok := roleDefaults[role]
+	name, ok := roleLookup(in, role)
 	if !ok {
-		name = roleDefaults[fallbackRole]
+		name, _ = roleLookup(in, fallbackRole)
 		reason = "unknown role; worker role default applied"
 	}
 	p, found := lookupProfile(in, name)
@@ -138,6 +146,26 @@ func roleDefault(in ResolveInput) (WorkerProfile, Decision) {
 		Layer:   string(LayerRole),
 		Reason:  reason,
 	}
+}
+
+// roleLookup returns the default profile name for role. in.RoleDefaults is
+// checked first; a role it does not hold uses the built-in table.
+func roleLookup(in ResolveInput, role string) (string, bool) {
+	if name, ok := in.RoleDefaults[role]; ok {
+		return name, true
+	}
+	name, ok := roleDefaults[role]
+	return name, ok
+}
+
+// kindLookup returns the default profile name for kind. in.KindDefaults is
+// checked first; a kind it does not hold uses the built-in table.
+func kindLookup(in ResolveInput, kind string) (string, bool) {
+	if name, ok := in.KindDefaults[kind]; ok {
+		return name, true
+	}
+	name, ok := kindDefaults[kind]
+	return name, ok
 }
 
 // lookupProfile finds a profile by name through in.Lookup. When Lookup is nil,
