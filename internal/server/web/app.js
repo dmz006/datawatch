@@ -19931,7 +19931,7 @@ function loadGeneralConfig() {
                   <input id="${pid}-maxretries" type="number" min="${dlMin}" max="${dlMax}" step="1" class="form-input" style="width:80px;margin-top:0;" />
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                  <span style="${dlLbl}" title="${escHtml(t(f.taskTemplatesHelpKey) || 'Configures the standard tasks the decomposer adds to each story.')}">${escHtml(t(f.taskTemplatesLabelKey) || 'Task templates')}</span>
+                  <span style="${dlLbl}" title="${escHtml(t(f.taskTemplatesHelpKey) || 'Configures the standard tasks the decomposer adds to each story.')}">${escHtml(t(f.taskTemplatesLabelKey) || 'Standard tasks')}</span>
                   <label class="toggle-switch" style="margin:0;flex-shrink:0;">
                     <input type="checkbox" id="${pid}-tasktemplates" />
                     <span class="toggle-slider"></span>
