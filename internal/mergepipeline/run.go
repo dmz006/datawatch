@@ -79,6 +79,23 @@ type Runner struct {
 	Ship ShipRunner
 	// Recorder receives the run after every step; nil records nothing.
 	Recorder autonomous.MergeRunRecorder
+	// Release gate wiring, set by the caller from the release approval
+	// settings (config.MergePipelineConfig.EffectiveReleaseApproval). With
+	// ReleaseApproval empty the gate is not wired and the run ships as
+	// before.
+	//
+	// ReleaseSize is the size of this release: patch, minor, or major. The
+	// caller sets it from the place the release-version step learns the
+	// version (VersionFiles); empty means the size could not be read and the
+	// effective approval resolves to ask rather than shipping.
+	ReleaseSize string
+	// ReleaseApproval is the effective approval mode for a release of this
+	// size: auto, ask, or manual.
+	ReleaseApproval string
+	// ReleaseAnswers reads the operator's answer to the release question;
+	// nil means no answer is readable and an ask-mode run holds until one
+	// is.
+	ReleaseAnswers ReleaseAnswerReader
 
 	MainBranch string // default main
 	// PostShip is the operator's autonomous.merge_pipeline.post_ship block.
@@ -141,6 +158,13 @@ type runState struct {
 	// pushReleaseOK is set when a step with Action ActionPushRelease
 	// reported ok; the post-ship hooks run only when it is set.
 	pushReleaseOK bool
+	// failedSteps counts the steps that failed; a failed check never ships
+	// in any mode.
+	failedSteps int
+	// gate and gateSet hold the release gate verdict, decided at most once,
+	// before the first step that leaves the machine.
+	gate    gateVerdict
+	gateSet bool
 }
 
 func newRunID() string {
@@ -209,6 +233,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			continue
 		}
 		failures++
+		st.failedSteps++
 		if step.EffectiveOnFailure() != OnFailureContinue {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
@@ -377,6 +402,24 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
 		return autonomous.MergeStepSkipped, "the project's Makefile has no " + step.RequiresMakeTarget + " target", nil
 	}
+	// The release gate applies to every step that leaves the machine, and
+	// only to those: it is decided at most once per run, before the first
+	// such step runs, and its verdict, in the run's plain wording, is
+	// recorded on the steps it holds back.
+	gate, gerr := gateVerdict{}, error(nil)
+	applies := stepLeavesMachine(step)
+	if applies {
+		gate, gerr = s.gateForLeaving()
+		if gerr != nil {
+			// Asking the release decision failed; guessing is not an
+			// option, so the step fails and the run stops short of the
+			// ship.
+			return autonomous.MergeStepFailed, "the release gate could not be applied: " + gerr.Error(), gerr
+		}
+		if gate.holds {
+			return autonomous.MergeStepSkipped, gate.skipNote, nil
+		}
+	}
 	var detail string
 	var err error
 	switch {
@@ -393,7 +436,21 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 		}
 		return autonomous.MergeStepFailed, detail, err
 	}
+	if applies && gate.approvedNote != "" {
+		detail = gate.approvedNote + "; " + detail
+	}
 	return autonomous.MergeStepOK, detail, nil
+}
+
+// stepLeavesMachine reports whether the step runs through the ShipRunner:
+// the ship actions, or one of the ship kinds. These are the steps the
+// release gate decides about.
+func stepLeavesMachine(step Step) bool {
+	switch step.Action {
+	case ActionTagRelease, ActionPushRelease, ActionDeployLatest:
+		return true
+	}
+	return leavesTheMachine(step.Kind)
 }
 
 // leavesTheMachine reports the kinds that only run through the ShipRunner.
