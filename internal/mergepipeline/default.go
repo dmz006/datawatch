@@ -37,6 +37,10 @@ import "time"
 //
 // Steps 4 to 6 are one script run today; they are separate steps so a project
 // can replace any of them.
+//
+// When merge-branches finds every branch already in main, nothing new is
+// released: steps 5 to 10 are recorded as skipped and nothing is pushed. The
+// deploy step still runs.
 func DefaultDefinition() Definition {
 	return Definition{Steps: []Step{
 		{Name: "rebase-onto-main", Kind: KindCustom, Action: ActionRebaseOntoMain, OnFailure: OnFailureStop, Timeout: 5 * time.Minute},
