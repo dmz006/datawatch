@@ -26,7 +26,7 @@ var burnGuardKeys = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude",
-	"ask_on_change",
+	"ask_on_change", "max_projection_gap_points",
 }
 
 func burnGuardPatchBool(key string, v interface{}) (bool, error) {
@@ -119,6 +119,10 @@ func validateBurnGuardValue(key string, v interface{}) error {
 		if f <= 0 || f > config.BurnGuardPointsPerMillionMax {
 			return fmt.Errorf("usage.burn_guard.%s: must be above 0 and at most %g", key, config.BurnGuardPointsPerMillionMax)
 		}
+	case "max_projection_gap_points":
+		if f < 0 || f > config.BurnGuardProjectionGapMax {
+			return fmt.Errorf("usage.burn_guard.max_projection_gap_points: must be from 0 to %g (0 never compares the projections)", config.BurnGuardProjectionGapMax)
+		}
 	case "retry_limit_claude":
 		if f != math.Trunc(f) || f < 0 || f > config.BurnGuardRetryLimitClaudeMax {
 			return fmt.Errorf("usage.burn_guard.retry_limit_claude: must be a whole number from 0 to %d", config.BurnGuardRetryLimitClaudeMax)
@@ -181,6 +185,8 @@ func applyBurnGuardPatchKey(c *config.BurnGuardConfig, fullKey string, v interfa
 		c.CacheWritePointsPerMillion, _ = burnGuardPatchNumber(key, v)
 	case "cache_read_points_per_million":
 		c.CacheReadPointsPerMillion, _ = burnGuardPatchNumber(key, v)
+	case "max_projection_gap_points":
+		c.MaxProjectionGapPoints, _ = burnGuardPatchNumber(key, v)
 	case "retry_limit_claude":
 		f, _ := burnGuardPatchNumber(key, v)
 		c.RetryLimitClaude = int(f)
