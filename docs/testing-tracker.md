@@ -5752,3 +5752,9 @@ Tests for the discussion id rule (1 to 128 characters of letters, digits, dot, u
 | Validator accepts good ids and rejects empty, `.`, `..`, slash, backslash, NUL, over 128 characters, spaces and non-ASCII | **Yes** | **Yes** | `TestValidateDiscussionID` (`internal/server/discussion_id_test.go`) | |
 | Every discussion route (recall, write, delete, wal, participants, conflicts, conflicts/resolve, receive) and the file service folder route answer 400 `invalid discussion id` for a bad id and create no file | **Yes** | **Yes** | `TestDiscussionRoutesRejectTraversalIDs` (`internal/server/discussion_route_traversal_test.go`) | Called through the handlers, state and file roots compared before and after |
 | Tag-selection match results unchanged after the lookup set stopped using a computed size hint | **Yes** | **Yes** | `TestMatchesObjectTagsResults` (`internal/autonomous/object_tag_filter_test.go`) | |
+
+## Standard task list REST read — `GET /api/autonomous/standard-tasks` — unreleased
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `GET /api/autonomous/standard-tasks[?project=…]` returns `{enabled, tasks}`; `enabled` is the global `autonomous.task_templates.enabled`; each task row carries the snake_case fields `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override`, `mode`; the six built-in ids appear once each in config order; other methods answer 405 | **Yes** | **No** | `TestStandardTaskRESTRead` (`internal/server/autonomous_standard_tasks_test.go`), run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/server/ -run TestStandardTaskRESTRead` | Unit test through the handler. Live daemon check not yet run. |

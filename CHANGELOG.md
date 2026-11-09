@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /api/autonomous/standard-tasks` lists the standard tasks the decomposer can add to a story.** The read returns `{enabled, tasks}`: `enabled` is the global `autonomous.task_templates.enabled`, and `tasks` holds one row per effective task template with the fields `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override` and `mode`. An optional `project` query parameter (a project directory or alias) selects that project's override. Rows come from `autonomous.ListStandardTasks` (`internal/server/autonomous_standard_tasks.go`), pinned by `TestStandardTaskRESTRead`. Read-only; other methods answer 405.
+
 ## v9.112.8 — Sessions tiles show every session's system tag chips on the first load
 
 ### Fixed
