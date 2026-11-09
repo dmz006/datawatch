@@ -68,6 +68,16 @@ type attemptRun struct {
 	// AttemptsBefore is len(t.Attempts) when the attempt began; the executor's
 	// exit hook uses it to tell whether the attempt was already recorded.
 	AttemptsBefore int
+	// WorkerProfile names the worker profile the launch applied; empty when
+	// the attempt ran with no profile.
+	WorkerProfile string
+	// WorkerRole names the role of the attempt's worker session.
+	WorkerRole string
+	// LaunchContext is the starting context generated for the worker at
+	// launch, when one was generated; empty for a launch without a
+	// starting context. The attempt record estimates its token size from it
+	// and records the estimated source.
+	LaunchContext string
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -178,10 +188,16 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
 		SnapshotRef:     ref,
 		Escalated:       run.Escalated,
+		WorkerProfile:   run.WorkerProfile,
+		WorkerRole:      run.WorkerRole,
+		StartupTokens:   EstimateTokens(run.LaunchContext),
 		SessionID:       sessionID,
 		TmuxSession:     tmux,
 		EndReason:       deriveAttemptEndReason(f, adopted),
 		EndDetail:       f.EndDetail,
+	}
+	if run.LaunchContext != "" {
+		rec.StartupTokenSource = StartupTokenSourceEstimated
 	}
 	m.store.WithLock(func() {
 		if ev := t.RunnerEvidence; ev != nil {

@@ -27,6 +27,7 @@ import (
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // SpawnRequest is what the executor hands to SpawnFn for each task.
@@ -1683,6 +1684,24 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			_ = m.store.SaveTask(t)
 			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
 			run.Escalated = escalated
+			// Launch record: the worker profile the launch names (most-specific
+			// task-level name first) and the starting context it generates. The
+			// attempt record estimates the worker's startup token size from it
+			// (the estimated source); a launch without a named profile carries
+			// both empty and records zero tokens.
+			profileName := t.WorkerProfile
+			if profileName == "" {
+				profileName = prd.WorkerProfile
+			}
+			run.WorkerProfile = profileName
+			run.WorkerRole = "worker"
+			if p, ok := workerprofile.Builtin(run.WorkerProfile); ok {
+				run.LaunchContext = BuildWorkerStartingContext(StartingContextInput{
+					Role:     run.WorkerRole,
+					Profile:  p,
+					TaskSpec: t.Spec,
+				})
+			}
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
