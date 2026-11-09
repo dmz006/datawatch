@@ -7921,6 +7921,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Release approval modes go through SetReleaseApprovalMode, which stores
+	// them with an audit event and a decision record, so they are taken out of
+	// the patch here and never reach applyConfigPatch.
+	if err := s.routeReleaseModeKeys(releaseModeSurface(r), patch); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errReleaseModeUnavailable) {
+			status = http.StatusServiceUnavailable
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)

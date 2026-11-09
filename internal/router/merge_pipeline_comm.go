@@ -99,6 +99,18 @@ func checkMergePipelineConfigure(key, value string) error {
 	return config.ValidateReleaseApprovalModeKey(key, strings.TrimSpace(value))
 }
 
+// configureMergePipelineReleaseMode sends one release approval mode through
+// PUT /api/config tagged with the comm surface, so the daemon records the change
+// as a comm change. The daemon stores it through SetReleaseApprovalMode.
+func (r *Router) configureMergePipelineReleaseMode(key, value string) error {
+	b, err := json.Marshal(map[string]any{key: strings.TrimSpace(value)})
+	if err != nil {
+		return err
+	}
+	_, err = r.commJSON(http.MethodPut, "/api/config?surface=comm", string(b))
+	return err
+}
+
 // replyMergePipeline answers the merge-pipeline verb. args[0] is the verb.
 func (r *Router) replyMergePipeline(args []string) {
 	const label = "autonomous merge-pipeline"

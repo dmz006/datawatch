@@ -12028,8 +12028,9 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	}
 	url := loopbackBaseURL(cfg) + "/api/config"
 	if isMergePipelineReleaseApprovalKey(key) {
-		// auto|ask|manual only; refused here before anything is sent.
-		return runMergePipelineReleaseApprovalSet(url, cfg.Server.Token, key, value)
+		// auto|ask|manual only; refused here before anything is sent. The
+		// cli surface is named so the daemon records the change as a CLI change.
+		return runMergePipelineReleaseApprovalSet(url+"?surface=cli", cfg.Server.Token, key, value)
 	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
