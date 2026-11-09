@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -150,13 +151,13 @@ func TestBurnGuardAskOnChangeAlertNamesProjectionTargetAndSetting(t *testing.T) 
 	s := settings()
 	s.AskOnChange = false
 	d := tick(t, l, proj(20), s, time.Now())
-	for _, want := range []string{"projected 118.0%", "target 98.0%", "usage.burn_guard.ask_on_change"} {
+	for _, want := range []string{"guard 118.0%", "target 98.0%", "usage.burn_guard.ask_on_change"} {
 		if !strings.Contains(d.AlertText, want) {
 			t.Fatalf("climb alert %q missing %q", d.AlertText, want)
 		}
 	}
 	d = tick(t, l, proj(-10), s, time.Now())
-	for _, want := range []string{"projected 88.0%", "target 98.0%", "usage.burn_guard.ask_on_change"} {
+	for _, want := range []string{"guard 88.0%", "target 98.0%", "usage.burn_guard.ask_on_change"} {
 		if !strings.Contains(d.AlertText, want) {
 			t.Fatalf("step back alert %q missing %q", d.AlertText, want)
 		}
@@ -236,7 +237,7 @@ func TestMarginHolds(t *testing.T) {
 	l, _ := NewLadder(nil)
 	at := time.Now()
 	for _, o := range []float64{2, 1, 0, -1, -2} {
-		if d := tick(t, l, proj(o), settings(), at); d.Changed || d.Reason != "within the margin" {
+		if d := tick(t, l, proj(o), settings(), at); d.Changed || !strings.HasPrefix(d.Reason, "within the margin") {
 			t.Fatalf("overBy %v: %+v", o, d)
 		}
 	}
@@ -413,5 +414,85 @@ func TestFridayNightReplayThroughLadder(t *testing.T) {
 	}
 	if len(l.State().Applied) != 0 {
 		t.Fatalf("state %+v", l.State())
+	}
+}
+
+// gapProj is a projection whose guard projection (173.7%) is far above its advice
+// projection (57.0%), with the newest reading at readingPct against the line.
+func gapProj(readingPct, line float64) Projection {
+	return Projection{Projected: 173.7, AdviceProjected: 57.0, Target: 98, Ceiling: 100, Margin: 2,
+		OverBy: 75.7, Over: true, Line: line, PercentAtReading: readingPct,
+		PointsPerHour: 1.7, AllowedPerHour: 0.6}
+}
+
+func gapSettings(limit float64) LadderSettings {
+	s := settings()
+	s.MaxProjectionGapPoints = limit
+	return s
+}
+
+func TestGapUsesLowerProjectionWhenGapOverLimit(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	d := tick(t, l, gapProj(50, 90), gapSettings(25), time.Now())
+	if d.Changed || d.Direction != DirectionHold {
+		t.Fatalf("lower projection (57%%) is under target; no rung should apply: %+v", d)
+	}
+	if d.GuardProjected != 173.7 || d.AdviceProjected != 57.0 || math.Abs(d.Gap-116.7) > 1e-9 {
+		t.Fatalf("decision projections: guard %v advice %v gap %v", d.GuardProjected, d.AdviceProjected, d.Gap)
+	}
+	if d.OverBy != 57.0-98 {
+		t.Fatalf("OverBy must be recomputed from the lower value, got %v", d.OverBy)
+	}
+	if !strings.Contains(d.Reason, "guard 173.7%, advice 57.0%, using the lower") {
+		t.Fatalf("reason does not name both projections: %q", d.Reason)
+	}
+}
+
+func TestGapForcesClimbWhenReadingOverLine(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	d := tick(t, l, gapProj(99, 90), gapSettings(25), time.Now())
+	if d.Direction != DirectionClimb || d.Rung != RungLowerInflight || d.Changed == false {
+		t.Fatalf("reading over the line must still climb one rung: %+v", d)
+	}
+	for _, want := range []string{"guard 173.7%, advice 57.0%, using the lower", "target 98.0%"} {
+		if !strings.Contains(d.AlertText, want) {
+			t.Fatalf("alert %q missing %q", d.AlertText, want)
+		}
+	}
+	if d.QuestionText == "" {
+		t.Fatalf("ask_on_change is on in settings(); a changed step must raise a question: %+v", d)
+	}
+}
+
+func TestGapNamesBothProjectionsInQuestion(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	d := tick(t, l, gapProj(99, 90), gapSettings(25), time.Now())
+	if !strings.Contains(d.QuestionText, "guard 173.7%, advice 57.0%, using the lower") {
+		t.Fatalf("question %q does not name both projections", d.QuestionText)
+	}
+}
+
+func TestGapLimitZeroOrWithinLimitUsesGuard(t *testing.T) {
+	for _, limit := range []float64{0, 200} {
+		l, _ := NewLadder(&memStore{})
+		d := tick(t, l, gapProj(50, 90), gapSettings(limit), time.Now())
+		if d.Direction != DirectionClimb || d.OverBy != 75.7 {
+			t.Fatalf("limit %v: guard projection should decide: %+v", limit, d)
+		}
+		if !strings.Contains(d.AlertText, "using the guard") {
+			t.Fatalf("limit %v: alert %q should say the guard was used", limit, d.AlertText)
+		}
+	}
+}
+
+func TestGapLowerNeverSkipsRungWhenOverLine(t *testing.T) {
+	// Lower value is over the target too: the normal climb applies, one rung per tick.
+	p := gapProj(99, 90)
+	p.AdviceProjected = 150
+	p.Projected = 173.7
+	l, _ := NewLadder(&memStore{})
+	d := tick(t, l, p, gapSettings(10), time.Now())
+	if d.Direction != DirectionClimb || len(d.Applied) != 1 {
+		t.Fatalf("expected a single climb: %+v", d)
 	}
 }

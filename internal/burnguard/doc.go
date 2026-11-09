@@ -16,7 +16,9 @@
 //     pace line of the newest reading, using usagecalc's advice for the week position, the
 //     pace line and the ceiling. It returns the projection, the line, whether the projection
 //     is over or under by the margin, and the numbers an alert needs (points per hour and
-//     allowed per hour).
+//     allowed per hour). It also projects the readings alone with usagecalc's advice (the
+//     recent-burn projection, AdviceProjected). When the two differ by more than the
+//     configured gap limit, the ladder decides on the lower of them.
 //
 // The package does no network I/O, reads no clock (every moment comes in as an argument) and
 // does not import the server package.
