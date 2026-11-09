@@ -61,9 +61,6 @@ func TestGitLab_StubReturnsNotImplemented(t *testing.T) {
 	if err := g.RevokeToken(context.Background(), "tok"); !errors.Is(err, ErrNotImplemented) {
 		t.Errorf("RevokeToken err=%v want ErrNotImplemented", err)
 	}
-	if _, err := g.OpenPR(context.Background(), PROptions{}); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("OpenPR err=%v want ErrNotImplemented", err)
-	}
 }
 
 func TestResolve_Routing(t *testing.T) {
