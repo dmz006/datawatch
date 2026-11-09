@@ -54,6 +54,16 @@ type IssueOptions struct {
 	Body  string
 }
 
+// ReleaseOptions captures the fields needed to publish a release for
+// an existing tag. Tag is the git tag the release is cut from; Title
+// and Notes are optional display text.
+type ReleaseOptions struct {
+	Repo  string // "owner/repo" for github; "group/project" for gitlab
+	Tag   string
+	Title string
+	Notes string
+}
+
 // Provider abstracts a forge. Concrete implementations:
 //
 //	GitHub.Kind()  → "github"
