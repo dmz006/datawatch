@@ -4812,9 +4812,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// nothing stopped two PRDs sharing a project_dir from
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
-			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
+			// onSpawned names the planner on the PRD as soon as the session
+			// exists (req.OnPlannerSpawned, wired by the Manager), with the
+			// output file computed above, before relocation.
+			onSpawned := func(sessionID string) {
+				if req.OnPlannerSpawned != nil {
+					req.OnPlannerSpawned(sessionID, outputFile)
+				}
+			}
+			// Same reader and empty effort/node as runOneShotJSONSession.
+			content, _, err := runOneShotJSONSessionWithSpawnHook(cfg, req.PRDID, req.ProjectDir, backend, req.Model, "",
 				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
-				launchTagsForDecompose(req.PRDID))
+				autonomouspkg.RelocateProjectFile, "", launchTagsForDecompose(req.PRDID), onSpawned)
+			return content, err
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// One live-config snapshot for this invocation (see

@@ -330,6 +330,14 @@ var judgeLiveSession func(sessionName string) string
 // decides how the output file is read, and whether it is removed from the
 // project directory.
 func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithSpawnHook(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags, nil)
+}
+
+// runOneShotJSONSessionWithSpawnHook is runOneShotJSONSessionWithReader plus
+// onSpawned, called with the session id as soon as the start request succeeds
+// and before the reader starts waiting on the output. A failed spawn never
+// calls it. A nil onSpawned makes this exactly runOneShotJSONSessionWithReader.
+func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags, onSpawned func(sessionID string)) (content string, sessionID string, err error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
@@ -453,6 +461,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		}
 	}
 	sessionID = startOut.ID
+	if onSpawned != nil {
+		onSpawned(sessionID)
+	}
 	if verifierSessionStarted != nil {
 		verifierSessionStarted(sessionName, sessionID)
 	}
