@@ -60,6 +60,9 @@ func loadReplayScenario(t *testing.T) replayScenario {
 func commitReplayFiles(t *testing.T, repo string, c replayCommit) {
 	t.Helper()
 	for name, body := range c.Files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, name)), 0o750); err != nil {
+			t.Fatal(err)
+		}
 		write(t, repo, name, body)
 	}
 	git(t, repo, "add", ".")
