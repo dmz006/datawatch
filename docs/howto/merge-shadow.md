@@ -43,8 +43,14 @@ a PWA card; see "Where the shadow state is read" below.
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the
   conflicts, each with its file class, resolution and resolver, are recorded in
   the plan. No branch, tag or ref is ever created or moved and nothing is pushed.
-- Record each gate of the trial merge with its status and duration, and each
-  finding with a code and whether it blocks.
+- Record each gate of the trial merge with its status — `pass`, `fail`,
+  `timeout`, `skipped`, or `load_sensitive` (a test gate that failed first and
+  passed when rerun alone) — and its duration, and each finding with a code and
+  whether it blocks.
+- Run the plan's checks before the trial merge: an Automaton task branch that
+  holds commits the work branch does not blocks the plan with
+  `unmerged_task_branch`, and the trial merge and every gate are then recorded
+  as skipped (see "The plan's checks and gates" below).
 
 **Never does:**
 
@@ -56,6 +62,53 @@ a PWA card; see "Where the shadow state is read" below.
   is filed into the defect queue, and no gate, approval or automation consumes
   the comparison. Filing the recorded candidates into the defect queue is a
   separate job (see "What you still review" below).
+
+## The plan's checks and gates
+
+The plan does more than the trial merge. These checks run before it and inside
+the gates — each is the replay of an event the phase's first tests meet again
+(the autonomy handover plan, Phase 4):
+
+**Unmerged task branch — `unmerged_task_branch` (blocks).** The first step of
+the plan is the Automaton's own task branches: the ones named after the work
+branch (`<branch>--tasks-…`). A task branch holding commits the work branch does
+not blocks the plan with one finding per such branch, and the trial merge is not
+run — every gate is recorded as `skipped` with the reason. That is the event
+where a task branch is never merged back, replayed as a defect instead of being
+discovered after ship.
+
+**Stray root file — `stray_root_file` (blocks).** A check of an Automaton branch
+as a merge candidate: one blocking finding per file the branch adds to the
+repository root that the base ref does not track in its root tree, dotfiles
+included. It catches the stray tracked file that would otherwise ride into the
+merge at the repository root.
+
+**Load-sensitive test gate — `load_sensitive` (a status, not a failure).** The
+`test` gate that fails on its first run is run once more, alone. When the rerun
+passes, the gate is recorded `load_sensitive` — the first five lines of the
+failing run are kept as the gate's finding — and it does not block the plan.
+When the rerun does not pass, the first failure stands, with the rerun's status
+noted in the detail. It is the daemon's answer to the test that fails only under load: the
+gate names it, and the operator still decides what that test is.
+
+**Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
+the local golangci-lint version against the version the trial merge's CI
+workflow pins — the `version` of a `golangci/golangci-lint-action` step in
+`.github/workflows/ci.yaml`, a `v`-prefix aside. A difference fails the gate
+with one blocking finding; a local version that cannot be determined counts as
+a mismatch. A CI workflow that pins nothing — no workflow, no such step, no
+`version` key — or one that cannot be read, leaves the gate's status unchanged
+and adds only the local version (and, when the pin could not be read, the
+reason) to the gate's detail. It is the answer to the lint that differs between
+local and CI.
+
+**Plans-link gate — `check-plans-links`.** The gate runner runs the project's
+make target of a given name — build, lint and test are the standard three in
+the trial merge — and any other target can be run the same way, such as the
+plans-link checker `check-plans-links`. A broken plan link fails that gate, and
+the gate output reports only the count of broken targets; the checker never
+names them. It is the answer to the broken plan link: a link that cannot resolve
+keeps the merge from passing its gate.
 
 ## Where the shadow state is read
 
@@ -210,6 +263,11 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
 - Every defect candidate in the data directory's
   `defect-candidates/<automaton id>.json` — the candidates have no read surface
   today, and filing them into the defect queue is a separate job.
+- The plan's findings that name a test to watch or a merge to fix: the
+  `load_sensitive` gate (a test that failed under load and passed when rerun
+  alone is still a test to watch), and the blocking `unmerged_task_branch`,
+  `stray_root_file` and `lint_version_mismatch` findings (see
+  [The plan's checks and gates](#the-plans-checks-and-gates)).
 - The parity-issue and gate lines in the plan, per
   [merge-pipeline.md](merge-pipeline.md#what-is-still-yours-to-do).
 - The fact that comparison records are not persisted yet — the comparison
