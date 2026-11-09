@@ -1,5 +1,7 @@
 // Tests for the autonomous_standard_tasks MCP tool, proxied against an
 // httptest backend that stands in for GET /api/autonomous/standard-tasks.
+// The backend replies with the shared fixture, so the tool's output is
+// compared against it.
 
 package mcp
 
@@ -7,14 +9,28 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"testing"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
+// standardTasksFixturePath is the shared expected list every surface reads.
+const standardTasksFixturePath = "../../testdata/standard-tasks/expected.json"
+
 func TestStandardTaskMCPTool(t *testing.T) {
-	const reply = `{"enabled":true,"tasks":[{"id":"changelog_entry","title":"Changelog entry","kind":"docs","summary":"Adds a changelog entry.","offered_when":"always","enabled":true,"project_override":null,"mode":"model session"}]}`
-	s, rec := activateServer(t, http.StatusOK, reply)
+	fixture, err := os.ReadFile(standardTasksFixturePath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var want struct {
+		Tasks []map[string]any `json:"tasks"`
+	}
+	if err := json.Unmarshal(fixture, &want); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+
+	s, rec := activateServer(t, http.StatusOK, string(fixture))
 
 	if got := s.toolAutonomousStandardTasks().Name; got != "autonomous_standard_tasks" {
 		t.Fatalf("tool name = %q", got)
@@ -39,13 +55,20 @@ func TestStandardTaskMCPTool(t *testing.T) {
 		}
 	}
 	rows, _ := obj["tasks"].([]any)
-	if len(rows) != 1 {
-		t.Fatalf("tasks = %v", obj["tasks"])
+	if len(rows) != len(want.Tasks) {
+		t.Fatalf("tasks = %d, fixture = %d", len(rows), len(want.Tasks))
 	}
-	row, _ := rows[0].(map[string]any)
-	for _, k := range []string{"id", "title", "kind", "summary", "offered_when", "enabled", "project_override", "mode"} {
-		if _, ok := row[k]; !ok {
-			t.Errorf("task row missing field %q", k)
+	// The tool prints the fixture's fields; each must match the fixture row.
+	for i, w := range want.Tasks {
+		row, _ := rows[i].(map[string]any)
+		for _, k := range []string{"id", "title", "kind", "enabled", "mode"} {
+			if _, ok := row[k]; !ok {
+				t.Errorf("task row %d missing field %q", i, k)
+				continue
+			}
+			if row[k] != w[k] {
+				t.Errorf("task row %d %s = %v, want %v", i, k, row[k], w[k])
+			}
 		}
 	}
 }
