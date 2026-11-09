@@ -3847,12 +3847,10 @@ autonomous:
   #     back to the full harness, with the reason recorded on the attempt. An
   #     unknown name set on a task or Automaton is recorded as a decision on the
   #     task record and in the Automaton's decision list.
-  #   Wiring today: the worker launch applies the resolved profile (its MCP
-  #     config, tools, skills and starting context). The verifier and judge
-  #     launch paths do not call the resolver yet, so verifier and judge
-  #     sessions still start with the full harness whatever is set here, and
-  #     the verifier and judge rows of the profile in force read are what
-  #     would apply once they are wired.
+  #   Wiring: the worker, verifier and judge launches each resolve the
+  #     profile and apply it to the session start (its MCP config, tools,
+  #     skills and starting context). Verifier and judge launches resolve it
+  #     when they start their one-shot session.
   #   Read the profile in force per role and task kind on GET /api/config
   #     (autonomous.in_force), MCP worker_profile_status, datawatch config get,
   #     the comm channel configure key, or the web settings group.
