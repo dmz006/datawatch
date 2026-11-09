@@ -258,6 +258,10 @@ Set `DATAWATCH_BIN` to a daemon binary built from the tree under test. A full ru
 
 **Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
 
+#### Long prompts in the matrix sandbox
+
+The matrix sandbox uses the fake shell backend with a script path. A long decompose prompt therefore reaches the sandbox without a launch error, even when it is longer than the tmux send-keys limit. The script receives the task text as a file; see [Shell tasks longer than the send-keys limit](llm-backends.md#shell-tasks-longer-than-the-send-keys-limit).
+
 ### Daemon restart and in-flight Automata
 
 Automata (PRDs) do **not** silently resume across a daemon restart. The daemon only auto-resumes a PRD that was in `running` state when it stopped, and only if that work still looks fresh: the PRD's newest recorded activity must be within `autonomous.resume_max_age_seconds` (default 3600 — one hour; set `0` to never auto-resume, `-1` for no age limit), and the PRD's project directory must still exist on disk (a removed temp workspace means the work cannot continue in place). A PRD that fails either check is **parked**: it is set to `blocked` with a plain-English reason, an operator alert is raised, and it does **not** run. A PRD still in `planning` state (decompose in flight when the daemon stopped) is reset to `draft` instead so you can re-run planning, and a `failed` PRD is recovered only when all of its failed tasks were killed by the daemon with no recorded result.

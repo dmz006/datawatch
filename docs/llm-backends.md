@@ -110,6 +110,14 @@ task and exit when complete. For these:
 - Output filters and scheduled commands still fire normally
 - You can still view output with `status <id>` and `tail <id> [n]`
 
+### Shell tasks longer than the send-keys limit
+
+A script-form shell task that is longer than the tmux send-keys limit is not typed into the pane. It is written to a file named `shell-task-<session>.txt` in the project directory's `.datawatch` folder. That folder is gitignored, and the file is created with owner-only permissions. The script receives the absolute path of that file as its first argument, `$1`, and the project directory as its second argument, `$2`. The file holds the whole task text exactly.
+
+The command line removes the file after the script exits. If the daemon crashes first, the file is left behind, and the next daemon start removes it.
+
+The interactive form is unchanged: its input still goes through send-keys, and an oversize interactive task is still refused.
+
 ### One-shot (`one_shot`) sessions
 
 All backends named `*-prompt` (`pi-prompt`, `goose-prompt`, `opencode-prompt`, …)
