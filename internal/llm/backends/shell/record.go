@@ -12,6 +12,10 @@ type CommandRecord struct {
 	Command  string
 	ExitCode *int
 	Start    time.Time
+	// TaskFile is the absolute path of the task file when the task was
+	// passed to the script by file. It is empty when the task was passed
+	// inline.
+	TaskFile string
 }
 
 var (
