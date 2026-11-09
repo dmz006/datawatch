@@ -1,0 +1,30 @@
+{
+  "description": "An Automaton whose branch adds a file at the repository root that main does not track. The Automaton branch adds stray-notes.txt at the root, which must produce a blocking stray_root_file finding naming that file. It also adds docs/notes.md in a subdirectory and modifies README.md, which is already tracked at the root on main; neither may produce a finding.",
+  "automaton_id": "bb000001",
+  "project": "demo",
+  "branch": "automaton/bb000001",
+  "base_ref": "main",
+  "main": {
+    "message": "base",
+    "files": {
+      "version.go": "package main\n\nvar Version = \"1.2.0\"\n",
+      "README.md": "# Demo\n"
+    }
+  },
+  "automaton_commits": [
+    {
+      "message": "stray root file",
+      "files": {
+        "stray-notes.txt": "scratch left in the root\n"
+      }
+    },
+    {
+      "message": "subdirectory file and tracked root edit",
+      "files": {
+        "docs/notes.md": "# Notes\n",
+        "README.md": "# Demo\n\nUpdated.\n"
+      }
+    }
+  ],
+  "task_branches": []
+}
