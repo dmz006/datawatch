@@ -88,7 +88,8 @@ def main(argv: list[str]) -> int:
         if not text:
             continue
         for target in MD_LINK_RE.findall(text):
-            if PLAN_NAME_RE.search(target) is None:
+            tracked = any(f"{d}/" in target for d in ("reports", "parity-issues"))
+            if PLAN_NAME_RE.search(target) is None and not tracked:
                 continue
             if re.match(r"^[a-z][a-z0-9+.-]*:", target):
                 continue  # remote / absolute URL scheme
@@ -96,6 +97,8 @@ def main(argv: list[str]) -> int:
                 continue
             clean = target.split("#", 1)[0]
             if not clean.endswith(".md"):
+                continue
+            if tracked and PLAN_NAME_RE.search(clean) is None and not clean.endswith(".md"):
                 continue
             rel = clean.lstrip("./")
             leaf = clean.rsplit("/", 1)[-1]
