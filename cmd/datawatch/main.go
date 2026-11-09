@@ -6029,6 +6029,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					if alreadyLanded, ok := verdictForAlreadyLanded(task.VerificationScript, taskDir, task.PriorAttemptCount); ok {
 						return alreadyLanded, nil
 					}
+					// A note task that changes nothing by design passes on its
+					// exemption reason; without a reason the failure below stands.
+					if exempt, handled := verdictForExemptNoChange(task.VerificationScriptReason, task.VerificationScript); handled {
+						return exempt, nil
+					}
 					category := ""
 					summary := "verifier: no changes detected (diff empty and no new files); task produced no output"
 					if reportDeclared != "" {

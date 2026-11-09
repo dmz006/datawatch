@@ -1845,6 +1845,9 @@ func (a *API) SetDecomposeLintConfig(body map[string]any) error {
 		if err := ct.Validate(); err != nil {
 			return err
 		}
+		if err := validateTaskTemplateVerificationScripts(ct.Templates); err != nil {
+			return err
+		}
 		tpl = &ct
 	}
 	if raw, ok := body["decompose_guidance"]; ok {

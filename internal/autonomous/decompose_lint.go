@@ -14,6 +14,7 @@ package autonomous
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -86,17 +87,18 @@ func normSeverity(s string) string { return strings.ToLower(strings.TrimSpace(s)
 // one member match and all_of every member. Empty conditions are
 // absent and never restrict.
 type compiledMatch struct {
-	spec       *regexp.Regexp
-	title      *regexp.Regexp
-	files      *regexp.Regexp
-	readOnly   *bool
-	verifEmpty bool
-	reportEmpt bool
-	anyOf      []compiledMatch
-	allOf      []compiledMatch
+	spec         *regexp.Regexp
+	title        *regexp.Regexp
+	files        *regexp.Regexp
+	readOnly     *bool
+	verifEmpty   bool
+	reportEmpt   bool
+	unexecScript bool
+	anyOf        []compiledMatch
+	allOf        []compiledMatch
 }
 
-func (m *compiledMatch) matchTask(t Task) bool {
+func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	if m.spec != nil && !m.spec.MatchString(t.Spec) {
 		return false
 	}
@@ -110,6 +112,9 @@ func (m *compiledMatch) matchTask(t Task) bool {
 		return false
 	}
 	if m.reportEmpt && taskHasUsableReportPath(t) {
+		return false
+	}
+	if m.unexecScript && unexecutableVerificationScriptReason(dir, t) == "" {
 		return false
 	}
 	if m.files != nil {
@@ -127,7 +132,7 @@ func (m *compiledMatch) matchTask(t Task) bool {
 	if len(m.anyOf) > 0 {
 		anyMatched := false
 		for _, sub := range m.anyOf {
-			if sub.matchTask(t) {
+			if sub.matchTask(t, dir) {
 				anyMatched = true
 				break
 			}
@@ -137,7 +142,7 @@ func (m *compiledMatch) matchTask(t Task) bool {
 		}
 	}
 	for _, sub := range m.allOf {
-		if !sub.matchTask(t) {
+		if !sub.matchTask(t, dir) {
 			return false
 		}
 	}
@@ -183,7 +188,7 @@ func compileRules(rules []Rule) []compiledRule {
 // predicates, nested any_of/all_of). An empty pattern means the
 // condition is absent, not the empty regular expression.
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
-	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty}
+	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -223,6 +228,14 @@ func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, err
 // are skipped, never fatal, and are reported so an operator can fix
 // the pattern without losing the rest of the lint.
 func LintTasksWithErrors(stories []Story, rules []Rule) ([]LintFinding, []error) {
+	return LintTasksInDir("", stories, rules)
+}
+
+// LintTasksInDir is LintTasksWithErrors with the project directory the
+// plan will run in; the verification_script_unexecutable predicate
+// checks script paths against it. An empty dir checks command strings
+// only (a path cannot be checked without a base directory).
+func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, []error) {
 	compiled := compileRules(rules)
 	var errs []error
 	var findings []LintFinding
@@ -234,7 +247,7 @@ func LintTasksWithErrors(stories []Story, rules []Rule) ([]LintFinding, []error)
 		}
 		for _, s := range stories {
 			for _, t := range s.Tasks {
-				if !cr.match.matchTask(t) {
+				if !cr.match.matchTask(t, dir) {
 					continue
 				}
 				findings = append(findings, LintFinding{
@@ -243,7 +256,7 @@ func LintTasksWithErrors(stories []Story, rules []Rule) ([]LintFinding, []error)
 					Message:  cr.rule.Message,
 					Story:    s.ID,
 					Task:     t.ID,
-					Matched:  excerptFor(cr.match, t),
+					Matched:  excerptFor(cr.match, t, dir),
 				})
 			}
 		}
@@ -256,6 +269,13 @@ func LintTasksWithErrors(stories []Story, rules []Rule) ([]LintFinding, []error)
 // the findings.
 func LintTasks(stories []Story, rules []Rule) []LintFinding {
 	f, _ := LintTasksWithErrors(stories, rules)
+	return f
+}
+
+// LintTasksIn is LintTasks with the project directory (see
+// LintTasksInDir), the entry point for a PRD that has one.
+func LintTasksIn(dir string, stories []Story, rules []Rule) []LintFinding {
+	f, _ := LintTasksInDir(dir, stories, rules)
 	return f
 }
 
@@ -342,21 +362,21 @@ func clipExcerpt(s string) string {
 	return string(r[:maxExcerptLen-1]) + "…"
 }
 
-func excerptFor(m *compiledMatch, t Task) string {
+func excerptFor(m *compiledMatch, t Task, dir string) string {
 	if e := regexExcerpt(m, t); e != "" {
 		return e
 	}
 	for i := range m.anyOf {
-		if e := excerptFor(&m.anyOf[i], t); e != "" {
+		if e := excerptFor(&m.anyOf[i], t, dir); e != "" {
 			return e
 		}
 	}
 	for i := range m.allOf {
-		if e := excerptFor(&m.allOf[i], t); e != "" {
+		if e := excerptFor(&m.allOf[i], t, dir); e != "" {
 			return e
 		}
 	}
-	return predicateExcerpt(m, t)
+	return predicateExcerpt(m, t, dir)
 }
 
 // regexExcerpt is the first regex hit in priority order: spec, files
@@ -378,7 +398,7 @@ func regexExcerpt(m *compiledMatch, t Task) string {
 // predicateExcerpt describes the asserted field state of a
 // predicate-only condition (read_only, the files list, an empty
 // verification script).
-func predicateExcerpt(m *compiledMatch, t Task) string {
+func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	var parts []string
 	if m.readOnly != nil {
 		parts = append(parts, fmt.Sprintf("read_only=%v", *m.readOnly))
@@ -399,6 +419,9 @@ func predicateExcerpt(m *compiledMatch, t Task) string {
 	}
 	if m.reportEmpt {
 		parts = append(parts, "report_path=<none usable>")
+	}
+	if m.unexecScript {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" ("+unexecutableVerificationScriptReason(dir, t)+")")
 	}
 	if len(parts) == 0 {
 		return ""

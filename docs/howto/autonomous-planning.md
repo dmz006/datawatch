@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, prd, decompose, planning]
+  topics: [autonomous, automata, decompose, planning, task templates]
 exec_params:
   - {name: spec, required: true, description: "Free-form goal specification"}
   - {name: project_dir, required: false, default: "", description: "Project directory (empty = use default)"}
@@ -290,8 +290,10 @@ READ-ONLY: audits the retry paths and reports what it finds; no file is edited.
 List every call site of the retry helper and note which ones skip the backoff.
 ```
 
-A read-only task must also be verifiable: give it a `verification_script`, or
-a `report_path` under `.datawatch/reports/` where it writes its verdict. The
+A read-only task must also be verifiable: give it a `verification_script`
+(one repo-relative script file that already exists in the project — a
+command like `go build ./... && go test ./...` is not a script), or a
+`report_path` under `.datawatch/reports/` where it writes its verdict. The
 plan-coverage gate and the decompose lint both refuse a read-only task with
 neither, whether it is read-only by the marker or by the `read_only` flag,
 because a failure of it would otherwise leave nothing to inspect.
@@ -307,6 +309,19 @@ These are exempt without a marker:
   `suite run`, `eval`, `install` or `investigation` as whole words. Only the
   title is matched, never the spec, so a doc task that mentions a test suite in
   its body is still checked.
+
+## Closing tasks from the task-template pack
+
+The task-template pack appends closing tasks to every story that the
+planner left out ([the decompose-lint and task-templates
+how-to](automaton-decompose-lint.md) covers the pack itself; this
+section covers how those closing tasks verify).
+
+- **The final gate verifies through its report file, never a command string.** The built-in final gate is read-only and carries **no** verification script at all: it checks that the build is clean, the touched packages' tests pass and the touched files hang together, and it writes its verdict and evidence to the one report its `report_path` names under `.datawatch/reports/`. That report file — not a command — is what the gate verifies through, and a command string given where a script is expected is rejected by the verifier's pre-start check, because a script must be a file.
+- **A verification script must be a script file that lives in the project.** A template's `verification_script` names one repo-relative script that already exists as an executable (for example `scripts/verify.sh`), and the verifier's pre-start check runs *that file*. A command string such as `go build ./... && go test ./...` is not a script: a value that looks like a command — whitespace, shell operators, an absolute path, a parent reference or the project root itself — is refused at config write with an error naming the template id, nothing is stored, and a template that still carries one is skipped when the templates are applied, so it never becomes a task the verifier cannot start. The same bar is enforced on the plan side: plan coverage and the decompose lint flag a task whose verification script is not a script file, because a failure of it would otherwise leave nothing to inspect.
+- **The note tasks are records the verifier reads, not checks it runs — and a scriptless task passes with an explicit exemption.** The built-in note tasks — the release version note and the bounded load-step rule — write no files and carry no verification script: for the verifier there is nothing to run against them and nothing to hold for them, and they pass with no changes; because they plan no file changes, the decompose verification-script-coverage check does not apply to them either, so they never kick a decompose back. The verification side has a matching explicit escape hatch for scriptless work: instead of a script, a task may carry a stated **verification-exemption reason** (`verification_script_reason`) explaining why it needs no script, and a task with that exemption passes the plan-structure check with no changes. The note tasks are written in exactly that record spirit — the verifier reads the note rather than running it — and where a plan-coverage record does call out a scriptless task (a `missing_verification` finding), you acknowledge it like any other failing surface when the gate is in its default `block` mode (or leave it to the `warn`/`off` modes, which report but do not gate).
+- **A read-only task may write exactly one file: its report, and any other change still fails.** The only write a read-only task is allowed is to the one `report_path` it carries, and that path has to live under `.datawatch/reports/`. The read-only tree check that runs after the task compares the tree before and after and sets aside only `.datawatch/` (in which the report lives) plus that one report path. If the task leaves an extra report file under the older `docs/plans/reports/` location, that file is moved under `.datawatch/reports/` and the move is recorded as the decision for the write, so the report file itself does not fail the task. Any other change the task left behind still fails it, and the daemon records that read-only violation, naming the file.
+- **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old template tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
 
 ## Choose the verifier per task, story or Automaton
 
@@ -541,6 +556,7 @@ than reading any log that is not the session's own.
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
+- [howto/automaton-decompose-lint](automaton-decompose-lint.md) — the decompose-lint quality check and the task templates the closing tasks come from
 - [howto/automata-orchestrator](automata-orchestrator.md)
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [howto/algorithm-mode](algorithm-mode.md)

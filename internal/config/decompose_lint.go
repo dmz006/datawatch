@@ -143,8 +143,15 @@ type DecomposeLintMatch struct {
 	// emits nothing to inspect when it fails. Use it with
 	// verification_script_empty to flag such tasks. Absent (false) = do
 	// not check.
-	ReportPathEmpty bool   `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
-	FilesRegex      string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	ReportPathEmpty bool `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
+	// VerificationScriptUnexecutable asserts the task's verification
+	// script is not a runnable file: a command string, or (when the
+	// project directory is known) a path that is missing, not
+	// executable, shebang-less or outside the project. A script the
+	// task lists in its own files is not flagged. Absent (false) = do
+	// not check.
+	VerificationScriptUnexecutable bool   `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
+	FilesRegex                     string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.
@@ -197,6 +204,12 @@ type TaskTemplateDef struct {
 	// (the build and test commands its spec asserts) so it is not an
 	// unverifiable read-only task while it changes nothing.
 	VerificationScript string `yaml:"verification_script,omitempty" json:"verification_script,omitempty"`
+	// VerificationScriptReason is the explicit reason a task from the
+	// template has no verification script (a note that changes no files
+	// carries one). It is copied onto the task so the verifier and the
+	// structural plan check can tell a deliberate exemption from a
+	// forgotten script.
+	VerificationScriptReason string `yaml:"verification_script_reason,omitempty" json:"verification_script_reason,omitempty"`
 	// ReportPath, for a read-only template, is the one repo-relative
 	// file under .datawatch/reports/ the task may write its verdict
 	// and evidence to. It takes the same slots as the other string

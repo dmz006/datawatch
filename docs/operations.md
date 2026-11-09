@@ -970,11 +970,15 @@ exempt:
 
 To fix the plan, add either a `verification_script` or a `report_path` to
 the task. The path must be a clean repo-relative path under
-`.datawatch/reports/`. The built-in final-gate template already ships in
-this shape: its spec says to write its output to
-`.datawatch/reports/<feature>-final-gate.txt`, sets `report_path` to the
-same file and carries a verification script — a useful example of a
-read-only task that can verify itself.
+`.datawatch/reports/`, and a `verification_script`, when used, must name
+one repo-relative script file — a command string is not one, and the
+verifier's pre-start check rejects it as exactly the thing it is not: a
+file. The built-in final-gate template already ships in the report shape:
+its spec says to write its verdict to `.datawatch/reports/<feature>-final-
+gate.txt`, `report_path` names the same file, and it carries **no**
+verification script — a read-only task verified by exactly one output, the
+report itself. (The companion version-note task is a note the verifier
+reads rather than runs, and it carries no verification script either.)
 
 **The verifier's acceptance rule.** When a read-only task that declares a
 report path finishes with no tree changes, the verifier looks for the

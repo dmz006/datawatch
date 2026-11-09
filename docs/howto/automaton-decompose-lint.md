@@ -132,6 +132,7 @@ and never name a particular project, repository or home directory.
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
 | `no_verification_script` | warn | a task with no verification script |
+| `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 
 ## 4. Writing your own rules — a worked example
@@ -193,6 +194,7 @@ hold for the same task. The leaves:
 | `read_only` | tri-state: absent = don't check; `true`/`false` = assert the flag |
 | `verification_script_empty` | assert the task declares no verification script |
 | `report_path_empty` | assert the task has no usable report path (empty, or not a clean path under `.datawatch/reports/`) |
+| `verification_script_unexecutable` | assert the task's verification script is not a runnable file (command string, or missing/not executable/no shebang when the project directory is known) |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
 
@@ -233,22 +235,40 @@ detected, and nothing is added twice. Slots `{{feature}}`, `{{files}}` and
 story's task files; a template's `depends_on` lists *template* ids it must
 run after, and the resulting task also depends on the story's other tasks.
 
-The **built-in pack** is the floor — five templates, written to hold two
+The **built-in pack** is the floor — five templates, written to hold three
 hard properties for every feature name a story can carry: no blocking
-decompose-lint finding, and no hosting-CLI side effects.
+decompose-lint finding, no hosting-CLI side effects, and no verification
+script that is not genuinely a script file (the read-only ones verify
+through their report instead) — so a decomposed Automaton's closing tasks
+reach the verifier and pass it, instead of being rejected at pre-start.
 
 | Template id | What it adds |
 |---|---|
 | `changelog_entry` | a changelog entry for the feature (`CHANGELOG.md`) |
 | `parity_issue_draft` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
 | `docs_set` | the feature's docs into shape, over the story's own files |
-| `final_gate` | a **read-only** closing task: build clean, tests pass, files hang together |
-| `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit |
+| `final_gate` | a **read-only** closing task — build clean, tests pass, files hang together — that records its verdict in the report its `report_path` names under `.datawatch/reports/`; it carries **no** verification script, the report being its output |
+| `version_bump_left_to_merge` | a plain *note* that the version is the next patch above main, resolved at merge — never an edit, and no verification script: the verifier reads it rather than runs it |
 
 Templates are applied in **shadow and enforce** (off applies nothing), and
 `autonomous.task_templates.enabled` (default **true**) gates them globally.
 Your templates are the ceiling over the built-in pack: same id replaces,
 new id appends.
+
+**A template's `verification_script` is one file, not a command.** It must
+name a single repo-relative script that already exists in the project as an
+executable (for example `scripts/verify.sh`) — the verifier's pre-start
+check runs it *as a file*, so a command string such as `go build ./... &&
+go test ./...` is not a valid script and a task carrying it dies before it
+can run. The built-in pack never uses one for that reason: the final gate
+verifies through its read-only report, and the version note is read, not
+run. A template whose `verification_script` looks like a command
+(whitespace, shell operators, an absolute path, a parent reference or the
+project root itself) is refused at config write with an error naming the
+template id — nothing is stored — and a template that still carries such a
+value is skipped when the templates are applied, so it never becomes a task
+the verifier cannot start. Need checks like a full build on the closing
+task? Put them in a script under `scripts/` and name that file.
 
 ### A custom template with slots
 

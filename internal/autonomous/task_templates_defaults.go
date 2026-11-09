@@ -49,6 +49,11 @@ const (
 	TemplateBoundedLoadStep = "bounded_load_step"
 )
 
+// noteTemplateExemptionReason is the B124 exemption carried by every
+// built-in note template: a note task changes no files, so no script
+// has anything to verify.
+const noteTemplateExemptionReason = "note task: changes no files by design, so there is nothing for a script to verify"
+
 // BuiltInTaskTemplates returns the built-in task-template pack fresh
 // (a new slice and fresh defs each call, so no caller can mutate the
 // pack). Slots ({{feature}}, {{files}}, {{files_list}}) are left in
@@ -87,7 +92,8 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Title: "Bounded load-step rule for {{feature}}",
 			Spec: "Record the bounded-load-step posture for '{{feature}}': " + boundedLoadStepRule +
 				" This is a note, not a change: it writes no files and touches nothing else (no files).",
-			Kind: "note",
+			Kind:                     "note",
+			VerificationScriptReason: noteTemplateExemptionReason,
 			AppliesWhen: "Always offered as a posture note: any story that could " +
 				"carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task).",
 		},
@@ -98,18 +104,19 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Kind:       "final_gate",
 			ReadOnly:   true,
 			ReportPath: ".datawatch/reports/{{feature}}-final-gate.txt",
-			// Its own check, without modifying the tree: the gate verifies
-			// the build and the package tests, so it must not be an
-			// unverifiable read-only task.
-			VerificationScript: "go build ./... && go test ./...",
+			// No VerificationScript: the gate's own check is its report
+			// file. A read-only task with a usable report path is verified
+			// by the read-only report check, and the command text the gate
+			// used to carry is not a file, so the verifier prestart rejects it.
 			AppliesWhen: "Always offered as the closing task: a cheap, read-only " +
 				"verdict before the story is considered done.",
 		},
 		{
-			ID:    TemplateVersionBumpLeftToMerge,
-			Title: "Release version note for {{feature}}",
-			Spec:  "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
-			Kind:  "note",
+			ID:                       TemplateVersionBumpLeftToMerge,
+			Title:                    "Release version note for {{feature}}",
+			Spec:                     "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
+			Kind:                     "note",
+			VerificationScriptReason: noteTemplateExemptionReason,
 			AppliesWhen: "Offered to make the versioning posture explicit in the " +
 				"story without any task touching versioning itself.",
 		},

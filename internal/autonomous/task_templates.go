@@ -16,8 +16,11 @@
 package autonomous
 
 import (
+	"fmt"
+	"path"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
@@ -178,20 +181,21 @@ func taskForTemplate(story Story, def config.TaskTemplateDef, baseDepends []stri
 		}
 	}
 	return Task{
-		ID:                 id,
-		StoryID:            story.ID,
-		PRDID:              story.PRDID,
-		Title:              title,
-		Spec:               spec,
-		Status:             TaskQueued,
-		DependsOn:          uniqueStrings(depends),
-		Kind:               def.Kind,
-		ReadOnly:           def.ReadOnly,
-		VerificationScript: def.VerificationScript,
-		ReportPath:         reportPathForTemplate(def),
-		FilesPlanned:       splitTemplateFiles(def.Files),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		ID:                       id,
+		StoryID:                  story.ID,
+		PRDID:                    story.PRDID,
+		Title:                    title,
+		Spec:                     spec,
+		Status:                   TaskQueued,
+		DependsOn:                uniqueStrings(depends),
+		Kind:                     def.Kind,
+		ReadOnly:                 def.ReadOnly,
+		VerificationScript:       def.VerificationScript,
+		VerificationScriptReason: def.VerificationScriptReason,
+		ReportPath:               reportPathForTemplate(def),
+		FilesPlanned:             splitTemplateFiles(def.Files),
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 }
 
@@ -311,6 +315,11 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 		if err := validateReportPath(reportPathForTemplate(rendered)); err != nil {
 			continue
 		}
+		// Likewise a template whose verification_script is a command
+		// string rather than a repo-relative script file.
+		if err := validateTemplateVerificationScript(def); err != nil {
+			continue
+		}
 		if storyAlreadyHasTemplate(story, rendered) {
 			continue
 		}
@@ -355,4 +364,59 @@ func taskTemplatesEnabledForProject(cfg *config.Config, projectDir string) bool 
 // applied label ("<story>/<template>").
 func TaskTemplateAppliedLabel(storyID, templateID string) string {
 	return storyID + "/" + templateID
+}
+
+// taskTemplateShellOperators are the characters that make a value a
+// shell command rather than a file path: the operators (&&, ||, ;, |,
+// >, <), expansion ($ and backtick), grouping and quoting.
+const taskTemplateShellOperators = "&|;<>$`()'\"\\"
+
+// verificationScriptLooksLikeCommand reports whether a template's
+// verification_script value is a command string rather than a single
+// repo-relative script file. It is one when it contains whitespace or a
+// shell operator, or when it is not one repo-relative path: absolute, a
+// path with a .. segment, or the project root itself. The empty value
+// is not a command; it means the template carries no script.
+func verificationScriptLooksLikeCommand(s string) bool {
+	if s == "" {
+		return false
+	}
+	if strings.IndexFunc(s, unicode.IsSpace) >= 0 {
+		return true
+	}
+	if strings.ContainsAny(s, taskTemplateShellOperators) {
+		return true
+	}
+	if strings.HasPrefix(s, "/") {
+		return true
+	}
+	for _, seg := range strings.Split(s, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return path.Clean(s) == "."
+}
+
+// validateTemplateVerificationScript rejects one template whose
+// verification_script is a command string. The error names the template
+// id and says a verification script must be a repo-relative script file.
+// The value is checked untrimmed: it is copied verbatim onto the task,
+// so surrounding whitespace would reach the verifier too.
+func validateTemplateVerificationScript(def config.TaskTemplateDef) error {
+	if !verificationScriptLooksLikeCommand(def.VerificationScript) {
+		return nil
+	}
+	return fmt.Errorf("task template %q: verification_script %q is a command string; a verification script must be a repo-relative script file (for example scripts/verify.sh)", strings.TrimSpace(def.ID), def.VerificationScript)
+}
+
+// validateTaskTemplateVerificationScripts checks every template in a set
+// and returns the first rejection, if any.
+func validateTaskTemplateVerificationScripts(templates []config.TaskTemplateDef) error {
+	for _, def := range templates {
+		if err := validateTemplateVerificationScript(def); err != nil {
+			return err
+		}
+	}
+	return nil
 }
