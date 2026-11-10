@@ -4721,6 +4721,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = json.Unmarshal(b, &cfg.Autonomous.Scan)
 			}
 		}
+		// Verifier stats show the configured run cap (0 = no cap).
+		autonomouspkg.DefaultVerifierStats.SetRunCapSeconds(config.VerifierRunCapSeconds(acfgIn.VerifierMaxRunSeconds))
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30
 		}
