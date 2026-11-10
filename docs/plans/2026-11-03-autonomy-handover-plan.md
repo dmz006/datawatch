@@ -226,3 +226,7 @@ Operator, on how to take it forward: "A, but it should be designed to fit into t
 Current stores: Automata are one JSON file each (fsync and rename writes, side files for large text); trace is per-session JSONL plus an index; memory, web search, council and docs-index vectors use SQLite (memory also has a Postgres store); small state is single JSON files.
 
 Operator on how reports and dashboards read this data: "Let's go with A. I like that for initial step and if we find that we're using the database more we can look at a migration for a future version, but I like A for right now." Decision: files stay the source of truth; a derived SQLite reporting index, rebuildable from the files, serves reports and dashboards. A migration of the source of truth to a database is a possible future version, revisited if database use grows. Not yet drafted as an Automaton; it is part of the reports work and the pack run record (the trace event is extended, the index reads it).
+
+### Plans and backlog primary in datawatch (operator, 2026-11-10)
+
+Operator (pasted text, as heard): backlog, plans and status should run inside datawatch with an optional export to a repo, a migration plan is needed, and skills for synchronizing the files drop to a low-priority background helper until the migration is done. Design proposal and open questions: docs/plans/2026-11-10-plans-and-backlog-in-datawatch.md. Deprioritised: the plans folder auto-tidy Automaton, the daily tidy Automation, the scheduler Automaton for it, and file-sync skills.

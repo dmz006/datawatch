@@ -1,0 +1,89 @@
+# Plans, backlog and status inside datawatch, exported to a repo (design proposal, open)
+
+Status: proposal. Nothing here is decided except what is quoted. No Automaton is drafted until the open
+questions below are answered, one at a time.
+
+## Operator direction (quoted)
+
+2026-11-10 (pasted text, as heard): "I was just thinking, we're at a point when we get the projects and everything
+altogether that we shouldn't be keeping track of all the backlog, plans, and status directly on the file system
+with files and all the trouble we're having making skills to coordinate them. In fact, they should all slowly
+run inside DataWatch and we should have an option to be able to have them export to a repo so people can keep
+track of the status if we want. But let's make a plan for how and when we can migrate directly to DataWatch and
+stop trying to manage all these planned folders. And with this in mind, we should also stop focusing so much on
+skill for the synchronization between the files. That should be just a background helping task until we get all
+migration data watched, and then it's a push out to repo versus trying to keep it in the repo as the main
+primary source. Let's not focus so much on the skills for those pieces."
+
+Read as two decisions:
+1. The long-term primary source for backlog, plans and status is datawatch itself. The repository gets an
+   optional export (a push out), not the primary copy.
+2. Skills and packs for synchronizing files between datawatch and the repository are a low-priority background
+   helper until the migration is done. They are not where effort goes now.
+
+## What is on the file system today (counted 2026-11-10)
+
+- `docs/plans/` holds about 154 entries at the top level, plus parity issue drafts, generated drafts and gate
+  reports (about 186 files across those three folders).
+- `docs/plans/README.md` is the registry: about 457 numbered rows, each a finding, a shipped item or a decision.
+  It was already described by the operator as a temporary tracker until project planning exists.
+- Helper scripts that keep these files tidy: `scripts/tidy-plans.sh`, `scripts/plans-tidy-daily.sh`,
+  `scripts/plans_registry_hygiene.py`, `scripts/plans-tidy-automation.json`, `scripts/branch-audit.py` and
+  `scripts/v10-status.py`.
+- Supervisor rules and lessons, design proposals, decisions and handover notes are also files.
+
+## What datawatch already holds
+
+- Automata (about 600 records, including about 540 archived) with stories, tasks, decisions, change records,
+  review state and generated artefacts, stored as one JSON file each under the data directory.
+- The Projects tab shipped in v9.127.0 with the project, arc and Automaton model decided on 2026-11-06.
+- Memory (SQLite), traces, and the decisions recorded on each Automaton.
+- What I have not checked: whether datawatch has a record type for a backlog item or a finding (the registry
+  rows), a decision log outside an Automaton, or a document store for design proposals. The defect intake
+  tools exist, but I have not read what they store.
+
+## Proposed shape (for the operator to confirm or change)
+
+Everything the registry and the plans folder carry becomes a record in datawatch, linked to the project, Automation
+and Automaton it concerns:
+- **Backlog item or finding**: today a registry row.
+- **Decision**: today a quoted line in a design doc.
+- **Design proposal**: today a markdown file.
+- **Status and release record**: today registry rows marked shipped, plus parity issue numbers.
+- **Export**: a setting-controlled push of those records to a repository as readable files, one direction only.
+
+## Sequencing (proposed, dates open)
+
+| Step | Content | Target |
+|---|---|---|
+| 1 | Inventory what datawatch can already store and what is missing (backlog item, decision, document, parity link) | open |
+| 2 | Add the missing record types and surfaces (REST, MCP, CLI, messaging, web) in the same release | open |
+| 3 | One-time import of the registry and the live design docs into datawatch records, with the files kept read-only as the archive | open |
+| 4 | Stop writing new registry rows and plan files; the supervisor and Automata write records instead | open |
+| 5 | Optional export to a repository, off by default | open |
+| 6 | Retire the tidy scripts and registry checks once nothing writes the folders | open |
+
+Until step 4 the files stay as they are. The supervisor keeps adding registry rows by hand, so nothing is lost
+during the move.
+
+## Deprioritised by the operator's second decision
+
+- The plans folder auto-tidy Automaton (`29550001`) and the daily tidy Automation definition.
+- A scheduler Automaton whose main purpose was running the tidy script.
+- The registry-audit unit in the supervisor-as-skills design (it audits a file that is going away). The
+  supervisor-as-skills design itself stays; only the file-sync parts drop.
+- Any skill or pack whose job is to keep files and datawatch records in step.
+
+None of these is cancelled. They wait, and the migration replaces their reason.
+
+## Open questions (one at a time)
+
+1. What does "migrate" cover first: the registry rows only, or also design proposals, handover plans and the
+   supervisor lessons? Recommendation: registry rows and findings first, since they are what the supervisor
+   writes every hour; documents second.
+2. Where does the data live: in the existing per-record JSON files, or in the reporting database decided on
+   2026-11-10 (files remain the source of truth for now)? This interacts with that decision.
+3. Who writes the records: the supervisor through datawatch tools, Automata at their end, or both?
+4. What does the export look like: which records, what file layout, and who may turn it on?
+5. When is the cut-over (step 4)? The operator sets the date; I will list and recommend.
+6. Does the registry row numbering continue, or do records get ids of their own?

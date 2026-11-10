@@ -271,3 +271,7 @@ event with those fields, not adding a store.
 Operator answer (2026-11-10): "A. Extend the existing one." (extend the existing trace event with the pack, unit,
 project, Automation, runner, escalation, cost and resolved-input fields; no new store.) The operator then asked
 about the data store mechanism itself; see the data store note in the handover plan.
+
+Note (2026-11-10): the operator decided that plans, backlog and status become primary inside datawatch, so
+file-synchronization skills are low priority and the registry-audit unit in this design is deprioritised; see
+docs/plans/2026-11-10-plans-and-backlog-in-datawatch.md.
