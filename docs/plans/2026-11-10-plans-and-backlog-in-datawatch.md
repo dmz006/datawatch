@@ -148,3 +148,17 @@ Operator answer on the encryption question (2026-11-10): "A" (the new plan, back
 under secure mode from the first release; bringing the Automaton, trace and decision files into the same coverage is a
 precondition for the cut-over; metadata that must stay readable for search or filtering stays plaintext and is named in
 the docs). Step 3 of the sequence (import) and step 4 (cut-over) now depend on that coverage.
+
+Operator answer on migration question 4, the repository export (2026-11-10): "5Off by default, but it should be useful
+information, project/automation gantt time line, summary and tasks, human readable, but everything, maybe checkbox is
+what is written but i want to make history of changes, current queue and status as things are worked ok, it's neat to
+be a tracker by product/repo/project/ automation/automata/tasks. I don't want decisions but others may, i want status
+and history" (read as option A with changes).
+Decision: the export is off by default. It is a human-readable tracker, organised by product, repository, project,
+Automation, Automaton and task. It carries: a Gantt timeline per project and Automation, a summary with the tasks as
+checklists, the current queue and status, and a history of changes over time (the export itself builds that history).
+It covers everything in those kinds, not a sample. Decisions are a record kind the operator can choose to include or
+leave out; the operator does not want them in his own export, others may. Each record kind is selectable by setting.
+Carried over from option A and not contradicted: one-way push, never read back. The leak filter (no deployment names,
+tracker ids or secrets) stays on the export unless the operator says otherwise; it applies to the export of a
+repository that others read.
