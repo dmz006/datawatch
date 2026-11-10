@@ -2806,6 +2806,7 @@
   "triage_detail_reason": "理由",
   "triage_detail_history": "履歴",
   "triage_detail_empty_history": "履歴はまだ記録されていません。",
+  "triage_detail_automation": "Automation",
   "triage_question_held_why": "保留の理由: %1$s",
   "triage_question_held_change": "この保留を変更または確認するには、オートマタの設定を開いてください。",
   "triage_question_answer_in_place": "その場で回答",

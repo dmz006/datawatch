@@ -2806,6 +2806,7 @@
   "triage_detail_reason": "Motif",
   "triage_detail_history": "Historique",
   "triage_detail_empty_history": "Aucun historique enregistré pour l'instant.",
+  "triage_detail_automation": "Automation",
   "triage_question_held_why": "Motif de la mise en attente : %1$s",
   "triage_question_held_change": "Pour modifier ou consulter cette mise en attente, ouvrez Paramètres dans Automates.",
   "triage_question_answer_in_place": "Répondre sur place",

@@ -2806,6 +2806,7 @@
   "triage_detail_reason": "Reason",
   "triage_detail_history": "History",
   "triage_detail_empty_history": "No history recorded yet.",
+  "triage_detail_automation": "Automation",
   "triage_question_held_why": "Why it is held: %1$s",
   "triage_question_held_change": "To change or view this hold, open Settings under Automata.",
   "triage_question_answer_in_place": "Answer in place",
