@@ -8089,6 +8089,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					fmt.Printf("[warn] observer peer registry: %v\n", err)
 				} else {
 					httpServer.SetPeerRegistry(reg)
+					// Peer silence watcher: one alert per outage when a
+					// registered observer peer stops pushing stats. The
+					// threshold is read from the live config on every check,
+					// so a runtime change applies with no restart (0 = off).
+					peerSilence := observerpkg.NewPeerSilenceWatcher(reg, alertStore,
+						func() int { return cfg.Observer.Peers.SilentAlertMinutes }, nil)
+					peerSilence.SetSelfName(cfg.Hostname)
+					go peerSilence.Run(ctx, time.Minute)
 					// S13 — give the agent manager the same registry so
 					// Manager.Spawn mints + Manager.Terminate drops a
 					// per-agent peer. agentMgr already exists from F10
