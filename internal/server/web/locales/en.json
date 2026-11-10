@@ -4409,5 +4409,12 @@
   "settings_daemon_task_help_link_label": "Help: daemon task modes",
   "settings_daemon_task_saved": "Saved",
   "settings_daemon_task_save_failed": "Save failed",
-  "settings_daemon_task_number_invalid": "Enter a whole number of seconds (0 = no cap)"
+  "settings_daemon_task_number_invalid": "Enter a whole number of seconds (0 = no cap)",
+  "settings_merge_pipeline_conflict_mode": "Merge conflict mode (stop_and_ask, mechanical or mechanical_and_model)",
+  "settings_merge_pipeline_conflict_mode_hint": "How a merge conflict is handled. A mode that needs a model stops and asks when no model is set or the model is not available.",
+  "settings_merge_pipeline_conflict_confirm_first_n": "Merge conflicts to confirm with the operator (a whole number; 0 means none)",
+  "settings_merge_pipeline_conflict_confirm_first_n_hint": "The first N conflict resolutions wait for the operator to confirm them. Later resolutions apply without waiting.",
+  "merge_pipeline_conflict_confirmation_label": "Conflict confirmations",
+  "merge_pipeline_conflict_confirmation_counted": "{count} conflicts confirmed",
+  "merge_pipeline_conflict_confirmation_remaining": "{remaining} confirmations remaining"
 }

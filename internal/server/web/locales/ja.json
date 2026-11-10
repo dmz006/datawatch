@@ -4409,5 +4409,12 @@
   "settings_daemon_task_help_link_label": "ヘルプ：デーモンのタスクモード",
   "settings_daemon_task_saved": "保存しました",
   "settings_daemon_task_save_failed": "保存に失敗しました",
-  "settings_daemon_task_number_invalid": "秒数を整数で入力してください（0 = 上限なし）"
+  "settings_daemon_task_number_invalid": "秒数を整数で入力してください（0 = 上限なし）",
+  "settings_merge_pipeline_conflict_mode": "マージ競合モード(stop_and_ask、mechanical、mechanical_and_model のいずれか)",
+  "settings_merge_pipeline_conflict_mode_hint": "マージ競合の扱い方です。モデルが必要なモードは、モデルが未設定または利用できない場合に停止して確認を求めます。",
+  "settings_merge_pipeline_conflict_confirm_first_n": "オペレーターが確認するマージ競合の数(整数。0 は確認なし)",
+  "settings_merge_pipeline_conflict_confirm_first_n_hint": "最初の N 件の競合解決は、オペレーターの確認を待ちます。それ以降は待たずに適用されます。",
+  "merge_pipeline_conflict_confirmation_label": "競合の確認",
+  "merge_pipeline_conflict_confirmation_counted": "{count} 件の競合を確認済み",
+  "merge_pipeline_conflict_confirmation_remaining": "残り {remaining} 件の確認"
 }

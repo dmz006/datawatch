@@ -130,6 +130,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"merge_pipeline_no_project_body",
 		"merge_pipeline_no_project_choose",
 		"merge_pipeline_no_project_set_base",
+		"settings_merge_pipeline_conflict_mode",
+		"settings_merge_pipeline_conflict_confirm_first_n",
+		"merge_pipeline_conflict_confirmation_label",
 		"stats_burn_guard",
 		"settings_usage_burn_guard_enabled",
 		"status_card_activity",
@@ -698,6 +701,29 @@ func TestDefectQueueLocales(t *testing.T) {
 		for _, k := range want {
 			if v, ok := bundle[k]; !ok || v == "" {
 				t.Errorf("locale %s missing defect_queue key %q", lang, k)
+			}
+		}
+	}
+}
+
+// TestLocalesConflictKeys asserts that every bundle carries the merge
+// pipeline conflict mode and confirmation keys, so no language falls back
+// to a missing string for the conflict settings or confirmation counter.
+func TestLocalesConflictKeys(t *testing.T) {
+	keys := []string{
+		"settings_merge_pipeline_conflict_mode",
+		"settings_merge_pipeline_conflict_mode_hint",
+		"settings_merge_pipeline_conflict_confirm_first_n",
+		"settings_merge_pipeline_conflict_confirm_first_n_hint",
+		"merge_pipeline_conflict_confirmation_label",
+		"merge_pipeline_conflict_confirmation_counted",
+		"merge_pipeline_conflict_confirmation_remaining",
+	}
+	for _, lang := range []string{"en", "de", "es", "fr", "ja"} {
+		bundle := loadLocaleBundle(t, lang)
+		for _, k := range keys {
+			if v, ok := bundle[k]; !ok || v == "" {
+				t.Errorf("locale %s is missing conflict key %q", lang, k)
 			}
 		}
 	}
