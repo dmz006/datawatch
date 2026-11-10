@@ -2104,9 +2104,9 @@ func renderStandardTasksTable(w io.Writer, body []byte) error {
 		return fmt.Errorf("decode standard tasks: %w", err)
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTITLE\tKIND\tENABLED\tMODE")
+	_, _ = fmt.Fprintln(tw, "ID\tTITLE\tKIND\tENABLED\tMODE")
 	for _, t := range resp.Tasks {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", t.ID, t.Title, t.Kind, t.Enabled, t.Mode)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", t.ID, t.Title, t.Kind, t.Enabled, t.Mode)
 	}
 	return tw.Flush()
 }
