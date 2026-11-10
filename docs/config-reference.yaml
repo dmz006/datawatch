@@ -4513,6 +4513,14 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+  peers:
+    # silent_alert_minutes: how long a registered observer peer may go
+    # without pushing before the daemon raises one "Observer peer silent"
+    # alert (naming the peer, how long it has been silent and its last
+    # push time). A recovery alert follows when the peer pushes again.
+    # Whole minutes. Default 5. 0 turns the silence watcher off. Gaps
+    # shorter than this never alert. The daemon's own row is skipped.
+    silent_alert_minutes: 5
 
 # ── Secrets Manager (BL242 — v6.4.0+) ──
 # Centralized encrypted secrets store. All surfaces (REST, MCP, CLI, comm,

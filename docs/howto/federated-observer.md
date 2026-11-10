@@ -206,9 +206,53 @@ datawatch observer peer-remove lab-east-peer
    only).
 9. Click into a peer row → drill-down modal: last snapshot, push
    history, per-envelope detail.
-10. Cog-nav badge: when any peer goes stale (no push in >60s), the
-    gear icon shows a numeric badge. Click → navigates to Federated
-    Peers + flashes the offending row.
+10. Peer connectivity: there is no badge on the Settings nav button. A
+    peer that last pushed more than a minute ago shows an inline
+    "Stale (age)" note on its row in the Observer peer list; a peer that
+    has never pushed shows "Never pushed". The daemon's own row is
+    skipped. For a longer outage the daemon raises one system alert
+    (see "Silent-peer alert" below).
+
+> **Operator review.** Confirm the default `silent_alert_minutes: 5`
+> suits your lab, and recapture any Settings-nav screenshots that still
+> show the old peer-stale badge. Story TS-852 checks at 390 px that
+> nothing covers the Settings nav label.
+
+### Silent-peer alert
+
+The daemon watches every registered observer peer (never its own row).
+When a peer has not pushed for longer than
+`observer.peers.silent_alert_minutes` it raises a system alert.
+
+- **Setting.** `observer.peers.silent_alert_minutes` is a whole number
+  of minutes. The default is 5. `0` turns the watcher off.
+- **Once per outage.** The warning alert, "Observer peer silent:
+  <name>", names the peer, how long it has been silent and the time of
+  its last push. You get it once, not again on every check while the
+  peer stays down. A peer that never pushed is measured from its
+  registration time and shows "never" as its last push.
+- **Recovery alert.** When the peer pushes again, an info alert,
+  "Observer peer recovered: <name>", closes the outage. If it goes
+  silent again later, that is a new outage and a new alert.
+- **Momentary gaps never alert.** A peer that is quiet for less than the
+  threshold, such as a late push or a short network blip, raises
+  nothing and needs no clean-up.
+- **Stale indicator.** Separate from the alert, a peer that last pushed
+  more than a minute ago shows an inline "Stale (age)" note on its row
+  in the Observer peer list ("Never pushed" if it has not pushed at
+  all). The note appears well before the alert fires, so you can spot a
+  struggling peer early.
+
+Ways to read or change the setting:
+
+| Access method | How |
+|---|---|
+| YAML | Set `silent_alert_minutes` under `observer.peers` in `~/.datawatch/config.yaml`. |
+| CLI | `datawatch config set observer.peers.silent_alert_minutes <n>` |
+| Web UI | Settings, Observer section, "Silent peer alert after (minutes; 0 = disabled)" field. |
+| REST | `PUT /api/config` with `observer.peers.silent_alert_minutes`; read it back with `GET /api/config`. |
+| MCP | `config_set` with key `observer.peers.silent_alert_minutes`; read it back with `get_config` section `observer`. |
+| Comm channel | `configure observer.peers.silent_alert_minutes=<n>` |
 
 ## Other channels
 
@@ -409,9 +453,13 @@ bash install/install-stats.sh \
 - **Memory summaries not flowing.** Opt-in: `push_memory_summaries:
   true` on the peer. Off by default to avoid leaking content across
   trust boundaries.
-- **Cog badge stuck on N stale.** A registered peer hasn't pushed in
-  >60s. Either bring it back or remove the peer record. Click the
-  badge in the PWA to navigate to it.
+- **Peer row shows "Stale" or "Never pushed".** A registered peer
+  hasn't pushed in over a minute (or ever). Either bring it back or
+  remove the peer record. The Settings nav button no longer carries a
+  badge; look at the peer row in the Observer peer list.
+- **"Observer peer silent" alert.** The peer was silent longer than
+  `observer.peers.silent_alert_minutes`. One alert per outage; an
+  "Observer peer recovered" alert follows when it pushes again.
 
 ## Linked references
 
@@ -426,7 +474,7 @@ bash install/install-stats.sh \
 - [ ] Mint peer token modal
 - [ ] Peer drill-down with last snapshot
 - [ ] Cross-host envelope view
-- [ ] Cog-icon stale badge with breadcrumb to flashing peer row
+- [ ] Peer row with the inline "Stale (age)" and "Never pushed" notes
 - [ ] CLI `datawatch observer peers` output
 
 ---

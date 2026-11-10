@@ -8478,6 +8478,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					fmt.Printf("[warn] observer peer registry: %v\n", err)
 				} else {
 					httpServer.SetPeerRegistry(reg)
+					// Peer silence watcher: one alert per outage when a
+					// registered observer peer stops pushing stats. The
+					// threshold is read from the live config on every check,
+					// so a runtime change applies with no restart (0 = off).
+					peerSilence := observerpkg.NewPeerSilenceWatcher(reg, alertStore,
+						func() int { return cfg.Observer.Peers.SilentAlertMinutes }, nil)
+					peerSilence.SetSelfName(cfg.Hostname)
+					go peerSilence.Run(ctx, time.Minute)
 					// S13 — give the agent manager the same registry so
 					// Manager.Spawn mints + Manager.Terminate drops a
 					// per-agent peer. agentMgr already exists from F10
@@ -12028,6 +12036,7 @@ func newConfigSetCmd() *cobra.Command {
 			"  ask     - ask the operator before the release ships (default for major)\n" +
 			"  manual  - leave the release for the operator to ship\n" +
 			"Any other value is refused and the error names the key.\n\n" +
+			"Peer silence key: observer.peers.silent_alert_minutes (whole minutes >= 0; 0 = silence watcher off, default 5). Read it back with `config get observer.peers.silent_alert_minutes`.\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +

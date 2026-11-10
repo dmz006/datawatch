@@ -4610,5 +4610,10 @@
   "automata_events_help_card_cleanup_status": "Bereinigungsstatus — Fortschritt der automatischen Bereinigung nach Abschluss der Automaten",
   "settings_secrets_vault": "Secrets-Vault",
   "settings_secrets_vault_unreachable_alert_after_seconds": "Vault-Nichterreichbarkeitsalarm nach (Sekunden)",
-  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm."
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm.",
+  "observer_peer_stale": "Veraltet",
+  "observer_peer_never_pushed": "Nie gesendet",
+  "settings_observer_peers": "Observer-Peers",
+  "settings_observer_peer_silent_alert_minutes": "Alarm bei stillem Peer nach (Minuten; 0 = aus)",
+  "settings_observer_peer_silent_alert_minutes_hint": "Alarm auslösen, wenn ein registrierter Observer-Peer so viele Minuten nichts gesendet hat. 0 deaktiviert die Prüfung."
 }

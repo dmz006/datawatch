@@ -971,6 +971,7 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Automata held-question keys: autonomous.questions.held_mode (off|shadow|on; default shadow), "+
 			"autonomous.questions.held_states (a JSON array of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; "+
 			"unset = all five, [] = none). "+
+			"Peer silence key: observer.peers.silent_alert_minutes (whole minutes >= 0; 0 = silence watcher off, default 5; read back with get_config section=observer). "+
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = the default window), "+
 			"session.liveness_idle_timeout_overrides (a JSON object of backend name to whole seconds, e.g. {\"pi\":300}, or backend=seconds pairs such as pi=300; "+
 			"0 = off for that backend; an unknown backend name is refused; an empty object clears the overrides). "+

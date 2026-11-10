@@ -18923,6 +18923,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'cost_report.week_start', label: 'Week starts on', labelKey: 'settings_cost_report_week_start', type: 'select', options: ['monday','sunday'] },
     { key: 'cost_report.include_peer_spend', label: 'Include peer spend', labelKey: 'settings_cost_report_include_peer_spend', type: 'toggle' },
   ]},
+  { id: 'observer_peers_cfg', sectionKey: 'settings_observer_peers', section: 'Observer peers', docs: 'howto/federated-observer.md', fields: [
+    { key: 'observer.peers.silent_alert_minutes', label: 'Silent peer alert after (minutes; 0 = disabled)', labelKey: 'settings_observer_peer_silent_alert_minutes', helpKey: 'settings_observer_peer_silent_alert_minutes_hint', type: 'number', placeholder: '0', min: 0, step: 1 },
+  ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
@@ -26166,77 +26169,6 @@ function updateAlertBadge() {
     badge.style.display = 'none';
   }
 }
-
-// BL172 — count of stale federated peers (last_push_at older than 60s
-// or never). Polled independently of the Settings panel so the
-// operator sees the badge without opening the Monitor card.
-function updatePeerStaleBadge() {
-  const badge = document.getElementById('peerStaleBadge');
-  if (!badge) return;
-  apiFetch('/api/observer/peers').then(data => {
-    const peers = (data && data.peers) || [];
-    if (peers.length === 0) {
-      badge.style.display = 'none';
-      return;
-    }
-    const now = Date.now();
-    let stale = 0;
-    for (const p of peers) {
-      const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
-      if (!lastPush || (now - lastPush) > 60000) {
-        stale++;
-      }
-    }
-    if (stale > 0) {
-      badge.textContent = stale > 99 ? '99+' : String(stale);
-      // 'flex' (not 'inline') so the 44x44 badge centers its count — the
-      // element is a position:absolute 44x44 box (see index.html) and an
-      // inline display would ignore the box sizing.
-      badge.style.display = 'flex';
-      badge.title = `${stale} federated peer(s) stale (>60s since last push)`;
-    } else {
-      badge.style.display = 'none';
-    }
-  }).catch(() => {
-    // 503 (registry disabled) or network error — hide silently.
-    badge.style.display = 'none';
-  });
-}
-
-// Refresh the peer-stale badge every 30s. Cheap GET; cached on the
-// daemon side and skipped when registry is disabled.
-setInterval(updatePeerStaleBadge, 30000);
-
-// v6.12.0 (Option A breadcrumb) — click handler for the cog stale badge.
-// Navigates to the Observer view (where the Federated Peers card lives),
-// scrolls the peers list into view, then briefly highlights any peer
-// row whose dot is red (stale or never-pushed).
-window.navigateToStalePeer = function() {
-  navigate('observer');
-  // Defer scroll/highlight until the observer view has rendered + peers
-  // list has loaded.
-  setTimeout(() => {
-    const list = document.getElementById('observerPeersList');
-    if (!list) return;
-    list.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    // Find peer rows whose dot color is the error/red shade. The row is
-    // built in loadObserverPeers — first child span is the dot.
-    const rows = list.querySelectorAll('div > span:first-child');
-    rows.forEach(dot => {
-      const bg = dot.style.background || '';
-      if (bg.includes('error') || bg.includes('239,68,68')) {
-        const row = dot.parentElement;
-        if (row) {
-          row.style.transition = 'background-color 0.4s ease';
-          const orig = row.style.backgroundColor;
-          row.style.backgroundColor = 'rgba(239,68,68,0.18)';
-          setTimeout(() => { row.style.backgroundColor = orig; }, 2600);
-        }
-      }
-    });
-  }, 600);
-};
-setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 
 // BL221 (v6.2.0) — Automata tab redesign. Replaces the legacy flat PRD
 // list with a 2-tab layout (Automata | Templates), filter bar with status
@@ -42292,7 +42224,16 @@ function loadObserverPeers() {
       const attachTag = bound.length > 0
         ? `<span title="${escHtml(t('observer_attached_to')||'attached to ComputeNode')}" style="margin-left:6px;font-size:11px;color:var(--accent2);border:1px solid var(--accent2);border-radius:3px;padding:0 4px;">⇄ ${escHtml(bound.join(', '))}</span>`
         : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
-      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+      let staleTag = '';
+      if (!p.is_self) {
+        const staleStyle = 'margin-left:6px;font-size:11px;color:var(--warning,#f59e0b);';
+        if (!lastPush) {
+          staleTag = `<span class="obs-peer-stale" style="${staleStyle}">${escHtml(t('observer_peer_never_pushed'))}</span>`;
+        } else if (ageMs > 60000) {
+          staleTag = `<span class="obs-peer-stale" style="${staleStyle}">${escHtml(t('observer_peer_stale'))} (${escHtml(observerPeerAgo(ageMs))})</span>`;
+        }
+      }
+      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${staleTag}${actions}</div>`;
     }).join('');
     if (groupByNode) {
       // alpha.24 — render per-CN buckets, fetched from the meta-peers

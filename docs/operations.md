@@ -7133,3 +7133,17 @@ Building a path into the discussion folder goes through one helper, `discussionF
 3. **Rename legacy folders if any.** Discussion folders created before the ID rule that use other characters remain on disk but are unreachable through the API; list existing IDs (`GET /api/memory/discussion`) and rename any that do not pass the rule.
 
 Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule; it only rejects an empty topic or one containing a slash.
+
+## Observer peer silence alert (`observer.peers.silent_alert_minutes`)
+
+The daemon checks every registered observer peer once a minute (its own row is skipped). A peer that has not pushed for longer than the threshold raises one warning system alert, "Observer peer silent: <name>", per outage; when it pushes again, one info alert, "Observer peer recovered: <name>", follows. A peer that never pushed is measured from its registration time. This replaces the old numeric badge on the PWA Settings nav button, which no longer exists; per-peer "Stale (age)" and "Never pushed" notes now sit on the peer rows in the Observer list.
+
+| Key | Default | What it does |
+|-----|---------|--------------|
+| `observer.peers.silent_alert_minutes` | `5` | Whole minutes of silence before the alert. `0` turns the watcher off. |
+
+Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set` tool, or the comm channel `configure observer.peers.silent_alert_minutes=<n>`. Read it back with `config get observer.peers.silent_alert_minutes`. See [howto/federated-observer](howto/federated-observer.md) for the operator walkthrough.
+
+### Android / iPhone
+
+The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/2026-11-10-pwa-peer-stale-badge-removal-parity.md`.

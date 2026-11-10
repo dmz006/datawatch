@@ -4610,5 +4610,10 @@
   "automata_events_help_card_cleanup_status": "クリーンアップ状況 — オートマトン完了後の自動クリーンアップの進捗",
   "settings_secrets_vault": "シークレット Vault",
   "settings_secrets_vault_unreachable_alert_after_seconds": "Vault 到達不能アラートまでの秒数",
-  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Vault バックエンドに到達できない状態が続いてから datawatch がアラートを出すまでの秒数。デフォルトは 120、0 でアラートを無効にします。"
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Vault バックエンドに到達できない状態が続いてから datawatch がアラートを出すまでの秒数。デフォルトは 120、0 でアラートを無効にします。",
+  "observer_peer_stale": "古い",
+  "observer_peer_never_pushed": "未送信",
+  "settings_observer_peers": "オブザーバーピア",
+  "settings_observer_peer_silent_alert_minutes": "無通信ピアのアラートまでの時間（分、0で無効）",
+  "settings_observer_peer_silent_alert_minutes_hint": "登録済みオブザーバーピアがこの分数のあいだ送信しない場合にアラートを出します。0でチェックを無効にします。"
 }
