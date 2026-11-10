@@ -12,12 +12,14 @@ import (
 // standardTasksFixturePath is the shared expected list every surface reads.
 const standardTasksFixturePath = "../../testdata/standard-tasks/expected.json"
 
-// loadStandardTaskFixture returns the shared expected rows (id, title, enabled, mode).
+// loadStandardTaskFixture returns the shared expected rows (id, title,
+// enabled, mode and runner).
 func loadStandardTaskFixture(t *testing.T) []struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
 	Enabled bool   `json:"enabled"`
 	Mode    string `json:"mode"`
+	Runner  string `json:"runner"`
 } {
 	t.Helper()
 	raw, err := os.ReadFile(standardTasksFixturePath)
@@ -30,6 +32,7 @@ func loadStandardTaskFixture(t *testing.T) []struct {
 			Title   string `json:"title"`
 			Enabled bool   `json:"enabled"`
 			Mode    string `json:"mode"`
+			Runner  string `json:"runner"`
 		} `json:"tasks"`
 	}
 	if err := json.Unmarshal(raw, &f); err != nil {
@@ -50,7 +53,7 @@ func standardTaskLine(reply, id string) string {
 }
 
 // TestStandardTaskRouterReply checks the standard task reply lines against the
-// shared fixture: id, title, on/off and mode, one line each, and no "PRD".
+// shared fixture: id, title, on/off, mode and runner, one line each, and no "PRD".
 func TestStandardTaskRouterReply(t *testing.T) {
 	want := loadStandardTaskFixture(t)
 	on := config.DefaultConfig()
@@ -66,8 +69,8 @@ func TestStandardTaskRouterReply(t *testing.T) {
 			t.Fatalf("no reply line for built-in id %q:\n%s", w.ID, reply)
 		}
 		parts := strings.Split(line, " | ")
-		if len(parts) != 4 {
-			t.Fatalf("line %q: want 4 fields (id, title, on/off, mode), got %d", line, len(parts))
+		if len(parts) != 5 {
+			t.Fatalf("line %q: want 5 fields (id, title, on/off, mode, runner), got %d", line, len(parts))
 		}
 		if parts[1] != w.Title {
 			t.Errorf("line %q: title = %q, want %q", line, parts[1], w.Title)
@@ -81,6 +84,9 @@ func TestStandardTaskRouterReply(t *testing.T) {
 		}
 		if parts[3] != w.Mode {
 			t.Errorf("line %q: want mode %q, got %q", line, w.Mode, parts[3])
+		}
+		if parts[4] != w.Runner {
+			t.Errorf("line %q: want runner %q, got %q", line, w.Runner, parts[4])
 		}
 	}
 	if got := len(strings.Split(reply, "\n")); got != len(want) {

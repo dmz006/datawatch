@@ -1,6 +1,7 @@
 // standard_tasks.go — the comm channel reply for the standard task list:
 // one line per task template the decomposer can add to a story, with its
-// id, title, on/off state and mode.
+// id, title, on/off state, effective mode (llm, daemon or off) and the
+// runner word that carries it out.
 //
 // The rows come from autonomous.ListStandardTasks, the same listing the
 // REST read (GET /api/autonomous/standard-tasks) and the MCP tool
@@ -22,7 +23,9 @@ const standardTasksEmpty = "no standard tasks are defined."
 
 // buildStandardTasksReply renders the standard task list for projectDir
 // (empty reports the global switch). It is one line per row:
-// "<id> | <title> | on|off | <mode>". A nil cfg reads as the shipped defaults.
+// "<id> | <title> | on|off | <mode> | <runner>", with the mode as llm,
+// daemon or off and the runner word from the same row the REST read and
+// the MCP tool serve. A nil cfg reads as the shipped defaults.
 func buildStandardTasksReply(cfg *config.Config, projectDir string) string {
 	rows := autonomous.ListStandardTasks(cfg, projectDir)
 	if len(rows) == 0 {
@@ -34,7 +37,7 @@ func buildStandardTasksReply(cfg *config.Config, projectDir string) string {
 		if row.Enabled {
 			state = "on"
 		}
-		lines = append(lines, fmt.Sprintf("%s | %s | %s | %s", row.ID, row.Title, state, row.Mode))
+		lines = append(lines, fmt.Sprintf("%s | %s | %s | %s | %s", row.ID, row.Title, state, row.Mode, row.Runner))
 	}
 	return strings.Join(lines, "\n")
 }
