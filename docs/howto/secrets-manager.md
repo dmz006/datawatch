@@ -263,7 +263,13 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 secrets vault status
 ```
 
-The Settings nav button shows a red `!` badge when Vault is the active backend but unreachable.
+The Settings nav button no longer shows a badge for an unreachable Vault. Check the status row in
+Settings → Secrets Store instead: it shows **Vault** reachable or unreachable, the mount and path
+layout, **Last error** (or `none`) and **Last success** (or `never`), each in your chosen language.
+
+> **Operator review:** the red `!` nav badge was removed in favour of a real alert for an
+> unreachable Vault. This page does not yet describe that alert (its trigger, channel and clearing
+> behaviour) because it is not part of the shipped change set. Confirm it exists, then document it here.
 
 ### 5c. MCP
 
