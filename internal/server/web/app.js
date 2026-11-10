@@ -26657,7 +26657,15 @@ window.switchAutomataTab = switchAutomataTab;
 // Automaton and Automation are different objects, so every owner name is
 // printed with its own label. Rows expand on click to show detail and reason.
 const _AUTOMATA_EVENTS_LIMIT = 50;
-const _automataEventsState = { inFlight: null, expanded: new Set() };
+// The kinds the event log emits, in chip order. A chip toggles one kind; the
+// selected kinds go out as one comma list (kind=watch,retry).
+const _AUTOMATA_EVENT_KINDS = ['watch', 'decision', 'retry', 'check', 'cleanup', 'alert', 'error'];
+const _AUTOMATA_EVENTS_SEARCH_MS = 300;
+// gen counts filter resets: a response from an older filter set is dropped.
+const _automataEventsState = {
+  inFlight: null, expanded: new Set(), kinds: new Set(), project: '', q: '',
+  nextCursor: '', events: [], projects: new Set(), gen: 0, searchTimer: null,
+};
 
 // _automataEventsText returns the translation, or the English fallback when no
 // bundle defines the key (t() returns the key itself on a miss).
@@ -26708,17 +26716,34 @@ function automataEventRowHtml(ev, expanded) {
     + `</div>`;
 }
 
-// automataEventsFetch loads the newest events. A call made while a request is
-// in flight returns that same request, so only one is ever outstanding. A
-// failure is retried once; a second failure rejects.
-function automataEventsFetch() {
+// automataEventsQuery builds the event-log URL for the current filters. limit
+// always comes first; before is the next_cursor of the page being continued.
+function automataEventsQuery(before) {
+  const st = _automataEventsState;
+  const parts = ['limit=' + _AUTOMATA_EVENTS_LIMIT];
+  const kinds = _AUTOMATA_EVENT_KINDS.filter(k => st.kinds.has(k));
+  if (kinds.length) parts.push('kind=' + encodeURIComponent(kinds.join(',')));
+  if (st.project) parts.push('project=' + encodeURIComponent(st.project));
+  if (st.q) parts.push('q=' + encodeURIComponent(st.q));
+  if (before) parts.push('before=' + encodeURIComponent(before));
+  return '/api/autonomous/event-log?' + parts.join('&');
+}
+
+// automataEventsFetch loads one page of events for the current filters. A call
+// made while a request is in flight returns that same request, so only one is
+// ever outstanding. A failure is retried once; a second failure rejects. The
+// next_cursor of the page is kept in state for Load more.
+function automataEventsFetch(before) {
   const st = _automataEventsState;
   if (st.inFlight) return st.inFlight;
+  const url = automataEventsQuery(before || '');
+  const gen = st.gen;
   const run = async () => {
     let lastErr = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const body = await apiFetch('/api/autonomous/event-log?limit=' + _AUTOMATA_EVENTS_LIMIT);
+        const body = await apiFetch(url);
+        if (gen === st.gen) st.nextCursor = (body && body.next_cursor) || '';
         return (body && Array.isArray(body.events)) ? body.events : [];
       } catch (e) {
         lastErr = e;
@@ -26726,8 +26751,9 @@ function automataEventsFetch() {
     }
     throw lastErr;
   };
-  st.inFlight = run().finally(() => { st.inFlight = null; });
-  return st.inFlight;
+  const p = run().finally(() => { if (st.inFlight === p) st.inFlight = null; });
+  st.inFlight = p;
+  return p;
 }
 
 // paintAutomataEvents writes the event list into the panel. A stale load that
@@ -26764,26 +26790,168 @@ function renderAutomataEventsPanel() {
   if (!panel) return;
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
     <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</h3>
+    ${automataEventsFilterHtml()}
     <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
+    <div id="automataEventsMoreWrap" style="margin-top:8px;">
+      <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
+      <span id="automataEventsMoreError" style="color:var(--error,#ef4444);font-size:12px;margin-left:8px;"></span>
+    </div>
   </div>`;
   const root = document.getElementById('automataEventsPanel');
   if (root && !root._eventsClickBound) {
     root._eventsClickBound = true;
     root.addEventListener('click', e => {
-      const row = e.target && e.target.closest ? e.target.closest('[data-event-id]') : null;
+      const target = e.target || {};
+      const chip = target.closest ? target.closest('[data-events-kind]') : null;
+      if (chip) { toggleAutomataEventKind(chip.getAttribute('data-events-kind')); return; }
+      const more = target.closest ? target.closest('[data-events-more]') : null;
+      if (more) { automataEventsLoadMore(); return; }
+      const row = target.closest ? target.closest('[data-event-id]') : null;
       if (row) toggleAutomataEventRow(row.getAttribute('data-event-id'));
     });
+    root.addEventListener('change', e => {
+      if (e.target && e.target.id === 'automataEventsProject') setAutomataEventsProject(e.target.value);
+    });
+    root.addEventListener('input', e => {
+      if (e.target && e.target.id === 'automataEventsSearch') scheduleAutomataEventsSearch(e.target.value);
+    });
   }
-  automataEventsFetch()
+  automataEventsReload();
+}
+
+// automataEventsFilterHtml renders the kind chips, the project dropdown and the
+// search box from the current filter state.
+function automataEventsFilterHtml() {
+  const st = _automataEventsState;
+  const chips = _AUTOMATA_EVENT_KINDS.map(k => {
+    const on = st.kinds.has(k);
+    return `<button type="button" class="automata-events-chip automata-event-kind-${k}${on ? ' active' : ''}" data-events-kind="${k}" aria-pressed="${on ? 'true' : 'false'}" style="border:1px solid var(--border);border-radius:10px;padding:0 8px;font-size:11px;background:${on ? 'var(--accent2,#60a5fa)' : 'transparent'};color:${on ? 'var(--bg)' : 'var(--text2)'};cursor:pointer;">${escHtml(k)}</button>`;
+  }).join('');
+  const kindLabel = _automataEventsText('automata_events_filter_kind', 'Kind');
+  const projectLabel = _automataEventsText('automata_events_filter_project', 'Project');
+  const searchLabel = _automataEventsText('automata_events_filter_search', 'Search events');
+  return `<div id="automataEventsFilters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0;">`
+    + `<div class="automata-events-kinds" role="group" aria-label="${escHtml(kindLabel)}" style="display:flex;flex-wrap:wrap;gap:4px;">${chips}</div>`
+    + `<select id="automataEventsProject" aria-label="${escHtml(projectLabel)}" style="font-size:12px;">${automataEventsProjectOptions()}</select>`
+    + `<input id="automataEventsSearch" type="search" value="${escHtml(st.q)}" placeholder="${escHtml(searchLabel)}" aria-label="${escHtml(searchLabel)}" style="font-size:12px;min-width:160px;">`
+    + `</div>`;
+}
+
+// automataEventsProjectOptions lists "All projects" and every project seen in
+// the loaded events, plus the selected one, so the selection never vanishes.
+function automataEventsProjectOptions() {
+  const st = _automataEventsState;
+  const names = new Set(st.projects);
+  if (st.project) names.add(st.project);
+  const opts = [`<option value=""${st.project ? '' : ' selected'}>${escHtml(_automataEventsText('automata_events_filter_all_projects', 'All projects'))}</option>`];
+  Array.from(names).sort().forEach(p => {
+    opts.push(`<option value="${escHtml(p)}"${p === st.project ? ' selected' : ''}>${escHtml(p)}</option>`);
+  });
+  return opts.join('');
+}
+
+// automataEventsSyncControls refreshes the chip states, the project options and
+// the Load more button after a load settles.
+function automataEventsSyncControls() {
+  const st = _automataEventsState;
+  document.querySelectorAll('[data-events-kind]').forEach(b => {
+    const on = st.kinds.has(b.getAttribute('data-events-kind'));
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.classList.toggle('active', on);
+  });
+  const sel = document.getElementById('automataEventsProject');
+  if (sel) sel.innerHTML = automataEventsProjectOptions();
+  const more = document.getElementById('automataEventsMore');
+  if (more) {
+    more.style.display = st.nextCursor ? '' : 'none';
+    more.disabled = !!st.inFlight;
+  }
+}
+
+// automataEventsReload drops the loaded rows and fetches the first page for the
+// current filters. Responses to an older filter set are discarded.
+function automataEventsReload() {
+  const st = _automataEventsState;
+  st.gen++;
+  st.inFlight = null;
+  st.events = [];
+  st.nextCursor = '';
+  st.lastEvents = [];
+  const list = document.getElementById('automataEventsList');
+  if (list) list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>`;
+  const err = document.getElementById('automataEventsMoreError');
+  if (err) err.textContent = '';
+  automataEventsSyncControls();
+  automataEventsLoad(false);
+}
+
+// automataEventsLoad fetches a page and appends it (append) or replaces the
+// rows (first page). A failed Load more reports under the button; a failed first
+// page replaces the list with the error.
+function automataEventsLoad(append) {
+  const st = _automataEventsState;
+  const gen = st.gen;
+  const before = append ? st.nextCursor : '';
+  automataEventsSyncControls();
+  automataEventsFetch(before)
     .then(events => {
-      if (!document.getElementById('automataEventsList')) return;
-      _automataEventsState.lastEvents = events;
-      paintAutomataEvents(events);
+      if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
+      st.events = append ? st.events.concat(events) : events;
+      st.lastEvents = st.events;
+      st.events.forEach(ev => { if (ev && ev.project) st.projects.add(ev.project); });
+      paintAutomataEvents(st.events);
+      automataEventsSyncControls();
     })
     .catch(err => {
-      if (!document.getElementById('automataEventsList')) return;
-      paintAutomataEvents([], (_automataEventsText('automata_events_failed', 'Could not load events')) + ': ' + ((err && err.message) || String(err)));
+      if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
+      const msg = (_automataEventsText('automata_events_failed', 'Could not load events')) + ': ' + ((err && err.message) || String(err));
+      if (append) {
+        const more = document.getElementById('automataEventsMoreError');
+        if (more) more.textContent = msg;
+        automataEventsSyncControls();
+      } else {
+        paintAutomataEvents([], msg);
+      }
     });
+}
+
+// toggleAutomataEventKind adds or removes one kind chip and reloads page one.
+function toggleAutomataEventKind(kind) {
+  const st = _automataEventsState;
+  if (!_AUTOMATA_EVENT_KINDS.includes(kind)) return;
+  if (st.kinds.has(kind)) st.kinds.delete(kind);
+  else st.kinds.add(kind);
+  automataEventsReload();
+}
+
+// setAutomataEventsProject applies the project dropdown and reloads page one.
+function setAutomataEventsProject(name) {
+  const st = _automataEventsState;
+  const next = String(name || '');
+  if (next === st.project) return;
+  st.project = next;
+  automataEventsReload();
+}
+
+// scheduleAutomataEventsSearch debounces the search box: the query is applied
+// once typing pauses for _AUTOMATA_EVENTS_SEARCH_MS.
+function scheduleAutomataEventsSearch(text) {
+  const st = _automataEventsState;
+  if (st.searchTimer) clearTimeout(st.searchTimer);
+  st.searchTimer = setTimeout(() => {
+    st.searchTimer = null;
+    const q = String(text || '').trim();
+    if (q === st.q) return;
+    st.q = q;
+    automataEventsReload();
+  }, _AUTOMATA_EVENTS_SEARCH_MS);
+}
+
+// automataEventsLoadMore fetches the page after next_cursor and appends it.
+function automataEventsLoadMore() {
+  const st = _automataEventsState;
+  if (!st.nextCursor || st.inFlight) return;
+  automataEventsLoad(true);
 }
 window.renderAutomataEventsPanel = renderAutomataEventsPanel;
 

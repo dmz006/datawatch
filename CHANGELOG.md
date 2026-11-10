@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- Automata Events sub-tab: kind chips (watch, decision, retry, check, cleanup, alert, error) send `kind=`, a project dropdown sends `project=`, a debounced search box sends `q=`, and Load more follows `next_cursor` with `before=`.
+
 ## v9.119.0 — Keep the plans folder and registry tidy automatically
 
 - Plans folder tidy now archives `docs/plans/reports` and `docs/plans/parity-issues` by month into `archive/YYYY-MM/` subfolders (`scripts/plans_monthly_archive.py`, wired into `scripts/tidy-plans.sh`); the broken-link check resolves the archive subfolders.
