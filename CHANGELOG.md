@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Peer-stale badge replaced by a per-peer connectivity indicator.** The web app no longer shows the peer-stale count badge on the Settings nav button, and the 30-second poll and click-through behind it are gone (no references remain in `app.js` or `index.html`). Peer connectivity now shows where the peer is listed: each peer row in the Observer list shows an inline "Stale (age)" note when the peer last pushed more than a minute ago, or "Never pushed" when it has not pushed yet. The daemon's own row is skipped. The labels are in all five locales (en, de, es, fr, ja). No migration step.
+
 ## v9.90.2 — Version check exempts the supervisor status script
 
 The CI version-bump check no longer fails on edits to `scripts/v10-status.py`.
