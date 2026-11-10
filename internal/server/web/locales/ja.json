@@ -3666,5 +3666,8 @@
   "prd_dl_running": "Decompose Lint を実行中...",
   "prd_dl_dryrun_error": "Decompose Lint のドライランに失敗しました：",
   "observer_peer_stale": "古い",
-  "observer_peer_never_pushed": "未送信"
+  "observer_peer_never_pushed": "未送信",
+  "settings_observer_peers": "オブザーバーピア",
+  "settings_observer_peer_silent_alert_minutes": "無通信ピアのアラートまでの時間（分、0で無効）",
+  "settings_observer_peer_silent_alert_minutes_hint": "登録済みオブザーバーピアがこの分数のあいだ送信しない場合にアラートを出します。0でチェックを無効にします。"
 }
