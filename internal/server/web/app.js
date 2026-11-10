@@ -25629,10 +25629,15 @@ function _automataStandardTasksRender() {
   const rows = st.tasks.map(tk => {
     const on = tk.enabled === false ? t('automata_std_off') : t('automata_std_on');
     const vals = [tk.title, tk.kind, tk.summary || tk.description, tk.when || tk.offered_when || tk.offered, on, tk.mode];
-    return `<tr>${vals.map(v => `<td style="padding:4px 8px;vertical-align:top;">${escHtml(v == null ? '' : String(v))}</td>`).join('')}</tr>`;
+    return `<tr>${vals.map((v, i) => `<td data-label="${escHtml(t('automata_std_col_' + cols[i]))}" style="padding:4px 8px;vertical-align:top;">${escHtml(v == null ? '' : String(v))}</td>`).join('')}</tr>`;
   }).join('');
-  panel.innerHTML = `<div style="font-size:12px;color:var(--text2);margin:0 0 10px;">${escHtml(t('automata_std_mode_note'))} <code>autonomous.task_templates</code>${docsLink('howto/automata-standard-tasks.md', t('automata_std_howto'))}</div>`
-    + `<table class="automata-standard-tasks" style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table>`;
+  const note = `<div style="font-size:12px;color:var(--text2);margin:0 0 10px;">${escHtml(t('automata_std_mode_note'))} <code>autonomous.task_templates</code>${docsLink('howto/automata-standard-tasks.md', t('automata_std_howto'))}</div>`;
+  // An empty list shows the explanation in place of the table, so the
+  // header row never sits over nothing.
+  const body = st.tasks.length === 0
+    ? `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('automata_empty_std_tasks'))}</div>`
+    : `<table class="automata-standard-tasks" style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table>`;
+  panel.innerHTML = `<div class="automata-templates-body">${note}${body}</div>`;
 }
 
 function _automataStandardTasksLoad() {
@@ -25765,10 +25770,10 @@ function _automataRenderTemplates() {
   </div>`;
 
   if (list.length === 0) {
-    panel.innerHTML = searchBar + `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('automata_empty_templates'))}</div>`;
+    panel.innerHTML = `<div class="automata-templates-body">${searchBar}<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('automata_empty_templates'))}</div></div>`;
     return;
   }
-  panel.innerHTML = searchBar + list.map(renderTemplateCard).join('');
+  panel.innerHTML = `<div class="automata-templates-body">${searchBar}${list.map(renderTemplateCard).join('')}</div>`;
 }
 
 window._automataOnTmplSearch = function(val) {
