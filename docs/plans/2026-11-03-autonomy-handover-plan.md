@@ -214,3 +214,7 @@ Pack question 6 (first acceptance of the pre-seeded community registry). Options
 
 2026-11-09 evening decompose hold lifted. Supervisor reported 22% at 17:14 (1.6 points ahead of pace, projection 114%) and proposed holding new decomposes until the burn was back under 0.6 an hour. Operator reading at 18:00: "23%, we need decompose, are we doing claude workers and not decomposing, what can we do to get and keep work going by stay on track". Decision: the hold is lifted and decomposes resume at two an hour in priority order. Supervisor's spend analysis since 08:32 (8.4 estimated points): task worktree sessions 7.2 (workers and verifiers about 70 percent of the total, planners about 0.09 each), this supervisor session 1.3, and by model haiku 5.6 and sonnet 2.8, where the sonnet share is mostly the supervisor's merge helpers (eight of them today, about 0.3 each). The controllable items are the merge helpers (the daemon merge in Phase 4 removes them) and the supervisor session's own turns.
 
+
+### Supervisor as skills (operator, 2026-11-09)
+
+Operator: "We need to modulator even the supervisor, skills and eventually other models seem essential" (read as: make the supervisor modular; skills, and eventually other models, are essential). Scope and shape are open; first question asked of the operator is whether to draft a design Automaton or fold it into the packs work.
