@@ -3061,7 +3061,11 @@ const _PROJECTS_LAST_KEY = 'cs_projects_last';
 const _PROJECTS_OVERVIEW = '';
 // rollup is the roll-up of the project named by rollupFor; rollupError is its
 // load failure. The page paints the roll-up only for the selected project.
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '' };
+// hist is the paged history of the project named by hist.name: items so far,
+// next is the cursor for the following page ('' when none), error is its load
+// failure. histBusy guards a Load more click against a second request.
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false };
+const _PROJECTS_HISTORY_PAGE = 20;
 
 function _projectsRememberLast(name) {
   try { localStorage.setItem(_PROJECTS_LAST_KEY, name || ''); } catch (_) { /* not remembered */ }
@@ -3109,7 +3113,8 @@ function _projectsPaint() {
   } else {
     const p = list.find(x => x.name === selected);
     const forSel = _projectsState.rollupFor === selected;
-    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '');
+    const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
   }
 }
 
@@ -3131,7 +3136,7 @@ function _projectsPickerHTML(list, selected, err) {
 // and session view. The closing div closes the #projectsView wrapper that
 // _projectsPickerHTML leaves open. roll is this project's roll-up (null while
 // it loads); rollErr is the roll-up's load failure, if any.
-function _projectPageHTML(p, roll, rollErr) {
+function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
   const events = [];
   const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
@@ -3177,7 +3182,8 @@ function _projectPageHTML(p, roll, rollErr) {
       <span style="color:var(--text2);font-size:12px;">${escHtml(t('projects_page_priority'))} ${escHtml(arc.priority || 0)}</span>
       <strong style="font-size:14px;">${escHtml(arc.automation_id)}</strong>
       <span style="font-size:12px;">${escHtml(stateLabel)}</span>
-      <span style="font-size:12px;color:var(--text2);">${escHtml(tasks.done || 0)}/${escHtml(tasks.total || 0)} ${escHtml(t('projects_page_tasks'))}${pts(arc.points)}</span>
+      <span style="flex:1 1 160px;min-width:140px;">${_projectBarHTML(tasks.done, tasks.total, arc.automation_id)}</span>
+      <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
     </summary>`;
     if (!automata.length) {
       events.push(t('projects_event_arc_empty', [arc.automation_id]));
@@ -3193,12 +3199,14 @@ function _projectPageHTML(p, roll, rollErr) {
     body = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
+    body += _projectRollupHTML(roll, arcs);
     if (!arcs.length) events.push(t('projects_event_no_arcs'));
     else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else events.push(t('projects_event_no_unassigned'));
   }
+  body += _projectHistoryHTML(hist);
 
   const evs = events.length
     ? `<div id="projectEvents" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
@@ -3207,13 +3215,157 @@ function _projectPageHTML(p, roll, rollErr) {
     <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${head}${body}${evs}</div></div>`;
 }
 
+// ── Project roll-up section: progress bars, cost in points, throughput ──────
+// A progress bar is done/total as a fill, with the count and percent beside it.
+// An empty total reads as 0%, not as an error. Costs are usage points only;
+// the roll-up never carries or shows API dollars.
+function _projectBarHTML(done, total, label) {
+  const d = Math.max(0, Number(done) || 0);
+  const tot = Math.max(0, Number(total) || 0);
+  const pct = tot > 0 ? Math.min(100, Math.round(d / tot * 100)) : 0;
+  return `<div class="project-progress" role="progressbar" aria-label="${escHtml(label || '')}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+    <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
+    <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${d}/${tot} ${escHtml(t('projects_page_tasks'))} · ${pct}%</span></div>`;
+}
+
+// _projectRollupHTML is the roll-up block above the arcs: the whole-project
+// progress bar, its cost in points, and the throughput over the window. A
+// roll-up without a total (older replies) is summed from its arcs and the
+// unassigned group.
+function _projectRollupHTML(roll, arcs) {
+  const groups = arcs.concat([roll.unassigned || {}]);
+  let tot = roll.total && roll.total.tasks ? roll.total : null;
+  if (!tot) {
+    tot = { tasks: { done: 0, total: 0 }, points: 0, throughput: { automata_finished: 0, tasks_finished: 0, automata_per_day: 0, tasks_per_day: 0 } };
+    groups.forEach(g => {
+      const gt = g.tasks || {};
+      const th = g.throughput || {};
+      tot.tasks.done += Number(gt.done) || 0;
+      tot.tasks.total += Number(gt.total) || 0;
+      tot.points += Number(g.points) || 0;
+      tot.throughput.automata_finished += Number(th.automata_finished) || 0;
+      tot.throughput.tasks_finished += Number(th.tasks_finished) || 0;
+      tot.throughput.automata_per_day += Number(th.automata_per_day) || 0;
+      tot.throughput.tasks_per_day += Number(th.tasks_per_day) || 0;
+    });
+  }
+  const th = tot.throughput || {};
+  const days = roll.window_days || 7;
+  const pts1 = n => String(Math.round((Number(n) || 0) * 10) / 10);
+  const perDay = n => String(Math.round((Number(n) || 0) * 100) / 100);
+  const pointsVal = roll.points_priced === false
+    ? t('projects_rollup_points_unpriced')
+    : `${pts1(tot.points)} ${t('projects_page_points')}`;
+  const throughputVal = t('projects_rollup_throughput_value', [
+    Number(th.automata_finished) || 0, perDay(th.automata_per_day),
+    Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
+  ]);
+  const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
+  return `<div class="project-rollup" style="margin-top:10px;">
+    <div style="font-weight:600;font-size:13px;">${escHtml(t('projects_rollup_heading'))}</div>
+    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+    ${line(t('projects_rollup_points_label'), pointsVal)}
+    ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+  </div>`;
+}
+
+function _projectDate(v) {
+  const d = v ? new Date(v) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
+}
+
+// _projectHistoryRowHTML is one entry of the history list: a finished or
+// archived Automaton (linked to its view) or a daily progress snapshot.
+// Other kinds are left out.
+function _projectHistoryRowHTML(e) {
+  if (!e || typeof e !== 'object') return '';
+  if (e.kind === 'automaton') {
+    const tk = e.tasks || {};
+    const when = _projectDate(e.finished_at || e.time);
+    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(e.id || '')}" style="margin:6px 0;font-size:13px;">
+      <a href="#" class="project-history-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(e.id || '')});return false;`)}">${escHtml(e.title || e.id || '')}</a>
+      <span style="color:var(--text2);font-size:12px;"> ${escHtml(e.status || '')}${when ? ' · ' + escHtml(when) : ''} · ${escHtml(tk.done || 0)}/${escHtml(tk.total || 0)} ${escHtml(t('projects_page_tasks'))}</span></div>`;
+  }
+  if (e.kind === 'snapshot' && e.progress) {
+    const p = e.progress;
+    const when = _projectDate(e.taken_at || e.time);
+    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;font-size:13px;color:var(--text2);">${escHtml(t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0]))}</div>`;
+  }
+  return '';
+}
+
+// _projectHistoryHTML is the paged history list under the page. hist is null
+// while the first page loads. Load more appears while the server reports a
+// next cursor.
+function _projectHistoryHTML(hist) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_history_heading'))}</div>`;
+  let inner;
+  if (!hist) {
+    inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_history_loading'))}</div>`;
+  } else if (hist.error) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + hist.error)}</div>`;
+  } else if (!hist.items.length) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_history_empty'))}</div>`;
+  } else {
+    inner = hist.items.map(_projectHistoryRowHTML).join('');
+  }
+  if (hist && hist.next) {
+    const busy = _projectsState.histBusy ? ' disabled' : '';
+    inner += `<button class="btn-secondary" id="projectHistoryMore" style="margin-top:8px;"${busy} onclick="projectsHistoryMore()">${escHtml(t('projects_history_load_more'))}</button>`;
+  }
+  return `<div id="projectHistory" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${head}${inner}</div>`;
+}
+
+// _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
+// the selected project. append=false starts from the first page; append=true
+// adds the page after the cursor of the current list. Overview reads nothing.
+// A reply for a project no longer selected is dropped.
+function _projectsLoadHistory(append) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  const prev = append && _projectsState.hist && _projectsState.hist.name === name ? _projectsState.hist : null;
+  const cursor = prev ? prev.next : '';
+  const prevItems = prev ? prev.items : [];
+  const q = '?limit=' + _PROJECTS_HISTORY_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  _projectsState.histBusy = true;
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/history' + q).then(r => {
+    if (_projectsState.selected !== name) return;
+    const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    const items = Array.isArray(body.items) ? body.items : [];
+    _projectsState.hist = { name, items: prevItems.concat(items), next: body.next_cursor || '', error: '' };
+  }).catch(err => {
+    if (_projectsState.selected !== name) return;
+    _projectsState.hist = { name, items: prevItems, next: cursor, error: (err && err.message) || String(err) };
+  }).then(() => { _projectsState.histBusy = false; });
+}
+
+// projectsHistoryMore is the Load more button: it appends the next page and
+// repaints while the Projects tab is still the active view.
+function projectsHistoryMore() {
+  const h = _projectsState.hist;
+  if (_projectsState.histBusy || !h || !h.next) return Promise.resolve();
+  return _projectsLoadHistory(true).then(() => {
+    if (state.activeView === 'projects') _projectsPaint();
+  });
+}
+
+// _projectsLoadSelected reads the roll-up, then the first history page, for the
+// selected project, repainting after each so the arcs show before the history.
+function _projectsLoadSelected() {
+  return _projectsLoadRollup().then(() => {
+    if (state.activeView === 'projects') _projectsPaint();
+    return _projectsLoadHistory(false);
+  });
+}
+
 function renderProjectsView() {
   _projectsState.selected = (() => {
     const fromHash = _projectsHashParse(_projectsCurrentHash());
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   _projectsPaint();
-  return _projectsLoad().then(() => _projectsLoadRollup()).then(() => {
+  return _projectsLoad().then(() => _projectsLoadSelected()).then(() => {
     // Paint again only while the Projects tab is still the active view.
     if (state.activeView === 'projects') _projectsPaint();
   });
@@ -3258,7 +3410,7 @@ function selectProjectsView(name) {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
-  return _projectsLoadRollup().then(() => {
+  return _projectsLoadSelected().then(() => {
     if (state.activeView === 'projects') _projectsPaint();
   });
 }
