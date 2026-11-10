@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.128.1 — Correct the merge conflict mode label and hint text
+
+### Fixed
+
+- **The conflict mode setting's labels and hints name its real values.** The English label and hint of the merge conflict mode setting name `shadow` (the default) and `on`, and the German, Spanish, French and Japanese labels and hints name the same two values, so every shipped locale describes conflict mode the same way.
+
 ## v9.128.0 — Rebuild Automata Inbox triage cards
 
 - Inbox triage cards rebuilt: the needs-attention card is now titled Triage and holds one card per Automaton that failed, is blocked, or has finished work ready to merge. Each card shows a headline, the recorded reason, Automaton and Automation chips and how long it has waited, with Open details, Retry, Resolve review and Cancel buttons.

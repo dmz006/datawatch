@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.128.0 (2026-11-10).** The Automata Inbox Triage card is rebuilt: one card per stuck Automaton with Open details, Retry, Resolve review and Cancel, and open questions answered in place. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.128.1 (2026-11-10).** The merge conflict mode label and hint now name their real values in every shipped language. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
