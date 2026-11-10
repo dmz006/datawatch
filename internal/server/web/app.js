@@ -26652,15 +26652,138 @@ function switchAutomataTab(tab) {
 }
 window.switchAutomataTab = switchAutomataTab;
 
-// renderAutomataEventsPanel paints the Events sub-tab. The event log itself is
-// not wired yet, so the panel shows its heading and a placeholder line.
+// Automata Events sub-tab. Reads GET /api/autonomous/event-log (newest first).
+// One request is in flight at a time, and a failed request is retried once.
+// Automaton and Automation are different objects, so every owner name is
+// printed with its own label. Rows expand on click to show detail and reason.
+const _AUTOMATA_EVENTS_LIMIT = 50;
+const _automataEventsState = { inFlight: null, expanded: new Set() };
+
+// _automataEventsText returns the translation, or the English fallback when no
+// bundle defines the key (t() returns the key itself on a miss).
+function _automataEventsText(key, fallback) {
+  const s = t(key);
+  return (s && s !== key) ? s : fallback;
+}
+
+// automataEventOwners lists the labelled owners of one event: an Automation
+// (the parent) and/or an Automaton (the child). Each carries its own label.
+function automataEventOwners(ev) {
+  const owners = [];
+  if (ev.automation) owners.push({ label: _automataEventsText('automata_events_label_automation', 'Automation'), name: ev.automation });
+  if (ev.automaton) owners.push({ label: _automataEventsText('automata_events_label_automaton', 'Automaton'), name: ev.automaton });
+  return owners;
+}
+
+// automataEventRowHtml renders one event row. The detail block is in the markup
+// only when the row is expanded, so a collapsed row carries no detail text.
+function automataEventRowHtml(ev, expanded) {
+  const id = escHtml(String(ev.id || ''));
+  let when = '';
+  if (ev.time) {
+    const d = new Date(ev.time);
+    when = isNaN(d.getTime()) ? String(ev.time) : d.toLocaleString();
+  }
+  const kind = escHtml(String(ev.kind || ''));
+  const owners = automataEventOwners(ev).map(o =>
+    `<span class="automata-event-owner" style="margin-right:8px;color:var(--text2);font-size:11px;">${escHtml(o.label)}: <strong>${escHtml(o.name)}</strong></span>`
+  ).join('');
+  let body = '';
+  if (expanded) {
+    body = `<div class="automata-event-detail" style="margin-top:6px;font-size:12px;white-space:pre-wrap;word-break:break-word;">`
+      + (ev.detail ? `<div><strong>${escHtml(_automataEventsText('automata_events_detail', 'Detail'))}:</strong> ${escHtml(ev.detail)}</div>` : '')
+      + `<div><strong>${escHtml(_automataEventsText('automata_events_reason', 'Reason'))}:</strong> ${escHtml(ev.reason || '')}</div>`
+      + (ev.next_action ? `<div><strong>${escHtml(_automataEventsText('automata_events_next_action', 'Next action'))}:</strong> ${escHtml(ev.next_action)}</div>` : '')
+      + `</div>`;
+  }
+  return `<div class="automata-event-row" data-event-id="${id}" role="button" tabindex="0" aria-expanded="${expanded ? 'true' : 'false'}" style="padding:8px 4px;border-bottom:1px solid var(--border);cursor:pointer;">`
+    + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--text2);">`
+    + `<span>${escHtml(when)}</span>`
+    + `<span class="automata-event-kind automata-event-kind-${kind}" style="border:1px solid var(--border);border-radius:10px;padding:0 6px;">${kind}</span>`
+    + (ev.project ? `<span class="automata-event-project">${escHtml(_automataEventsText('automata_events_project', 'Project'))}: <strong>${escHtml(ev.project)}</strong></span>` : '')
+    + `</div>`
+    + `<div style="margin-top:4px;">${owners}</div>`
+    + `<div class="automata-event-summary" style="font-size:13px;">${escHtml(ev.summary || '')}</div>`
+    + body
+    + `</div>`;
+}
+
+// automataEventsFetch loads the newest events. A call made while a request is
+// in flight returns that same request, so only one is ever outstanding. A
+// failure is retried once; a second failure rejects.
+function automataEventsFetch() {
+  const st = _automataEventsState;
+  if (st.inFlight) return st.inFlight;
+  const run = async () => {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const body = await apiFetch('/api/autonomous/event-log?limit=' + _AUTOMATA_EVENTS_LIMIT);
+        return (body && Array.isArray(body.events)) ? body.events : [];
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr;
+  };
+  st.inFlight = run().finally(() => { st.inFlight = null; });
+  return st.inFlight;
+}
+
+// paintAutomataEvents writes the event list into the panel. A stale load that
+// finishes after the operator left the Events sub-tab paints nothing.
+function paintAutomataEvents(events, errorText) {
+  const list = document.getElementById('automataEventsList');
+  if (!list) return;
+  if (errorText) {
+    list.innerHTML = `<div style="color:var(--error,#ef4444);font-size:12px;">${escHtml(errorText)}</div>`;
+    return;
+  }
+  if (!events.length) {
+    list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_empty', 'No events yet.'))}</div>`;
+    return;
+  }
+  list.innerHTML = events.map(ev => automataEventRowHtml(ev, _automataEventsState.expanded.has(String(ev.id)))).join('');
+}
+
+// toggleAutomataEventRow expands or collapses one row and repaints the list
+// from the events already loaded.
+function toggleAutomataEventRow(id) {
+  const key = String(id || '');
+  if (!key) return;
+  if (_automataEventsState.expanded.has(key)) _automataEventsState.expanded.delete(key);
+  else _automataEventsState.expanded.add(key);
+  if (_automataEventsState.lastEvents) paintAutomataEvents(_automataEventsState.lastEvents);
+}
+window.toggleAutomataEventRow = toggleAutomataEventRow;
+
+// renderAutomataEventsPanel paints the Events sub-tab: a heading, a loading
+// line, then the rows. Row clicks are delegated to the panel, not bound per row.
 function renderAutomataEventsPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
-    <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(t('automata_events_tab') || 'Events')}</h3>
-    <p style="margin:0;color:var(--text2);">Automata events will appear here.</p>
+    <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</h3>
+    <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
   </div>`;
+  const root = document.getElementById('automataEventsPanel');
+  if (root && !root._eventsClickBound) {
+    root._eventsClickBound = true;
+    root.addEventListener('click', e => {
+      const row = e.target && e.target.closest ? e.target.closest('[data-event-id]') : null;
+      if (row) toggleAutomataEventRow(row.getAttribute('data-event-id'));
+    });
+  }
+  automataEventsFetch()
+    .then(events => {
+      if (!document.getElementById('automataEventsList')) return;
+      _automataEventsState.lastEvents = events;
+      paintAutomataEvents(events);
+    })
+    .catch(err => {
+      if (!document.getElementById('automataEventsList')) return;
+      paintAutomataEvents([], (_automataEventsText('automata_events_failed', 'Could not load events')) + ': ' + ((err && err.message) || String(err)));
+    });
 }
 window.renderAutomataEventsPanel = renderAutomataEventsPanel;
 
@@ -34428,7 +34551,7 @@ function renderAutonomousView() {
       <div class="output-tabs automata-tabs-bar">
         ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
-        <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(t('automata_events_tab') || 'Events')}</button>
+        <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</button>
         <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab!=='automata'?'display:none;':''}">&#9745;</button>
