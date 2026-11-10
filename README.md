@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.132.0 (2026-11-10).** The Settings nav button no longer carries a peer-stale badge; the daemon raises a silent-peer alert after observer.peers.silent_alert_minutes (default 5, 0 disables) and each Observer peer row shows how stale it is. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.133.0 (2026-11-10).** Every verifier session now has a hard maximum run time (default 45 minutes, setting autonomous.verifier_max_run_seconds, 0 turns it off); a session that reaches the cap is ended, its worker slot is freed, and the verification is retried once on the next backend in the verifier policy. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
