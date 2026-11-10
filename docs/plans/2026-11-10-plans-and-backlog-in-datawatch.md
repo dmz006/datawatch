@@ -191,3 +191,10 @@ Requirements that follow: every surface (web, messaging, CLI, MCP, REST, reports
 supervisor's own reports) shows the title first and the id second or not at all; any command that takes an id also
 accepts an unambiguous title or title prefix; a title that matches more than one record asks which one; the export's
 file names and headings use titles. Open: whether titles must be unique within a project.
+
+Operator answer on title uniqueness (2026-11-10): "A yes, but we may run into conflicts so need a way to handle large
+changes over time" (option A: a title is unique within a project; the same title may exist in different projects; plus
+a requirement: conflicts will arise, so large changes over time need a defined handling path).
+Situations that will create conflicts: the one-time import of the registry rows, a bulk rename, moving records between
+projects, merging two projects, and importing records from another installation or repository of a product. Open: how
+each is handled (next question).
