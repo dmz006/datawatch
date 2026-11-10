@@ -1829,7 +1829,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				ClusterProfile:   prd.ClusterProfile,           // v5.26.19
 				Branch:           snapGit.Branch,               // carried through the snapshot
 				Git:              snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,               // BL244
+				ContextPrepend:   contextPrepend,               // plugin session injection
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
 				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
