@@ -2806,6 +2806,7 @@
   "triage_detail_reason": "Motivo",
   "triage_detail_history": "Historial",
   "triage_detail_empty_history": "Aún no hay historial registrado.",
+  "triage_detail_automation": "Automatización",
   "triage_question_held_why": "Motivo de la retención: %1$s",
   "triage_question_held_change": "Para cambiar o ver esta retención, abre Configuración en Autómatas.",
   "triage_question_answer_in_place": "Responder en su lugar",

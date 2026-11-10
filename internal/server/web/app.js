@@ -30224,6 +30224,7 @@ window.triageCardHtml = function(record) {
   const M = window.AutomataTriageModel;
   const prdID = String(record.prd_id || '');
   const taskID = String(record.task_id || '');
+  _triageRemember(record, prdID, taskID);
   const headline = `<div class="triage-headline" style="margin-top:4px;font-weight:700;overflow-wrap:anywhere;">${escHtml(_triageHeadlineText(record))}</div>`;
   const chipStyle = 'display:inline-block;max-width:100%;padding:1px 8px;border:1px solid var(--border);border-radius:10px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;';
   const kindChip = `<span class="triage-kind-chip" style="${chipStyle}">${escHtml(t('triage_kind_automaton'))}</span>`;
@@ -30245,14 +30246,113 @@ function _triageCardClick(ev) {
   const btn = target.closest('[data-action]');
   const prdID = (btn && btn.getAttribute('data-prd-id')) || card.getAttribute('data-prd-id') || '';
   const taskID = (btn && btn.getAttribute('data-task-id')) || '';
-  const openDetail = () => { if (typeof window.openTriageDetail === 'function') window.openTriageDetail(prdID, taskID); };
-  if (!btn) { openDetail(); return; }
-  const action = btn.getAttribute('data-action');
-  if (action === 'open-detail') openDetail();
+  if (!btn) { _triageOpenDetail(prdID, taskID); return; }
+  _triageRunAction(btn.getAttribute('data-action'), prdID, taskID, btn.getAttribute('data-status') || '');
+}
+// _triageOpenDetail opens the detail panel when its opener is loaded.
+function _triageOpenDetail(prdID, taskID) {
+  if (typeof window.openTriageDetail === 'function') window.openTriageDetail(prdID, taskID);
+}
+// _triageRunAction is the one dispatcher for the four action buttons. The
+// card and the detail panel both call it, so a button does the same thing
+// wherever it is drawn.
+function _triageRunAction(action, prdID, taskID, status) {
+  if (action === 'open-detail') _triageOpenDetail(prdID, taskID);
   else if (action === 'retry' && typeof window.prdResetTask === 'function') window.prdResetTask(prdID, taskID);
   else if (action === 'resolve-review' && typeof window.prdResolveTaskReview === 'function') window.prdResolveTaskReview(prdID, taskID, { action: 'retry' });
-  else if (action === 'cancel' && typeof window.automataCancel === 'function') window.automataCancel(prdID, btn.getAttribute('data-status') || '');
+  else if (action === 'cancel' && typeof window.automataCancel === 'function') window.automataCancel(prdID, status || '');
 }
+// _triageRecordKey keys the record index by the PRD and task ids a card carries.
+function _triageRecordKey(prdID, taskID) {
+  return String(prdID || '') + '\u0000' + String(taskID || '');
+}
+// _triageRemember keeps the last drawn record for a PRD and task, so a card
+// click can open the detail panel with the full record.
+function _triageRemember(record, prdID, taskID) {
+  if (!window._triageRecordIndex) window._triageRecordIndex = new Map();
+  window._triageRecordIndex.set(_triageRecordKey(prdID, taskID), record);
+}
+// _triageRow is one labelled line of the detail panel.
+function _triageRow(label, value) {
+  return `<div class="triage-detail-row"><span class="triage-detail-label">${escHtml(label)}</span> <span class="triage-detail-value">${escHtml(value)}</span></div>`;
+}
+// _triageDetailHtml renders the detail panel body for one record. The full
+// headline, reason and error text are shown unclamped. A section whose data
+// is empty is left out, except the history, which says it is empty.
+function _triageDetailHtml(record) {
+  const M = window.AutomataTriageModel;
+  const prdID = String(record.prd_id || '');
+  const taskID = String(record.task_id || '');
+  // The card's reason keeps two lines; the panel shows the whole error.
+  const fullError = record.status === 'failed' ? String(record.error || '').trim() : '';
+  const reason = M.triageReason(record);
+  const reasonText = fullError || reason.text || t(reason.key);
+  const parts = [];
+  parts.push(`<div class="triage-detail-headline">${escHtml(_triageHeadlineText(record))}</div>`);
+  const automaton = String(record.prd_title || '') || prdID;
+  const rows = [];
+  if (automaton) rows.push(_triageRow(t('triage_kind_automaton'), automaton));
+  const owner = M.triageOwnerLabel(record);
+  if (owner) rows.push(_triageRow(t('triage_detail_automation'), owner));
+  if (rows.length) parts.push(`<div class="triage-detail-rows">${rows.join('')}</div>`);
+  parts.push(_triageWaitLine(record));
+  parts.push(`<div class="triage-detail-section"><div class="triage-detail-heading">${escHtml(t('triage_detail_reason'))}</div><div class="triage-detail-text">${escHtml(reasonText)}</div></div>`);
+  if (record.retry_budget && typeof record.retry_budget === 'object') {
+    parts.push(`<div class="triage-detail-section">${window.triageBudgetDetailHtml(record)}</div>`);
+  }
+  const notes = (Array.isArray(record.notes) ? record.notes : []).filter(n => n && typeof n === 'object');
+  const history = notes.length
+    ? `<ul class="triage-detail-history">${notes.map(n => {
+        const when = _triageTime(n.at);
+        const source = n.source ? ' · ' + String(n.source) : '';
+        return `<li><div class="triage-detail-when">${escHtml(when + source)}</div><div class="triage-detail-text">${escHtml(n.text || '')}</div></li>`;
+      }).join('')}</ul>`
+    : `<div class="triage-detail-empty">${escHtml(t('triage_detail_empty_history'))}</div>`;
+  parts.push(`<div class="triage-detail-section"><div class="triage-detail-heading">${escHtml(t('triage_detail_history'))}</div>${history}</div>`);
+  parts.push(_triageButtons(record, prdID, taskID));
+  return parts.join('');
+}
+// _triageFindRecord returns the record last drawn for a PRD and task id.
+function _triageFindRecord(prdID, taskID) {
+  const idx = window._triageRecordIndex;
+  return (idx && idx.get(_triageRecordKey(prdID, taskID))) || null;
+}
+// closeTriageDetail removes the detail panel if it is open.
+function closeTriageDetail() {
+  const el = document.getElementById('triageDetailDrawer');
+  if (el && typeof el.remove === 'function') el.remove();
+}
+window.closeTriageDetail = closeTriageDetail;
+// openTriageDetail(recordOrId, taskID) opens the detail panel for one triage
+// record. It takes the record itself, or the PRD id and task id a card carries
+// (the card body click and Open details). The panel's action buttons call the
+// same helpers as the card.
+window.openTriageDetail = function(recordOrId, taskID) {
+  const record = (recordOrId && typeof recordOrId === 'object')
+    ? recordOrId
+    : _triageFindRecord(String(recordOrId || ''), String(taskID || ''));
+  if (!record) return;
+  closeTriageDetail();
+  const el = document.createElement('div');
+  el.id = 'triageDetailDrawer';
+  el.className = 'automation-drawer';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', t('triage_detail_title'));
+  el.innerHTML = `<div class="automation-drawer-panel triage-detail-panel">
+    <div class="automation-drawer-head"><span class="automation-drawer-title">${escHtml(t('triage_detail_title'))}</span><button type="button" class="automation-drawer-close" onclick="closeTriageDetail()" aria-label="${escHtml(t('automation_drawer_close'))}" title="${escHtml(t('automation_drawer_close'))}">✕</button></div>
+    ${_triageDetailHtml(record)}
+  </div>`;
+  el.addEventListener('click', e => {
+    if (e.target === el) { closeTriageDetail(); return; }
+    const target = e.target;
+    if (!target || typeof target.closest !== 'function') return;
+    const btn = target.closest('[data-action]');
+    if (!btn) return;
+    _triageRunAction(btn.getAttribute('data-action'), btn.getAttribute('data-prd-id') || '', btn.getAttribute('data-task-id') || '', btn.getAttribute('data-status') || '');
+  });
+  document.body.appendChild(el);
+};
 // _triageBindClick arms the delegated handler once, on the first card drawn,
 // so nothing listens for clicks before there is a card to act on.
 function _triageBindClick() {

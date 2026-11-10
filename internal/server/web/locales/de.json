@@ -2806,6 +2806,7 @@
   "triage_detail_reason": "Grund",
   "triage_detail_history": "Verlauf",
   "triage_detail_empty_history": "Noch kein Verlauf aufgezeichnet.",
+  "triage_detail_automation": "Automation",
   "triage_question_held_why": "Warum es angehalten ist: %1$s",
   "triage_question_held_change": "Um diese Sperre zu ändern oder anzusehen, öffne die Einstellungen unter Automaten.",
   "triage_question_answer_in_place": "Direkt antworten",
