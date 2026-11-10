@@ -181,3 +181,13 @@ references resolve; whether the id is also a globally unique uid is a follow-up 
 Follow-up (open): ids today are short, readable ids (Automata look like four hex characters plus a counter). A short id
 is easy to say and type but can collide across installations or across the repositories of a product; a uid (a UUID) is
 unique everywhere but unreadable.
+
+Operator answer on the id question (2026-11-10): "A, but keep in mind people, humans, will refer to the title or name not
+the id so that should be also accessible and used so humans know what is what, this is actually something i was going to
+bring up, id means nothing to me" (option A: every record has a short id and a never-changing uid; plus a requirement:
+the title or name is the primary human handle, shown first everywhere, and usable to find and refer to a record; ids are
+secondary).
+Requirements that follow: every surface (web, messaging, CLI, MCP, REST, reports, the repository export, alerts, the
+supervisor's own reports) shows the title first and the id second or not at all; any command that takes an id also
+accepts an unambiguous title or title prefix; a title that matches more than one record asks which one; the export's
+file names and headings use titles. Open: whether titles must be unique within a project.
