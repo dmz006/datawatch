@@ -18,7 +18,8 @@ Settings nav button and replace it with a real connectivity alert".
 ## Current behavior
 
 The daemon now runs a peer silence watcher (`internal/observer/peer_silence.go`), started
-at daemon startup in `cmd/datawatch/main.go`. Every minute it checks each registered
+in `cmd/datawatch/main.go` only when the observer peer registry is created, which happens
+when `observer.peers.allow_register` is true. With registration off, no watcher runs. Every minute it checks each registered
 observer peer, skipping the daemon's own row. If a peer has not pushed stats for longer
 than `observer.peers.silent_alert_minutes`, the watcher raises one warning system alert,
 "Observer peer silent: <name>", through the existing alerts store. A peer that never
@@ -73,4 +74,5 @@ and default), `internal/server/api.go` (REST config read and write),
 `cmd/datawatch/main.go` (startup wiring and CLI help), `internal/server/web/app.js` and
 `internal/server/web/locales/{en,de,es,fr,ja}.json` (Settings field and labels),
 `internal/server/v5280_locales_test.go` (locale guard), plus the matching
-`peer_silence*_test.go` files in the observer, config, server, cmd, mcp and router packages.
+`peer_silence*_test.go` files in the observer, config, server, cmd and mcp packages, plus the router's
+`peer_silence_configure_test.go` (the chat configure surface).
