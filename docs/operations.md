@@ -4705,6 +4705,60 @@ session/PRD keeps its own completion state, and the push record is:
 
 ---
 
+## Unattended release push and tag (`autonomous.push_and_tag`)
+
+By default datawatch never touches a release: the work branch is pushed as
+usual and the branch, the version bump, the tag and the release are
+published by the one person who owns shipping. Turning on the three release
+settings is what changes that. See
+[`docs/howto/release-push-and-tag.md`](howto/release-push-and-tag.md).
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `autonomous.push_and_tag` | `false` | When `true`, after an Automaton finishes and ships, the daemon pushes the release commit to the default branch, pushes the release tag, and then watches the release CI for `git.release_ci_window_minutes`. When `false`, nothing release-related is ever pushed and the tag stays local. |
+| `autonomous.release_path` | `direct_push` | How the release is published when `push_and_tag` is on: `direct_push` (push the release commit, then the tag) or `pull_request` (not available yet — the release commit is kept local, nothing is pushed). |
+| `git.release_ci_window_minutes` | `60` (when unset) | How long the release CI is waited for after the release push. |
+
+### The secret-scan refusal rule
+
+The pre-push secret scan
+([`docs/howto/secret-scan-push-gate.md`](howto/secret-scan-push-gate.md))
+covers more than the work branch when `autonomous.push_and_tag` is on: it
+also runs over the release commit before that commit may be pushed to the
+default branch. With the scan in `enforce` mode, a finding that is not
+allow-listed **refuses the release push** (commit not published, tag still
+local) and records one audit entry whose **only** credential detail is the
+credential source label that the daemon used — a token or key itself never
+appears in that entry or anywhere else. The tag can be pushed on its own
+after the finding is cleared or allow-listed. When the scan is `off`, the
+distinct audit entry for that refusal is not written and the gate is
+skipped.
+
+### The audit entry
+
+Each unattended release push or tag — and each refusal — is an audit entry
+carrying: the event type, the project, the ref (branch or tag name), the
+short SHA of the commit, the credential source label, and the outcome
+(`pushed` / `refused` and the reason, such as a finding count). The entry
+contains no token, key or other credential value.
+
+### Changing the settings
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` block — `push_and_tag: true`, `release_path: direct_push \| pull_request`; `git:` block — `release_ci_window_minutes: 60` |
+| **CLI** | `datawatch config set autonomous.push_and_tag true`, `datawatch config set autonomous.release_path direct_push`, `datawatch config set git.release_ci_window_minutes 30`; read with `datawatch release status --project <name>` |
+| **Web UI** | Settings → *Release* group on the daemon (push & toggle switch, path radio, CI-window minutes, last-status line) |
+| **REST API** | `PUT /api/config` with `{"autonomous.push_and_tag": true}`; read the project view via `GET /api/projects/<name>/release-status` |
+| **Comm channel** | `configure autonomous.push_and_tag=true` |
+| **MCP** | `config_set` with key `autonomous.push_and_tag` / `autonomous.release_path` / `git.release_ci_window_minutes`; read with the `release_push_status` tool |
+
+`autonomous.push_and_tag` and `autonomous.release_path` are read live on
+ship (a runtime change applies to the next release, no restart); a value
+other than the allowed ones is refused by the daemon.
+
+---
+
 ## Session git opt-in (`git` true/false at start, `session.git_default`)
 
 Every session start can opt the session in or out of git activity in
