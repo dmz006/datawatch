@@ -6230,6 +6230,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// granted, run time from the grant to the verifier result.
 			vRequestedAt := time.Now()
 			var vGrantedAt time.Time
+			// vRunCapEnded is set by the onCap hook below when the run cap
+			// ended a verifier session, so the record counts it as run_cap.
+			var vRunCapEnded bool
 			defer func() {
 				end := time.Now()
 				var wait, run time.Duration
@@ -6243,10 +6246,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					summary += " " + verr.Error()
 				}
 				ok := verr == nil && vres.OK
-				cat := autonomouspkg.VerifierCategoryFor(ok, vres.Category, summary, verifierEscalated)
-				if verr != nil && cat == autonomouspkg.VerifierCatContent {
-					cat = autonomouspkg.VerifierCatInfra
-				}
+				cat := verifierStatsCategory(ok, vres.Category, summary, verifierEscalated, verr, vRunCapEnded)
 				autonomouspkg.DefaultVerifierStats.Record(wait, run, cat)
 				metricsPkg.VerifierRuns.WithLabelValues(cat).Inc()
 				metricsPkg.VerifierWaitSeconds.Add(wait.Seconds())
@@ -6418,6 +6418,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// Before the retry decision: free the verifier's lease and
 					// record the run-cap decision.
 					func(capEnd *autonomouspkg.OneShotNoOutputError) {
+						if capEnd != nil && capEnd.RunCap {
+							vRunCapEnded = true
+						}
 						verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)
 					})
 				if serr != nil {
