@@ -2974,8 +2974,6 @@ function navigate(view, sessionId, fromPopstate) {
     if (window._sessionStatsInterval) { clearInterval(window._sessionStatsInterval); window._sessionStatsInterval = null; }
     // Clean up pi progress polling interval (PWA poll-stacking rule)
     if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
-    // Repo CI watch status-line poll (Automaton view, same rule)
-    if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
     // Supervisor watch card poll (Automaton view, same rule)
     if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
     // Supervisor loop card poll (Automaton view, same rule)
@@ -34452,90 +34450,6 @@ window.scrollToPRD = function(id) {
   showToast('Automaton ' + id + ' not in current filter', 'info', 2500);
 };
 
-// ── Repo CI watch — the read-only status line (the Automaton view)
-// The line shows the shared repo CI watch state the coordinator records
-// (every run's watched state; one alert per non-green run once it is
-// past the threshold): the mode in effect, how many watched runs are
-// failing / pending right now, and when it last polled.
-//
-// It is read-only: every read goes through GET /api/autonomous/repo-ci-
-// watch, and when that endpoint is unavailable (autonomous disabled,
-// a peer without the capability) the line stays hidden instead of
-// showing a stale state.
-//
-// PWA poll-stacking rule: the interval lives on
-// window._repoCIWatchInterval and is cleared both before it is
-// (re)set (each renderAutonomousView) and when leaving the view, so
-// re-renders and tab switches never stack a second timer.
-const REPO_CI_WATCH_STATUS_ELEMENT_ID = 'repoCIWatchStatusLine';
-const REPO_CI_WATCH_POLL_MS = 30000; // the same cadence as the Automata list loader (pollMs: 30000)
-
-function repoCIWatchAgeText(lastPollAt, nowMs) {
-  if (!lastPollAt || String(lastPollAt).slice(0, 4) === '0001' || Number.isNaN(Date.parse(lastPollAt))) {
-    return t('repo_ci_watch_last_poll_never');
-  }
-  const now = nowMs ? nowMs : Date.now();
-  const secs = Math.floor(Math.max(0, now - Date.parse(lastPollAt)) / 1000);
-  if (secs < 5) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_just_now')]);
-  if (secs < 60) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_seconds', [secs])]);
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_minutes', [mins])]);
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_hours', [hrs])]);
-  return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_days', [Math.floor(hrs / 24)])]);
-}
-
-// repoCIWatchStatusText renders the whole line for one read view
-// ({ mode, alert_minutes, repos, last_poll_at, records }) — pure so the
-// PWA test can pin its text for each mode/count. nowMs is injectable
-// for the same reason.
-function repoCIWatchStatusText(view, nowMs) {
-  if (!view || typeof view !== 'object') return null;
-  const mode = String(view.mode || 'off');
-  let modeText = t('repo_ci_watch_mode_' + mode);
-  if (modeText.indexOf('repo_ci_watch_mode_') === 0) modeText = mode; // unknown mode: raw value
-  const recs = Array.isArray(view.records) ? view.records : [];
-  const failing = recs.filter(r => r && r.status === 'failing').length;
-  const pending = recs.filter(r => r && r.status === 'pending').length;
-  const parts = [t('repo_ci_watch_prefix') + ': ' + modeText];
-  const counts = [];
-  if (failing) counts.push(t('repo_ci_watch_failing', [failing]));
-  if (pending) counts.push(t('repo_ci_watch_pending', [pending]));
-  parts.push(counts.length ? counts.join(', ') : t('repo_ci_watch_none_open'));
-  parts.push(repoCIWatchAgeText(view.last_poll_at, nowMs));
-  return parts.join(', ');
-}
-
-function repoCIWatchRenderLine(view, nowMs) {
-  const el = document.getElementById(REPO_CI_WATCH_STATUS_ELEMENT_ID);
-  if (!el) return;
-  const text = repoCIWatchStatusText(view, nowMs);
-  if (!text) { // endpoint missing — hide the line, never show a stale state
-    el.style.display = 'none';
-    el.textContent = '';
-    return;
-  }
-  el.textContent = text;
-  el.title = t('repo_ci_watch_status_title');
-  el.style.display = '';
-}
-
-function repoCIWatchRefreshStatusLine(nowMs) {
-  return apiFetch('/api/autonomous/repo-ci-watch')
-    .then(view => repoCIWatchRenderLine(view, nowMs))
-    .catch(() => repoCIWatchRenderLine(null, nowMs));
-}
-
-function repoCIWatchStartPolling() {
-  if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
-  repoCIWatchRefreshStatusLine();
-  window._repoCIWatchInterval = setInterval(repoCIWatchRefreshStatusLine, REPO_CI_WATCH_POLL_MS);
-}
-
-function repoCIWatchStopPolling() {
-  if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
-}
-
 function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
@@ -34556,10 +34470,6 @@ function renderAutonomousView() {
   view.innerHTML = `
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     <div class="view-content" style="position:relative;">
-      <!-- Repo CI watch — the read-only status line (mode, failing/
-           pending counts, last poll). Hidden until the endpoint answers;
-           stays hidden when it doesn't. -->
-      <div id="repoCIWatchStatusLine" role="status" style="font-size:12px;color:var(--text2);padding:0 0 8px;display:none;"></div>
       <!-- v6.12.4 — operator: "automata tab, automata and templates
            should be like tab headers, like tmux,channel,state are
            inside a session. not buttons". Reuse the output-tabs /
@@ -34611,10 +34521,6 @@ function renderAutonomousView() {
     if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
   }
   _automataReuseList = false;
-  // Repo CI watch status line — the immediate refresh plus a refresh on
-  // the Automaton view's own cadence; startPolling clears any existing
-  // window timer first so re-renders never stack (PWA poll-stacking rule).
-  repoCIWatchStartPolling();
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
