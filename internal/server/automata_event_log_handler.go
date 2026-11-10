@@ -423,3 +423,12 @@ func (s *Server) handleAutomataEventLog(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSONOK(w, automataEventLogPage(merged, q))
 }
+
+// AutomataEventLogHandler serves the event log route as a standalone handler,
+// so other packages (the MCP proxy tests) can drive the real handler without
+// the full daemon, like ChecksShipHandler.
+func (s *Server) AutomataEventLogHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/autonomous/event-log", s.handleAutomataEventLog)
+	return mux
+}
