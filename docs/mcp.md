@@ -274,6 +274,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
+| Automata events (the Events tab) | (no MCP tools — REST `GET /api/autonomous/event-log`, CLI `datawatch autonomous event-log`, comm `autonomous event-log`) |
 
 Compute node tools:
 
@@ -296,6 +297,20 @@ Autonomous PRD reads and writes:
   - `full` returns everything, including task specs and logs, and the `foreign_file_drift` field on tasks.
 - **`autonomous_prd_plan_coverage_get`** — read one Automaton's stored plan-requirements coverage report (the plan-coverage gate record): the report for that exact decomposed plan — matched and unmatched numbered requirements, any structural findings, and the overall verdict — plus the operator's acknowledgement, and the counts of findings the plan-coverage filters suppressed from the report (`suppressed.created_files`, `suppressed.requirements`). Read-only: it changes nothing and runs no gate, judge or scan. Takes `id` (required).
 - **Behaviour change for PRD write tools.** `autonomous_prd_reset_task`, `autonomous_prd_run`, `autonomous_prd_approve`, `autonomous_prd_cancel`, and the set, add and edit tools no longer return the whole Automaton. Each write reply is now a small object with the Automaton's `id`, its `status` and `rev`, the id and status of the task or story that changed, and a `message`. To read the full Automaton after a write, call `autonomous_prd_get` with `detail` set to `full`.
+
+Autonomous events (the Events tab of the Automata view) — no MCP tools:
+
+- **Events stream** — the one newest-first stream of what the daemon watches and does for you (supervisor watch, lane fill decisions, infrastructure retries, Automata checks, cleanup, the repo CI watch and the recorded errors). The kinds are `watch`, `decision`, `retry`, `check`, `cleanup`, `alert` and `error`. It has no MCP tools and is read-only over REST, the CLI and the comm channel:
+
+  | Parameter | Meaning |
+  |---|---|
+  | `kind` | Optional comma list of event kinds: `watch`, `decision`, `retry`, `check`, `cleanup`, `alert`, `error`; an unknown kind is a 400 |
+  | `project` | Optional exact project match |
+  | `q` | Optional case-insensitive text over the summary, detail, project, Automaton and Automation names |
+  | `limit` | Page size, 1–200, default 50; anything else is a 400 |
+  | `before` | Optional opaque cursor — the `next_cursor` from a previous page's body; returns older events; a bad cursor is a 400 |
+
+  The body is `{"events": [...], "next_cursor": "...", "total": n}`; `next_cursor` is empty on the last page, and `total` counts every event that matches the filters across all pages. Example: `GET /api/autonomous/event-log?kind=watch,retry&limit=10` — the ten newest `watch` and `retry` rows. CLI: `datawatch autonomous event-log --kind watch --kind retry --limit 10`; comm: `autonomous event-log kind=watch,retry limit=10` (its limit is 1–10, default 10). What a row means, what an error entry and a quiet entry are, and the next action for a common error: [howto/automata-events.md](howto/automata-events.md).
 
 Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 

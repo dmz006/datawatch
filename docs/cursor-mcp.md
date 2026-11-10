@@ -222,6 +222,20 @@ Selected core tools:
 | `plugin_service_restart` | Restart the plugin's managed service: the stop call and then the start call, in order; takes `name`; write; attach-only plugins are refused with a clear error and the start is never attempted |
 | `plugin_token_rotate` | Rotate one secret the plugin's manifest references: stores the new value and, when the name is a service token, revokes + re-mints it; takes `name`, `secret`, `new_value`; write; the new value is sent to the server and never returned (response carries only status, plugin and secret names); a secret the plugin doesn't reference is refused |
 
+### Automata events (the Events tab) — no MCP tools
+
+The one newest-first stream of what the daemon watches and does for you (the kinds `watch`, `decision`, `retry`, `check`, `cleanup`, `alert` and `error`) has no MCP tools. It is read-only over REST, the CLI and the comm channel:
+
+| Parameter | Meaning |
+|---|---|
+| `kind` | Optional comma list of event kinds: `watch`, `decision`, `retry`, `check`, `cleanup`, `alert`, `error`; an unknown kind is a 400 |
+| `project` | Optional exact project match |
+| `q` | Optional case-insensitive text over the summary, detail, project, Automaton and Automation names |
+| `limit` | Page size, 1–200, default 50; anything else is a 400 |
+| `before` | Optional opaque cursor — the `next_cursor` from a previous page's body; returns older events; a bad cursor is a 400 |
+
+The body of `GET /api/autonomous/event-log` is `{"events": [...], "next_cursor": "...", "total": n}`; `next_cursor` is empty on the last page, and `total` counts every event that matches the filters. Example: `GET /api/autonomous/event-log?kind=watch,retry&limit=10` — the ten newest `watch` and `retry` rows. The CLI equivalent is `datawatch autonomous event-log --kind watch --kind retry --limit 10`, and the comm verb is `autonomous event-log kind=watch,retry limit=10` (its limit is 1–10, default 10). What a row means, what an error entry and a quiet entry are, and the next action for a common error: [howto/automata-events.md](howto/automata-events.md).
+
 ## Example Usage in Cursor
 
 Once configured, you can ask Claude in Cursor:
