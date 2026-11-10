@@ -80,6 +80,14 @@ type Coordinator struct {
 	// the Coordinator's own last-poll instant: the pass only runs when
 	// poll_seconds (repo_ci_watch.poll_seconds) has elapsed since it.
 	repoCIWatchLastPoll time.Time
+	// repoCIWatchLastSuccess is the instant of the last poll pass that
+	// polled every configured repository to completion; repoCIWatchArmedAt
+	// is when the watch was first seen active (the overdue baseline before
+	// any success); repoCIWatchOverdueAlerted is the once-per-episode stamp
+	// of the overdue alert (see repo_ci_watch_poll_overdue.go).
+	repoCIWatchLastSuccess    time.Time
+	repoCIWatchArmedAt        time.Time
+	repoCIWatchOverdueAlerted bool
 
 	// Lane fill (see lane_fill_coordinator.go). laneFillTick, when positive,
 	// replaces the poll_seconds interval of the lane fill loop (tests).

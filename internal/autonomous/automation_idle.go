@@ -56,10 +56,11 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration, done ch
 		c.triagePass()
 		c.heldQuestionPass() // held questions: one generic held decision per held Automaton (held_question_pass.go)
 		c.questionPass(ctx)
-		c.repoCIWatchPass()       // repo CI watch (repo_ci_watch_poll.go)
-		c.securityFailurePass()   // security failure pass over the watch's records (security_failure_pass.go)
-		c.supervisorWatchPass()   // supervisor watch: host / work / worktree checks (supervisor_watch_pass.go)
-		c.supervisorLoopPass(ctx) // supervisor loop: one pass over the mechanical steps (supervisor_loop_steps.go)
+		c.repoCIWatchPass()         // repo CI watch (repo_ci_watch_poll.go)
+		c.repoCIWatchOverdueCheck() // repo CI watch overdue alert (repo_ci_watch_poll_overdue.go)
+		c.securityFailurePass()     // security failure pass over the watch's records (security_failure_pass.go)
+		c.supervisorWatchPass()     // supervisor watch: host / work / worktree checks (supervisor_watch_pass.go)
+		c.supervisorLoopPass(ctx)   // supervisor loop: one pass over the mechanical steps (supervisor_loop_steps.go)
 	}
 }
 
