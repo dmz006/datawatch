@@ -213,6 +213,11 @@ datawatch observer peer-remove lab-east-peer
     skipped. For a longer outage the daemon raises one system alert
     (see "Silent-peer alert" below).
 
+> **Operator review.** Confirm the default `silent_alert_minutes: 5`
+> suits your lab, and recapture any Settings-nav screenshots that still
+> show the old peer-stale badge. Story TS-848 checks at 390 px that
+> nothing covers the Settings nav label.
+
 ### Silent-peer alert
 
 The daemon watches every registered observer peer (never its own row).
