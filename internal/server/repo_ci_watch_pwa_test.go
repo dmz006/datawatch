@@ -1,28 +1,23 @@
-// PWA wiring for the repo CI watch status line in the Automaton view.
-// The line is read-only: it polls GET /api/autonomous/repo-ci-watch and
-// renders the mode in effect, the failing/pending count of the watched
-// runs, and how long ago the watch last polled — all through localized
-// key. When the endpoint is missing the line hides instead of showing a
-// stale state, so this pins down the wiring end to end on the client
-// side: every repo_ci_watch_* key used by this line must be present in
-// every locale bundle with a non-empty value free of the PRD word, app.js
-// must be the one reading the read-only endpoint (and keeping its poll
-// interval on window so it can never stack), and the eight repo_ci_watch
-// settings must be present in GENERAL_CONFIG_FIELDS.
+// PWA wiring for the repo CI watch in the Automaton view.
+// The always-visible repo CI status line under the Automata sub-tab bar
+// has been removed. The server endpoint GET /api/autonomous/repo-ci-watch
+// and the eight repo_ci_watch settings are kept. This pins down the removal
+// on the client side: app.js must no longer poll the endpoint, hold a poll
+// interval, or render the status line; the locale keys stay in every bundle
+// (they are not deleted in this change); and the eight settings must remain
+// in GENERAL_CONFIG_FIELDS.
 
 package server
 
 import (
 	"io/fs"
-	"regexp"
 	"strings"
 	"testing"
 )
 
-// repoCIWatchLocaleKeys are the repo_ci_watch_* keys the status line
-// passes to t() in app.js (the repo_ci_watch settings card labels use
-// the parallel settings_repo_ci_watch_* family next to them in the same
-// bundle).
+// repoCIWatchLocaleKeys are the repo_ci_watch_* keys the removed status
+// line used. They stay in the locale bundles for now; this test only checks
+// that app.js no longer references them.
 var repoCIWatchLocaleKeys = []string{
 	"repo_ci_watch_status_title",
 	"repo_ci_watch_prefix",
@@ -54,70 +49,51 @@ var repoCIWatchConfigKeys = []string{
 	"autonomous.automation.repo_ci_watch.delete_superseded",
 }
 
-var repoCIWatchPRDWord = regexp.MustCompile(`\bPRDs?\b`)
-
-func TestRepoCIWatchPWA(t *testing.T) {
+func TestRepoCIWatchPWAStatusLineRemoved(t *testing.T) {
 	src, err := fs.ReadFile(webFS, "web/app.js")
 	if err != nil {
 		t.Fatalf("app.js missing from embed: %v", err)
 	}
 	appJS := string(src)
 
-	// The line reads the read-only endpoint and holds its poll
-	// interval on window (the PWA poll-stacking rule): re-render and
-	// view-change must clear before setting it.
-	for _, want := range []string{
+	// The status line must not poll the read-only endpoint or hold a poll
+	// interval, and its helpers and markup id must be gone.
+	for _, gone := range []string{
 		"'/api/autonomous/repo-ci-watch'",
 		"window._repoCIWatchInterval",
-		"clearInterval(window._repoCIWatchInterval)",
 		"repoCIWatchStartPolling",
+		"repoCIWatchStopPolling",
+		"repoCIWatchRefreshStatusLine",
+		"repoCIWatchRenderLine",
+		"repoCIWatchStatusLine",
 	} {
-		if !strings.Contains(appJS, want) {
-			t.Errorf("app.js does not contain %q", want)
+		if strings.Contains(appJS, gone) {
+			t.Errorf("app.js still contains removed repo CI status line wiring %q", gone)
 		}
 	}
 
-	// Every key the line t()s must be wired in app.js itself (literal
-	// key in a t() call; the mode keys are built as the
-	// repo_ci_watch_mode_ + off/shadow/on prefix the same way the other
-	// dynamic status families are) and present in every bundle with a
-	// non-empty value free of the PRD word.
+	// No t() call may still pass a status-line key (or the mode-prefix
+	// family the line built dynamically).
 	for _, key := range repoCIWatchLocaleKeys {
-		var want string
-		if strings.HasPrefix(key, "repo_ci_watch_mode_") {
-			want = "'repo_ci_watch_mode_'"
-		} else {
-			want = "'" + key + "'"
-		}
-		if !strings.Contains(appJS, want) {
-			t.Errorf("app.js does not use locale key %q (looking for %q)", key, want)
+		for _, form := range []string{"'" + key + "'", "'repo_ci_watch_mode_'"} {
+			if strings.Contains(appJS, form) {
+				t.Errorf("app.js still references removed status line locale key %s", form)
+			}
 		}
 	}
+
+	// Locale keys are kept in every bundle in this change. Keys are not
+	// deleted here, so they must still be present (non-empty).
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
 		for _, key := range repoCIWatchLocaleKeys {
-			value, ok := bundle[key]
-			if !ok {
-				t.Errorf("locale %s: missing repo_ci_watch key %q", lang, key)
-				continue
+			if strings.TrimSpace(bundle[key]) == "" {
+				t.Errorf("locale %s: key %q missing or empty (keys are not deleted in this change)", lang, key)
 			}
-			if strings.TrimSpace(value) == "" {
-				t.Errorf("locale %s: key %q has an empty value", lang, key)
-			}
-			if repoCIWatchPRDWord.MatchString(value) {
-				t.Errorf("locale %s: key %q value uses PRD: %q", lang, key, value)
-			}
-		}
-		title, ok := bundle["repo_ci_watch_status_title"]
-		if !ok || strings.TrimSpace(title) == "" {
-			t.Errorf("locale %s: status line title key repo_ci_watch_status_title missing or empty", lang)
 		}
 	}
 
-	// The eight repo_ci_watch settings keys must be wired into
-	// GENERAL_CONFIG_FIELDS in app.js — all of them, each one, so the
-	// PWA's settings card can bind them (autonomous section, alongside
-	// the other autonomous.automation.* entries).
+	// The eight settings keys must still be wired into GENERAL_CONFIG_FIELDS.
 	for _, key := range repoCIWatchConfigKeys {
 		if !strings.Contains(appJS, key) {
 			t.Errorf("app.js (GENERAL_CONFIG_FIELDS) does not contain repo_ci_watch config key %q", key)
