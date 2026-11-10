@@ -215,3 +215,20 @@ specific to the operator's installation. It works from each installation's own c
 addresses, node and peer names, user and organization names, repository names and configured identities, plus generic
 patterns for secrets, tracker ids and version literals. Another user with different names and addresses gets the same
 protection without editing the filter. This is the same approach as the supervisor pack leak check.
+
+## Work through the UI, not the model (operator, 2026-11-10)
+
+Operator: "You want to be able to use the UI especially on projects on? Products and all the different places where
+questions might be faced to go to do all the work through within the UI and have the ability to Easily work with these
+things and see the answers and not have to drop down to the model level if you can do that I'll try to process those
+questions myself. And if I can through that then I will Otherwise, I'll come back and ask for more help" (read as: he
+wants to do the work, including answering questions, in the datawatch UI, on projects, products and everywhere a question
+can arise, see the answers there, and not have to go down to the model; he will answer in the UI and come back for help
+only if he cannot).
+Requirements that follow: a question raised about a project, product, Automation, Automaton or task appears on that
+object's own page as well as in the Inbox, with its options, trade-offs and recommendation; the answer and its history
+are visible on the same page; an answered question shows who answered, when and in what words; a question that cannot be
+answered in the UI (missing context, a choice that needs a free-text value) says so and says what is needed. The same
+holds for every object kind added by the migration, including products.
+Practice from now on: the supervisor raises design questions in the questions interface, with a forced default and a
+recommendation, and reads the answers back from there. Plain-text answers in chat are still accepted.
