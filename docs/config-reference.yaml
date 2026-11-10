@@ -3242,6 +3242,7 @@ autonomous:
   # 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
   verifier_no_progress_timeout_seconds: 900   # a verifier session with no output file, no pane activity, no live runner process and no held capacity slot for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 900
+  verifier_max_run_seconds: 2700              # hard total wall-clock cap, in seconds, on one verifier session, so a verifier that keeps producing output cannot hold a verifier slot for hours; an explicit 0 keeps the cap off and is preserved (no omitempty), a negative value is refused when the daemon loads the config; CURRENTLY INERT — loaded and validated but no runtime code reads it yet: the enforcing run loop is pending, so the live bound on a run is the no-progress watchdog plus autonomous.verification_timeout_seconds
   session_start_confirm_seconds: 120
   # Orphan sweep grace period, in seconds. A live task worker session
   # (name "autonomous:<title>", with a PRD/task link) that is not the current
