@@ -150,6 +150,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"nav_autonomous",
 		"nav_alerts",
 		"nav_settings",
+		"nav_projects",
 		"settings_scope_lint",
 		"settings_rules_context_title",
 		"settings_rules_context_hint",

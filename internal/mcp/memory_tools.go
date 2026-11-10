@@ -962,6 +962,7 @@ func (s *Server) handleMemoryImport(ctx context.Context, req mcpsdk.CallToolRequ
 func (s *Server) toolConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("config_set",
 		mcpsdk.WithDescription("Set a configuration value. Key format: section.field (e.g. 'detection.prompt_debounce'); the supervisor loop block is set with supervisor_loop.<key> (enabled, the step switches, the model jobs' style/backend/model, validator retries, escalation, run retention, archive_cancelled_after_minutes = whole minutes before a cancelled Automaton is archived, 0 = at once). "+
+			"Project defaults keys: projects_defaults.branch_retention_days (whole days a project's branches are kept when it sets none; 0 = unset), projects_defaults.weekly_share_percent (0-100; 0 = unset), projects_defaults.major_trigger (manual|milestone|never; default manual). "+
 			"Automata tag browser keys: autonomous.tags.default_view (auto|attention|tags), autonomous.tags.attention_statuses (comma list of Automaton statuses), "+
 			"autonomous.tags.default_match_mode (any|all), autonomous.tags.direct_counts_visible (true|false), autonomous.tags.registry_keeper (federation peer name; empty = this daemon), "+
 			"autonomous.tags.registry_sync_seconds (whole seconds >= 5), "+

@@ -3012,6 +3012,9 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailPRD = null;
       _automationState.detailId = null;
       renderAutonomousView();
+    } else if (view === 'projects') {
+      headerTitle.textContent = t('nav_projects') || 'Projects';
+      renderProjectsView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -3045,6 +3048,676 @@ function navigate(view, sessionId, fromPopstate) {
       renderSettingsView();
     }
   }
+}
+
+// ── Projects view ────────────────────────────────────────────────────────────
+// Top-level Projects tab. The picker's first entry, Overview, is the
+// cross-project in-flight view (the Automata list). Each other entry is a
+// project from GET /api/projects. The last choice is remembered in
+// localStorage, and mirrored in the URL hash (#projects or #projects/<name>)
+// so a link reopens the same choice. Storage and history can be blocked
+// (private windows), so each touch is wrapped and the view still renders.
+const _PROJECTS_LAST_KEY = 'cs_projects_last';
+const _PROJECTS_OVERVIEW = '';
+// rollup is the roll-up of the project named by rollupFor; rollupError is its
+// load failure. The page paints the roll-up only for the selected project.
+// hist is the paged history of the project named by hist.name: items so far,
+// next is the cursor for the following page ('' when none), error is its load
+// failure. histBusy guards a Load more click against a second request.
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false };
+const _PROJECTS_HISTORY_PAGE = 20;
+// _projectsLinks holds the read-only replies for the selected project (name):
+// its effective policy, its merge pipeline and its event stream. A reply for a
+// project no longer selected is dropped. Nothing on these sections edits.
+let _projectsLinks = { name: '', policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
+// The pending-events queue the page reads; ?project= keeps one project's events.
+const _PROJECTS_EVENTS_QUEUE = 'pwa';
+const _PROJECTS_EVENTS_LIMIT = 20;
+
+function _projectsRememberLast(name) {
+  try { localStorage.setItem(_PROJECTS_LAST_KEY, name || ''); } catch (_) { /* not remembered */ }
+}
+function _projectsRecallLast() {
+  try { return localStorage.getItem(_PROJECTS_LAST_KEY) || ''; } catch (_) { return ''; }
+}
+// _projectsHashParse returns the project named by a #projects hash ('' for
+// Overview), or null when the hash is not a projects route.
+function _projectsHashParse(hash) {
+  const m = /^#projects(?:\/(.+))?$/.exec(String(hash || ''));
+  if (!m) return null;
+  try { return m[1] ? decodeURIComponent(m[1]) : _PROJECTS_OVERVIEW; } catch (_) { return null; }
+}
+function _projectsHashBuild(name) {
+  return name ? '#projects/' + encodeURIComponent(name) : '#projects';
+}
+function _projectsCurrentHash() {
+  return typeof location !== 'undefined' ? location.hash : '';
+}
+
+// Picker and body share one render. Loading: the Overview body shows at once.
+// Load failure: Overview with the error. No projects: a message pointing at
+// Settings, with no picker.
+function _projectsPaint() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const err = _projectsState.error;
+  if (list && list.length === 0 && !err) {
+    view.innerHTML = `<div id="projectsView" style="padding:16px;">
+      <div id="projectsNone" style="color:var(--text2);font-size:14px;line-height:1.5;">${escHtml(t('projects_none') || 'No projects yet.')}
+        <button class="btn-secondary" style="margin-left:8px;" onclick="navigate('settings')">${escHtml(t('projects_none_settings_action') || 'Open Settings')}</button>
+      </div></div>`;
+    return;
+  }
+  const sel = _projectsState.selected;
+  const known = sel === _PROJECTS_OVERVIEW || (list && list.some(p => p.name === sel));
+  const selected = known ? sel : _PROJECTS_OVERVIEW;
+  if (selected === _PROJECTS_OVERVIEW) {
+    // Overview is the cross-project in-flight view; it draws the whole
+    // #view, so the picker goes back on top of it afterwards.
+    renderAutonomousView();
+    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
+  } else {
+    const p = list.find(x => x.name === selected);
+    const forSel = _projectsState.rollupFor === selected;
+    const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
+  }
+}
+
+function _projectsPickerHTML(list, selected, err) {
+  const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
+    .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
+  const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
+  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+      <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
+      <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+    </div>`;
+}
+
+// The project page: the header fields, the ordered arcs with the Automata and
+// sessions under each, the unassigned Automata, and an Events list. A section
+// that is off or empty is left out, and what it would have said becomes an
+// Events entry. Rows link to the existing Automaton view (_statusOpenAutomaton)
+// and session view. The closing div closes the #projectsView wrapper that
+// _projectsPickerHTML leaves open. roll is this project's roll-up (null while
+// it loads); rollErr is the roll-up's load failure, if any.
+function _projectPageHTML(p, roll, rollErr, hist) {
+  if (!p) return '</div>';
+  const events = [];
+  const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
+  const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
+  const field = (key, val) => (val === undefined || val === null || val === '') ? unset(key) : row(key, val);
+  const pts = n => (Number(n) > 0 ? ` · ${Math.round(Number(n) * 10) / 10} ${escHtml(t('projects_page_points'))}` : '');
+
+  const tgt = p.target || {};
+  const ld = p.lane_defaults || {};
+  const laneVal = [ld.lane, ld.backend, ld.model].filter(Boolean).join(' · ');
+  const share = (p.weekly_share === undefined || p.weekly_share === null) ? '' : p.weekly_share + '%';
+  const head = [
+    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : unset('projects_field_description'),
+    field('projects_field_dir', p.dir),
+    field('projects_field_backend', p.default_backend),
+    field('projects_page_owner', p.owner),
+    field('projects_page_repository', p.repository),
+    field('projects_page_default_branch', p.default_branch),
+    field('projects_page_target', tgt.name),
+    field('projects_page_done_when', tgt.definition_of_done),
+    field('projects_page_lane_defaults', laneVal),
+    field('projects_page_weekly_share', share),
+  ].join('');
+
+  const sessionLink = id => `<a href="#" class="project-session-link" data-session="${escHtml(id)}" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(id)});return false;`)}" style="font-family:monospace;font-size:12px;margin-right:10px;">#${escHtml(String(id).split('-').pop())}</a>`;
+  const automatonHTML = a => {
+    const title = a.title || a.id;
+    const sessions = Array.isArray(a.session_ids) ? a.session_ids.filter(Boolean) : [];
+    if (!sessions.length) events.push(t('projects_event_automaton_no_sessions', [title]));
+    const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
+    return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
+      <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
+      <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${links}</div>`;
+  };
+  const automataList = list => list.map(automatonHTML).join('');
+  const arcHTML = arc => {
+    const state = arc.state || 'planned';
+    const stateKey = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[state];
+    const stateLabel = stateKey ? t(stateKey) : state;
+    const automata = Array.isArray(arc.automata) ? arc.automata : [];
+    const tasks = arc.tasks || {};
+    const summary = `<summary style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:4px 0;">
+      <span style="color:var(--text2);font-size:12px;">${escHtml(t('projects_page_priority'))} ${escHtml(arc.priority || 0)}</span>
+      <strong style="font-size:14px;">${escHtml(arc.automation_id)}</strong>
+      <span style="font-size:12px;">${escHtml(stateLabel)}</span>
+      <span style="flex:1 1 160px;min-width:140px;">${_projectBarHTML(tasks.done, tasks.total, arc.automation_id)}</span>
+      <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
+    </summary>`;
+    const docs = _projectArcDocsHTML(p, arc);
+    if (!automata.length) {
+      events.push(t('projects_event_arc_empty', [arc.automation_id]));
+      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
+    }
+    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
+  };
+
+  let body = '';
+  if (rollErr) {
+    events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+  } else if (!roll) {
+    body = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+  } else {
+    const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
+    body += _projectRollupHTML(roll, arcs);
+    if (!arcs.length) events.push(t('projects_event_no_arcs'));
+    else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+    const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
+    if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
+    else events.push(t('projects_event_no_unassigned'));
+  }
+  body += _projectGanttHTML(hist);
+  body += _projectHistoryHTML(hist);
+  body += _projectLinksHTML(p);
+
+  const evs = events.length
+    ? `<div id="projectEvents" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
+    : '';
+  return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
+    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${head}${body}${evs}</div></div>`;
+}
+
+// ── Project roll-up section: progress bars, cost in points, throughput ──────
+// ── Project links: read-only policy, merge pipeline, arc documents, events ──
+// These sections only show what the daemon holds. The policy and the merge
+// pipeline link to their Settings entries; nothing here has an edit control.
+
+// _projectsLoadLinks reads the three read-only replies for the selected project:
+// GET /api/projects/{name}/policy/effective, GET /api/autonomous/merge-pipeline
+// for the project, and GET /api/autonomous/events filtered by ?project=. Each
+// read is independent, so one failure does not hide the others.
+function _projectsLoadLinks() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  _projectsLinks = { name, policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
+  const enc = encodeURIComponent(name);
+  const msg = err => (err && err.message) || String(err);
+  const obj = r => (r && typeof r === 'object' && !Array.isArray(r) ? r : {});
+  const current = () => _projectsLinks.name === name;
+  const policy = apiFetch('/api/projects/' + enc + '/policy/effective').then(r => {
+    if (current()) _projectsLinks.policy = obj(r);
+  }).catch(err => { if (current()) _projectsLinks.policyError = msg(err); });
+  const merge = apiFetch('/api/autonomous/merge-pipeline?project=' + enc).then(r => {
+    if (current()) _projectsLinks.merge = obj(r);
+  }).catch(err => { if (current()) _projectsLinks.mergeError = msg(err); });
+  const evq = '?queue=' + encodeURIComponent(_PROJECTS_EVENTS_QUEUE) + '&project=' + enc + '&limit=' + _PROJECTS_EVENTS_LIMIT;
+  const evs = apiFetch('/api/autonomous/events' + evq).then(r => {
+    if (current()) _projectsLinks.events = obj(r);
+  }).catch(err => { if (current()) _projectsLinks.eventsError = msg(err); });
+  return Promise.all([policy, merge, evs]);
+}
+
+// _projectsSafeLink returns the value when it is an http or https link, else ''.
+// Anything else from a record is shown as text, never as a link.
+function _projectsSafeLink(v) {
+  const s = String(v || '').trim();
+  return /^https?:\/\//i.test(s) ? s : '';
+}
+
+// _projectsOpenSettings opens Settings and scrolls to a section that has an
+// element id (settings-sec-<key>). An empty key just opens Settings.
+function _projectsOpenSettings(sectionKey) {
+  try { navigate('settings'); } catch (_) { return; }
+  if (!sectionKey) return;
+  setTimeout(() => {
+    const el = document.getElementById('settings-sec-' + sectionKey);
+    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth' });
+  }, 200);
+}
+
+function _projectsSettingsLinkHTML(sectionKey, label) {
+  return `<a href="#" class="project-settings-link" onclick="${escHtml(`_projectsOpenSettings(${JSON.stringify(sectionKey)});return false;`)}" style="font-size:12px;">${escHtml(label)} ↗</a>`;
+}
+
+// _projectPolicyEffectiveHTML lists each policy value the project resolves to
+// and where it came from (the source), with a link to the Settings policy card.
+function _projectPolicyEffectiveHTML(pl, err) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_policy_heading'))}</div>`;
+  const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}</div>`;
+  let inner;
+  if (err) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
+  } else if (!pl) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
+  } else {
+    const pol = pl.policy && typeof pl.policy === 'object' ? pl.policy : {};
+    const keys = Object.keys(pol);
+    inner = keys.length ? keys.map(k => {
+      const e = pol[k] || {};
+      const val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      return `<div class="project-policy-row" style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(k)}:</span> ${escHtml(val)} <span style="color:var(--text2);font-size:12px;">(${escHtml(e.source || '')})</span></div>`;
+    }).join('') : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>`;
+  }
+  return `<div class="project-policy-effective" style="margin-top:10px;">${head}${link}${inner}</div>`;
+}
+
+// _projectMergePipelineHTML shows the merge pipeline in effect for the project:
+// where it comes from and why, its steps, and the conflict policy. The link
+// opens Settings, where the merge pipeline settings are.
+function _projectMergePipelineHTML(mp, err) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_merge_heading'))}</div>`;
+  const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML('', t('projects_links_merge_settings'))}</div>`;
+  let inner;
+  if (err) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
+  } else if (!mp) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
+  } else {
+    const sk = MERGE_PIPELINE_SOURCE_KEYS[mp.source];
+    const src = sk ? t(sk) : (mp.source || t('merge_pipeline_source_none'));
+    const polEntry = MERGE_PIPELINE_POLICIES.find(([v]) => v === mp.conflict_policy);
+    const polLabel = polEntry ? t(polEntry[1]) : (mp.conflict_policy || '');
+    const steps = mp.definition && Array.isArray(mp.definition.steps) ? mp.definition.steps : [];
+    inner = `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_source_label'))}:</span> ${escHtml(src)}</div>` +
+      (mp.reason ? `<div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_reason', [mp.reason]))}</div>` : '') +
+      (mp.file_error ? `<div style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_file_error', [mp.file_error]))}</div>` : '') +
+      (polLabel ? `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_conflict_policy_label'))}:</span> ${escHtml(polLabel)}</div>` : '') +
+      (steps.length
+        ? `<ol style="margin:4px 0 0;padding-left:20px;">${steps.map((st, i) => _mergePipelineStepHtml(st, i + 1)).join('')}</ol>`
+        : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('merge_pipeline_empty'))}</div>`);
+  }
+  return `<div class="project-merge-pipeline" style="margin-top:10px;">${head}${link}${inner}</div>`;
+}
+
+// _projectEventStreamHTML lists the event stream for this project, newest last
+// as the daemon returns it. dropped says that events were lost before the page
+// read them.
+function _projectEventStreamHTML(ev, err) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_events_heading'))}</div>`;
+  const note = `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('projects_links_events_note', [_PROJECTS_EVENTS_QUEUE]))}</div>`;
+  let inner;
+  if (err) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
+  } else if (!ev) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
+  } else {
+    const items = Array.isArray(ev.events) ? ev.events : [];
+    inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
+      (items.length
+        ? items.map(e => {
+          const when = e.at ? new Date(e.at).toLocaleString() : '';
+          const ids = [e.automation_id, e.task_id].filter(Boolean).join(' · ');
+          return `<div class="project-event-row" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(when)} · ${escHtml(e.kind || '')}${e.level ? ' (' + escHtml(e.level) + ')' : ''}${ids ? ' · ' + escHtml(ids) : ''}</div>`;
+        }).join('')
+        : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
+  }
+  return `<div class="project-event-stream" style="margin-top:10px;">${head}${note}${inner}</div>`;
+}
+
+// _projectLinksHTML is the policy, merge pipeline and event stream sections of
+// the selected project. A reply held for another project is not shown.
+function _projectLinksHTML(p) {
+  const L = _projectsLinks.name === p.name ? _projectsLinks : { policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
+  return `<div id="projectLinks" style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">` +
+    _projectPolicyEffectiveHTML(L.policy, L.policyError) +
+    _projectMergePipelineHTML(L.merge, L.mergeError) +
+    _projectEventStreamHTML(L.events, L.eventsError) + `</div>`;
+}
+
+// _projectArcDocsHTML lists an arc's plan and design document links and its
+// linked datawatch-app issues, read from the project's arc record. A link is
+// shown only for an http or https value; anything else is plain text.
+function _projectArcDocsHTML(p, arc) {
+  const rec = (Array.isArray(p.arcs) ? p.arcs : []).find(a => a && a.automation_id === arc.automation_id) || {};
+  const list = v => (Array.isArray(v) ? v : []).filter(x => x !== undefined && x !== null && String(x) !== '');
+  const link = v => {
+    const s = String(v);
+    const u = _projectsSafeLink(s);
+    return u ? `<a href="${escHtml(u)}" target="_blank" rel="noopener noreferrer">${escHtml(s)}</a>` : escHtml(s);
+  };
+  const issue = v => {
+    const s = String(v);
+    if (/^\d+$/.test(s)) return escHtml('datawatch-app #' + s);
+    return link(s);
+  };
+  const line = (key, items, fmt) => `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
+    (items.length ? items.map(fmt).join(', ') : `<span style="color:var(--text2);">${escHtml(t('projects_links_none'))}</span>`) + `</div>`;
+  return `<div class="project-arc-docs" style="margin:4px 0 6px 12px;">` +
+    line('projects_links_arc_plans', list(rec.plan_docs), link) +
+    line('projects_links_arc_designs', list(rec.design_docs), link) +
+    line('projects_links_arc_issues', list(rec.issues), issue) + `</div>`;
+}
+
+// A progress bar is done/total as a fill, with the count and percent beside it.
+// An empty total reads as 0%, not as an error. Costs are usage points only;
+// the roll-up never carries or shows API dollars.
+function _projectBarHTML(done, total, label) {
+  const d = Math.max(0, Number(done) || 0);
+  const tot = Math.max(0, Number(total) || 0);
+  const pct = tot > 0 ? Math.min(100, Math.round(d / tot * 100)) : 0;
+  return `<div class="project-progress" role="progressbar" aria-label="${escHtml(label || '')}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+    <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
+    <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${d}/${tot} ${escHtml(t('projects_page_tasks'))} · ${pct}%</span></div>`;
+}
+
+// _projectRollupHTML is the roll-up block above the arcs: the whole-project
+// progress bar, its cost in points, and the throughput over the window. A
+// roll-up without a total (older replies) is summed from its arcs and the
+// unassigned group.
+function _projectRollupHTML(roll, arcs) {
+  const groups = arcs.concat([roll.unassigned || {}]);
+  let tot = roll.total && roll.total.tasks ? roll.total : null;
+  if (!tot) {
+    tot = { tasks: { done: 0, total: 0 }, points: 0, throughput: { automata_finished: 0, tasks_finished: 0, automata_per_day: 0, tasks_per_day: 0 } };
+    groups.forEach(g => {
+      const gt = g.tasks || {};
+      const th = g.throughput || {};
+      tot.tasks.done += Number(gt.done) || 0;
+      tot.tasks.total += Number(gt.total) || 0;
+      tot.points += Number(g.points) || 0;
+      tot.throughput.automata_finished += Number(th.automata_finished) || 0;
+      tot.throughput.tasks_finished += Number(th.tasks_finished) || 0;
+      tot.throughput.automata_per_day += Number(th.automata_per_day) || 0;
+      tot.throughput.tasks_per_day += Number(th.tasks_per_day) || 0;
+    });
+  }
+  const th = tot.throughput || {};
+  const days = roll.window_days || 7;
+  const pts1 = n => String(Math.round((Number(n) || 0) * 10) / 10);
+  const perDay = n => String(Math.round((Number(n) || 0) * 100) / 100);
+  const pointsVal = roll.points_priced === false
+    ? t('projects_rollup_points_unpriced')
+    : `${pts1(tot.points)} ${t('projects_page_points')}`;
+  const throughputVal = t('projects_rollup_throughput_value', [
+    Number(th.automata_finished) || 0, perDay(th.automata_per_day),
+    Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
+  ]);
+  const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
+  return `<div class="project-rollup" style="margin-top:10px;">
+    <div style="font-weight:600;font-size:13px;">${escHtml(t('projects_rollup_heading'))}</div>
+    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+    ${line(t('projects_rollup_points_label'), pointsVal)}
+    ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+  </div>`;
+}
+
+function _projectDate(v) {
+  const d = v ? new Date(v) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
+}
+
+// _projectHistoryRowHTML is one entry of the history list: a finished or
+// archived Automaton (linked to its view) or a daily progress snapshot.
+// Other kinds are left out.
+function _projectHistoryRowHTML(e) {
+  if (!e || typeof e !== 'object') return '';
+  if (e.kind === 'automaton') {
+    const tk = e.tasks || {};
+    const when = _projectDate(e.finished_at || e.time);
+    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(e.id || '')}" style="margin:6px 0;font-size:13px;">
+      <a href="#" class="project-history-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(e.id || '')});return false;`)}">${escHtml(e.title || e.id || '')}</a>
+      <span style="color:var(--text2);font-size:12px;"> ${escHtml(e.status || '')}${when ? ' · ' + escHtml(when) : ''} · ${escHtml(tk.done || 0)}/${escHtml(tk.total || 0)} ${escHtml(t('projects_page_tasks'))}</span></div>`;
+  }
+  if (e.kind === 'snapshot' && e.progress) {
+    const p = e.progress;
+    const when = _projectDate(e.taken_at || e.time);
+    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;font-size:13px;color:var(--text2);">${escHtml(t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0]))}</div>`;
+  }
+  return '';
+}
+
+// _projectHistoryHTML is the paged history list under the page. hist is null
+// while the first page loads. Load more appears while the server reports a
+// next cursor.
+function _projectHistoryHTML(hist) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_history_heading'))}</div>`;
+  let inner;
+  if (!hist) {
+    inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_history_loading'))}</div>`;
+  } else if (hist.error) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + hist.error)}</div>`;
+  } else if (!hist.items.length) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_history_empty'))}</div>`;
+  } else {
+    inner = hist.items.map(_projectHistoryRowHTML).join('');
+  }
+  if (hist && hist.next) {
+    const busy = _projectsState.histBusy ? ' disabled' : '';
+    inner += `<button class="btn-secondary" id="projectHistoryMore" style="margin-top:8px;"${busy} onclick="projectsHistoryMore()">${escHtml(t('projects_history_load_more'))}</button>`;
+  }
+  return `<div id="projectHistory" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${head}${inner}</div>`;
+}
+
+// ── Project Gantt: Automaton and task bars from the history endpoint ─────────
+// The Gantt draws the history reply's gantt rows (one per Automaton, one per
+// task) on a time axis. A window selector picks the last 7, 30 or 90 days; a
+// bar outside the window is left out, and a bar still running runs to now. The
+// row count is bounded: at most _PROJECTS_GANTT_MAX_ROWS rows are drawn, the
+// newest Automata first with their tasks under them, and a note says how many
+// rows were left out. Bars use the same state colours as the dashboard Timeline.
+// Each window: key, days, and the literal i18n key of its label.
+const _PROJECTS_GANTT_WINDOWS = [['7d', 7, 'projects_gantt_window_7d'], ['30d', 30, 'projects_gantt_window_30d'], ['90d', 90, 'projects_gantt_window_90d']];
+const _PROJECTS_GANTT_DEFAULT_WINDOW = '30d';
+const _PROJECTS_GANTT_MAX_ROWS = 40;
+const _PROJECTS_GANTT_DAY_MS = 86400000;
+
+// _projectsGanttWindowDays is the day count of a window key; an unknown key
+// falls back to the default window.
+function _projectsGanttWindowDays(key) {
+  const w = _PROJECTS_GANTT_WINDOWS.find(x => x[0] === key);
+  return w ? w[1] : 30;
+}
+
+// _projectsGanttSpan returns the [a, b] time span of a gantt row in ms. A row
+// with no start shows at its end; a row with no end is still running and runs
+// to now. A row with neither has no bar (null).
+function _projectsGanttSpan(r, now) {
+  const s = r.start ? Date.parse(r.start) : NaN;
+  const e = r.end ? Date.parse(r.end) : NaN;
+  if (isNaN(s) && isNaN(e)) return null;
+  const a = isNaN(s) ? e : s;
+  const b = isNaN(e) ? now : e;
+  return { a: Math.min(a, b), b: Math.max(a, b), running: isNaN(e) };
+}
+
+// _projectsGanttRows picks the rows that overlap the window and bounds them.
+// Automaton rows come newest first, each followed by its task rows in start
+// order. total counts every row in the window before the bound is applied.
+function _projectsGanttRows(gantt, windowKey, now) {
+  const winStart = now - _projectsGanttWindowDays(windowKey) * _PROJECTS_GANTT_DAY_MS;
+  const inWin = (Array.isArray(gantt) ? gantt : [])
+    .filter(r => r && typeof r === 'object')
+    .map(r => ({ row: r, sp: _projectsGanttSpan(r, now) }))
+    .filter(x => x.sp && x.sp.b >= winStart && x.sp.a <= now);
+  const autos = inWin.filter(x => x.row.kind !== 'task').sort((x, y) => y.sp.a - x.sp.a);
+  const items = [];
+  let total = 0;
+  autos.forEach(au => {
+    const tasks = inWin
+      .filter(x => x.row.kind === 'task' && x.row.automaton_id === au.row.automaton_id)
+      .sort((x, y) => x.sp.a - y.sp.a);
+    total += 1 + tasks.length;
+    [au].concat(tasks).forEach(x => { if (items.length < _PROJECTS_GANTT_MAX_ROWS) items.push(x); });
+  });
+  return { items, total, winStart };
+}
+
+// _projectGanttPalette reads the theme colours the Gantt draws with, falling
+// back to the dashboard defaults where the page has no computed style.
+function _projectGanttPalette() {
+  let css = null;
+  try { css = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null; } catch (_) { css = null; }
+  const v = (name, fb) => { try { return (css && css.getPropertyValue(name).trim()) || fb; } catch (_) { return fb; } };
+  return { acc: v('--accent', '#7c3aed'), txt: v('--text', '#e2e8f0'), txt2: v('--text2', '#64748b'), bdr: v('--border', '#2d3148') };
+}
+
+// _projectGanttHTML is the Gantt block of the project page. hist is null while
+// the first history page loads; the window selector repaints on change.
+function _projectGanttHTML(hist) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_gantt_heading'))}</div>`;
+  const key = _projectsState.ganttWindow || _PROJECTS_GANTT_DEFAULT_WINDOW;
+  const select = `<label style="font-size:12px;color:var(--text2);margin-left:auto;">${escHtml(t('projects_gantt_window_label'))}
+    <select id="projectGanttWindow" onchange="projectsGanttWindow(this.value)" style="font-size:12px;">${_PROJECTS_GANTT_WINDOWS.map(([k, , labelKey]) =>
+      `<option value="${k}"${k === key ? ' selected' : ''}>${escHtml(t(labelKey))}</option>`).join('')}</select></label>`;
+  const top = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${head}${select}</div>`;
+  let inner;
+  if (!hist) {
+    inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
+  } else if (hist.error) {
+    inner = '';
+  } else {
+    const now = Date.now();
+    const rows = _projectsGanttRows(hist.gantt, key, now);
+    if (!rows.items.length) {
+      inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_empty'))}</div>`;
+    } else {
+      inner = _projectGanttSVG(rows, now);
+      if (rows.total > rows.items.length) {
+        inner += `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [rows.items.length, rows.total]))}</div>`;
+      }
+    }
+  }
+  return `<div id="projectGantt" class="project-gantt" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${top}${inner}</div>`;
+}
+
+// _projectGanttSVG draws the bounded rows on a shared time axis. The axis has
+// five dated ticks across the window; each row has its label, then a bar
+// coloured by state, with the state and dates in its tooltip.
+function _projectGanttSVG(rows, now) {
+  const W = 640, LABEL_W = 170, ROW_H = 20, HEAD_H = 18;
+  const BAR_X = LABEL_W, BAR_W = W - LABEL_W - 8;
+  const winStart = rows.winStart, span = now - winStart;
+  const pal = _projectGanttPalette();
+  const x = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / span)) * BAR_W;
+  const H = HEAD_H + rows.items.length * ROW_H + 4;
+  let svg = '';
+  for (let i = 0; i <= 4; i++) {
+    const ts = winStart + span * i / 4;
+    const anchor = i === 0 ? 'start' : (i === 4 ? 'end' : 'middle');
+    const tx = i === 0 ? BAR_X : (i === 4 ? BAR_X + BAR_W : x(ts));
+    svg += `<line x1="${tx.toFixed(1)}" y1="${HEAD_H}" x2="${tx.toFixed(1)}" y2="${H}" stroke="${pal.bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
+    svg += `<text x="${tx.toFixed(1)}" y="11" text-anchor="${anchor}" font-size="9" fill="${pal.txt2}">${escHtml(new Date(ts).toLocaleDateString())}</text>`;
+  }
+  rows.items.forEach((it, i) => {
+    const r = it.row, sp = it.sp;
+    const y = HEAD_H + i * ROW_H;
+    const isTask = r.kind === 'task';
+    const label = (r.title || r.automaton_id || r.task_id || '').slice(0, 24);
+    const x1 = x(sp.a), x2 = x(sp.b);
+    const dates = [r.start ? new Date(r.start).toLocaleDateString() : '', r.end ? new Date(r.end).toLocaleDateString() : t('projects_gantt_running')].filter(Boolean).join(' – ');
+    const tip = `${label} · ${r.state || ''}${dates ? ' · ' + dates : ''}`;
+    svg += `<text x="${isTask ? 14 : 4}" y="${y + 14}" font-size="11" fill="${isTask ? pal.txt2 : pal.txt}"${isTask ? '' : ' font-weight="600"'}>${escHtml(label)}</text>`;
+    svg += `<rect x="${x1.toFixed(1)}" y="${y + 4}" width="${Math.max(2, x2 - x1).toFixed(1)}" height="${ROW_H - 8}" rx="3" fill="${_ganttStateColour(r.state, pal.acc, pal.txt2)}" opacity="${sp.running ? 0.55 : 0.9}"><title>${escHtml(tip)}</title></rect>`;
+  });
+  return `<svg class="project-gantt-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('projects_gantt_heading'))}" style="display:block;margin-top:4px;">${svg}</svg>`;
+}
+
+// projectsGanttWindow is the window selector's change handler. It keeps the
+// choice on the page state and repaints while the Projects tab is active.
+function projectsGanttWindow(key) {
+  _projectsState.ganttWindow = _PROJECTS_GANTT_WINDOWS.some(w => w[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
+  if (state.activeView === 'projects') _projectsPaint();
+}
+
+// _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
+// the selected project. append=false starts from the first page; append=true
+// adds the page after the cursor of the current list. Overview reads nothing.
+// A reply for a project no longer selected is dropped.
+function _projectsLoadHistory(append) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  const prev = append && _projectsState.hist && _projectsState.hist.name === name ? _projectsState.hist : null;
+  const cursor = prev ? prev.next : '';
+  const prevItems = prev ? prev.items : [];
+  const q = '?limit=' + _PROJECTS_HISTORY_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  _projectsState.histBusy = true;
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/history' + q).then(r => {
+    if (_projectsState.selected !== name) return;
+    const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    const items = Array.isArray(body.items) ? body.items : [];
+    // Gantt rows are not paged: the first page carries them all, and later
+    // pages keep what the first one held.
+    const gantt = prev ? prev.gantt : (Array.isArray(body.gantt) ? body.gantt : []);
+    _projectsState.hist = { name, items: prevItems.concat(items), gantt, next: body.next_cursor || '', error: '' };
+  }).catch(err => {
+    if (_projectsState.selected !== name) return;
+    _projectsState.hist = { name, items: prevItems, gantt: prev ? prev.gantt : [], next: cursor, error: (err && err.message) || String(err) };
+  }).then(() => { _projectsState.histBusy = false; });
+}
+
+// projectsHistoryMore is the Load more button: it appends the next page and
+// repaints while the Projects tab is still the active view.
+function projectsHistoryMore() {
+  const h = _projectsState.hist;
+  if (_projectsState.histBusy || !h || !h.next) return Promise.resolve();
+  return _projectsLoadHistory(true).then(() => {
+    if (state.activeView === 'projects') _projectsPaint();
+  });
+}
+
+// _projectsLoadSelected reads the roll-up, then the first history page, for the
+// selected project, repainting after each so the arcs show before the history.
+function _projectsLoadSelected() {
+  return _projectsLoadRollup().then(() => {
+    if (state.activeView === 'projects') _projectsPaint();
+    return _projectsLoadHistory(false);
+  }).then(() => _projectsLoadLinks());
+}
+
+function renderProjectsView() {
+  _projectsState.selected = (() => {
+    const fromHash = _projectsHashParse(_projectsCurrentHash());
+    return fromHash !== null ? fromHash : _projectsRecallLast();
+  })();
+  _projectsPaint();
+  return _projectsLoad().then(() => _projectsLoadSelected()).then(() => {
+    // Paint again only while the Projects tab is still the active view.
+    if (state.activeView === 'projects') _projectsPaint();
+  });
+}
+
+function _projectsLoad() {
+  return apiFetch('/api/projects').then(list => {
+    _projectsState.list = Array.isArray(list) ? list : [];
+    _projectsState.error = '';
+  }).catch(err => {
+    _projectsState.list = _projectsState.list || [];
+    _projectsState.error = (err && err.message) || String(err);
+  });
+}
+
+// _projectsLoadRollup reads GET /api/projects/{name}/rollup for the selected
+// project. Overview and a name not in the list read nothing. A reply for a
+// project that is no longer selected is dropped.
+function _projectsLoadRollup() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/rollup').then(r => {
+    if (_projectsState.selected !== name) return;
+    _projectsState.rollup = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    _projectsState.rollupFor = name;
+    _projectsState.rollupError = '';
+  }).catch(err => {
+    if (_projectsState.selected !== name) return;
+    _projectsState.rollup = null;
+    _projectsState.rollupFor = name;
+    _projectsState.rollupError = (err && err.message) || String(err);
+  });
+}
+
+// selectProjectsView is the picker's change handler. It remembers the choice
+// and mirrors it in the hash without adding a history entry.
+function selectProjectsView(name) {
+  _projectsState.selected = name || _PROJECTS_OVERVIEW;
+  _projectsRememberLast(_projectsState.selected);
+  try {
+    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
+  } catch (_) { /* the hash is a convenience; the choice still applies */ }
+  _projectsPaint();
+  return _projectsLoadSelected().then(() => {
+    if (state.activeView === 'projects') _projectsPaint();
+  });
 }
 
 // Handle Android/browser back button via popstate
@@ -18412,6 +19085,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'classifier.calibration.false_pass_weight', label: "Classifier calibration false-pass weight", labelKey: 'settings_classifier_calibration_false_pass_weight', type: 'number', placeholder: '5', min: 0, step: 0.5, default: '5' },
     { key: 'classifier.calibration.rotation_bias_threshold', label: "Classifier calibration rotation bias threshold", labelKey: 'settings_classifier_calibration_rotation_bias_threshold', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
     { key: 'classifier.calibration.rotation_flip_threshold', label: "Classifier calibration rotation flip threshold", labelKey: 'settings_classifier_calibration_rotation_flip_threshold', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
+  ]},
+  // Daemon-level project defaults (projects_defaults.*): what a project inherits
+  // when it sets none of its own. Each field has a ? help entry that opens the
+  // project defaults section of the project automation policy howto.
+  { id: 'projects_defaults', sectionKey: 'settings_projects_defaults', section: 'Project defaults', docs: 'howto/project-automation-policy.md#daemon-level-project-defaults', fields: [
+    { key: 'projects_defaults.branch_retention_days', label: '', labelKey: 'settings_projects_defaults_branch_retention_days', helpKey: 'settings_projects_defaults_branch_retention_days_help', helpDocs: 'howto/project-automation-policy.md#daemon-level-project-defaults', type: 'number', placeholder: '0', min: 0, step: 1 },
+    { key: 'projects_defaults.weekly_share_percent', label: '', labelKey: 'settings_projects_defaults_weekly_share_percent', helpKey: 'settings_projects_defaults_weekly_share_percent_help', helpDocs: 'howto/project-automation-policy.md#daemon-level-project-defaults', type: 'number', placeholder: '0', min: 0, max: 100, step: 1 },
+    { key: 'projects_defaults.major_trigger', label: '', labelKey: 'settings_projects_defaults_major_trigger', helpKey: 'settings_projects_defaults_major_trigger_help', helpDocs: 'howto/project-automation-policy.md#daemon-level-project-defaults', type: 'select', options: ['manual', 'milestone', 'never'], default: 'manual' },
   ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
@@ -45809,6 +46490,13 @@ function _dashRenderEventFeed() {
   }).join('');
 }
 
+// _ganttStateColour is the bar colour for a Gantt state. The dashboard Timeline
+// and the project Gantt share it, so a state reads the same colour in both.
+// Unknown states take the muted text colour.
+function _ganttStateColour(s, accent, muted) {
+  return ({ completed: '#10b981', running: accent, in_progress: accent, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || muted);
+}
+
 function _drawGantt() {
   const svgEl = document.getElementById('dashGanttSvg');
   if (!svgEl) return;
@@ -45830,7 +46518,7 @@ function _drawGantt() {
   const txt = css.getPropertyValue('--text').trim() || '#e2e8f0';
   const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
   const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
-  const stC = s => ({ completed: '#10b981', running: acc, in_progress: acc, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || txt2);
+  const stC = s => _ganttStateColour(s, acc, txt2);
   const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / WIN_MS)) * BAR_W;
   let totalH = HEADER_H + GAP;
   for (const p of prds) {

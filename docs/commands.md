@@ -1473,8 +1473,18 @@ Project + cluster profile CRUD (F10 sprint 2).
 
 | Subcommand | Description |
 |---|---|
-| `summary <dir>` | Project-summary one-shot (git status, recent sessions, stats, BL35) |
-| `upsert` | Add/update a project record from operator input (BL27) |
+| `list` | List the registered project aliases |
+| `get <name>` | Show one alias and its record |
+| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier; see [howto/projects-tab](howto/projects-tab.md) |
+| `delete <name>` | Remove an alias; the directory is not touched |
+| `policy show\|set\|unset` | The per-project policy tier; `policy show <name> --effective [--automaton <id>]` resolves each setting with its tier. See [howto/project-automation-policy](howto/project-automation-policy.md) |
+| `show <name> [--window N]` | The record plus the roll-up: arcs, Automata, tasks, points and throughput |
+| `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields keep their stored value |
+| `arcs <name> [--set id:priority:state,…]` | Print the arcs in order, or replace them (`--set ""` clears) |
+| `history <name> [--limit N] [--cursor …]` | One page of finished Automata, daily progress and Gantt rows |
+
+The target's definition of done and the lane defaults are set through REST or MCP
+(`project_upsert`), not by a flag.
 
 ### `datawatch cooldown <subcommand>`
 

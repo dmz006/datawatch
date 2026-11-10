@@ -2477,6 +2477,26 @@ The settings below are the six keys of the block. Each is set on every surface (
 ---
 
 
+### Projects tab
+
+**Projects tab** — the top-level web app tab that shows one registered project as a whole: its arcs, the Automata and sessions under each arc, progress and cost in points, a Gantt of recent work, the finished history, the effective policy and merge pipeline, and the project's events. It is read-only; the project record is changed through REST, MCP, the CLI or the comm channel. Overview in the picker is the cross-project in-flight view. See [howto/projects-tab.md](howto/projects-tab.md).
+
+**Project (alias)** — a name mapped to an absolute directory, with an optional default backend and description. Sessions, Automata and the policy refer to a project by this name. Registering one creates an alias; deleting one does not touch the directory.
+
+**Project record** — the optional fields a project alias can carry beyond its directory: owner, repository, default branch, arcs, target, lane defaults, weekly share, branch retention and major trigger. An absent field keeps its stored value on every write.
+
+**Arc** — one planned slot in a project's order: an Automation (its `automation_id`), a `priority` that sets its place on the page, and a `state` of `planned`, `active` or `done`. The arc list is replaced as a whole. An arc is an Automation, not an Automaton.
+
+**Project target** — the outcome a project works toward: a name and a definition of done, the point at which the target counts as reached.
+
+**Lane defaults** — the lane, backend and model that new work in a project starts with (lane `gpu`, `claude` or `any`). Recorded on the project; they do not yet decide where an Automaton runs.
+
+**Weekly share** — the percentage (0 to 100) of the weekly usage budget a project should get, with the daemon-wide default `projects_defaults.weekly_share_percent`. Stored and shown; no scheduler reads it yet.
+
+**Branch retention (project)** — the days a project keeps finished Automaton branches, with the daemon-wide default `projects_defaults.branch_retention_days`. Stored and shown; the worktree cleanup does not read it yet.
+
+---
+
 ## Core feature reference matrix
 
 Tracks which core features have how-to walkthroughs, plans, and architecture diagrams.

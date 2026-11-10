@@ -360,6 +360,7 @@ func newProjectsCmd() *cobra.Command {
 			},
 		},
 	)
+	cmd.AddCommand(newProjectsRecordCommands()...)
 	return cmd
 }
 

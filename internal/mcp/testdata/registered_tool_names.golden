@@ -444,8 +444,11 @@ profile_set_agent_settings
 profile_smoke
 profile_update
 project_alias_delete
+project_history
 project_list
 project_policy_effective
+project_rollup
+project_set_arcs
 project_summary
 project_upsert
 proxy_config_get

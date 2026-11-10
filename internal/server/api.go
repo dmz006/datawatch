@@ -6498,6 +6498,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// in the GET response too. Without them the PWA and mobile
 		// Settings cards render empty fields on reload even though
 		// the PUT path now persists correctly.
+		// Daemon-level project defaults (projects_defaults.*), effective values.
+		"projects_defaults": projectsDefaultsForDisplay(s.cfg.ProjectsDefaults),
 		"autonomous": map[string]interface{}{
 			"enabled":               s.cfg.Autonomous.Enabled,
 			"push_and_tag":          s.cfg.Autonomous.PushAndTag,
@@ -7008,6 +7010,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// Defect queue settings (autonomous.defect_queue.*): same shared validator.
 	if verr := firstDefectQueueSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Project defaults (projects_defaults.*): refused before anything is applied.
+	if verr := firstProjectsDefaultsSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8330,6 +8337,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 	for k, v := range patch {
 		if strings.HasPrefix(k, "tracing.backends.") {
 			_ = applyTracingKey(&cfg.Tracing, k, v)
+			continue
+		}
+		// projects_defaults.* — the daemon-level project defaults. Validated in
+		// handlePutConfig; a direct applyConfigPatch caller's bad value is left
+		// unchanged.
+		if strings.HasPrefix(k, config.ProjectsDefaultsSettingPrefix) {
+			_ = cfg.ProjectsDefaults.ApplyProjectsDefaultsSetting(k, v)
 			continue
 		}
 		if _, ok := supervisorLoopPatchKey(k); ok {

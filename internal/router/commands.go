@@ -1946,6 +1946,10 @@ profile cluster list            list cluster profiles
 profile <kind> show <name>      show a profile (kind: project|cluster)
 profile <kind> smoke <name>     run profile validation smoke test
 project policy <name> [automaton]  effective project policy with per-setting sources
+project show <name>             project record (dir, owner, repository, branch, ...)
+project arcs <name>             ordered arc list of the project
+project set <name> <field> <value>  set one record field (owner, repository, default_branch, description, default_backend, major_trigger, weekly_share, branch_retention_days)
+project progress <name>         roll-up: tasks, points and throughput, total and per arc
 agent list                      list active agent workers
 agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail

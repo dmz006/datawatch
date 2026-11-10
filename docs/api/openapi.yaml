@@ -8304,11 +8304,105 @@ paths:
                 policy:
                   description: The per-project policy tier (optional); unset keys inherit from the daemon tier.
                   $ref: "#/components/schemas/ProjectPolicy"
+                owner: {type: string, description: "Project record. Absent keeps the stored value; empty clears it"}
+                repository: {type: string, description: "Project record: owner/name or URL"}
+                default_branch: {type: string, description: "Project record: default git branch"}
+                arcs:
+                  type: array
+                  description: "Project record: the ordered arc list. Absent keeps it; [] clears it"
+                  items: {type: object}
+                target:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    definition_of_done: {type: string}
+                lane_defaults:
+                  type: object
+                  properties:
+                    lane: {type: string, description: "gpu, claude or any"}
+                    backend: {type: string}
+                    model: {type: string}
+                weekly_share: {type: integer, minimum: 0, maximum: 100, description: "Percent of the weekly usage budget"}
+                branch_retention_days: {type: integer, minimum: 0, description: "Days to keep finished Automaton branches"}
+                major_trigger: {type: string, enum: [manual, milestone, never]}
       responses:
         "200": {description: OK}
         "400":
           description: name or dir missing, dir not absolute, or a policy field holds a value the key does not know — the body names the offending field
           content: {"text/plain": {schema: {type: string}}}
+  /api/projects/{name}/rollup:
+    get:
+      summary: Project roll-up of arcs, Automata, task progress, points and throughput
+      description: |
+        Groups the project's Automata by the arc whose Automation holds them.
+        Each arc reports its Automata with their session ids, task progress
+        (done/total), cost in usage points and throughput. Automata of this
+        project that no arc holds are in `unassigned`; `total` sums everything.
+        Costs are points from the billing profile's point calibration, never
+        API dollars. Throughput counts Automata (completed, last updated in the
+        window) and tasks (completed, completed in the window) per day.
+      operationId: projectsRollup
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: window, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 365, default: 7}, description: "Window in days for throughput and cost"}
+      responses:
+        "200":
+          description: The project roll-up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  window_days: {type: integer}
+                  generated_at: {type: string, format: date-time}
+                  points_priced: {type: boolean, description: "True when at least one Automaton has a point figure"}
+                  arcs: {type: array, items: {$ref: "#/components/schemas/ProjectRollupGroup"}}
+                  unassigned: {$ref: "#/components/schemas/ProjectRollupGroup"}
+                  total: {$ref: "#/components/schemas/ProjectRollupGroup"}
+        "400":
+          description: window is not a whole number of days from 1 to 365
+        "404":
+          description: Unknown project
+        "405":
+          description: Method other than GET
+        "503":
+          description: Automations are not available
+  /api/projects/{name}/history:
+    get:
+      summary: Project history of finished and archived Automata, daily progress and Gantt rows
+      description: |
+        Lists the project's completed and archived Automata (including earlier
+        release work) merged with the project's daily progress snapshots, newest
+        first and paged. `gantt` gives one row per Automaton and one per task
+        with start, end and state from the stored timestamps. Gantt rows cover
+        every matching Automaton and are not paged.
+      operationId: projectsHistory
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}, description: "Entries per page"}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "next_cursor of the previous page"}
+      responses:
+        "200":
+          description: The project history page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  generated_at: {type: string, format: date-time}
+                  limit: {type: integer}
+                  total: {type: integer}
+                  has_more: {type: boolean}
+                  next_cursor: {type: string}
+                  items: {type: array, items: {type: object}}
+                  gantt: {type: array, items: {type: object}}
+        "400": {description: Bad limit or cursor}
+        "404": {description: Unknown project}
+        "503": {description: Automations not available}
   /api/projects/{name}/policy/effective:
     get:
       summary: Effective policy for one project
@@ -8348,13 +8442,68 @@ paths:
         "503":
           description: Autonomations are not available, so the Automaton tier cannot be resolved
           content: {"text/plain": {schema: {type: string}}}
-
-    post:
-      summary: Upsert a project alias
-      operationId: projectsUpsert
+  /api/projects/{name}:
+    get:
+      summary: Read one project alias and its record
+      description: |
+        Returns the project's directory, default backend, description, policy and
+        the optional record fields (owner, repository, default branch, arcs, target,
+        lane defaults, weekly share, branch retention and major trigger).
+      operationId: projectsGet
       tags: [Singletons]
-      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
-      responses: {"200": {description: OK}}
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      responses:
+        "200": {description: The project record}
+        "404": {description: Unknown project}
+        "503": {description: Config not available}
+    delete:
+      summary: Delete a project alias
+      description: Removes the alias only. The project directory is not touched.
+      operationId: projectsDelete
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      responses:
+        "200": {description: Deleted}
+        "404": {description: Unknown project}
+  /api/projects/{name}/arcs:
+    put:
+      summary: Replace a project's ordered arc list
+      description: |
+        Body is a JSON array of arcs, or an object `{"arcs": [...]}`. Array position
+        is the arc order. Each arc has `automation_id` (required, unique within the
+        project), `priority` (integer) and `state` (`planned`, `active` or `done`;
+        empty means planned). An empty list clears the arcs. Returns the project
+        record.
+      operationId: projectsSetArcs
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: array
+                  items:
+                    type: object
+                    required: [automation_id]
+                    properties:
+                      automation_id: {type: string}
+                      priority: {type: integer}
+                      state: {type: string, enum: [planned, active, done]}
+                - type: object
+                  properties:
+                    arcs:
+                      type: array
+                      items: {type: object}
+      responses:
+        "200": {description: The project record with the new arcs}
+        "400": {description: Empty body, malformed JSON, duplicate or missing automation_id, or an unknown state; the message names the problem}
+        "404": {description: Unknown project}
+        "413": {description: Body larger than 1 MiB}
   /api/templates:
     get:
       summary: List session-start templates
@@ -8824,6 +8973,35 @@ components:
             example: "unauthorized"
 
   schemas:
+    ProjectRollupGroup:
+      type: object
+      description: "One arc, the unassigned bucket, or the whole-project total. Arc fields are set only on arc groups."
+      properties:
+        automation_id: {type: string}
+        priority: {type: integer}
+        state: {type: string, enum: [planned, active, done]}
+        automata:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              title: {type: string}
+              status: {type: string}
+              automation_id: {type: string}
+              finished: {type: boolean}
+              tasks: {type: object, properties: {done: {type: integer}, total: {type: integer}}}
+              points: {type: number}
+              session_ids: {type: array, items: {type: string}}
+        tasks: {type: object, properties: {done: {type: integer}, total: {type: integer}}}
+        points: {type: number}
+        throughput:
+          type: object
+          properties:
+            automata_finished: {type: integer}
+            tasks_finished: {type: integer}
+            automata_per_day: {type: number}
+            tasks_per_day: {type: number}
     RulesContextProject:
       type: object
       required: [project_dir]
