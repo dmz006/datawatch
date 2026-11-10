@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -141,10 +142,66 @@ func (s *Server) automataEventLogSourcesFor(ctx context.Context) automataEventLo
 	if rc, ok := mgr.(repoCIWatchReader); ok {
 		src.repoCI = rc.RepoCIWatchStatus
 	}
-	if re, ok := mgr.(automataRawErrorsReader); ok {
-		src.errors = re.AutomataRawErrors
+	if mgr != nil {
+		src.errors = func() []automataRawError {
+			var out []automataRawError
+			if re, ok := mgr.(automataRawErrorsReader); ok {
+				out = append(out, re.AutomataRawErrors()...)
+			}
+			out = append(out, automataRawErrorsFromPRDs(mgr.ListPRDs())...)
+			return newestRawErrors(out, automataEventLogSourceLimit)
+		}
 	}
 	return src
+}
+
+// automataRawErrorsFromPRDs turns the failure reasons recorded on failed
+// tasks into raw errors. The daemon records each reason when a task fails,
+// so the production log gets its error feed without a second store. A
+// "content" reason is a judged outcome, not an error, so it is left out.
+func automataRawErrorsFromPRDs(raws []any) []automataRawError {
+	var out []automataRawError
+	for _, raw := range raws {
+		p, err := toPRD(raw)
+		if err != nil || p == nil {
+			continue
+		}
+		name := p.Title
+		if name == "" {
+			name = p.ID
+		}
+		for _, st := range p.Story {
+			for _, t := range st.Tasks {
+				fr := t.FailureReason
+				if t.Status != autonomous.TaskFailed || fr == nil || fr.Category == "content" {
+					continue
+				}
+				source := fr.Source
+				if source == "" {
+					source = "task"
+				}
+				out = append(out, automataRawError{
+					Time:       fr.OccurredAt,
+					Source:     source,
+					Raw:        fr.Detail,
+					Project:    p.ProjectDir,
+					Automaton:  name,
+					Automation: p.AutomationID,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// newestRawErrors sorts raw errors newest first and keeps at most limit of
+// them. A daemon with many failed tasks would otherwise flood the log.
+func newestRawErrors(raws []automataRawError, limit int) []automataRawError {
+	sort.SliceStable(raws, func(i, j int) bool { return raws[i].Time.After(raws[j].Time) })
+	if len(raws) > limit {
+		raws = raws[:limit]
+	}
+	return raws
 }
 
 // collectAutomataEvents runs every present adapter and merges the results

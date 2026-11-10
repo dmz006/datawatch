@@ -24,7 +24,12 @@ type eventLogFake struct {
 	cleanup   autonomous.CleanupStatus
 	safeErr   error
 	triageErr bool
+	prds      []any
 }
+
+// ListPRDs returns the Automata the fake holds, so failed-task reasons reach
+// the error feed the same way they do in the daemon.
+func (f *eventLogFake) ListPRDs() []any { return f.prds }
 
 func (f *eventLogFake) SupervisorWatchStatus() autonomous.SupervisorWatchStatus {
 	return autonomous.SupervisorWatchStatus{}
@@ -396,5 +401,65 @@ func TestAutomataEventLogHandlerErrorFeedWired(t *testing.T) {
 		if e.Kind == AutomataEventError {
 			t.Fatalf("error event without a feed: %+v", e)
 		}
+	}
+}
+
+// TestAutomataEventLogHandlerErrorsFromFailedTasks checks the production error
+// feed: a failed task's recorded failure reason becomes an error event, while
+// content judgments and tasks that are not failed stay out of the log.
+func TestAutomataEventLogHandlerErrorsFromFailedTasks(t *testing.T) {
+	now := time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC)
+	prd := &autonomous.PRD{
+		ID:           "p1",
+		Title:        "Build feed",
+		ProjectDir:   "/work/proj",
+		AutomationID: "auto-9",
+		Story: []autonomous.Story{{Tasks: []autonomous.Task{
+			{ID: "t1", Status: autonomous.TaskFailed, FailureReason: &autonomous.FailureReason{
+				Category: "infra", Detail: "session timed out", Source: "judge", OccurredAt: now,
+			}},
+			{ID: "t2", Status: autonomous.TaskFailed, FailureReason: &autonomous.FailureReason{
+				Category: "content", Detail: "judged deficient", Source: "judge", OccurredAt: now,
+			}},
+			{ID: "t3", Status: autonomous.TaskStatus("running"), FailureReason: &autonomous.FailureReason{
+				Category: "infra", Detail: "stale reason", Source: "judge", OccurredAt: now,
+			}},
+		}}},
+	}
+	s := eventLogServer(&eventLogFake{prds: []any{prd}})
+	evs, err := s.collectAutomataEvents(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	var errs []AutomataEvent
+	for _, e := range evs {
+		if e.Kind == AutomataEventError {
+			errs = append(errs, e)
+		}
+	}
+	if len(errs) != 1 {
+		t.Fatalf("want 1 error event from the infra failure, got %d: %+v", len(errs), errs)
+	}
+	e := errs[0]
+	if !strings.HasPrefix(e.ID, "error:judge:") || e.Project != "/work/proj" || e.Automaton != "Build feed" || e.Automation != "auto-9" {
+		t.Fatalf("error event fields wrong: %+v", e)
+	}
+	if !strings.Contains(e.Reason, "session timed out") {
+		t.Fatalf("reason should carry the raw detail: %q", e.Reason)
+	}
+}
+
+// TestAutomataEventLogHandlerErrorFeedNewestFirstCapped checks that the error
+// feed keeps the newest raw errors when a daemon has more than the limit.
+func TestAutomataEventLogHandlerErrorFeedNewestFirstCapped(t *testing.T) {
+	base := time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC)
+	in := []automataRawError{
+		{Time: base, Source: "a"},
+		{Time: base.Add(2 * time.Hour), Source: "c"},
+		{Time: base.Add(time.Hour), Source: "b"},
+	}
+	got := newestRawErrors(in, 2)
+	if len(got) != 2 || got[0].Source != "c" || got[1].Source != "b" {
+		t.Fatalf("want newest two (c, b), got %+v", got)
 	}
 }
