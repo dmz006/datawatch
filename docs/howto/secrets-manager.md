@@ -110,7 +110,7 @@ vault:
   token: ${secret:vault-token}
 ```
 
-**Limitations in v6.15:** Vault is the single active backend for all secrets —
+**Limitations:** Vault is the single active backend for all secrets —
 per-agent Vault isolation is a future enhancement. KV v1 and Vault
 AppRole/Kubernetes auth are also deferred.
 
@@ -265,7 +265,7 @@ secrets vault status
 
 The Settings nav button no longer shows a badge for an unreachable Vault. Check the status row in
 Settings → Secrets Store instead: it shows **Vault** reachable or unreachable, the mount and path
-layout, **Last error** (or `none`) and **Last success** (or `never`), each in your chosen language.
+layout, **Last success** (or `never`) and **Last error** (or `none`), each in your chosen language.
 
 ### Vault-unreachable alert
 
@@ -273,28 +273,45 @@ Instead of a nav badge, datawatch raises a real alert when the Vault stays unrea
 
 - **Trigger.** Only when `secrets.backend` is `vault`. datawatch checks the Vault every 15 seconds.
   Once the Vault has been unreachable continuously for `secrets.vault.unreachable_alert_after_seconds`
-  (whole seconds, default 120), one **Vault unreachable** error alert is raised. It carries the Vault
-  address and the last error, with secrets scrubbed. It is raised once per outage, not repeated.
+  (whole seconds, default 120), one **Vault unreachable** error alert is raised. It is raised once per
+  outage, not repeated.
+- **What the alert contains.** The Vault address and the last error only. Secret values are scrubbed.
 - **Where it shows.** It is a system alert: it appears in Alerts in the PWA and goes to your messaging
   channels like other system alerts.
 - **Recovery.** When the Vault answers again, datawatch raises a separate **Vault recovered** info
-  alert. The original error alert is not removed; mark it read as usual.
-- **Setting the threshold.** `0` turns the alert off; a negative value is rejected.
+  alert. The original error alert stays; mark it read as usual.
+- **Threshold.** `0` turns the alert off; a negative value is rejected.
+
+Set the threshold any of these ways (the examples use 300 seconds):
 
 ```yaml
-# datawatch.yaml
+# YAML: ~/.datawatch/datawatch.yaml
 secrets:
   vault:
-    unreachable_alert_after_seconds: 120
+    unreachable_alert_after_seconds: 300
 ```
 
-The same key (`secrets.vault.unreachable_alert_after_seconds`) is available through REST
-`PUT /api/config`, MCP, the CLI, the comm channel, and a field in PWA Settings (en, de, es, fr, ja).
+```sh
+# REST
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"secrets.vault.unreachable_alert_after_seconds": 300}' $BASE/api/config
 
-> **Operator review:** (1) The CHANGELOG says the alert "clears" on recovery; the code raises a separate
-> "Vault recovered" info alert and leaves the error alert in place. Confirm which wording is intended.
-> (2) The exact PWA field label and location, and the CLI/comm command spelling, were not verified
-> against the UI strings; check them before release.
+# CLI
+datawatch config set secrets.vault.unreachable_alert_after_seconds 300
+```
+
+```json
+// MCP
+{ "tool": "config_set", "args": { "key": "secrets.vault.unreachable_alert_after_seconds", "value": "300" } }
+```
+
+```text
+# Comm channel
+configure secrets.vault.unreachable_alert_after_seconds=300
+```
+
+In the PWA: Settings → Secrets Store → the Vault alert delay field (seconds; `0` = off). The
+field is translated in en, de, es, fr and ja.
 
 ### 5c. MCP
 
