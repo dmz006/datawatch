@@ -17743,6 +17743,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'audit.retention_days', label: 'Audit log retention (days, -1 = never prune)', labelKey: 'settings_audit_retention_days', type: 'number', placeholder: '30' },
     { key: 'audit.cef_mirror_enabled', label: 'Mirror audit logs in CEF format (for SIEM)', labelKey: 'settings_audit_cef_mirror_enabled', type: 'toggle' },
   ]},
+  // Vault health monitor: seconds the Vault backend may stay unreachable
+  // before an alert is raised (0 disables the alert).
+  { id: 'secrets_vault', sectionKey: 'settings_secrets_vault', section: 'Secrets Vault', docs: 'howto/secrets-manager.md', fields: [
+    { key: 'secrets.vault.unreachable_alert_after_seconds', label: 'Vault unreachable alert after (seconds)', labelKey: 'settings_secrets_vault_unreachable_alert_after_seconds', helpKey: 'settings_secrets_vault_unreachable_alert_after_seconds_help', type: 'number', min: 0, step: 1, placeholder: '120', onchange: "savePromptNumberSetting('secrets.vault.unreachable_alert_after_seconds', this.value, 0)" },
+  ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
   // lives in LLM_CONFIG_FIELDS at the same id='rtk'.

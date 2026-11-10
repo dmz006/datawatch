@@ -3866,5 +3866,8 @@
   "prd_dl_dryrun": "Dry run",
   "prd_dl_dryrun_done": "Dry run (not recorded)",
   "prd_dl_running": "Running decompose lint...",
-  "prd_dl_dryrun_error": "Decompose lint dry run failed:"
+  "prd_dl_dryrun_error": "Decompose lint dry run failed:",
+  "settings_secrets_vault": "Secrets Vault",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Vault unreachable alert after (seconds)",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Seconds the Vault backend may stay unreachable before datawatch raises an alert. Default 120; 0 disables the alert."
 }
