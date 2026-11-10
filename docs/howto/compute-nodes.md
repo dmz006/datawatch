@@ -754,6 +754,8 @@ datawatch compute node update gpu-1 --verifier-slots 3
 
 **What the slots do not do.** The verifier pool never raises the executor cap: `session_slots` and `max_concurrent_sessions` bound the workers exactly as before, and the advice figure is never applied automatically. A negative value on any of the three keys is refused when the daemon loads the config or saves the node.
 
+**How long one slot may be held.** The slots bound how many verifiers run at once; how long a single run may take is bounded by `autonomous.verifier_max_run_seconds` (default 2700, forty-five minutes), a total wall-clock limit on one verifier session, set in the `autonomous:` block of the config file. That is the guard against a single verifier that keeps producing output holding its slot for hours while other verifiers — and the tasks behind them — queue. An explicit `0` means no cap and is kept as `0`; a negative value is refused when the daemon loads the config. It is currently set in the config file, not on the node and not through the autonomous config read/set surfaces. See [operations.md — Verifier throughput](../operations.md#verifier-throughput).
+
 ---
 
 ## How a pi-family worker picks its node
