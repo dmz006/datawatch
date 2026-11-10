@@ -8523,7 +8523,7 @@ paths:
       tags: [Singletons]
       responses:
         "200":
-          description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude"
+          description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude, max_projection_gap_points"
           content:
             application/json:
               schema: {$ref: "#/components/schemas/BurnGuardConfig"}
@@ -12471,3 +12471,4 @@ components:
           description: "Task kind to ceiling (low, medium, high, cheaper_backend); set per Automation, not here"
           additionalProperties: {type: string, enum: [low, medium, high, cheaper_backend]}
         retry_limit_claude: {type: integer, description: "Most retries of one task on Claude, 0 to 20. Default 2"}
+        max_projection_gap_points: {type: number, minimum: 0, maximum: 100, description: "Largest allowed gap in points between the two usage projections before the guard stops trusting the comparison, 0 to 100; 0 never compares. Default 25"}

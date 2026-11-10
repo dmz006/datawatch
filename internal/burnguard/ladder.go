@@ -2,6 +2,7 @@ package burnguard
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -70,6 +71,10 @@ type LadderSettings struct {
 	StepBack bool
 	// MarginPoints is the band around the target inside which the ladder holds.
 	MarginPoints float64
+	// MaxProjectionGapPoints is the largest allowed gap between the guard projection and
+	// the advice projection. When the gap is larger, the tick decides on the lower of the
+	// two; 0 means never compare (the guard projection alone decides).
+	MaxProjectionGapPoints float64
 	// AskOnChange gates the per-step question: true raises a question for each
 	// climb or step back that changed a setting, false alerts only (the alerts
 	// then carry how to turn the questions on).
@@ -125,11 +130,18 @@ type Decision struct {
 	Applied []string `json:"applied,omitempty"`
 	Actions []Action `json:"actions,omitempty"`
 
-	Projected      float64 `json:"projected"`
-	Line           float64 `json:"line"`
-	OverBy         float64 `json:"over_by"`
-	PointsPerHour  float64 `json:"points_per_hour"`
-	AllowedPerHour float64 `json:"allowed_per_hour"`
+	// Projected is the guard projection (the token-priced one); GuardProjected repeats it
+	// beside AdviceProjected, the readings-only projection, and Gap is their absolute
+	// difference. OverBy is the excess the tick decided on: the guard's own, or the lower
+	// projection's when the gap was over the limit.
+	Projected       float64 `json:"projected"`
+	GuardProjected  float64 `json:"guard_projected"`
+	AdviceProjected float64 `json:"advice_projected"`
+	Gap             float64 `json:"gap"`
+	Line            float64 `json:"line"`
+	OverBy          float64 `json:"over_by"`
+	PointsPerHour   float64 `json:"points_per_hour"`
+	AllowedPerHour  float64 `json:"allowed_per_hour"`
 
 	// Changed is true when the tick applied or released a rung.
 	Changed bool `json:"changed"`
@@ -205,6 +217,8 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 	p := in.Projection
 	d.Projected, d.Line, d.OverBy = p.Projected, p.Target, p.OverBy
 	d.PointsPerHour, d.AllowedPerHour = p.PointsPerHour, p.AllowedPerHour
+	d.GuardProjected, d.AdviceProjected = p.Projected, p.AdviceProjected
+	d.Gap = math.Abs(p.Projected - p.AdviceProjected)
 
 	finish := func() (Decision, error) {
 		d.Level = len(l.state.Applied)
@@ -236,7 +250,7 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 		d.Reason = "ladder disabled"
 		alert := "Burn guard turned off: released " + strings.Join(reverse(released), ", ") + "."
 		if p.Needs == "" {
-			alert += " " + numbers(p)
+			alert += " " + numbers(p, false)
 		}
 		if !in.Settings.AskOnChange {
 			alert += " " + askOnOffHint
@@ -257,43 +271,56 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 	if margin < 0 {
 		margin = 0
 	}
+	// The gap check: when the guard and advice projections differ by more than the limit,
+	// the lower of the two decides. The reading check: when the guard projection is over
+	// and the newest reading is already above the pace line, the ladder still climbs one
+	// rung, so the lower value can never skip a rung the guard calls for.
+	overBy, lower := p.OverBy, false
+	if limit := in.Settings.MaxProjectionGapPoints; limit > 0 && d.Gap > limit {
+		lower = true
+		overBy = math.Min(p.Projected, p.AdviceProjected) - p.Target
+	}
+	d.OverBy = overBy
+	forced := p.OverBy > margin && p.PercentAtReading > p.Line
+
 	switch {
-	case p.OverBy > margin:
+	case overBy > margin || forced:
 		rung, ok := nextRung(ladder, l.state.Applied)
 		if !ok {
-			d.Reason = "over the line, already at the last rung"
+			d.Reason = "over the line, already at the last rung " + numbers(p, lower)
 			return finish()
 		}
 		acts := l.apply(rung, in.InflightCap)
 		d.Direction, d.Rung, d.Actions, d.Changed = DirectionClimb, rung, acts, true
 		what := describe(acts, l.state.OriginalInflight)
 		d.AlertText = fmt.Sprintf("Burn guard stepped up to rung %d of %d (%s): %s %s",
-			len(l.state.Applied), len(ladder), rung, what, numbers(p))
+			len(l.state.Applied), len(ladder), rung, what, numbers(p, lower))
 		if in.Settings.AskOnChange && changesSetting(acts, in.InflightCap) {
-			d.QuestionText = fmt.Sprintf("The weekly burn projects to %.1f%% at the reset against a target of %.1f%%. I did this: %s Release it, or leave it?",
-				p.Projected, p.Target, what)
+			d.QuestionText = fmt.Sprintf("The weekly burn projects at the reset (%s; target %.1f%%). I did this: %s Release it, or leave it?",
+				projections(p, lower), p.Target, what)
 		}
 		if !in.Settings.AskOnChange {
 			d.AlertText += " " + askOnOffHint
 		}
-	case p.OverBy < -margin && in.Settings.StepBack && prev > 0:
+	case overBy < -margin && in.Settings.StepBack && prev > 0:
 		rung := l.state.Applied[prev-1]
 		acts := l.release()
 		d.Direction, d.Rung, d.Actions, d.Changed = DirectionStepBack, rung, acts, true
 		what := describe(acts, 0)
-		d.AlertText = fmt.Sprintf("Burn guard stepped back from %s: %s %s", rung, what, numbers(p))
+		d.AlertText = fmt.Sprintf("Burn guard stepped back from %s: %s %s", rung, what, numbers(p, lower))
 		if in.Settings.AskOnChange && changesSetting(acts, 0) {
-			d.QuestionText = fmt.Sprintf("The weekly burn now projects to %.1f%% against a target of %.1f%%. I did this: %s", p.Projected, p.Target, what)
+			d.QuestionText = fmt.Sprintf("The weekly burn now projects at the reset (%s; target %.1f%%). I did this: %s",
+				projections(p, lower), p.Target, what)
 		}
 		if !in.Settings.AskOnChange {
 			d.AlertText += " " + askOnOffHint
 		}
-	case p.OverBy < -margin && prev > 0:
-		d.Reason = "under the line, step back is off"
-	case p.OverBy > margin:
-		d.Reason = "over the line"
+	case overBy < -margin && prev > 0:
+		d.Reason = "under the line, step back is off " + numbers(p, lower)
+	case overBy < -margin:
+		d.Reason = "under the line " + numbers(p, lower)
 	default:
-		d.Reason = "within the margin"
+		d.Reason = "within the margin " + numbers(p, lower)
 	}
 	return finish()
 }
@@ -378,9 +405,21 @@ func describe(acts []Action, original int) string {
 	return strings.Join(parts, " ")
 }
 
-func numbers(p Projection) string {
-	return fmt.Sprintf("(projected %.1f%% at the reset, target %.1f%%, burning %.2f points/hour against %.2f allowed)",
-		p.Projected, p.Target, p.PointsPerHour, p.AllowedPerHour)
+// numbers is the parenthetical every alert and reason carries: both projections, the target
+// and the burn. lower is true when the tick decided on the lower of the two projections.
+func numbers(p Projection, lower bool) string {
+	return fmt.Sprintf("(%s; target %.1f%%, burning %.2f points/hour against %.2f allowed)",
+		projections(p, lower), p.Target, p.PointsPerHour, p.AllowedPerHour)
+}
+
+// projections names the guard and advice projections and which one the tick used, for
+// example "guard 173.7%, advice 57.0%, using the lower".
+func projections(p Projection, lower bool) string {
+	using := "guard"
+	if lower {
+		using = "lower"
+	}
+	return fmt.Sprintf("guard %.1f%%, advice %.1f%%, using the %s", p.Projected, p.AdviceProjected, using)
 }
 
 func reverse(s []string) []string {

@@ -30,6 +30,8 @@ const (
 	BurnGuardIntervalMinutesMax      = 1440
 	BurnGuardMarginPointsDefault     = 2.0
 	BurnGuardMarginPointsMax         = 50.0
+	BurnGuardProjectionGapDefault    = 25.0
+	BurnGuardProjectionGapMax        = 100.0
 	BurnGuardCacheWriteDefault       = 0.373
 	BurnGuardCacheReadDefault        = 0.0069
 	BurnGuardPointsPerMillionMax     = 1000.0
@@ -47,6 +49,10 @@ type BurnGuardConfig struct {
 	// MarginPoints is how far the projection may run over the pace line
 	// before the guard acts, 0 to 50 (default 2.0).
 	MarginPoints float64 `yaml:"margin_points" json:"margin_points"`
+	// MaxProjectionGapPoints is the largest gap, in points, allowed between
+	// the projection and the pace line, 0 to 100 (default 25). 0 means never
+	// compare: the gap check is off.
+	MaxProjectionGapPoints float64 `yaml:"max_projection_gap_points" json:"max_projection_gap_points"`
 	// Ladder is the ordered list of rungs applied while over the line
 	// (default lower_inflight, route_pi_prompt, hold_claude).
 	Ladder []string `yaml:"ladder,omitempty" json:"ladder,omitempty"`
@@ -89,6 +95,7 @@ func DefaultBurnGuard() BurnGuardConfig {
 		Enabled:                    true,
 		IntervalMinutes:            BurnGuardIntervalMinutesDefault,
 		MarginPoints:               BurnGuardMarginPointsDefault,
+		MaxProjectionGapPoints:     BurnGuardProjectionGapDefault,
 		Ladder:                     append([]string(nil), burnGuardRungs...),
 		StepBack:                   true,
 		CacheWritePointsPerMillion: BurnGuardCacheWriteDefault,
@@ -136,6 +143,9 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 		return def
 	}
 	out.MarginPoints = num("margin_points", c.MarginPoints, BurnGuardMarginPointsMax, d.MarginPoints)
+	// Zero is valid (never compare); a negative, NaN, infinite or
+	// over-maximum value is replaced by the default.
+	out.MaxProjectionGapPoints = num("max_projection_gap_points", c.MaxProjectionGapPoints, BurnGuardProjectionGapMax, d.MaxProjectionGapPoints)
 	// An unset price is the default quietly; zero is not a usable price.
 	price := func(key string, v, def float64) float64 {
 		if v == 0 {
@@ -214,6 +224,16 @@ func BurnGuardRungs() []string { return append([]string(nil), burnGuardRungs...)
 func ValidateBurnGuardRung(name string) error {
 	if _, ok := usageChoice(name, burnGuardRungs); !ok {
 		return fmt.Errorf("usage.burn_guard.ladder: %q is not a rung (allowed: %s)", name, strings.Join(burnGuardRungs, ", "))
+	}
+	return nil
+}
+
+// ValidateMaxProjectionGapPoints is the one rule for usage.burn_guard.max_projection_gap_points,
+// shared by the REST config path, the CLI and the comm channel: a finite number from 0 to
+// BurnGuardProjectionGapMax. Zero is valid and means the projections are never compared.
+func ValidateMaxProjectionGapPoints(f float64) error {
+	if !burnGuardFinite(f) || f < 0 || f > BurnGuardProjectionGapMax {
+		return fmt.Errorf("usage.burn_guard.max_projection_gap_points: must be from 0 to %g (0 never compares the projections)", BurnGuardProjectionGapMax)
 	}
 	return nil
 }

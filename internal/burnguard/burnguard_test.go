@@ -119,8 +119,10 @@ func TestFridayNightProjectsOverWellBeforeLimit(t *testing.T) {
 	if p.Line <= 0 || p.Ceiling != 100 || p.Target != 95 {
 		t.Fatalf("line %.1f ceiling %.1f target %.1f", p.Line, p.Ceiling, p.Target)
 	}
-	if p.PointsPerHour != p.WorkerPointsPerHour+p.OtherPointsPerHour || p.WorkerPointsPerHour <= p.OtherPointsPerHour {
-		t.Fatalf("split worker %.2f other %.2f", p.WorkerPointsPerHour, p.OtherPointsPerHour)
+	// PointsPerHour is the calibrated blend, so it need not equal the window split; the split
+	// itself is still the trailing-window burn of worker and other sessions.
+	if p.PointsPerHour <= 0 || p.WorkerPointsPerHour <= p.OtherPointsPerHour {
+		t.Fatalf("split worker %.2f other %.2f, points/hour %.2f", p.WorkerPointsPerHour, p.OtherPointsPerHour, p.PointsPerHour)
 	}
 }
 

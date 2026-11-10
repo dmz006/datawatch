@@ -12,7 +12,7 @@ import (
 func TestBurnGuardDefaults(t *testing.T) {
 	got := DefaultConfig().Usage.BurnGuard
 	want := BurnGuardConfig{
-		Enabled: true, IntervalMinutes: 60, MarginPoints: 2.0,
+		Enabled: true, IntervalMinutes: 60, MarginPoints: 2.0, MaxProjectionGapPoints: 25,
 		Ladder:   []string{"lower_inflight", "route_pi_prompt", "hold_claude"},
 		StepBack: true, CacheWritePointsPerMillion: 0.373, CacheReadPointsPerMillion: 0.0069,
 		RefitOnReading:   true,
@@ -57,6 +57,18 @@ func TestBurnGuardNormalize(t *testing.T) {
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MarginPoints, 0) }, ""},
 		{"margin negative", func(c *BurnGuardConfig) { c.MarginPoints = -1 },
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MarginPoints, 2) }, "margin_points"},
+		{"projection gap zero is valid (never compare)", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = 0 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 0) }, ""},
+		{"projection gap negative", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = -1 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap NaN", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = nan },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap infinite", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = math.Inf(1) },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap over maximum", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = 101 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 25) }, "max_projection_gap_points"},
+		{"projection gap at maximum is valid", func(c *BurnGuardConfig) { c.MaxProjectionGapPoints = 100 },
+			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MaxProjectionGapPoints, 100) }, ""},
 		{"margin NaN", func(c *BurnGuardConfig) { c.MarginPoints = nan },
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.MarginPoints, 2) }, "margin_points"},
 		{"margin too large", func(c *BurnGuardConfig) { c.MarginPoints = 99 },
@@ -201,5 +213,42 @@ func eqF(t *testing.T, got, want float64) {
 	t.Helper()
 	if got != want {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// TestBurnGuardProjectionGapSurfaceValues pins the max_projection_gap_points rule the
+// config layer applies on load: the default is 25, zero is kept (never compare), and a
+// negative, NaN or over-maximum value is replaced by the default with a warning.
+func TestBurnGuardProjectionGapSurfaceValues(t *testing.T) {
+	if got := DefaultBurnGuard().MaxProjectionGapPoints; got != 25 || BurnGuardProjectionGapDefault != 25 {
+		t.Fatalf("default max_projection_gap_points = %v, want 25", got)
+	}
+	cases := []struct {
+		name string
+		v    float64
+		want float64
+		warn bool
+	}{
+		{"zero kept", 0, 0, false},
+		{"at maximum kept", BurnGuardProjectionGapMax, BurnGuardProjectionGapMax, false},
+		{"negative degraded", -1, 25, true},
+		{"NaN degraded", math.NaN(), 25, true},
+		{"over maximum degraded", BurnGuardProjectionGapMax + 1, 25, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := DefaultBurnGuard()
+			in.MaxProjectionGapPoints = tc.v
+			var lines []string
+			out := normalizeBurnGuard(in, func(f string, a ...interface{}) { lines = append(lines, sprintf(f, a...)) })
+			eqF(t, out.MaxProjectionGapPoints, tc.want)
+			joined := strings.Join(lines, "\n")
+			if tc.warn && !strings.Contains(joined, "max_projection_gap_points") {
+				t.Errorf("no warning naming max_projection_gap_points: %q", joined)
+			}
+			if !tc.warn && len(lines) > 0 {
+				t.Errorf("unexpected warning: %q", joined)
+			}
+		})
 	}
 }

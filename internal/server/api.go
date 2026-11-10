@@ -9622,7 +9622,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":
 			// Validated in handlePutConfig; stored normalized.
 			applyClassifierPatchKey(&cfg.Classifier, k, v)
-		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change":
+		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points":
 			// Validated in handlePutConfig; stored normalized.
 			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)
 		case "autonomous.backoff_max_wait_minutes":

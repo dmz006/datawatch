@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +47,12 @@ a running session.`,
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "config [key=value ...]",
-		Short: "Show the guard's settings, or set some (enabled, interval_minutes, margin_points, ladder, step_back, ...)",
+		Short: "Show the guard's settings, or set some (enabled, interval_minutes, margin_points, max_projection_gap_points, ladder, step_back, ...)",
+		Long: `Show the guard's settings (a GET; the output includes max_projection_gap_points),
+or set some with key=value arguments. max_projection_gap_points is the largest gap,
+in points, allowed between the guard's projection and the usage advice before the
+guard takes the lower projection: a number from 0 to 100; 0 never compares them.
+An invalid value is refused here and nothing is stored.`,
 		RunE: func(c *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return daemonJSON(http.MethodGet, "/api/usage/burn-guard/config", nil)
@@ -77,6 +83,15 @@ func parseBurnGuardSettings(args []string) (map[string]any, error) {
 				return nil, fmt.Errorf("%s must be true or false: %q", k, v)
 			}
 			body[k] = b
+		case "max_projection_gap_points":
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return nil, fmt.Errorf("%s must be a number: %q", k, v)
+			}
+			if err := config.ValidateMaxProjectionGapPoints(f); err != nil {
+				return nil, err
+			}
+			body[k] = f
 		case "ladder":
 			var rungs []string
 			for _, r := range strings.Split(v, ",") {

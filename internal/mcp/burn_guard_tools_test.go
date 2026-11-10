@@ -105,3 +105,48 @@ func textContent(t *testing.T, res *mcpsdk.CallToolResult) string {
 	}
 	return ""
 }
+
+// TestBurnGuardProjectionGapMCPRefusesInvalidAndAppliesValid proves the MCP tool
+// forwards max_projection_gap_points to the daemon: a value the daemon refuses comes
+// back as an error result and nothing is applied, while 0 and 25 are sent as numbers
+// and the daemon's stored value is returned as a success result.
+func TestBurnGuardProjectionGapMCPRefusesInvalidAndAppliesValid(t *testing.T) {
+	prop, ok := (&Server{}).toolBurnGuardConfigSet().InputSchema.Properties["max_projection_gap_points"].(map[string]any)
+	if !ok || prop["type"] != "number" {
+		t.Fatalf("max_projection_gap_points schema = %v, want a number property", prop)
+	}
+
+	for _, bad := range []float64{-1, 100.5, 101} {
+		s, rec := bgServer(t, http.StatusBadRequest, "usage.burn_guard.max_projection_gap_points: must be from 0 to 100 (0 never compares the projections)")
+		res, err := s.handleBurnGuardConfigSet(context.Background(), callReq(map[string]any{"max_projection_gap_points": bad}))
+		if err != nil || res == nil {
+			t.Fatalf("%v: err=%v res=%v", bad, err, res)
+		}
+		if rec.body["max_projection_gap_points"] != bad {
+			t.Fatalf("%v: forwarded body = %v", bad, rec.body)
+		}
+		if !res.IsError {
+			t.Errorf("%v: refusal not an error result: %s", bad, textContent(t, res))
+		}
+		if text := textContent(t, res); !strings.Contains(text, "HTTP 400") || !strings.Contains(text, "max_projection_gap_points") {
+			t.Errorf("%v: refusal not surfaced: %s", bad, text)
+		}
+	}
+
+	for _, good := range []float64{0, 25} {
+		s, rec := bgServer(t, http.StatusOK, `{"ok":true,"config":{"max_projection_gap_points":`+strconv.FormatFloat(good, 'f', -1, 64)+`}}`)
+		res, err := s.handleBurnGuardConfigSet(context.Background(), callReq(map[string]any{"max_projection_gap_points": good}))
+		if err != nil || res == nil {
+			t.Fatalf("%v: err=%v res=%v", good, err, res)
+		}
+		if rec.method != http.MethodPut || rec.path != "/api/usage/burn-guard/config" {
+			t.Fatalf("%v: proxied %s %s", good, rec.method, rec.path)
+		}
+		if rec.body["max_projection_gap_points"] != good {
+			t.Fatalf("%v: PUT body = %v", good, rec.body)
+		}
+		if res.IsError {
+			t.Errorf("%v: valid value returned an error: %s", good, textContent(t, res))
+		}
+	}
+}

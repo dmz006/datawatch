@@ -4566,6 +4566,9 @@ usage:
     # Points the projection may run over the pace line before the guard acts.
     # 0 to 50, default 2.
     margin_points: 2
+    # Largest gap in points allowed between the projection and the pace line.
+    # 0 means never compare. 0 to 100, default 25.
+    max_projection_gap_points: 25
     # Ordered rungs applied while over the line. Allowed: lower_inflight,
     # route_pi_prompt, hold_claude. Default is all three in that order.
     ladder: [lower_inflight, route_pi_prompt, hold_claude]
