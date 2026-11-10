@@ -3866,5 +3866,8 @@
   "prd_dl_dryrun": "Trockenlauf",
   "prd_dl_dryrun_done": "Trockenlauf (nicht aufgezeichnet)",
   "prd_dl_running": "Decompose Lint läuft...",
-  "prd_dl_dryrun_error": "Decompose-Lint-Trockenlauf fehlgeschlagen:"
+  "prd_dl_dryrun_error": "Decompose-Lint-Trockenlauf fehlgeschlagen:",
+  "settings_secrets_vault": "Secrets-Vault",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Vault-Nichterreichbarkeitsalarm nach (Sekunden)",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm."
 }

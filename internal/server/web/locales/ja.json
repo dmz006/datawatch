@@ -3866,5 +3866,8 @@
   "prd_dl_dryrun": "ドライラン",
   "prd_dl_dryrun_done": "ドライラン（未記録）",
   "prd_dl_running": "Decompose Lint を実行中...",
-  "prd_dl_dryrun_error": "Decompose Lint のドライランに失敗しました："
+  "prd_dl_dryrun_error": "Decompose Lint のドライランに失敗しました：",
+  "settings_secrets_vault": "シークレット Vault",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Vault 到達不能アラートまでの秒数",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Vault バックエンドに到達できない状態が続いてから datawatch がアラートを出すまでの秒数。デフォルトは 120、0 でアラートを無効にします。"
 }
