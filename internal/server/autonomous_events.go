@@ -1,6 +1,10 @@
 // REST read side of the mcp_queue lifecycle subscription sink.
 //
-//	GET /api/autonomous/events?queue=<name>&since=<cursor>&limit=<n>
+//	GET /api/autonomous/events?queue=<name>&since=<cursor>&limit=<n>&project=<name>
+//
+// project optionally keeps only the events of one project's Automata, their
+// Automations and their sessions; an unknown project is a 404. See
+// project_events_filter.go for the membership rule.
 //
 // Returns the lifecycle events a named pending-events queue retains with
 // a cursor greater than since, oldest first:
@@ -86,7 +90,40 @@ func (s *Server) handleAutonomousEvents(w http.ResponseWriter, r *http.Request) 
 		limit = pendingEventsMaxLimit
 	}
 
+	// ?project=<name> keeps only events of that project's Automata, their
+	// Automations and their sessions (project_events_filter.go). An unknown
+	// project is a 404, matching the project roll-up.
+	projectName := strings.TrimSpace(q.Get("project"))
+	var scope *projectEventScope
+	if projectName != "" {
+		if s.cfg == nil {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
+		entry, ok := s.cfg.Projects[projectName]
+		if !ok {
+			http.Error(w, "project not found", http.StatusNotFound)
+			return
+		}
+		mgr := s.costReportAutonomousManager()
+		if mgr == nil {
+			http.Error(w, "automations not available", http.StatusServiceUnavailable)
+			return
+		}
+		sc := buildProjectEventScope(projectEventInput{
+			Dir:         entry.Dir,
+			Arcs:        entry.Arcs,
+			PRDs:        mgr.Store().ListPRDs(),
+			Automations: mgr.ListAutomations(),
+			SessionIDs:  mgr.PRDSessionIDs,
+		})
+		scope = &sc
+	}
+
 	events, next, dropped := s.autonomousEvents.Pending(queue, since, limit)
+	if scope != nil {
+		events = filterProjectEvents(*scope, events)
+	}
 	if events == nil {
 		events = []autonomous.LifecycleEvent{} // never "null" to the caller
 	}
