@@ -221,7 +221,7 @@ When a peer has not pushed for longer than
 
 - **Setting.** `observer.peers.silent_alert_minutes` is a whole number
   of minutes. The default is 5. `0` turns the watcher off.
-- **One alert per outage.** The warning alert, "Observer peer silent:
+- **Once per outage.** The warning alert, "Observer peer silent:
   <name>", names the peer, how long it has been silent and the time of
   its last push. You get it once, not again on every check while the
   peer stays down. A peer that never pushed is measured from its
