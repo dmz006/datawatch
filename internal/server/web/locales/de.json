@@ -4610,5 +4610,8 @@
   "automata_events_help_card_cleanup_status": "Bereinigungsstatus — Fortschritt der automatischen Bereinigung nach Abschluss der Automaten",
   "settings_secrets_vault": "Secrets-Vault",
   "settings_secrets_vault_unreachable_alert_after_seconds": "Vault-Nichterreichbarkeitsalarm nach (Sekunden)",
-  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm."
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm.",
+  "dash_card_off_events_reason": "Noch keine Ereignisse aus Hintergrundarbeit oder Sitzungen — diese Karte füllt sich, sobald Arbeit läuft.",
+  "dash_card_off_events_link": "Dashboard-Kartenreferenz",
+  "dash_card_events_purpose": "Neueste Ereignisse aus Hintergrundarbeit und Sitzungen."
 }

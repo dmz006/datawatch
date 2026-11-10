@@ -138,6 +138,9 @@ test('2026-11-02 audit: audit-dropped tiles absent from DASH_DEFAULT_LAYOUT, sti
 
 test('2026-11-02 audit: duplicate layout ids render once, not twice', async (t) => {
   const app = loadDashboardApp();
+  // The events card is inactive (and hidden) until the daemon or hook stream
+  // has an entry, so seed one to keep this test about the duplicate-id dedupe.
+  vm.runInContext("_dash._daemonEvents = [{kind:'watch', summary:'seed', time:new Date().toISOString()}];", app.sandbox);
   const html = buildLayout(app, [
     { id: 'events', cs: 2, rs: 2 },
     { id: 'events', cs: 3, rs: 1 },
