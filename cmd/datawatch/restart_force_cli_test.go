@@ -36,7 +36,7 @@ func TestRestartCLIRefusesWithoutForceAndListsSessions(t *testing.T) {
 	if len(paths) != 1 || paths[0] != "/api/autonomous/restart-interruptions" {
 		t.Fatalf("guard read %v; want the restart-interruptions route once", paths)
 	}
-	for _, want := range []string{"auto-plan-1", "prd-v/task-v", "sess-judge", "sess-a, sess-b", "datawatch restart --force"} {
+	for _, want := range []string{"auto-plan-1", "prd-v/task-v", "sess-judge", "sess-a, sess-b", "datawatch restart --force"} { // service-scope-ok: fixture text the refusal prints, never run
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("refusal output missing %q:\n%s", want, out.String())
 		}
