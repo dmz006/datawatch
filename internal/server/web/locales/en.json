@@ -849,7 +849,7 @@
   "projects_links_merge_heading": "Merge pipeline",
   "projects_links_merge_settings": "Open the merge pipeline settings in Settings",
   "projects_links_events_heading": "Events",
-  "projects_links_events_note": "Read-only stream for this project (queue {0}).",
+  "projects_links_events_note": "Read-only stream for this project (queue %1$s).",
   "projects_links_events_empty": "No events for this project yet.",
   "projects_links_events_dropped": "Some earlier events were dropped before they were read.",
   "projects_links_arc_plans": "Plan documents",
