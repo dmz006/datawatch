@@ -15,19 +15,22 @@ import (
 // Registry is one place skills come from. Today only kind="git" is wired;
 // the schema leaves room for kind="local" / kind="http" in v6.7.x.
 type Registry struct {
-	Name          string    `json:"name"`
-	Kind          string    `json:"kind"` // git
-	URL           string    `json:"url"`
-	Branch        string    `json:"branch,omitempty"`
-	AuthSecretRef string    `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
-	Enabled       bool      `json:"enabled"`
-	Description   string    `json:"description,omitempty"`
-	IsBuiltin     bool      `json:"is_builtin,omitempty"`  // marks PAI default registry
-	FirstParty    bool      `json:"first_party,omitempty"` // official datawatch-maintained source; see IsFirstPartyPackSource
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	LastSyncedAt  time.Time `json:"last_synced_at,omitempty"`
-	LastSyncError string    `json:"last_sync_error,omitempty"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"` // git
+	URL           string `json:"url"`
+	Branch        string `json:"branch,omitempty"`
+	AuthSecretRef string `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
+	Enabled       bool   `json:"enabled"`
+	Description   string `json:"description,omitempty"`
+	IsBuiltin     bool   `json:"is_builtin,omitempty"`  // marks PAI default registry
+	FirstParty    bool   `json:"first_party,omitempty"` // official datawatch-maintained source; see IsFirstPartyPackSource
+	// AutoAcceptPacks lets a new pack version from this source be accepted
+	// without review when it adds no tools, scripts or file scopes. Off by default.
+	AutoAcceptPacks bool      `json:"auto_accept_packs,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	LastSyncedAt    time.Time `json:"last_synced_at,omitempty"`
+	LastSyncError   string    `json:"last_sync_error,omitempty"`
 }
 
 // Entry types for AvailableSkill.Type and Synced.Type. A "pack" is a
