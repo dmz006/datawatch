@@ -26683,9 +26683,54 @@ function automataEventOwners(ev) {
   return owners;
 }
 
-// automataEventRowHtml renders one event row. The detail block is in the markup
-// only when the row is expanded, so a collapsed row carries no detail text.
+// automataEventFixTab picks the Automata sub-tab where the operator fixes an
+// error event. The event log carries no link target, so the place is derived
+// from the owner: an Automaton's fix lives on the Automata list, an
+// Automation's on its own tab, and an event with no owner on the Automata list.
+function automataEventFixTab(ev) {
+  if (ev && ev.automaton) return 'automata';
+  if (ev && ev.automation) return 'automation';
+  return 'automata';
+}
+
+// automataEventQuietHtml renders a quiet entry (quiet=true) as one muted line
+// with its reason. It has no alert styling and no expand or action control.
+function automataEventQuietHtml(ev) {
+  const when = ev.time ? (isNaN(new Date(ev.time).getTime()) ? String(ev.time) : new Date(ev.time).toLocaleString()) : '';
+  const reason = ev.reason ? ` — ${ev.reason}` : '';
+  return `<div class="automata-event-quiet" style="padding:4px;font-size:11px;color:var(--text2);opacity:0.8;">`
+    + escHtml(when ? when + ' · ' : '') + escHtml(String(ev.summary || '')) + escHtml(reason)
+    + `</div>`;
+}
+
+// automataEventErrorHtml renders an error entry as an alert block with three
+// parts: what happened (summary), the reason, and the next action as a button
+// that opens the place that fixes it. The block carries no data-event-id, so
+// clicking it does not expand a row.
+function automataEventErrorHtml(ev) {
+  const red = 'var(--error,#ef4444)';
+  const reasonLabel = _automataEventsText('automata_events_reason', 'Reason');
+  const nextLabel = _automataEventsText('automata_events_next_action', 'Next action');
+  const happened = _automataEventsText('automata_events_error_happened', 'What happened');
+  const fixText = ev.next_action || _automataEventsText('automata_events_error_fix_default', 'Open and fix');
+  const tab = automataEventFixTab(ev);
+  return `<div class="automata-event-error" role="alert" style="margin:6px 0;padding:8px 10px;border:1px solid ${red};border-left:4px solid ${red};border-radius:6px;background:var(--bg2,transparent);">`
+    + `<div style="font-size:11px;color:${red};font-weight:600;">${escHtml(happened)}</div>`
+    + `<div class="automata-event-summary" style="font-size:13px;margin-top:2px;">${escHtml(ev.summary || '')}</div>`
+    + `<div class="automata-event-reason" style="font-size:12px;color:var(--text2);margin-top:4px;"><strong>${escHtml(reasonLabel)}:</strong> ${escHtml(ev.reason || '')}</div>`
+    + `<div style="margin-top:6px;font-size:12px;"><strong>${escHtml(nextLabel)}:</strong> `
+    + `<button type="button" class="automata-event-fix btn-secondary" data-events-goto="${escHtml(tab)}" style="font-size:12px;padding:2px 10px;margin-left:4px;">${escHtml(fixText)}</button>`
+    + `</div>`
+    + `</div>`;
+}
+
+// automataEventRowHtml renders one event row. A quiet entry gets the muted
+// single line and an error entry gets the alert block; any other entry is a
+// row. The detail block is in the markup only when the row is expanded, so a
+// collapsed row carries no detail text.
 function automataEventRowHtml(ev, expanded) {
+  if (ev && ev.quiet) return automataEventQuietHtml(ev);
+  if (ev && ev.severity === 'error') return automataEventErrorHtml(ev);
   const id = escHtml(String(ev.id || ''));
   let when = '';
   if (ev.time) {
@@ -26772,6 +26817,14 @@ function paintAutomataEvents(events, errorText) {
   list.innerHTML = events.map(ev => automataEventRowHtml(ev, _automataEventsState.expanded.has(String(ev.id)))).join('');
 }
 
+// automataEventGoToFix opens the Automata sub-tab that fixes an error event.
+// Only the known tab names are accepted, so a bad attribute opens nothing.
+function automataEventGoToFix(tab) {
+  if (_AUTOMATA_TABS.indexOf(tab) < 0) return;
+  switchAutomataTab(tab);
+}
+window.automataEventGoToFix = automataEventGoToFix;
+
 // toggleAutomataEventRow expands or collapses one row and repaints the list
 // from the events already loaded.
 function toggleAutomataEventRow(id) {
@@ -26806,6 +26859,8 @@ function renderAutomataEventsPanel() {
       if (chip) { toggleAutomataEventKind(chip.getAttribute('data-events-kind')); return; }
       const more = target.closest ? target.closest('[data-events-more]') : null;
       if (more) { automataEventsLoadMore(); return; }
+      const fix = target.closest ? target.closest('[data-events-goto]') : null;
+      if (fix) { automataEventGoToFix(fix.getAttribute('data-events-goto')); return; }
       const row = target.closest ? target.closest('[data-event-id]') : null;
       if (row) toggleAutomataEventRow(row.getAttribute('data-event-id'));
     });
