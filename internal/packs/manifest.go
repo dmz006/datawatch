@@ -64,6 +64,21 @@ type Task struct {
 	ReportPath         string   `yaml:"report_path"`
 	Tools              []string `yaml:"tools"`
 	FileScopes         []string `yaml:"file_scopes"`
+	// ID is the task template id an operator references the task by. It is
+	// empty for a pack that carries no template ids.
+	ID string `yaml:"id"`
+	// Kind is the task kind tag a template carries (free text, e.g. "docs",
+	// "note", "final_gate").
+	Kind string `yaml:"kind"`
+	// Files is the template's files list, a plain string that may carry the
+	// {{feature}}, {{files}} and {{files_list}} slots. It is distinct from
+	// FileScopes, which the pack rules check against.
+	Files string `yaml:"files"`
+	// AppliesWhen is the free-text condition for when the template is offered.
+	AppliesWhen string `yaml:"applies_when"`
+	// VerificationScriptReason is the explicit reason a task has no
+	// verification script (a note that changes no files).
+	VerificationScriptReason string `yaml:"verification_script_reason"`
 }
 
 // Input is a value the operator supplies when the pack is instantiated.

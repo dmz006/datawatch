@@ -5,6 +5,13 @@
 # (go:embed) and loaded through packs.LoadBuiltin. The community registry
 # repository publishes the same pack for operator installation; this folder
 # is the built-in copy the daemon starts from.
+#
+# Each task carries the fields of an Automaton task template: id, kind,
+# files (a template string with slots), applies_when and, for a note with
+# no verification script, verification_script_reason. The spec text of a
+# template is the body of its prompt file (the leading "# " heading is the
+# title line and is not part of the spec). The task templates are built
+# from this pack by internal/autonomous (BuiltInTaskTemplates).
 name: standard-tasks-pack
 version: 0.1.0
 description: Built-in pack of the standard tasks and Automaton templates.
@@ -14,37 +21,60 @@ kinds:
   - other
   - maintenance
 tasks:
-  - title: Changelog entry
+  - id: changelog_entry
+    title: Changelog entry for {{feature}}
     prompt: prompts/changelog-entry.md
     verification_script: verify/changelog-entry.sh
     default_tier: small
     read_only: false
     file_scopes: [CHANGELOG.md]
-  - title: Parity issue draft
+    kind: docs
+    files: CHANGELOG.md
+    applies_when: "Always offered: every feature slice that lands needs a changelog entry so the changelog and the work stay in step."
+  - id: parity_issue_draft
+    title: Parity issue draft for {{feature}}
     prompt: prompts/parity-issue-draft.md
     verification_script: verify/parity-issue-draft.sh
     default_tier: small
     read_only: false
     file_scopes: [docs/plans/parity-issues/**]
-  - title: Docs set
+    kind: docs
+    files: docs/plans/parity-issues/{{feature}}-parity-draft.md
+    applies_when: "Offered when the slice touches behavior whose gaps are worth tracking as an issue draft without touching a tracker."
+  - id: docs_set
+    title: Docs set for {{feature}}
     prompt: prompts/docs-set.md
     verification_script: verify/docs-set.sh
     default_tier: small
     read_only: false
     file_scopes: [docs/**]
-  - title: Bounded load-step rule
+    kind: docs
+    files: "{{files}}"
+    applies_when: "Offered whenever the slice changes operator-visible behavior that the docs already describe."
+  - id: bounded_load_step
+    title: Bounded load-step rule for {{feature}}
     prompt: prompts/bounded-load-step.md
     verification_script: verify/bounded-load-step.sh
     default_tier: small
     read_only: false
-  - title: Release version note
+    kind: note
+    verification_script_reason: "note task: changes no files by design, so there is nothing for a script to verify"
+    applies_when: "Always offered as a posture note: any story that could carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task)."
+  - id: final_gate
+    title: Final gate for {{feature}}
+    prompt: prompts/final-gate.md
+    read_only: true
+    report_path: .datawatch/reports/{{feature}}-final-gate.txt
+    kind: final_gate
+    applies_when: "Always offered as the closing task: a cheap, read-only verdict before the story is considered done."
+  - id: version_bump_left_to_merge
+    title: Release version note for {{feature}}
     prompt: prompts/version-note.md
     verification_script: verify/version-note.sh
     default_tier: small
     read_only: false
-  - title: Final gate
-    prompt: prompts/final-gate.md
-    read_only: true
-    report_path: .datawatch/reports/{{feature}}-final-gate.txt
+    kind: note
+    verification_script_reason: "note task: changes no files by design, so there is nothing for a script to verify"
+    applies_when: "Offered to make the versioning posture explicit in the story without any task touching versioning itself."
 templates:
   - templates/README.md
