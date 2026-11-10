@@ -238,3 +238,8 @@ Operator reading, 2026-11-10 14:17 EST: "Claude at 33%".
 
 Operator, 2026-11-10, on the Vault unreachable alert default (120 seconds): "A" (keep 120 seconds; confirmed).
 Operator, 2026-11-10, on the peer silence alert default (5 minutes): not yet asked.
+
+### Embedded built-in pack to be removed before the packs release (operator, 2026-11-10)
+
+Finding: before the pack tasks were rewritten, work in the packs Automaton put a built-in copy of the standard-tasks pack inside the binary (an embedded folder under internal/packs/builtinpacks with a LoadBuiltin function). That is the pinned copy ruled out on 2026-11-09. Operator choice: "A" (seed the community registry from that folder first so the content is not lost, then replace the embedded copy with an in-memory defaults pack built from the existing Go task definitions; one copy, in the community registry).
+Plan: the content was copied to the supervisor scratch folder (pack-seed) for seeding. When the packs Automaton is merge-ready, the merge helper replaces LoadBuiltin and the embedded folder with DefaultsAsPack and updates the tests that used it, before shipping. Seeding the community registry repository is an outward-facing push to the operator's repository, so it waits for the operator's explicit go-ahead.
