@@ -44,6 +44,10 @@ type Pack struct {
 	// folder's files in sorted order; it is set by the loader, never read
 	// from pack.yaml.
 	Digest string `yaml:"-"`
+	// Source is the name of the skills registry the pack was read from. It is
+	// set by the caller, never read from pack.yaml. Runnable treats a pack whose
+	// Source is not a first-party pack source as untrusted until it is accepted.
+	Source string `yaml:"-"`
 	// Dir is the absolute pack folder LoadPackFolder read the pack from; it is
 	// set by the loader, never read from pack.yaml. Rule checks use it to find
 	// verification scripts.
