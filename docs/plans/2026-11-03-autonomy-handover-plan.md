@@ -230,3 +230,8 @@ Operator on how reports and dashboards read this data: "Let's go with A. I like 
 ### Plans and backlog primary in datawatch (operator, 2026-11-10)
 
 Operator (pasted text, as heard): backlog, plans and status should run inside datawatch with an optional export to a repo, a migration plan is needed, and skills for synchronizing the files drop to a low-priority background helper until the migration is done. Design proposal and open questions: docs/plans/2026-11-10-plans-and-backlog-in-datawatch.md. Deprioritised: the plans folder auto-tidy Automaton, the daily tidy Automation, the scheduler Automaton for it, and file-sync skills.
+
+### Standard-tasks pack authored in the community registry (operator, 2026-11-10)
+
+The supervisor asked where the standard-tasks pack content is authored. Operator: "We said when designing that it was too go on community registry" (read as: it was decided at design time that it goes in the community registry; option A). This restates the 2026-11-09 decision: no pinned copy inside the binary or this repository. The packs Automaton's pack-folder task was rewritten to author only a test fixture under internal/packs/testdata/, and its embed task is to be rewritten to build the defaults pack in memory from the existing Go definitions (the pack active while packs are off). The real pack is authored in the community registry repository as a separate step.
+Operator reading, 2026-11-10 14:17 EST: "Claude at 33%".
