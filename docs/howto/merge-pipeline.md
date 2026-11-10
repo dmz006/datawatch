@@ -641,38 +641,101 @@ run's branches are already contained in it, the release steps are recorded as
 
 ## Move from shadow to on
 
-A release size starts in shadow: the daemon plans each merge and the plan is
-compared with the merge a person made by hand, and the comparison is recorded
-without changing what ships. Moving a size from shadow to on means the daemon
-ships that size on its own, and that is decided per size by the release
-approval mode in [Release approval modes](#release-approval-modes).
+A release size's merges are compared with the merges a person makes by hand
+before the daemon ships that size on its own. The comparison records are the
+evidence for the switch. This section says what that evidence must show, how
+to read it on each surface, how a switch is recorded, what falls back after a
+switch, and which parts are built now and which are still to come.
 
-The evidence bar for a size is the same for every size and is the default
-unless the bar is configured:
+### The bar
+
+Every release size (`patch`, `minor` and `major`) uses the same bar:
 
 - at least 10 comparison records where the daemon's plan is equal to or better
   than the manual merge,
-- at least 2 of those counted comparisons with conflicts,
-- at least 2 of those counted comparisons with PWA changes,
+- at least 2 of those comparisons with conflicts,
+- at least 2 of those comparisons with PWA changes,
 - no comparison with a blocking defect.
 
-The Release readiness card on the Automation Setup sub-tab reads
-`GET /api/autonomous/release-readiness?size=patch|minor|major` for each size. It
-shows a size only once that size has at least one comparison record, with the
-counts against the bar, the items still missing and a Ready or Not ready flag.
-A size that shows Ready has met the bar; that alone does not change its mode.
+The bar is fixed in this build. It cannot be changed in configuration yet.
 
-To move a size:
+### Read it on each surface
 
-1. Check the card until the size shows Ready, and read any blocking defect it
-   reports before anything else.
-2. Change that size's release approval mode (`ask` or `manual` to `auto`) in the
-   merge pipeline card or the Autonomous settings. Do this one size at a time.
-3. Record the change with its evidence (the readiness counts at the time) so the
-   reason for the mode is kept with the decision.
+Each read gives one size's counts against the bar, the items still missing and
+a Ready or Not ready flag. Ready means the bar is met. It does not change the
+size's mode. Add a project to keep one project's comparisons only.
 
-Moving a size back is the same change in the other direction. Keep the major
-size on `ask` unless a person decides otherwise.
+| Surface | How to read it |
+|---|---|
+| CLI | `datawatch merge-pipeline readiness --size patch\|minor\|major [--project P]` |
+| REST | `GET /api/autonomous/release-readiness?size=patch\|minor\|major` with an optional `project` parameter |
+| MCP | the `autonomous_release_readiness` tool, with `size` (required) and an optional `project` |
+| Comm verb | `autonomous merge-pipeline release-readiness <patch\|minor\|major> [project]` |
+| PWA | the Release readiness card on the Automation Setup sub-tab. It draws a size only once that size has at least one comparison record |
+
+### Mode changes are recorded
+
+Each release size has a release approval mode, set globally or for one project.
+The modes are `auto`, `ask` and `manual`. Moving a size to on means setting its
+mode to `auto`.
+
+Every change to a size's mode is recorded as a decision that holds:
+
+- who changed it: the requester and the surface the change came from (REST,
+  MCP, CLI or comm),
+- the old mode and the new mode,
+- the evidence: that size's readiness counts at the time of the change.
+
+Each change also emits a `release_mode_changed` audit event, which shows in
+Events. Setting a size to the mode it already has is a no-op. Nothing is
+recorded and no event is emitted.
+
+### After a switch to on: falling back to ask (not built yet)
+
+The intended design is that, after a size is set to `auto`, the daemon falls
+back to `ask` for that size and raises an alert when:
+
+- a validator fails,
+- a release CI run goes red within the window, or
+- a merge needed a manual fix.
+
+None of this is in the build yet. The release gate does hold a run when one of
+its release checks fails, in any mode. It does not change the size's mode and
+it does not raise an alert. Nothing detects a red release CI within the window
+or a manual fix. Until that work lands, a size set to `auto` stays `auto` after
+a failure. Watch the card and Events after each switch.
+
+### What is built and what is still to come
+
+Built now:
+
+- the bar and the readiness read on the CLI, REST, MCP, comm verb and PWA card,
+- the decision record and the `release_mode_changed` audit event for each mode
+  change made through the REST, MCP and comm surfaces,
+- the release gate: a failed release check holds the run in any mode, `manual`
+  holds for a person, and `ask` raises one decision question and ships only
+  after a yes.
+
+Still to come:
+
+- the writer of the comparison records. No code in this build writes them yet,
+  so the readiness read counts zero until that writer is wired,
+- a configurable bar,
+- the fall-back to `ask` and its alert.
+
+The mode setting has no shadow value. A size's mode is `auto`, `ask` or
+`manual`, so the switch is the change from one of the other two to `auto`.
+
+### To move a size
+
+1. Check the card, or `datawatch merge-pipeline readiness --size S`, until the
+   size shows Ready. Read any blocking defect it reports first.
+2. Set that size's mode to `auto` in the merge pipeline card or the Autonomous
+   settings. Do this one size at a time. The change records its own evidence.
+3. Watch Events and the release gate for the next releases of that size.
+
+To move a size back, set its mode to `ask` or `manual`. That change is recorded
+the same way. Keep the major size on `ask` unless a person decides otherwise.
 
 ## After the ship: post-ship hooks
 
