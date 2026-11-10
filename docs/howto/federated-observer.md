@@ -242,9 +242,9 @@ Ways to read or change the setting:
 
 | Access method | How |
 |---|---|
-| YAML | Set `silent_alert_minutes` under `observer.peers` in `~/.datawatch/datawatch.yaml`. |
+| YAML | Set `silent_alert_minutes` under `observer.peers` in `~/.datawatch/config.yaml`. |
 | CLI | `datawatch config set observer.peers.silent_alert_minutes <n>` |
-| Web UI | Settings, Observer section, peer silence field. |
+| Web UI | Settings, Observer section, "Silent peer alert after (minutes; 0 = disabled)" field. |
 | REST | `PUT /api/config` with `observer.peers.silent_alert_minutes`; read it back with `GET /api/config`. |
 | MCP | `config_set` with key `observer.peers.silent_alert_minutes`; read it back with `get_config` section `observer`. |
 | Comm channel | `configure observer.peers.silent_alert_minutes=<n>` |
