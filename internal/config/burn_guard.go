@@ -227,3 +227,13 @@ func ValidateBurnGuardRung(name string) error {
 	}
 	return nil
 }
+
+// ValidateMaxProjectionGapPoints is the one rule for usage.burn_guard.max_projection_gap_points,
+// shared by the REST config path, the CLI and the comm channel: a finite number from 0 to
+// BurnGuardProjectionGapMax. Zero is valid and means the projections are never compared.
+func ValidateMaxProjectionGapPoints(f float64) error {
+	if !burnGuardFinite(f) || f < 0 || f > BurnGuardProjectionGapMax {
+		return fmt.Errorf("usage.burn_guard.max_projection_gap_points: must be from 0 to %g (0 never compares the projections)", BurnGuardProjectionGapMax)
+	}
+	return nil
+}

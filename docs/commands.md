@@ -783,6 +783,8 @@ The account **usage calculator** — the account's usage verdict, lane count, pa
 | `usage work <points\|clear>` | Set (or clear) the typed remaining-work figure, then show the refreshed advice. When cleared, the per-task estimate stands in. |
 | `usage burn-guard` | The burn guard's status, read-only: state, rung in force, projected percent against the pace line and margin, burn per hour, over or under target, and the last decision. Same data as `GET /api/usage/burn-guard`; run it or change its settings from the CLI, REST or MCP (`datawatch usage burn-guard run`, `config`). |
 
+**Burn guard projection gap.** The comm channel sets the gap between the guard's projection and the usage advice with `configure usage.burn_guard.max_projection_gap_points=<n>`: a number from 0 to 100 (default 25; 0 never compares the two projections). The value is checked by the same rule as the REST config path and the CLI (`datawatch usage burn-guard config max_projection_gap_points=<n>`), and an invalid value is refused with `Refused:` and nothing is stored. The `usage burn-guard config` output shows the current value as `max_projection_gap_points`.
+
 The `variant` / `policy` / `lanes` / `session` keys are case-insensitive; values pass through verbatim and the daemon validates them.
 
 **Example:**
