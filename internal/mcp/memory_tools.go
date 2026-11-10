@@ -971,7 +971,9 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = the default window), "+
 			"session.liveness_idle_timeout_overrides (a JSON object of backend name to whole seconds, e.g. {\"pi\":300}, or backend=seconds pairs such as pi=300; "+
 			"0 = off for that backend; an unknown backend name is refused; an empty object clears the overrides). "+
-			"Read both back with get_config section=session. A refused value returns the daemon's message."),
+			"Read both back with get_config section=session. "+
+			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120); read it back with get_config section=secrets. "+
+			"A refused value returns the daemon's message."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),
 			mcpsdk.Description("Config key (e.g. 'detection.prompt_debounce', 'pipeline.max_parallel')"),
