@@ -114,6 +114,10 @@ func TestMergeMCP_ReadOnlyNoWriteTool(t *testing.T) {
 	for _, n := range MergePipelineToolNames() {
 		known[n] = true
 	}
+	// The shadow status tool only reads shadow plans and comparison counts.
+	for _, n := range MergeShadowToolNames() {
+		known[n] = true
+	}
 	for _, n := range mergeTestToolNames(t) {
 		if known[n] {
 			continue

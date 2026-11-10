@@ -333,6 +333,30 @@ def map_finding(text):
     return None
 
 
+def merge_shadow_lines():
+    """One informational line per release size that has merge shadow comparisons, with matched and different counts.
+
+    Read only from GET /api/autonomous/merge/shadow through get_json (its default timeout). Sizes with no comparisons print
+    nothing, and nothing is returned when there are no comparisons or the endpoint cannot be reached. Informational only: it
+    never changes the OK or ATTENTION verdict.
+    """
+    d = get_json("https://localhost:8443/api/autonomous/merge/shadow", insecure=True)
+    if not isinstance(d, dict):
+        return []
+    totals = {}
+    for proj in d.get("projects") or []:
+        for size, cnt in (proj.get("counts") or {}).items():
+            if not isinstance(cnt, dict):
+                continue
+            m, x = cnt.get("matched") or 0, cnt.get("different") or 0
+            if m + x == 0:
+                continue
+            t = totals.setdefault(size, [0, 0])
+            t[0] += m
+            t[1] += x
+    return ["MERGE SHADOW %s: matched %d different %d" % (size, t[0], t[1]) for size, t in sorted(totals.items())]
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     record_path = None
@@ -499,6 +523,7 @@ def main(argv=None):
         except OSError as e:
             print("record write failed: %s" % e, file=sys.stderr)
 
+    shadow = merge_shadow_lines()
     if findings:
         print("ATTENTION " + summary)
         for f in findings:
@@ -506,6 +531,8 @@ def main(argv=None):
     else:
         print("OK " + summary)
     for line in readiness:
+        print(line)
+    for line in shadow:
         print(line)
     return 1 if findings else 0
 

@@ -6742,6 +6742,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// merge_pipeline — the merge-shadow comparison after a ship reads
+			// version files and the registry file from it.
+			amgr.SetMergePipelineConfig(cfg.Autonomous.MergePipeline)
+			// autonomous.merge_shadow — the finish-time shadow merge plan reads
+			// its enabled switch and gate timeout from it.
+			amgr.SetMergeShadowConfig(cfg.Autonomous.MergeShadow)
 			// autonomous.shipped.backfill_on_start (default off) — now that the
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
@@ -12074,6 +12080,11 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		// auto|ask|manual only; refused here before anything is sent. The
 		// cli surface is named so the daemon records the change as a CLI change.
 		return runMergePipelineReleaseApprovalSet(url+"?surface=cli", cfg.Server.Token, key, value)
+	}
+	// the merge-shadow settings are validated with the API's own rules and
+	// sent typed, with their help link printed on success.
+	if handled, err := mergeShadowConfigSet(cfg, key, value); handled {
+		return err
 	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {

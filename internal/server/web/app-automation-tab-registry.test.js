@@ -44,7 +44,7 @@ const FIXED = {
   automations: ['automationFilterBar', 'automationPanel'],
   resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard', 'automationInfraRetryCard', 'automationChecksCard', 'automationShipCard'],
   progress: ['progressCard'],
-  setup: ['automationOnboardingReportCard', 'automationMergePipelineCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'],
+  setup: ['automationOnboardingReportCard', 'automationMergePipelineCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'],
   housekeeping: ['automationSafeDeleteCard', 'automationCleanupCard', 'automationUncommittedWorkCard', 'automationProtectedPathsCard'],
 };
 const PLACEHOLDERS = {
@@ -131,7 +131,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
       seen.set(c, id);
     });
   }
-  assert.equal(seen.size, 5 + 2 + 6 + 1 + 4 + 4 + 13, 'total distinct card ids (fixed 22 + placeholders 13)');
+  assert.equal(seen.size, 5 + 2 + 6 + 1 + 5 + 4 + 13, 'total distinct card ids (fixed 23 + placeholders 13)');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationTriageCard', 'triage card is first on Inbox');
 });
 

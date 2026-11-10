@@ -165,5 +165,8 @@ func (m *Manager) RecordAutomationShipped(id, release string, mergedAt time.Time
 	if !ok {
 		return nil, fmt.Errorf("automation %q not found", id)
 	}
+	// The record is on disk: run the merge-shadow comparison in the
+	// background so the ship path never waits on it (no-op without a plan).
+	m.startMergeShadowCompare(id)
 	return out, nil
 }

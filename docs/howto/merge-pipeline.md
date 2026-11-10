@@ -828,6 +828,54 @@ issue, tag the release or send a notification. The hooks are off by default
 and a failed hook never blocks or fails the ship — the ship is already done.
 The operator guide is [How-to: Post-ship hooks](post-ship-hooks.md).
 
+## The shadow merge plan
+
+Phase 4 of the autonomy handover (review and merge by the daemon) moves the merge from "the supervisor works it out by hand" to "the daemon works it out and only then acts", using the same shadow-first rule as every other handover: the daemon plans the merge, the supervisor does the real one, and the two are compared — every difference is a defect. The plan and the shadow comparison that grades it against the merge that actually landed both exist as of this step; the rest of the phase lands separately. Three settings govern it — `autonomous.merge_shadow.enabled` (on by default), `autonomous.merge_shadow.gate_timeout` (the Go-duration budget each trial-merge gate waits, default `20m`) and `autonomous.merge_shadow.plan_keep` (how many plans are kept per project, default `200`) — documented with their validation and every way of setting them in [howto/merge-shadow.md](merge-shadow.md).
+
+### What a plan says
+
+One shadow merge plan per Automaton, describing what its merge would do:
+
+| Field | Meaning |
+|---|---|
+| Release size | `patch`, `minor`, `major` or `none`. |
+| Planned version | The version the bump step would set. Empty when there is none. |
+| Changelog heading and body | The entry drawn from the Automaton's own changelog entry task, or empty when it has none — nothing is invented. |
+| Changelog source | The task the entry came from, or `missing` when no task carries a well-formed one. |
+| README line, registry row, parity issue | The mechanical release edits the merge would make. Empty when there are none. |
+| Conflicts | Each conflicting path with its file class, the resolution and who made it. |
+| Gates | Each gate (build, lint, test) with its status — `pass`, `fail`, `timeout`, `skipped`, or `load_sensitive` (a test gate that failed first and passed when rerun alone) — how long it took and its detail. |
+| Findings | Each problem with a code — `trial_merge_failed`, `conflict_unresolved`, `gate_fail` or `gate_timeout`, `changelog_missing`, `unmerged_task_branch`, `stray_root_file`, `lint_version_mismatch`, `review_stale` — a message and whether it blocks. |
+
+Before the trial merge, the plan step also checks the Automaton's own task branches and, when one is recorded, its review verdict: a task branch named after the work branch (`<branch>--tasks-…`) holding commits the work branch does not blocks the plan with `unmerged_task_branch`, and a recorded review verdict that names a commit other than the branch head (or none at all) blocks it with `review_stale` — the verdict says nothing about the work the merge would land — and when any blocks the trial merge and every gate are recorded as skipped. The gates carry their own checks: the `test` gate that fails first is rerun once alone and, when it then passes, is recorded `load_sensitive` with the failing lines kept as the finding and not blocking, and a failed `test` gate names the failing tests (from the run's `go test -json`) and the first assertion line in its detail; the `lint` gate compares the local golangci-lint with the version the trial merge's CI workflow pins and fails with `lint_version_mismatch` on a difference; each gate's process starts in its own process group (unix) and the gate's timeout kills the whole group, so a hung PWA test suite — and everything it spawned — ends with the gate and nothing survives it; the planned version is derived from the default branch's version and the release size alone, and a trial tree that already carries the bump is reported as already at planned rather than bumped again; and the gate runner can run any other make target of the project as a gate — the plans-link checker (`check-plans-links`) runs that way, and a broken plan link fails it, with the output reporting only the count of broken targets. What each check does is in [howto/merge-shadow.md](merge-shadow.md#the-plans-checks-and-gates).
+
+### What a plan never does
+
+- It is never applied. Every stored plan has `applied` set to `false`, and the store refuses a plan marked applied — a shadow plan is a record, not a queue.
+- It touches nothing in your project. The trial merge that finds the conflicts runs in a throwaway worktree outside the project's tree, does the merge without committing it, and the scratch tree is removed on every exit path. No branch, tag or ref is created or moved, and nothing is pushed.
+- It invents nothing. The changelog text comes only from the Automaton's own changelog entry task when its output has the exact shape `## [version] - YYYY-MM-DD` with a non-empty body. Without one, the plan carries empty heading and body and the source `missing`.
+
+### Where plans live
+
+One plan per Automaton, as `merge-plans/<id>.json` under the daemon's data directory, written atomically (a temporary file renamed into place, so a crash never leaves a torn plan). Reads list the newest first, and a project's retention prunes the oldest plans beyond the most recent N (N is at least 1).
+
+### How the shadow comparison runs
+
+When the merge has landed and the shipped record has been written for the Automaton, the daemon starts the shadow comparison in the background. The ship path never waits on it: the comparison runs under a two-minute budget, and when that budget is spent, or the comparison fails for any other reason (an unresolvable base ref included), whatever it left behind is logged and dropped. The ship already happened and nothing about it changes.
+
+- **Nothing without a plan.** Without a stored plan to compare — an Automaton that finished before reaching the plan step, or whose plan was pruned by retention — the comparison does no work at all: no git reads, no comparison record, no files written.
+- **Read from the ref, never the tree.** The landed state is read from the default branch's ref — the plan's base ref, or `main` when the plan has none — with `git show <ref>:<path>`, so the comparison sees what landed, not your working tree, and uncommitted changes cannot skew it. It reads the first `## ` heading of `CHANGELOG.md`, the `var Version` line of every version file the pipeline names (a file that is not on the ref, or lacks the line, reads as *not found* and shows up as `(missing)` in the version side of the difference), the `Current release` line of `README.md` whose version matches the plan, and the registry table row naming the Automaton — from the pipeline's post-ship registry file with its `{project}` placeholder filled in, or `docs/plans/README.md` when the pipeline names none.
+- **Not found is a fact, not an error.** A file or line that is absent reads as *not found* and feeds the comparison — a planned artefact found nowhere is the input to a difference, not a failure of the read.
+- **Differences are graded.** The plan and the landed state are compared field by field — version (every version file), changelog heading, README line, registry row, the parity-issue flag, and gate results. A difference is **major** when a version is wrong or missing, a planned heading, README line or registry row landed nowhere, a parity issue the plan required landed nowhere, or a planned gate is absent from the supervisor's manual gate record or present with a different result (only checked when that record is supplied — see below); **minor** when the heading, README line or registry row drifted in wording, or a parity issue landed where the plan did not require one.
+- **The comparison itself is not stored yet.** The `merge-comparisons/` store (one JSON per Automaton under the daemon's data directory, a temporary file renamed into place) exists in the code, but the shipped post-ship flow does not call it: the only thing the hook persists is the defect candidates. Saving the full comparison record is an open gap an operator should note, not something that happens today.
+- **Each difference leaves a defect candidate.** Every difference is recorded as a defect candidate on the Automaton: its severity, field, both values and the release size, with the status `candidate` and a content-derived identity key, stored as `defect-candidates/<id>.json` (one file per Automaton) under the data directory. The store is idempotent by content — re-running the comparison on an unchanged plan and landed state adds nothing — and a candidate is not yet a defect: filing it into the defect queue is a separate job.
+
+**Two lines have no landed side yet, and why.** The parity-issue line compares the plan's flag against the plan's flag today, because the landed-side look-up of a filed parity issue is not wired — the hook passes the plan's own flag through, so that line reports *matched* without anything being checked, and a required parity issue that did not in fact land is not caught today either. The gate line has no landed side at all in the shipped flow: the manual gate record slot exists in the comparison, but the hook never fills it, so the gate field is counted as *not compared* rather than silently dropped — the record shows it as not compared, and a gate with a planned expectation but no recorded result is never treated as a failure. When a manual gate record *is* supplied, each planned gate absent from it, or present with a different result, becomes a **major** difference.
+
+### What is still yours to do
+
+The plan, the comparison and the defect candidates are read from the same daemon endpoint on five read-only operator surfaces: REST `GET /api/autonomous/merge/shadow`, the `autonomous_merge_shadow_status` MCP tool, `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Automation Setup and policy sub-tab (walkthrough: [merge-shadow.md](merge-shadow.md#where-the-shadow-state-is-read)). The stored plan is on all of them today; the **comparison** reads stay empty until the store wiring above lands (the card stays hidden, the CLI answers “no merge shadow comparison exists”), and the defect candidates are not yet filed into the defect queue and still have no read surface at all — they are the JSON under the data directory. The rest of the phase — the release approval modes per size of release (each `automatic`, `ask` or `manual`), the daemon's own push and tag under a release path, conflict resolution by file class with the confirmation counter — lands in the same phase and is documented as it does. What you still review: every difference the comparison grades (each one names its field, both values and its severity), the parity-issue and gate lines that have no landed side yet (above), the plan's findings — the `load_sensitive` gate (a test that failed under load and passed when rerun alone is still a test to watch), the failing tests named in a failed `test` gate's detail, and the blocking `unmerged_task_branch`, `stray_root_file`, `lint_version_mismatch` and `review_stale` findings (a `review_stale` verdict is on an older commit — the current head is not reviewed yet) — the fact that the comparison record is not stored beyond the candidates, and whether the evidence bar below has been met before the supervisor steps out of the loop. Until the shadow comparison meets the evidence bar (ten merges where the daemon's plan equals the manual one or is better, including at least two with conflicts and two with PWA changes, no blocking comparison defect), the merge stays with the supervisor. The phase's modes, defaults and exit criteria are in [the autonomy handover plan](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4.
+
 ## Settings
 
 All keys are under `autonomous.merge_pipeline` and each can be overridden per
@@ -860,3 +908,8 @@ Automation > Merge pipeline in the PWA — the card's one-select-per-size sectio
 link there that opens the [Release size](../datawatch-definitions.md#release-size)
 entry in the definitions. The other keys open their own entries for the pipeline
 in the same file.
+
+These keys are the *pipeline* settings. The shadow merge plan above has its own
+block — `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`
+and `autonomous.merge_shadow.plan_keep` — set the same ways and never overridden
+per project; its defaults and rules are in [howto/merge-shadow.md](merge-shadow.md).

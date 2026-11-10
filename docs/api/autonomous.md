@@ -78,6 +78,7 @@ GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queue
 GET    /api/autonomous/request-watch[?session=&automaton=]  model request progress: the watch settings in effect and one observation per watched worker or verifier session (state, time without progress, summary); read-only, makes no model call
 POST   /api/autonomous/merge/run           run a merge through the resolved merge pipeline: body {project?, title, branches}; answers {run, error?}; each step is recorded in pipeline_runs of the merge state
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions, merge_lock (the lock held on the base repository by a running merge, omitted when none); read-only, never runs git
+GET    /api/autonomous/merge/shadow        shadow merge state per project: stored plans, stored comparisons and per-release-size matched/different counts; read-only, stores only
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 GET    /api/autonomous/restart-interruptions  running tasks and live sessions a daemon restart now would interrupt (ids and counts) plus the restart policy; read-only, autonomous read capability
 
@@ -1895,6 +1896,75 @@ The states:
 | `unknown` | Not compared yet, or the comparison failed (no worktree base repository, a git error). A client must treat it as "no information", never as merged or pending |
 
 `state` is read from the daemon's in-memory comparison, so this route **never runs git** and answers quickly; an Automaton the check has not compared yet reads `unknown`. A shadow decision is one row per change of an Automaton's outcome: an identical decision is not appended again, it raises `repeat_count` and moves `last_seen_at` instead. `repeat_count` can therefore be 1 for a row seen once. The history is bounded at 1000 rows and survives a daemon restart.
+
+### `GET /api/autonomous/merge/shadow`
+The shadow merge plan state (Phase 4, shadow mode), grouped by project: the stored **plans** (one per finished Automaton, `applied` always `false`), the stored **comparisons**, and the matched/different comparison counts per release size. Read-only: it reads the two stores under the daemon's data directory (`merge-plans/`, `merge-comparisons/`); it runs no git, merges nothing and never applies a plan. The settings (`autonomous.merge_shadow.*`) and the walkthrough are in [howto/merge-shadow.md](../howto/merge-shadow.md).
+
+```
+GET /api/autonomous/merge/shadow
+
+200: {
+  "projects": [
+    {
+      "project": "datawatch",
+      "plans": [
+        {
+          "automaton_id": "d0442737d38c",
+          "project": "datawatch",
+          "branch": "automaton/d0442737d38c",
+          "base_ref": "main",
+          "release_size": "patch",
+          "planned_version": "9.35.0",
+          "changelog_heading": "## [9.35.0] - 2026-11-07",
+          "changelog_body": "...",
+          "changelog_source": "task",
+          "readme_line": "Current release: 9.35.0",
+          "registry_row": "| datawatch | ... |",
+          "parity_issue_needed": false,
+          "conflicts": [],
+          "gates": [
+            { "name": "tests", "status": "ok", "duration": "41s", "detail": "" }
+          ],
+          "findings": [],
+          "created_at": "2026-11-07T09:12:10Z",
+          "applied": false
+        }
+      ],
+      "comparisons": [
+        {
+          "automaton_id": "d0442737d38c",
+          "release_size": "patch",
+          "matched": 5,
+          "different": 1,
+          "not_compared": 0,
+          "differences": [
+            { "field": "readme_line", "severity": "minor", "planned": "Current release: 9.35.0", "landed": "Current release: 9.35.0 (beta)" }
+          ],
+          "created_at": "2026-11-07T09:12:44Z"
+        }
+      ],
+      "counts": {
+        "patch": { "matched": 3, "different": 1 },
+        "minor": { "matched": 0, "different": 0 },
+        "major": { "matched": 0, "different": 0 },
+        "none":  { "matched": 0, "different": 0 }
+      }
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `projects` | One entry per project that has a stored plan or comparison, sorted by name; **an empty list is the normal empty state, not an error**. A plan or comparison whose Automaton names no project (or has no stored plan) is listed under `project` `unknown` |
+| `projects[].plans` | The stored shadow merge plans for the project, always an array (never `null`); one per finished Automaton, each with `applied` `false` — a record, not a queue |
+| `projects[].comparisons` | The stored comparisons, always an array; a comparison joins its plan by `automaton_id` to find its project |
+| `projects[].counts` | All four release sizes (`patch`, `minor`, `major`, `none`) always present. A comparison counts as `different` when it found at least one difference, as `matched` otherwise |
+| `comparisons[].differences[]` | Each difference: `field`, `severity` (`major` or `minor`), `planned` (the plan's value) and `landed` (the landed value, `(missing)` when it landed nowhere) |
+
+Answers: `405` with `Allow: GET` for any other method; `403` for a federated peer without the autonomous read capability; `500` with the store's error when the plan or comparison store cannot be read. The **defect candidates** the comparison records are not in this body — they stay the JSON file under the data directory (`<data directory>/defect-candidates/<automaton id>.json`) until filing them into the defect queue lands.
+
+The same answer is the read behind the MCP tool `autonomous_merge_shadow_status` (optional `project` argument), the CLI `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Automation Setup and policy sub-tab — all read-only, none of them writes or files anything. Note that the CLI and the card render comparison state, and the comparison is stored empty today: the post-ship flow persists the **defect candidates**, not the comparison record, so these reads stay empty until that wiring lands — the stored plans are the part that is populated now.
 
 ### `GET /api/autonomous/safe-to-delete`
 

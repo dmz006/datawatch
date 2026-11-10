@@ -3654,6 +3654,10 @@ type AutonomousConfig struct {
 	// AutonomousDecisionsConfig below.
 	Decisions AutonomousDecisionsConfig `yaml:"decisions" json:"decisions"`
 
+	// MergeShadow — the shadow merge plan knobs (autonomous.merge_shadow).
+	// See MergeShadowConfig in merge_shadow.go.
+	MergeShadow MergeShadowConfig `yaml:"merge_shadow" json:"merge_shadow"`
+
 	// Automation — knobs for Automation (multi-Automaton orchestration)
 	// coordination. See AutonomousAutomationConfig.
 	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`

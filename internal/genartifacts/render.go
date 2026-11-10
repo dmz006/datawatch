@@ -422,3 +422,17 @@ func Generate(kind Kind, rec *changerecord.ChangeRecord, o Options) (Result, err
 	res.Warnings = append(res.Warnings, warns...)
 	return res, err
 }
+
+// PWAChanged reports whether the record lists a changed file under
+// internal/server/web/, the same prefix surfaceOf maps to the Web UI.
+func PWAChanged(rec *changerecord.ChangeRecord) bool {
+	if rec == nil {
+		return false
+	}
+	for _, f := range rec.Files {
+		if surfaceOf(f.Path) == "Web UI" {
+			return true
+		}
+	}
+	return false
+}

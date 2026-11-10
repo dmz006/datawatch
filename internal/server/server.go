@@ -575,6 +575,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                         // supervisor loop run records, newest first
 	apiMux.HandleFunc("/api/supervisor-loop/stats", api.handleSupervisorLoopStats)                       // supervisor loop numbers: jobs, run counts by outcome, retries, last run age
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                                // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
+	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                   // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                         // run a merge through the resolved pipeline, recording each step
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                // safe-to-delete report of finished Automaton branches and worktrees
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                // cleanup status: both passes, disk readings, rate-limited disk-alert flag

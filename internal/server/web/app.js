@@ -18849,6 +18849,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.post_ship.companion_repository', label: 'Companion repository (repository the parity_issue hook opens the issue in)', labelKey: 'settings_post_ship_companion_repository', hintKey: 'settings_post_ship_companion_repository_hint', docsKey: 'settings_post_ship_companion_repository', type: 'text', placeholder: 'owner/parity-tracker' },
     { key: 'autonomous.merge_pipeline.post_ship.issue_title_template', label: 'Issue title template (the title the parity_issue hook files; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_issue_title_template', hintKey: 'settings_post_ship_issue_title_template_hint', docsKey: 'settings_post_ship_issue_title_template', type: 'text', placeholder: 'Parity: {project} {version}' },
     { key: 'autonomous.merge_pipeline.post_ship.notify_template', label: 'Notify template (the message the notify hook sends; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_notify_template', hintKey: 'settings_post_ship_notify_template_hint', docsKey: 'settings_post_ship_notify_template', type: 'textarea' },
+    // Merge shadow — the finish-time shadow merge plan: what merging an
+    // Automaton's branch would do, kept per project for comparison with the
+    // real merge. On by default (enabled=false turns the plan off); each field
+    // links to the merge shadow howto.
+    { label: 'Merge shadow', labelKey: 'merge_shadow_settings_title', type: 'group' },
+    { key: 'autonomous.merge_shadow.enabled', label: 'Merge shadow (the finish-time shadow merge plan; on by default)', labelKey: 'settings_merge_shadow_enabled', helpKey: 'settings_merge_shadow_enabled_help', helpDocs: 'howto/merge-shadow.md', type: 'toggle' },
+    { key: 'autonomous.merge_shadow.gate_timeout', label: 'Merge shadow gate timeout (a Go duration per gate, default 20m)', labelKey: 'settings_merge_shadow_gate_timeout', helpKey: 'settings_merge_shadow_gate_timeout_help', helpDocs: 'howto/merge-shadow.md', type: 'text', placeholder: '20m' },
+    { key: 'autonomous.merge_shadow.plan_keep', label: 'Merge shadow plans kept per project (whole number, minimum 1, default 200)', labelKey: 'settings_merge_shadow_plan_keep', helpKey: 'settings_merge_shadow_plan_keep_help', helpDocs: 'howto/merge-shadow.md', type: 'number', placeholder: '200', min: 1, step: 1 },
     // Onboarding report — what is configured, what is missing and what to try next. The
     // list is comma separated; an id that names no check is ignored.
     // Tracing — how much of each agent's activity is recorded for the Trace card.
@@ -19863,13 +19871,13 @@ function loadGeneralConfig() {
           } else if (f.type === 'toggle') {
             const checked = !!val;
             const _togHint = _fieldHintHTML(f);
-            html += `<div class="settings-row" style="justify-content:space-between;${_togHint ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
+            html += `<div class="settings-row" style="justify-content:space-between;${(_togHint || f.helpDocs) ? 'flex-wrap:wrap;gap:6px;' : ''}">
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <label class="toggle-switch">
                 <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
                 <span class="toggle-slider"></span>
               </label>
-              ${_togHint}
+              ${f.helpDocs ? _settingsHelpTextHTML(f) : ''}${_togHint}
             </div>`;
           } else if (f.type === 'dir_browse') {
             const fid = 'cfg_dir_' + f.key.replace(/\./g, '_');
@@ -35077,11 +35085,15 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_setup',
     bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationMergeShadowCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationReleaseReadinessCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('setup')}`,
     mount() {
       listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]);
+      // The merge shadow card is a plain one-shot read (no list chrome), so it
+      // has no loader entry; it renders nothing when the shadow is off or empty.
+      if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
       _automationSlotsMount('setup');
     },
     stop() {

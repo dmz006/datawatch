@@ -1,0 +1,10 @@
+{"Time":"2026-11-07T10:00:00Z","Action":"start","Package":"example.com/datawatch/internal/config"}
+{"Time":"2026-11-07T10:00:00Z","Action":"run","Package":"example.com/datawatch/internal/config","Test":"TestSettingsKeyCount"}
+{"Time":"2026-11-07T10:00:00Z","Action":"output","Package":"example.com/datawatch/internal/config","Test":"TestSettingsKeyCount","Output":"=== RUN   TestSettingsKeyCount\n"}
+{"Time":"2026-11-07T10:00:00Z","Action":"output","Package":"example.com/datawatch/internal/config","Test":"TestSettingsKeyCount","Output":"    settings_count_test.go:14: settings keys = 41, want 40\n"}
+{"Time":"2026-11-07T10:00:00Z","Action":"output","Package":"example.com/datawatch/internal/config","Test":"TestSettingsKeyCount","Output":"--- FAIL: TestSettingsKeyCount (0.00s)\n"}
+{"Time":"2026-11-07T10:00:00Z","Action":"fail","Package":"example.com/datawatch/internal/config","Test":"TestSettingsKeyCount","Elapsed":0}
+{"Time":"2026-11-07T10:00:00Z","Action":"run","Package":"example.com/datawatch/internal/config","Test":"TestSettingsDefaults"}
+{"Time":"2026-11-07T10:00:00Z","Action":"pass","Package":"example.com/datawatch/internal/config","Test":"TestSettingsDefaults","Elapsed":0}
+{"Time":"2026-11-07T10:00:00Z","Action":"output","Package":"example.com/datawatch/internal/config","Output":"FAIL\n"}
+{"Time":"2026-11-07T10:00:00Z","Action":"fail","Package":"example.com/datawatch/internal/config","Elapsed":0.01}

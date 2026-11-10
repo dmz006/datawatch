@@ -188,6 +188,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_infra_retries":             CapAutonomousRead,
 	"onboarding_report":                    CapAutonomousRead,
 	"autonomous_merge_pipeline_get":        CapAutonomousRead,
+	"autonomous_merge_shadow_status":       CapAutonomousRead,
 	"autonomous_merge_pipeline_set_record": CapAutonomousWrite,
 	"autonomous_merge_pipeline_validate":   CapAutonomousRead,
 	"release_push_status":                  CapAutonomousRead,
@@ -257,18 +258,18 @@ var MCPToolCap = map[string]string{
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.
-	"usage_advice":                 CapUsageRead,
-	"usage_readings":               CapUsageRead,
-	"usage_reading_add":            CapUsageWrite,
-	"usage_reading_delete":         CapUsageWrite,
-	"usage_extra_credit_set":       CapUsageWrite,
-	"usage_remaining_work_set":     CapUsageWrite,
+	"usage_advice":             CapUsageRead,
+	"usage_readings":           CapUsageRead,
+	"usage_reading_add":        CapUsageWrite,
+	"usage_reading_delete":     CapUsageWrite,
+	"usage_extra_credit_set":   CapUsageWrite,
+	"usage_remaining_work_set": CapUsageWrite,
 
 	// Auto-lanes (the auto-lane loop the usage calculator runs, and its two
 	// settings): a read of the loop's state and the operator maximum — the
 	// autonomous role holds usage.read, so a monitor or autonomous session can
 	// see where the loop stands, same cap the calculator's own status reads use.
-	"usage_autolanes_status":     CapUsageRead,
+	"usage_autolanes_status":       CapUsageRead,
 	"burn_guard_status":            CapUsageRead,
 	"burn_guard_run":               CapUsageWrite,
 	"burn_guard_config_get":        CapUsageRead,

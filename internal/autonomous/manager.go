@@ -1331,6 +1331,14 @@ type Manager struct {
 	laneFillCaps    atomic.Pointer[laneFillPolicyCapFn]
 
 	dataDir string // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	// mergePipeline is the merge_pipeline settings the post-ship merge-shadow
+	// comparison reads version files and the registry file from; guarded by mu
+	// and set with SetMergePipelineConfig (merge_shadow_compare_hook.go).
+	mergePipeline config.MergePipelineConfig
+	// mergeShadow is the autonomous.merge_shadow settings the finish-time shadow
+	// merge reads its enabled switch and gate timeout from; guarded by mu and
+	// set with SetMergeShadowConfig (merge_shadow_hook.go).
+	mergeShadow config.MergeShadowConfig
 	// judgeVerdictCache — per-commit judge verdict cache
 	// (judge_verdict_cache.go): in-memory + JSON-persisted under the same
 	// autonomous data directory as the PRD store, so a completed pass/block

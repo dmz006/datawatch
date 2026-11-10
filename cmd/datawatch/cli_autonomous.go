@@ -197,6 +197,7 @@ Subcommands:
   unsubscribe <id>                Delete a lifecycle event subscription by id (BL427)
   events --queue <name>           Read pending events from an mcp_queue queue [--since <cursor>] [--limit n] [--json]
   merge-pipeline show|set-record|clear-record|validate   The merge pipeline of a project, its record, and a check of a pipeline
+  merge-shadow status|compare <automaton>   Merge shadow matched/different counts per release size, and one Automaton's differences
 `,
 	}
 	cmd.AddCommand(
@@ -205,6 +206,7 @@ Subcommands:
 		newAutonomousLaneFillCmd(),
 		newAutonomousInfraRetriesCmd(),
 		newAutonomousMergePipelineCmd(),
+		newAutonomousMergeShadowCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousGeneratedArtefactsCmd(),
 		newAutonomousChangeRecordCmd(),

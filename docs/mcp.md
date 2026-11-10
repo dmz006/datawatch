@@ -249,7 +249,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
@@ -713,6 +713,25 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
   autonomous_config_set(automation_merge_pending_mode="shadow")
   autonomous_config_set(automation_merge_pending_alert_minutes=0)
+  ```
+- **`autonomous_merge_shadow_status`** — read the shadow merge plan state (Phase 4, shadow mode) grouped by project: `projects` (sorted by project name; an empty list when no plan or comparison is stored — the normal empty state, not an error), each with `plans` (the stored shadow merge plans; `applied` is always `false` — a record, not a queue), `comparisons` (the stored comparisons; the post-ship flow persists the defect candidates, not the comparison record, so this list is empty until that wiring lands) and `counts` (per release size — `patch`, `minor`, `major`, `none` — the matched and different comparison counts; all four sizes are always present). Read-only: it reads the two stores under the daemon's data directory and runs no git, merges nothing, and files nothing into the defect queue. Needs the autonomous read capability when called by a federated peer. Returns the same object as `GET /api/autonomous/merge/shadow`; the walkthrough is [howto/merge-shadow.md](howto/merge-shadow.md#where-the-shadow-state-is-read).
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `project` | no | only that project's entry; the default is every project |
+
+  ```
+  autonomous_merge_shadow_status()
+  autonomous_merge_shadow_status(project="datawatch")
+  ```
+
+  Example result (shortened):
+
+  ```json
+  {"projects": [{"project": "datawatch",
+   "plans": [{"automaton_id": "d0442737d38c", "release_size": "patch", "planned_version": "9.35.0", "applied": false}],
+   "comparisons": [],
+   "counts": {"patch": {"matched": 0, "different": 0}, "minor": {"matched": 0, "different": 0}, "major": {"matched": 0, "different": 0}, "none": {"matched": 0, "different": 0}}}]}  
   ```
 - **`autonomous_config_set`** host load check arguments — `host_load_alert_mode` (`off`, `alert` or `reap`; default `alert`), `host_load_alert_multiple` (load-to-cores multiple that counts as a breach; default `1.5`) and `host_load_alert_minutes` (minutes a breach must last before one alert; default `10`). Only the arguments you give are sent; the daemon refuses an unknown mode and negative numbers. `autonomous_config_get` returns the `host_load_alert` block. Applies within a minute, with no restart:
 

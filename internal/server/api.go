@@ -6814,6 +6814,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"rules_review_source":    s.cfg.Autonomous.Automation.EffectiveRulesReviewSource(),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
+			// Effective, not raw: an unset enabled switch reads on, the unset
+			// gate timeout reads 20 minutes and the unset plan keep reads 200.
+			"merge_shadow": mergeShadowConfigSurface(s.cfg.Autonomous.MergeShadow),
 			// Effective, not raw: every supervisor_loop key with its default
 			// filled in, keyed without the supervisor_loop. prefix.
 			"supervisor_loop": supervisorLoopConfigSurface(s.cfg.Autonomous.SupervisorLoop),
@@ -7399,6 +7402,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	for k, v := range patch {
 		if field, ok := strings.CutPrefix(k, laneFillKeyPrefix); ok {
 			if verr := validateLaneFillValue(field, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Merge shadow: every autonomous.merge_shadow.* value is checked before
+	// anything is applied, so one bad value (or an unknown key) rejects the
+	// whole PUT with an error naming the key.
+	for k, v := range patch {
+		if field, ok := strings.CutPrefix(k, mergeShadowKeyPrefix); ok {
+			if verr := ValidateMergeShadowValue(field, v); verr != nil {
 				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}
@@ -9834,6 +9848,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applyLaneFillValue(&cfg.Autonomous.LaneFill, strings.TrimPrefix(k, laneFillKeyPrefix), v)
+		case mergeShadowKeyPrefix + "enabled", mergeShadowKeyPrefix + "gate_timeout",
+			mergeShadowKeyPrefix + "plan_keep":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyMergeShadowValue(&cfg.Autonomous.MergeShadow, strings.TrimPrefix(k, mergeShadowKeyPrefix), v)
 		case "autonomous.progress.lanes":
 			// Validated in handlePutConfig; 0 = the default of 5.
 			if n, err := parseProgressWhole("autonomous.progress.lanes", v); err == nil {
