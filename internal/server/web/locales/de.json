@@ -3327,6 +3327,8 @@
   "held_question_failed": "Failed to load held questions: %1$s",
   "held_question_settings_mode": "Held questions mode (off, shadow or on; default shadow)",
   "held_question_settings_states": "Held question states (comma-separated held task state ids; empty = all five)",
+  "automation_help_triage_card": "Öffne die Anleitung zur Inbox-Triage: was die Triage-Karte zeigt, ihre Schaltflächen und wie ein hängender Automat wieder frei wird",
+  "automation_help_held_questions": "Öffne die Anleitung zu angehaltenen Fragen: was eine angehaltene Frage bedeutet und wie du die Sperre ansiehst oder änderst",
   "settings_automation_merged_member_policy": "Automaton merged-member policy (completed, manual or block; default completed)",
   "automation_merged_members_title": "Automaton merged-member decisions",
   "automation_merged_member_member": "Automaton member",

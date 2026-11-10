@@ -30213,9 +30213,16 @@ function _triageButtons(record, prdID, taskID) {
   parts.push(btn('cancel', 'triage_action_cancel'));
   return `<div class="triage-actions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-width:0;">${parts.join('')}</div>`;
 }
+// _automationHelpLinkHtml is the '?' help affordance on an Inbox card. It opens
+// the Automata howto section for that card in a new tab; helpKey names the
+// locale string used as its tooltip and accessible label.
+function _automationHelpLinkHtml(helpKey, anchor) {
+  const label = t(helpKey);
+  return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
+}
 window.triageCardHtml = function(record) {
   _triageBindClick();
-  const head = `<div class="cap-title">${escHtml(t('triage_card_title'))}</div>`;
+  const head = `<div style="display:flex;align-items:center;gap:8px;min-width:0;"><div class="cap-title">${escHtml(t('triage_card_title'))}</div>${_automationHelpLinkHtml('automation_help_triage_card', '#the-needs-attention-card')}</div>`;
   if (!record || typeof record !== 'object') {
     return `<div class="prd-capacity-card triage-card">${head}<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_record_empty'))}</div></div>`;
   }
@@ -34777,6 +34784,7 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationHeldQuestionsCard" class="prd-capacity-card held-questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('held_question_title'))}</div>
+          ${_automationHelpLinkHtml('automation_help_held_questions', '#the-held-questions-card')}
         </div>
         <div id="automationHeldQuestionsBody"></div>
       </div>

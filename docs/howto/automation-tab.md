@@ -86,11 +86,59 @@ blocked, paused, draft, completed, cancelled) and then by name.
 
 ### The needs-attention card
 
-On Inbox, at the top, sits the needs-attention card:
-one card per Automaton that needs an operator because it failed or is blocked,
-with the reason it needs attention. While nothing is stuck it shows a one-line
-empty note. See the *Triage records* entry under [Related](#related) for the
-record itself and how it fills and clears.
+On Inbox, the needs-attention card is titled **Triage**. It holds one card per
+Automaton that needs an operator because it failed, is blocked, or has finished
+work that is ready to merge. While nothing is stuck it shows a one-line empty
+note. A `?` beside the title opens this section. See the *Triage records* entry
+under [Related](#related) for the record itself and how it fills and clears.
+
+Each card shows:
+
+- **Headline.** What happened, in one line: *Stopped: the task "…" failed*,
+  *Blocked: …*, or *Ready to merge: branch … is waiting*.
+- **Reason.** The reason recorded for it, cut to two lines. Open details to read
+  the whole record.
+- **Automaton and Automation.** An **Automaton** chip, and an **in Automation
+  *name*** chip when the Automaton belongs to an Automation.
+- **Wait time.** *waiting …*, how long the Automaton has been waiting on you.
+
+The card has up to four buttons:
+
+- **Open details** opens the detail panel. A click anywhere on the card, outside
+  a button, does the same.
+- **Retry** resets the failed task so it runs again. It appears only when the
+  record names a task.
+- **Resolve review** sends a task that is held for review back to its worker. It
+  appears when a task is held for review or the branch is ready to merge.
+- **Cancel** cancels the Automaton.
+
+Open questions and held questions sit above the Triage card on Inbox, so they
+are the first things you see. You answer an open question in place, on its own
+card, without opening the Automaton. The order on Inbox is: open questions, held
+questions, Triage, security failure report, supervisor watch.
+
+### The held-questions card
+
+The held-questions card lists tasks that an Automaton has held for an operator
+decision. An Automaton holds a task when it names a question it cannot settle
+itself while the task is in one of the held states: by default `review_held`,
+`decompose_blocked`, `decompose_stalled`, `decompose_failed` and
+`decompose_rejected`. The card's badge shows the mode the feature is in:
+
+- **shadow** (the default) records the questions it would have held as *would-be*
+  questions, and holds no task.
+- **on** holds the task and lists it here until you answer.
+- **off** turns the feature off.
+
+Each held entry shows the recommended option, *Held on the default: hold* (what
+happens if you do nothing), a link to open the Automaton or task, and an
+**Answer** button, which opens the question so you can respond.
+
+To view or change the mode or the held states, open **Settings** under **Automata**
+and look at **Held questions mode** (`autonomous.questions.held_mode`) or **Held
+question states**.
+
+Clicking a Triage card opens its detail panel.
 
 ### The cards on the other sub-tabs
 
