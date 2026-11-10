@@ -18377,6 +18377,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.burn_guard.margin_points', label: 'Burn guard margin (points)', labelKey: 'settings_usage_burn_guard_margin_points', type: 'number', placeholder: '2', min: 0, max: 50, step: 0.5, default: '2' },
     { key: 'usage.burn_guard.step_back', label: 'Burn guard steps back under the line', labelKey: 'settings_usage_burn_guard_step_back', type: 'toggle', default: true },
     { key: 'usage.burn_guard.ask_on_change', label: 'Burn guard asks instead of alerting', labelKey: 'settings_usage_burn_guard_ask_on_change', type: 'toggle', default: false },
+    { key: 'usage.burn_guard.max_projection_gap_points', label: 'Burn guard max projection gap (points, 0 to 100, default 25)', labelKey: 'settings_usage_burn_guard_max_projection_gap', type: 'number', placeholder: '25', min: 0, max: 100, step: 0.5, default: '25' },
     { key: 'usage.burn_guard.cache_write_points_per_million', label: 'Burn guard cache write price', labelKey: 'settings_usage_burn_guard_cache_write_points_per_million', type: 'number', placeholder: '0.373', min: 0.0001, step: 0.001, default: '0.373' },
     { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
     { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
@@ -28972,6 +28973,7 @@ window.burnGuardSettingsHtml = function (cfg) {
   const ceilRows = Object.keys(ceil).sort().map(k => `<span data-ceiling-kind="${escHtml(k)}" style="margin-right:10px;">${escHtml(k)}: ${escHtml(String(ceil[k]))}</span>`).join('');
   const retry = cfg.retry_limit_claude === undefined || cfg.retry_limit_claude === null ? '' : String(cfg.retry_limit_claude);
   const margin = cfg.margin_points === undefined || cfg.margin_points === null ? '' : String(cfg.margin_points);
+  const gap = cfg.max_projection_gap_points === undefined || cfg.max_projection_gap_points === null ? '' : String(cfg.max_projection_gap_points);
   return `<div class="burn-guard-settings" style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">` +
     `<div style="font-weight:600;font-size:12px;">${escHtml(t('burn_guard_settings_title'))}</div>` +
     `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardEnabled"${cfg.enabled ? ' checked' : ''} onchange="burnGuardSaveField('enabled')"><span>${escHtml(t('burn_guard_enabled'))}</span></label>` +
@@ -28979,6 +28981,7 @@ window.burnGuardSettingsHtml = function (cfg) {
     `<div style="font-size:12px;">${escHtml(t('burn_guard_ladder'))}</div><div id="burnGuardLadder">${rows}</div>` +
     `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardStepBack"${cfg.step_back ? ' checked' : ''} onchange="burnGuardSaveField('step_back')"><span>${escHtml(t('burn_guard_step_back'))}</span></label>` +
     `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardAskOnChange"${cfg.ask_on_change ? ' checked' : ''} onchange="burnGuardSaveField('ask_on_change')"><span>${escHtml(t('burn_guard_ask_on_change'))}</span><a href="/diagrams.html#docs/howto/burn-guard.md#settings" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_ask_on_change_help'))}" aria-label="Help" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a></label>` +
+    `<label style="font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${escHtml(t('burn_guard_max_projection_gap'))} <input id="burnGuardMaxProjectionGap" type="number" min="0" max="100" step="any" value="${escHtml(gap)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('max_projection_gap_points')"><a href="/diagrams.html#docs/howto/burn-guard.md#settings" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_max_projection_gap_help'))}" aria-label="Help" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a></label>` +
     `<label style="font-size:12px;">${escHtml(t('burn_guard_retry_limit'))} <input id="burnGuardRetryLimit" type="number" min="0" max="20" step="1" value="${escHtml(retry)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('retry_limit_claude')"></label>` +
     `<div data-burn-guard="effort-ceiling" style="font-size:12px;"><span>${escHtml(t('burn_guard_effort_ceiling'))}</span> ${ceilRows || escHtml(t('burn_guard_ceiling_none'))}</div>` +
     `<div style="font-size:11px;color:var(--text2);">${escHtml(t('burn_guard_ceiling_hint'))}</div>` +
@@ -29019,11 +29022,16 @@ window.burnGuardSaveField = function (key) {
   else if (key === 'step_back') body = { step_back: chk('burnGuardStepBack') };
   else if (key === 'ask_on_change') body = { ask_on_change: chk('burnGuardAskOnChange') };
   else if (key === 'margin_points') body = { margin_points: num('burnGuardMargin') };
+  else if (key === 'max_projection_gap_points') {
+    // An empty field is not 0: 0 turns the gap check off, so blank is refused.
+    const e = document.getElementById('burnGuardMaxProjectionGap');
+    body = { max_projection_gap_points: e && String(e.value).trim() !== '' ? num('burnGuardMaxProjectionGap') : NaN };
+  }
   else if (key === 'retry_limit_claude') body = { retry_limit_claude: num('burnGuardRetryLimit') };
   else return;
-  if (key === 'margin_points' || key === 'retry_limit_claude') {
+  if (key === 'margin_points' || key === 'retry_limit_claude' || key === 'max_projection_gap_points') {
     const v = body[key];
-    if (!Number.isFinite(v) || v < 0 || (key === 'retry_limit_claude' && (v > 20 || !Number.isInteger(v)))) {
+    if (!Number.isFinite(v) || v < 0 || (key === 'max_projection_gap_points' && v > 100) || (key === 'retry_limit_claude' && (v > 20 || !Number.isInteger(v)))) {
       _burnGuard.error = t('burn_guard_invalid_number');
       _burnGuardPaint();
       return;

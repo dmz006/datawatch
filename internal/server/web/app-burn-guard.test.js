@@ -144,3 +144,52 @@ test('polling uses a window-level interval variable and stops cleanly', () => {
   vm.runInContext('window.burnGuardStopPolling()', s);
   assert.equal(vm.runInContext('window._burnGuardInterval', s), null);
 });
+
+test('the max projection gap control shows the configured value and links to the howto Settings section', () => {
+  const html = card(loadApp(), STATUS, Object.assign({}, CONFIG, { max_projection_gap_points: 30 }));
+  assert.ok(html.includes('id="burnGuardMaxProjectionGap"'));
+  assert.ok(html.includes('value="30"'));
+  assert.ok(html.includes("burnGuardSaveField('max_projection_gap_points')"));
+  assert.ok(html.includes('/diagrams.html#docs/howto/burn-guard.md#settings'), 'help link to the howto Settings section');
+  assert.ok(html.includes('Maximum projection gap'), 'help title is the localized text');
+  const unset = card(loadApp(), STATUS, CONFIG);
+  assert.ok(unset.includes('id="burnGuardMaxProjectionGap"'));
+  assert.ok(unset.includes('value=""'), 'no value when the config has none');
+});
+
+test('saving the max projection gap sends a PUT of the bare key', async () => {
+  const s = loadApp();
+  const calls = stubApi(s);
+  s.document.getElementById = id => (id === 'burnGuardMaxProjectionGap' ? { value: '40' } : null);
+  await vm.runInContext("window.burnGuardSaveField('max_projection_gap_points')", s);
+  const put = calls.find(c => c[1] && c[1].method === 'PUT');
+  assert.ok(put, 'a PUT was sent');
+  assert.equal(put[0], '/api/usage/burn-guard/config');
+  assert.deepEqual(JSON.parse(put[1].body), { max_projection_gap_points: 40 });
+});
+
+test('a max projection gap outside 0 to 100 or not a number is refused locally and sends nothing', async () => {
+  for (const value of ['101', '-1', 'abc', '']) {
+    const s = loadApp();
+    const calls = stubApi(s);
+    s.document.getElementById = id => (id === 'burnGuardMaxProjectionGap' ? { value } : null);
+    await vm.runInContext("window.burnGuardSaveField('max_projection_gap_points')", s);
+    assert.equal(calls.length, 0, 'no request for ' + JSON.stringify(value));
+    assert.ok(vm.runInContext('_burnGuard.error', s).length > 0, 'an error is shown for ' + JSON.stringify(value));
+  }
+  const edge = loadApp();
+  const calls = stubApi(edge);
+  edge.document.getElementById = id => (id === 'burnGuardMaxProjectionGap' ? { value: '0' } : null);
+  await vm.runInContext("window.burnGuardSaveField('max_projection_gap_points')", edge);
+  assert.equal(calls.filter(c => c[1] && c[1].method === 'PUT').length, 1, '0 is a valid value (gap check off)');
+});
+
+test('the settings field for the max projection gap is a number from 0 to 100 with a locale key', () => {
+  const s = loadApp();
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  const line = src.split('\n').find(l => l.includes("key: 'usage.burn_guard.max_projection_gap_points'"));
+  assert.ok(line, 'settings field present');
+  assert.ok(line.includes("type: 'number'") && line.includes('min: 0') && line.includes('max: 100'));
+  assert.ok(line.includes("labelKey: 'settings_usage_burn_guard_max_projection_gap'"));
+  assert.ok(vm.runInContext("_i18n.bundle.settings_usage_burn_guard_max_projection_gap", s));
+});
