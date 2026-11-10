@@ -261,3 +261,9 @@ attributed to their pack the same way.
 Open point: whether the record reuses the existing trace, cost and audit stores (with new link fields) or adds a
 store of its own. Not yet checked against the code: which of those stores already carry per-task token and cost
 figures for daemon-run script steps. That check comes before the question is asked of the operator.
+
+Code check (2026-11-10): the existing trace event (`internal/trace/event.go`) already carries session, task, story
+and Automaton ids, backend, kind, name, outcome, duration and token counts, and there are rollups, MCP trace tools,
+a cost report package and an audit package. It has no field for pack name and version, unit and step, project,
+Automation, runner, the escalation, a cost figure or the resolved inputs. Reuse therefore means extending the trace
+event with those fields, not adding a store.
