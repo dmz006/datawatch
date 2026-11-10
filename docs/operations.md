@@ -4716,7 +4716,7 @@ settings is what changes that. See
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `autonomous.push_and_tag` | `false` | When `true`, after an Automaton finishes and ships, the daemon pushes the release commit to the default branch, pushes the release tag, and then watches the release CI for `git.release_ci_window_minutes`. When `false`, nothing release-related is ever pushed and the tag stays local. |
-| `autonomous.release_path` | `direct_push` | How the release is published when `push_and_tag` is on: `direct_push` (push the release commit, then the tag) or `pull_request` (not available yet — the release commit is kept local, nothing is pushed). |
+| `autonomous.release_path` | `direct_push` | How the release is published when `push_and_tag` is on: `direct_push` (push the release commit, then the tag) or `pull_request` (push the release branch, open a pull request into the default branch, poll its checks for `git.release_ci_window_minutes`, and merge only when every check succeeded; a failed or still-pending check set leaves the pull request open and unmerged). |
 | `git.release_ci_window_minutes` | `60` (when unset) | How long the release CI is waited for after the release push. |
 
 ### The secret-scan refusal rule

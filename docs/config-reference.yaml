@@ -3379,8 +3379,11 @@ autonomous:
   # How a finished release is published when push_and_tag is on.
   #   direct_push — (default) push the release commit to the default branch,
   #                 then push the release tag.
-  #   pull_request — not available yet: the release commit is kept local and
-  #                  nothing is pushed; the value still reads pull_request.
+  #   pull_request — push the release branch, open a pull request into the
+  #                  default branch, poll its checks for
+  #                  git.release_ci_window_minutes, and merge only when every
+  #                  check succeeded; a failed or still-pending check set
+  #                  leaves the pull request open and unmerged.
   # Anything else is treated as direct_push. See
   # docs/howto/release-push-and-tag.md.
   release_path: direct_push
