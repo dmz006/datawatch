@@ -27,6 +27,7 @@ function loadView(fetchImpl) {
   sandbox.URLSearchParams = URLSearchParams;
   sandbox.fetch = fetchImpl || (() => Promise.resolve(jsonRes([])));
   vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'automata-triage-model.js'), sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n.bundle = readLocale('en');
   return { sb: sandbox, out, els };

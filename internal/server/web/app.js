@@ -30116,16 +30116,19 @@ function _mergePipelineFetch(url, o) {
 }
 
 // ── Triage card ─────────────────────────────────────────────────────────────
-// triageCardHtml(record) turns one triage record — the single self-contained
-// record a failed or blocked Automaton carries while it waits for operator
-// attention — into the record card: the Automaton's name, the Automation
-// that owns it when it is a member, the status chip, the failed task, its
-// error, the session end reason, the retry budget per category, the first
-// sighting and whether an alert has already been raised. A missing record
-// renders the placeholder; the loader owns the failed state. Every value is
-// escaped. The key maps hold literal locale keys, so the key-coverage guard
-// can see them.
-const TRIAGE_STATUS_KEYS = { failed: 'triage_status_failed', blocked: 'triage_status_blocked' };
+// triageCardHtml(record) turns one triage record — the self-contained record a
+// failed, blocked or merge-pending Automaton carries while it waits for operator
+// attention — into the inbox card. The card shows, in order: the bold headline
+// (window.AutomataTriageModel.triageHeadline), a kind chip and, when the record
+// has an owning Automation, an owner chip with its name, the reason clamped to
+// two lines (the full text is in the detail panel), the waiting time since
+// first_seen_at, and the action buttons. The retry budget is not on the card;
+// window.triageBudgetDetailHtml(record) renders it for the detail panel.
+// Every value is escaped, and a line whose value is empty, zero or never is
+// not rendered. Each button carries data-action and data-prd-id (plus
+// data-task-id when the record has a task). One delegated click handler on the
+// document dispatches the actions; a click on the card body that is not a
+// button calls window.openTriageDetail(prdID, taskID) when that opener exists.
 const TRIAGE_BUDGET_ROWS = [
   ['infra', 'triage_budget_infra'],
   ['content', 'triage_budget_content'],
@@ -30133,7 +30136,7 @@ const TRIAGE_BUDGET_ROWS = [
   ['policy', 'triage_budget_policy'],
 ];
 // _triageKey returns the locale key for an API value, or '' for anything that
-// is not one of ours (including inherited names such as "constructor").
+// is not one of the map's keys (including inherited names such as "constructor").
 function _triageKey(map, v) {
   return (typeof v === 'string' && Object.prototype.hasOwnProperty.call(map, v)) ? map[v] : '';
 }
@@ -30155,49 +30158,109 @@ function _triageBudgetRow(label, b) {
     `<span style="font-weight:600;min-width:64px;overflow-wrap:anywhere;">${escHtml(label)}</span>` +
     `<span style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(val)}</span></div>`;
 }
-window.triageCardHtml = function(record) {
-  const head = `<div class="cap-title">${escHtml(t('triage_card_title'))}</div>`;
-  if (!record || typeof record !== 'object') {
-    return `<div class="prd-capacity-card triage-card">${head}<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_record_empty'))}</div></div>`;
-  }
-  const statusKey = _triageKey(TRIAGE_STATUS_KEYS, record.status);
-  const statusLabel = statusKey ? t(statusKey) : String(record.status || '');
-  const chipName = (statusKey === 'triage_status_failed') ? 'failed' : (statusKey === 'triage_status_blocked') ? 'blocked' : 'unknown';
-  const chipColor = statusKey === 'triage_status_failed' ? 'var(--error,#c00)' : 'var(--warning,#a06b00)';
-  const chip = `<span class="triage-status-chip triage-status-${chipName}" style="display:inline-block;padding:1px 8px;border:1px solid ${chipColor};border-radius:10px;font-size:11px;font-weight:700;color:${chipColor};">${escHtml(statusLabel)}</span>`;
-  const name = `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(record.prd_title || record.prd_id || '')} ${chip}</div>`;
-  const automation = record.automation_name
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_triage_owner', [record.automation_name]))}${record.member_id ? escHtml(t('triage_member', [record.member_id])) : ''}</div>`
-    : '';
-  const task = record.task_title
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_failed_task', [record.task_title]))}</div>`
-    : '';
-  const error = record.error
-    ? `<div class="triage-error" style="margin-top:4px;color:var(--error,#c00);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(record.error)}</div>`
-    : '';
-  const blocked = record.blocked_reason
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_blocked_reason', [record.blocked_reason]))}</div>`
-    : '';
-  const ended = record.session_end_reason
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_session_end_reason', [record.session_end_reason]))}</div>`
-    : '';
-  const firstSeen = _triageTime(record.first_seen_at);
-  const first = firstSeen
-    ? `<div style="color:var(--text2);">${escHtml(t('triage_first_seen', [firstSeen]))}</div>`
-    : '';
-  const alertedAt = record.alerted_at ? _triageTime(record.alerted_at) : '';
-  const alert = alertedAt
-    ? `<div style="color:var(--text2);">${escHtml(t('triage_alerted_at', [alertedAt]))}</div>`
-    : `<div style="color:var(--text2);">${escHtml(t('triage_not_alerted'))}</div>`;
-  const bud = (record.retry_budget && typeof record.retry_budget === 'object') ? record.retry_budget : {};
+// triageBudgetDetailHtml renders the retry budget table (four categories and
+// the ceiling) for the detail panel. A record with no budget still gets the
+// heading and says no auto-retry was allowed.
+window.triageBudgetDetailHtml = function(record) {
+  const bud = (record && typeof record === 'object' && record.retry_budget && typeof record.retry_budget === 'object') ? record.retry_budget : {};
   const budgetHead = `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('triage_retry_budget'))}</div>`;
   const budgetRows = TRIAGE_BUDGET_ROWS.map(([k, key]) => _triageBudgetRow(t(key), bud[k])).join('');
   const ceilingTotal = Number(bud.ceiling_total) || 0;
   const ceiling = ceilingTotal > 0
     ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_budget_ceiling', [Number(bud.ceiling_left) || 0, ceilingTotal]))}</div>`
     : `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_budget_none'))}</div>`;
-  return `<div class="prd-capacity-card triage-card" style="min-width:0;">${head}${name}${automation}${task}${error}${blocked}${ended}${first}${alert}${budgetHead}${budgetRows}${ceiling}</div>`;
+  return budgetHead + budgetRows + ceiling;
 };
+// _triageHeadlineText turns the view model's locale key and parameters into
+// the headline text.
+function _triageHeadlineText(record) {
+  const h = window.AutomataTriageModel.triageHeadline(record);
+  return t(h.key, Object.values(h.params || {}));
+}
+// _triageSpan formats a whole number of minutes as a compact human span.
+function _triageSpan(mins) {
+  if (mins < 60) return mins + 'm';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h < 24) return h + 'h' + (m ? ' ' + m + 'm' : '');
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return d + 'd' + (rh ? ' ' + rh + 'h' : '');
+}
+// _triageWaitLine is the waiting-time line, or '' when there is no usable
+// first sighting or less than a minute has passed.
+function _triageWaitLine(record) {
+  const since = window.AutomataTriageModel.triageWaitingSince(record);
+  if (!since) return '';
+  const mins = Math.floor((Date.now() - Date.parse(since)) / 60000);
+  if (!(mins >= 1)) return '';
+  return `<div class="triage-wait" style="margin-top:4px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_waiting_for', [_triageSpan(mins)]))}</div>`;
+}
+// _triageInReview reports whether the record carries a review note, which
+// the review step writes when a task is held for operator review.
+function _triageInReview(record) {
+  const notes = Array.isArray(record.notes) ? record.notes : [];
+  return notes.some(n => n && n.source === 'review');
+}
+// _triageButtons renders the action row. Retry needs a task; Resolve review
+// needs a merge-pending record or a task held for review; Cancel is always
+// there.
+function _triageButtons(record, prdID, taskID) {
+  const id = escHtml(prdID);
+  const taskAttr = taskID ? ` data-task-id="${escHtml(taskID)}"` : '';
+  const btn = (action, key) => `<button type="button" class="btn-secondary triage-btn triage-btn-${action}" data-action="${action}" data-prd-id="${id}"${taskAttr} data-status="${escHtml(record.status || '')}">${escHtml(t(key))}</button>`;
+  const parts = [btn('open-detail', 'triage_action_open_details')];
+  if (taskID) parts.push(btn('retry', 'triage_action_retry'));
+  if (record.status === 'merge_pending' || _triageInReview(record)) parts.push(btn('resolve-review', 'triage_action_resolve_review'));
+  parts.push(btn('cancel', 'triage_action_cancel'));
+  return `<div class="triage-actions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-width:0;">${parts.join('')}</div>`;
+}
+window.triageCardHtml = function(record) {
+  _triageBindClick();
+  const head = `<div class="cap-title">${escHtml(t('triage_card_title'))}</div>`;
+  if (!record || typeof record !== 'object') {
+    return `<div class="prd-capacity-card triage-card">${head}<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_record_empty'))}</div></div>`;
+  }
+  const M = window.AutomataTriageModel;
+  const prdID = String(record.prd_id || '');
+  const taskID = String(record.task_id || '');
+  const headline = `<div class="triage-headline" style="margin-top:4px;font-weight:700;overflow-wrap:anywhere;">${escHtml(_triageHeadlineText(record))}</div>`;
+  const chipStyle = 'display:inline-block;max-width:100%;padding:1px 8px;border:1px solid var(--border);border-radius:10px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;';
+  const kindChip = `<span class="triage-kind-chip" style="${chipStyle}">${escHtml(t('triage_kind_automaton'))}</span>`;
+  const owner = M.triageOwnerLabel(record);
+  const ownerChip = owner ? `<span class="triage-owner-chip" style="${chipStyle}">${escHtml(t('triage_in_automation', [owner]))}</span>` : '';
+  const chips = `<div class="triage-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:0;">${kindChip}${ownerChip}</div>`;
+  const reason = M.triageReason(record);
+  const reasonText = reason.text || t(reason.key);
+  const reasonHtml = `<div class="triage-reason" style="margin-top:6px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
+  return `<div class="prd-capacity-card triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;">${head}${headline}${chips}${reasonHtml}${_triageWaitLine(record)}${_triageButtons(record, prdID, taskID)}</div>`;
+};
+// _triageCardClick is the single delegated handler for every triage card.
+// Buttons dispatch their action; a click elsewhere on the card opens details.
+function _triageCardClick(ev) {
+  const target = ev && ev.target;
+  if (!target || typeof target.closest !== 'function') return;
+  const card = target.closest('.triage-card');
+  if (!card) return;
+  const btn = target.closest('[data-action]');
+  const prdID = (btn && btn.getAttribute('data-prd-id')) || card.getAttribute('data-prd-id') || '';
+  const taskID = (btn && btn.getAttribute('data-task-id')) || '';
+  const openDetail = () => { if (typeof window.openTriageDetail === 'function') window.openTriageDetail(prdID, taskID); };
+  if (!btn) { openDetail(); return; }
+  const action = btn.getAttribute('data-action');
+  if (action === 'open-detail') openDetail();
+  else if (action === 'retry' && typeof window.prdResetTask === 'function') window.prdResetTask(prdID, taskID);
+  else if (action === 'resolve-review' && typeof window.prdResolveTaskReview === 'function') window.prdResolveTaskReview(prdID, taskID, { action: 'retry' });
+  else if (action === 'cancel' && typeof window.automataCancel === 'function') window.automataCancel(prdID, btn.getAttribute('data-status') || '');
+}
+// _triageBindClick arms the delegated handler once, on the first card drawn,
+// so nothing listens for clicks before there is a card to act on.
+function _triageBindClick() {
+  if (window._triageCardClickBound) return;
+  if (typeof document === 'undefined' || !document || typeof document.addEventListener !== 'function') return;
+  window._triageCardClickBound = true;
+  document.addEventListener('click', _triageCardClick);
+}
 // triageListHtml is the Automation sub-tab's list renderer: the GET
 // /api/autonomous/triage body is { records: [...], alert_minutes }; it draws
 // a card per stuck Automaton, an empty state when none wait for the

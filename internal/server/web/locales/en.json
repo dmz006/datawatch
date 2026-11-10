@@ -2793,6 +2793,7 @@
   "triage_headline_failed": "Stopped: the task \"%1$s\" failed",
   "triage_headline_blocked": "Blocked: %1$s",
   "triage_headline_merge_pending": "Ready to merge: branch %1$s is waiting",
+  "triage_headline_none": "Triage: no headline recorded",
   "triage_reason_none": "No reason was recorded. Open details to see the record.",
   "triage_kind_automaton": "Automaton",
   "triage_in_automation": "in Automation %1$s",
