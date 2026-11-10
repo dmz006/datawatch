@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
+- **CI & release card shows the real release and ship state.** The card was empty because it only read repo CI watch records, and the watch is off by default. It now shows the current and latest release, the release state, and the ship policy with its last note, from the ship status. When the repo CI watch is on it also lists the failing runs. When the watch is off the card says "repo CI watch off" and links to the setting, and still shows the release and ship state. The card is hidden while neither release nor ship state is reported. Strings are in English, German, Spanish, French and Japanese.
 - **Dashboard Timeline card draws from task timestamps.** The Timeline · 6h card (`gantt`) was empty because it was drawn from hook-event timings. It now draws one bar per task that is running or finished inside the last 6 hours, using the task start and end times from the Automata list. Bars are grouped under their Automaton and coloured by task status. The chart is capped at 960px wide so it does not stretch on wide screens.
 - **Off-state.** When no Automaton task has a bar in the window, the Timeline is hidden from the grid (or, with *hide inactive cards* off, shows one line saying why). It returns on its own once a task starts.
 - **Locales.** Two new strings, the off-state reason and its link, are in English, German, Spanish, French and Japanese.
