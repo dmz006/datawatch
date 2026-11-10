@@ -1973,6 +1973,7 @@ usage work <points|clear>        set or clear the typed remaining work
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
+autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
