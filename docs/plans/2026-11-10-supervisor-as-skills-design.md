@@ -46,6 +46,26 @@ questions below are answered, one at a time.
   configuration; the leak check keeps the two apart. Any problem found while splitting stops the work and is
   raised to the operator.)
 
+- 2026-11-09, on the leak check patterns (pasted text, as heard): "For the leak detection, yes, the repo name, the
+  pass [read as: paths], definitely any secrets, and the stuff that you had mentioned were all seemed valid
+  things to be in scope. The rules, though, that are in the agent or the context files, those are local only.
+  And if we have custom specific rules or something actually in the process of doing our minimal rules, uses a
+  repos context to rules to make smaller ones, those are unique for the repo. Those should not be synced
+  locally [read as: not synced to the registry]. ... If there's anything that would be a genericized rule that
+  can be used as a way of approaching [things], so we could have a supervisor skill for doing version
+  detection in a file or however the different things that we end up doing. Those can all be configurable sort
+  of rules and things and procedures around it. People can take those and make those that fit their own
+  stuff, or we can show how context and agent definitions can create and manage their own rules around
+  things. So we just need to make sure we document this and make it as generic as possible and keep data
+  watch specific stuff in our own repo. Let's go through the rest of the leak detection patterns in
+  questions."
+  Decisions: in scope for the leak check are the repository name, paths, secrets, and the items listed in
+  requirement 3. Rules in agent or context files are local only and never published. Repo-specific rules
+  derived from a repository's context (the smaller rules made from it) are unique to that repository and are
+  not synced. Generic, configurable procedures (for example version detection in a file) may be published;
+  the documentation must show how context and agent definitions create and manage a repository's own rules.
+  The remaining pattern questions follow, one at a time.
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
