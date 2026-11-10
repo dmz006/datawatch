@@ -255,18 +255,18 @@ var MCPToolCap = map[string]string{
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.
-	"usage_advice":                 CapUsageRead,
-	"usage_readings":               CapUsageRead,
-	"usage_reading_add":            CapUsageWrite,
-	"usage_reading_delete":         CapUsageWrite,
-	"usage_extra_credit_set":       CapUsageWrite,
-	"usage_remaining_work_set":     CapUsageWrite,
+	"usage_advice":             CapUsageRead,
+	"usage_readings":           CapUsageRead,
+	"usage_reading_add":        CapUsageWrite,
+	"usage_reading_delete":     CapUsageWrite,
+	"usage_extra_credit_set":   CapUsageWrite,
+	"usage_remaining_work_set": CapUsageWrite,
 
 	// Auto-lanes (the auto-lane loop the usage calculator runs, and its two
 	// settings): a read of the loop's state and the operator maximum — the
 	// autonomous role holds usage.read, so a monitor or autonomous session can
 	// see where the loop stands, same cap the calculator's own status reads use.
-	"usage_autolanes_status":     CapUsageRead,
+	"usage_autolanes_status":       CapUsageRead,
 	"burn_guard_status":            CapUsageRead,
 	"burn_guard_run":               CapUsageWrite,
 	"burn_guard_config_get":        CapUsageRead,
@@ -391,7 +391,7 @@ var MCPToolCap = map[string]string{
 	"get_my_scope":                   CapHealthRead,
 	"get_my_session_id":              CapHealthRead,
 	"get_stats":                      CapHealthRead,
-	"worker_profile_status":                 CapConfigRead,
+	"worker_profile_status":          CapConfigRead,
 	"get_version":                    CapHealthRead,
 	"guardrail_library_list":         CapAutonomousRead,
 	"guardrail_profile_create":       CapAutonomousWrite,
