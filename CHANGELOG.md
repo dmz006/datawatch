@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Project Gantt (PWA).** The project page draws a Gantt from the history endpoint's rows: one bar per Automaton and one per task, coloured by state with the same colours as the dashboard Timeline. A window selector shows the last 7, 30 or 90 days; bars still running run to now. At most 40 rows are drawn, newest Automata first, and a note says how many were left out. Covered by `app-projects-gantt.test.js`.
+
 - **Project page (PWA).** Selecting a project shows its header (description, owner, repository, default branch, target and definition of done, lane and backend defaults, weekly share) and its arcs from the project roll-up, in priority order with each arc's state. Each arc expands to its Automata and their sessions; rows open the existing Automaton and session views. A header field, arc or section that is off or empty is left out, and its line appears under Events on the page instead. The roll-up is read only for the selected project.
 
 - **Projects tab (PWA).** A top-level Projects nav button opens a picker fed by `GET /api/projects`. The first entry, Overview, is the cross-project in-flight view; each other entry shows that project's directory, default backend and description. The last choice is remembered in the browser and mirrored in the `#projects` / `#projects/<name>` hash. With no projects the tab points at Settings. Covered by `app-projects-nav.test.js`.

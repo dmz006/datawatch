@@ -96,7 +96,9 @@ test('the picker lists Overview first, then the projects, and selects the rememb
   sb.localStorage.setItem('cs_projects_last', 'zeta');
   sb.renderProjectsView();
   await flushAsync();
-  const options = [...out.view.matchAll(/<option value="([^"]*)"\s*(selected)?\s*>/g)].map(m => [m[1], !!m[2]]);
+  // Only the picker's own options: the Gantt window selector has options too.
+  const picker = out.view.match(/<select id="projectsPicker"[\s\S]*?<\/select>/)[0];
+  const options = [...picker.matchAll(/<option value="([^"]*)"\s*(selected)?\s*>/g)].map(m => [m[1], !!m[2]]);
   assert.deepEqual(options, [['', false], ['acme', false], ['zeta', true]]);
   assert.match(out.view, /id="projectsPicker"/);
   assert.match(out.view, /data-project="zeta"/, 'the remembered project is the body');

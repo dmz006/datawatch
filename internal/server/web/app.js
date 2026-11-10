@@ -3206,6 +3206,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else events.push(t('projects_event_no_unassigned'));
   }
+  body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
 
   const evs = events.length
@@ -3316,6 +3317,137 @@ function _projectHistoryHTML(hist) {
   return `<div id="projectHistory" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${head}${inner}</div>`;
 }
 
+// ── Project Gantt: Automaton and task bars from the history endpoint ─────────
+// The Gantt draws the history reply's gantt rows (one per Automaton, one per
+// task) on a time axis. A window selector picks the last 7, 30 or 90 days; a
+// bar outside the window is left out, and a bar still running runs to now. The
+// row count is bounded: at most _PROJECTS_GANTT_MAX_ROWS rows are drawn, the
+// newest Automata first with their tasks under them, and a note says how many
+// rows were left out. Bars use the same state colours as the dashboard Timeline.
+// Each window: key, days, and the literal i18n key of its label.
+const _PROJECTS_GANTT_WINDOWS = [['7d', 7, 'projects_gantt_window_7d'], ['30d', 30, 'projects_gantt_window_30d'], ['90d', 90, 'projects_gantt_window_90d']];
+const _PROJECTS_GANTT_DEFAULT_WINDOW = '30d';
+const _PROJECTS_GANTT_MAX_ROWS = 40;
+const _PROJECTS_GANTT_DAY_MS = 86400000;
+
+// _projectsGanttWindowDays is the day count of a window key; an unknown key
+// falls back to the default window.
+function _projectsGanttWindowDays(key) {
+  const w = _PROJECTS_GANTT_WINDOWS.find(x => x[0] === key);
+  return w ? w[1] : 30;
+}
+
+// _projectsGanttSpan returns the [a, b] time span of a gantt row in ms. A row
+// with no start shows at its end; a row with no end is still running and runs
+// to now. A row with neither has no bar (null).
+function _projectsGanttSpan(r, now) {
+  const s = r.start ? Date.parse(r.start) : NaN;
+  const e = r.end ? Date.parse(r.end) : NaN;
+  if (isNaN(s) && isNaN(e)) return null;
+  const a = isNaN(s) ? e : s;
+  const b = isNaN(e) ? now : e;
+  return { a: Math.min(a, b), b: Math.max(a, b), running: isNaN(e) };
+}
+
+// _projectsGanttRows picks the rows that overlap the window and bounds them.
+// Automaton rows come newest first, each followed by its task rows in start
+// order. total counts every row in the window before the bound is applied.
+function _projectsGanttRows(gantt, windowKey, now) {
+  const winStart = now - _projectsGanttWindowDays(windowKey) * _PROJECTS_GANTT_DAY_MS;
+  const inWin = (Array.isArray(gantt) ? gantt : [])
+    .filter(r => r && typeof r === 'object')
+    .map(r => ({ row: r, sp: _projectsGanttSpan(r, now) }))
+    .filter(x => x.sp && x.sp.b >= winStart && x.sp.a <= now);
+  const autos = inWin.filter(x => x.row.kind !== 'task').sort((x, y) => y.sp.a - x.sp.a);
+  const items = [];
+  let total = 0;
+  autos.forEach(au => {
+    const tasks = inWin
+      .filter(x => x.row.kind === 'task' && x.row.automaton_id === au.row.automaton_id)
+      .sort((x, y) => x.sp.a - y.sp.a);
+    total += 1 + tasks.length;
+    [au].concat(tasks).forEach(x => { if (items.length < _PROJECTS_GANTT_MAX_ROWS) items.push(x); });
+  });
+  return { items, total, winStart };
+}
+
+// _projectGanttPalette reads the theme colours the Gantt draws with, falling
+// back to the dashboard defaults where the page has no computed style.
+function _projectGanttPalette() {
+  let css = null;
+  try { css = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null; } catch (_) { css = null; }
+  const v = (name, fb) => { try { return (css && css.getPropertyValue(name).trim()) || fb; } catch (_) { return fb; } };
+  return { acc: v('--accent', '#7c3aed'), txt: v('--text', '#e2e8f0'), txt2: v('--text2', '#64748b'), bdr: v('--border', '#2d3148') };
+}
+
+// _projectGanttHTML is the Gantt block of the project page. hist is null while
+// the first history page loads; the window selector repaints on change.
+function _projectGanttHTML(hist) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_gantt_heading'))}</div>`;
+  const key = _projectsState.ganttWindow || _PROJECTS_GANTT_DEFAULT_WINDOW;
+  const select = `<label style="font-size:12px;color:var(--text2);margin-left:auto;">${escHtml(t('projects_gantt_window_label'))}
+    <select id="projectGanttWindow" onchange="projectsGanttWindow(this.value)" style="font-size:12px;">${_PROJECTS_GANTT_WINDOWS.map(([k, , labelKey]) =>
+      `<option value="${k}"${k === key ? ' selected' : ''}>${escHtml(t(labelKey))}</option>`).join('')}</select></label>`;
+  const top = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${head}${select}</div>`;
+  let inner;
+  if (!hist) {
+    inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
+  } else if (hist.error) {
+    inner = '';
+  } else {
+    const now = Date.now();
+    const rows = _projectsGanttRows(hist.gantt, key, now);
+    if (!rows.items.length) {
+      inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_empty'))}</div>`;
+    } else {
+      inner = _projectGanttSVG(rows, now);
+      if (rows.total > rows.items.length) {
+        inner += `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [rows.items.length, rows.total]))}</div>`;
+      }
+    }
+  }
+  return `<div id="projectGantt" class="project-gantt" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${top}${inner}</div>`;
+}
+
+// _projectGanttSVG draws the bounded rows on a shared time axis. The axis has
+// five dated ticks across the window; each row has its label, then a bar
+// coloured by state, with the state and dates in its tooltip.
+function _projectGanttSVG(rows, now) {
+  const W = 640, LABEL_W = 170, ROW_H = 20, HEAD_H = 18;
+  const BAR_X = LABEL_W, BAR_W = W - LABEL_W - 8;
+  const winStart = rows.winStart, span = now - winStart;
+  const pal = _projectGanttPalette();
+  const x = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / span)) * BAR_W;
+  const H = HEAD_H + rows.items.length * ROW_H + 4;
+  let svg = '';
+  for (let i = 0; i <= 4; i++) {
+    const ts = winStart + span * i / 4;
+    const anchor = i === 0 ? 'start' : (i === 4 ? 'end' : 'middle');
+    const tx = i === 0 ? BAR_X : (i === 4 ? BAR_X + BAR_W : x(ts));
+    svg += `<line x1="${tx.toFixed(1)}" y1="${HEAD_H}" x2="${tx.toFixed(1)}" y2="${H}" stroke="${pal.bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
+    svg += `<text x="${tx.toFixed(1)}" y="11" text-anchor="${anchor}" font-size="9" fill="${pal.txt2}">${escHtml(new Date(ts).toLocaleDateString())}</text>`;
+  }
+  rows.items.forEach((it, i) => {
+    const r = it.row, sp = it.sp;
+    const y = HEAD_H + i * ROW_H;
+    const isTask = r.kind === 'task';
+    const label = (r.title || r.automaton_id || r.task_id || '').slice(0, 24);
+    const x1 = x(sp.a), x2 = x(sp.b);
+    const dates = [r.start ? new Date(r.start).toLocaleDateString() : '', r.end ? new Date(r.end).toLocaleDateString() : t('projects_gantt_running')].filter(Boolean).join(' – ');
+    const tip = `${label} · ${r.state || ''}${dates ? ' · ' + dates : ''}`;
+    svg += `<text x="${isTask ? 14 : 4}" y="${y + 14}" font-size="11" fill="${isTask ? pal.txt2 : pal.txt}"${isTask ? '' : ' font-weight="600"'}>${escHtml(label)}</text>`;
+    svg += `<rect x="${x1.toFixed(1)}" y="${y + 4}" width="${Math.max(2, x2 - x1).toFixed(1)}" height="${ROW_H - 8}" rx="3" fill="${_ganttStateColour(r.state, pal.acc, pal.txt2)}" opacity="${sp.running ? 0.55 : 0.9}"><title>${escHtml(tip)}</title></rect>`;
+  });
+  return `<svg class="project-gantt-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('projects_gantt_heading'))}" style="display:block;margin-top:4px;">${svg}</svg>`;
+}
+
+// projectsGanttWindow is the window selector's change handler. It keeps the
+// choice on the page state and repaints while the Projects tab is active.
+function projectsGanttWindow(key) {
+  _projectsState.ganttWindow = _PROJECTS_GANTT_WINDOWS.some(w => w[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
+  if (state.activeView === 'projects') _projectsPaint();
+}
+
 // _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
 // the selected project. append=false starts from the first page; append=true
 // adds the page after the cursor of the current list. Overview reads nothing.
@@ -3333,10 +3465,13 @@ function _projectsLoadHistory(append) {
     if (_projectsState.selected !== name) return;
     const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     const items = Array.isArray(body.items) ? body.items : [];
-    _projectsState.hist = { name, items: prevItems.concat(items), next: body.next_cursor || '', error: '' };
+    // Gantt rows are not paged: the first page carries them all, and later
+    // pages keep what the first one held.
+    const gantt = prev ? prev.gantt : (Array.isArray(body.gantt) ? body.gantt : []);
+    _projectsState.hist = { name, items: prevItems.concat(items), gantt, next: body.next_cursor || '', error: '' };
   }).catch(err => {
     if (_projectsState.selected !== name) return;
-    _projectsState.hist = { name, items: prevItems, next: cursor, error: (err && err.message) || String(err) };
+    _projectsState.hist = { name, items: prevItems, gantt: prev ? prev.gantt : [], next: cursor, error: (err && err.message) || String(err) };
   }).then(() => { _projectsState.histBusy = false; });
 }
 
@@ -45824,6 +45959,13 @@ function _dashRenderEventFeed() {
   }).join('');
 }
 
+// _ganttStateColour is the bar colour for a Gantt state. The dashboard Timeline
+// and the project Gantt share it, so a state reads the same colour in both.
+// Unknown states take the muted text colour.
+function _ganttStateColour(s, accent, muted) {
+  return ({ completed: '#10b981', running: accent, in_progress: accent, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || muted);
+}
+
 function _drawGantt() {
   const svgEl = document.getElementById('dashGanttSvg');
   if (!svgEl) return;
@@ -45845,7 +45987,7 @@ function _drawGantt() {
   const txt = css.getPropertyValue('--text').trim() || '#e2e8f0';
   const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
   const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
-  const stC = s => ({ completed: '#10b981', running: acc, in_progress: acc, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || txt2);
+  const stC = s => _ganttStateColour(s, acc, txt2);
   const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / WIN_MS)) * BAR_W;
   let totalH = HEADER_H + GAP;
   for (const p of prds) {
