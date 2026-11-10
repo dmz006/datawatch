@@ -252,3 +252,5 @@ Operator answers in the questions interface (2026-11-10):
 - Worker profile tiers: "Yes, in two steps" with: "I want to be staging this stuff out so we can test it and iterate and make it better so that when Tendido comes out we've actually tested these some." ("Tendido" as heard, read as 10.0.) Staged rollout before 10.0. Note: the built-in defaults already put the planner on full, workers, verifiers and docs on digest, and judge and note tasks on minimal; the howto's rollout steps start with the docs kind on minimal. The profile launch wiring (released after the running daemon was built) is not active until the daemon is redeployed, so step 1 cannot be set until the deploy.
 - Branch refresh: "Draft an Automaton for it" (no text). Drafted.
 - Watch interval, product record: recorded in the supervisor-as-skills design and the plans proposal.
+
+Operator, 2026-11-10, in the questions interface on the git hosts observability waiver: chose "Add observability to this change now" (no text). The git hosts Automaton gets observability tasks before it merges.
