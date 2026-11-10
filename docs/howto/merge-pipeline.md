@@ -174,30 +174,88 @@ Leave it unset to use the built-in default name; set it to an empty string for
 no model. The setting never adds, edits or removes a registry entry, so make
 sure the name you give exists. If you run a model of your own, name that one.
 
+## Conflict classes
+
+Before any model is asked, a conflicted merge is settled mechanically, file by
+file, by the rule of the file's class. The class comes from the file's path:
+
+| Class | Files | Mechanical rule |
+|---|---|---|
+| `code` | any file not named by another class | settled only when every conflicting hunk has both sides only adding lines; both sides are kept |
+| `document` | any `.md` file, and anything under `docs/` | the same additive rule as `code` |
+| `changelog` | `CHANGELOG.md` | additive hunks keep both sides; a hunk that is not additive is left |
+| `version_line` | the files named in `version_files` | a hunk that changes only a version number keeps the ours side; any other hunk is left |
+| `readme_line` | `README.md` | the same rule as `version_line` |
+| `locale` | the top-level `*.json` files under `internal/server/web/locales/` | keys added on either side are kept from both; a key changed on both sides keeps the ours value |
+| `generated` | files under `internal/docsindex/assets/` and `internal/server/web/docs/` | the ours side is kept and the file is rebuilt from its sources, when the project has a docs-index target |
+
+A conflict that no rule settles is left for the conflict policy: a model
+proposal under `mechanical_and_model`, or your answer otherwise. Binary files
+are never settled mechanically.
+
+**`stop_and_ask` resolves nothing.** Under that policy the mechanical step does
+not run and no model is asked. The merge is aborted, the project is left as it
+was before the merge, and you are asked.
+
 ## Conflict mode
 
 `autonomous.merge_pipeline.conflict_mode` says what a model proposal that passes
-the test step does:
+the test step does. The default is `shadow`.
 
 | Mode | What happens |
 |---|---|
-| `shadow` (the default) | The proposal is recorded and the project is left alone. |
-| `on` | A passing proposal is committed and the project fast-forwards to it. |
+| `shadow` (the default) | The model runs and its proposal is tested, then recorded on the merge attempt as computed. The project is never changed: it stays at its pre-merge commit. The counter is not touched. |
+| `on` | A passing proposal is committed and the project fast-forwards to it. The conflict counter goes up for each applied code or document conflict. |
 
-A mode of `on` with confirmation switched off applies every passing proposal.
+With `on`, the first N applied conflicts of a project are held for your
+confirmation (see the next section). With confirmation off (N is 0), every
+passing proposal is applied straight away.
+
+Shadow mode is the way to see what the model would have done before you let it
+change a project. Switch to `on` only after the recorded proposals look right.
 The PWA card and `GET /api/autonomous/merge-pipeline` show the mode in effect.
 
 ## Confirm the first N model conflicts
 
 `autonomous.merge_pipeline.conflict_confirm_first_n` is how many of a project's
-first model-resolved conflicts wait for you to confirm them. The default is 5;
-0 turns confirmation off. Confirmation is active only when the mode is `on` and
-N is above 0.
+first model-resolved conflicts wait for you to confirm them. The default is 5.
+Setting it to 0 turns confirmation off, so `on` applies every passing proposal.
+Confirmation is active only when the mode is `on` and N is above 0. The count is
+kept per project, so each project gets its own N confirmations.
 
-The card shows `Conflict confirmations: <count> conflicts confirmed · <remaining>
-confirmations remaining` while confirmation is active. If the counter cannot be
-read, the count is not shown, and the block of the JSON response carries the
-error instead.
+Only code and document conflicts are counted. A conflict settled by a mechanical
+rule in the changelog, version, README, locale or generated classes is not
+counted, and a mechanical settlement never asks you.
+
+What the confirmation looks like: when a passing proposal falls within the first
+N, the merge is aborted and the project is left at its pre-merge commit. You get
+an operator question that names the branch, the files and the number of hunks
+the model would change. The proposal is stored as pending until you answer it.
+Confirming applies the stored proposal and counts it; until then, the project
+does not change. Once N conflicts have been counted, later proposals are applied
+without asking.
+
+## Read the counter
+
+The counter appears in the `conflict_confirmation` block of the merge pipeline
+read. The same block is shown in four places:
+
+- **CLI**: `datawatch autonomous merge-pipeline show` prints a
+  `Conflict confirmation:` line after the pipeline text.
+- **REST**: `GET /api/autonomous/merge-pipeline?project=NAME`, the
+  `conflict_confirmation` object (see the [autonomous API](../api/autonomous.md)).
+- **MCP**: `autonomous_merge_pipeline_get` returns the same line as its text
+  answer, and the same object as its JSON body.
+- **Card**: Settings > Automation > Merge pipeline shows
+  `Conflict confirmations: <count> conflicts confirmed · <remaining>
+  confirmations remaining`.
+
+The block holds `mode` and `confirm_first_n` (the values in effect for the
+project), `counted` (the conflicts counted so far), `remaining` (N minus counted,
+never below zero), `enabled` (true only when the mode is `on` and N is above 0)
+and `error`. When the counter cannot be read, `counted` and `remaining` are
+`null` and `error` says why. The card then shows no count, and it shows nothing
+at all while confirmation is off.
 
 ## Release approval modes
 
@@ -684,6 +742,8 @@ project under `autonomous.merge_pipeline.projects.<project>.<key>`.
 | `fallback_on_bad_file` | `record` | what is used when the file exists but cannot be used |
 | `conflict_policy` | `mechanical_and_model` | what happens when a merge conflicts |
 | `conflict_model` | the built-in default model name | the model a policy that needs one asks for the rest of a conflict |
+| `conflict_mode` | `shadow` | `shadow` records a model proposal and never applies it; `on` applies a passing proposal, after confirmation for the first N |
+| `conflict_confirm_first_n` | `5` | how many of a project's first applied model conflicts wait for your confirmation; `0` turns confirmation off |
 | `version_files` | none; a pipeline that bumps the version fails that step until you name the files that carry the version line | the project files the release-version step sets |
 | `release_size_map` | `feature: minor`, `bug: patch` (built-in) | the kind-to-size entries of the release size; an entry adds to or overrides the built-in |
 | `major_trigger` | `manual` | `manual`: a major is an explicit `release_size: major` only; `milestone`: a completed `milestone` Automation as well; `never`: a milestone never steps a major |
