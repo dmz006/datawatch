@@ -256,16 +256,16 @@ type Server struct {
 	// valid until oldTokenExpiry (a 60s grace window from rotation) so a
 	// client that already has the previous token isn't cut off mid-flight;
 	// after that it's hard-revoked, same as if it had never existed.
-	tokenMu            sync.RWMutex
-	oldToken           string
-	oldTokenExpiry     time.Time
-	availableBackends  []string // registered LLM backend names
-	cfg                *config.Config
-	cfgPath            string
+	tokenMu           sync.RWMutex
+	oldToken          string
+	oldTokenExpiry    time.Time
+	availableBackends []string // registered LLM backend names
+	cfg               *config.Config
+	cfgPath           string
 	// dataDir is this instance's explicit data-directory override (set by
 	// the daemon at startup; empty in bare test fixtures). statePath
 	// resolves it first, then cfg.DataDir, then the config default.
-	dataDir string
+	dataDir            string
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
@@ -10653,7 +10653,7 @@ func validatePluginServicesPatch(current config.PluginServicesConfig, patch map[
 					next.PerService[name] = ov
 				}
 			}
-		case strings.HasPrefix(k, "plugins.services.per_service."): 
+		case strings.HasPrefix(k, "plugins.services.per_service."):
 			name, _ := strings.CutPrefix(k, "plugins.services.per_service.")
 			if name == "" {
 				continue
