@@ -120,9 +120,7 @@ func validateBurnGuardValue(key string, v interface{}) error {
 			return fmt.Errorf("usage.burn_guard.%s: must be above 0 and at most %g", key, config.BurnGuardPointsPerMillionMax)
 		}
 	case "max_projection_gap_points":
-		if f < 0 || f > config.BurnGuardProjectionGapMax {
-			return fmt.Errorf("usage.burn_guard.max_projection_gap_points: must be from 0 to %g (0 never compares the projections)", config.BurnGuardProjectionGapMax)
-		}
+		return config.ValidateMaxProjectionGapPoints(f)
 	case "retry_limit_claude":
 		if f != math.Trunc(f) || f < 0 || f > config.BurnGuardRetryLimitClaudeMax {
 			return fmt.Errorf("usage.burn_guard.retry_limit_claude: must be a whole number from 0 to %d", config.BurnGuardRetryLimitClaudeMax)
