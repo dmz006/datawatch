@@ -313,6 +313,18 @@ configure secrets.vault.unreachable_alert_after_seconds=300
 In the PWA: Settings → Secrets Store → the Vault alert delay field (seconds; `0` = off). The
 field is translated in en, de, es, fr and ja.
 
+**Checking the Settings nav button.** The sandbox story
+`scripts/test-stories/pwa/vault-nav-label-clear.mjs` forces the Vault unreachable at a 390 px
+viewport and confirms that nothing sits over the Settings nav label and that no Vault badge element
+exists. Run it against the sandbox daemon, never the production port.
+
+**For the operator to review.**
+
+- The companion mobile clients may still show a Vault-unreachable badge and lack the last-error and
+  last-success lines and the alert delay field. Parity issues are drafted under
+  `docs/plans/parity-issues/`; confirm where the new lines and field sit on the app before they are filed.
+- The default delay of 120 seconds is a supervisor choice. Change it if it does not suit your Vault.
+
 ### 5c. MCP
 
 Tools: `secrets_list`, `secrets_get`, `secrets_set`, `secrets_delete`.
