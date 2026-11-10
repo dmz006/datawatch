@@ -37,7 +37,11 @@ type VerifierStatsView struct {
 	Categories   map[string]int `json:"categories"`
 	WatchdogEnds int            `json:"watchdog_ends"`
 	Escalations  int            `json:"escalations"`
-	Since        time.Time      `json:"since"`
+	// RunCapSeconds is the hard run cap in effect for a verifier run; 0 means no cap.
+	RunCapSeconds int `json:"run_cap_seconds"`
+	// RunCapEnds counts runs ended by the run cap.
+	RunCapEnds int       `json:"run_cap_ends"`
+	Since      time.Time `json:"since"`
 }
 
 // VerifierStats keeps rolling aggregates of verifier queue wait, run time and
@@ -47,6 +51,8 @@ type VerifierStats struct {
 	now   func() time.Time
 	since time.Time
 	v     VerifierStatsView
+	// runCapSec is configuration, not a counter, so reset leaves it alone.
+	runCapSec int
 }
 
 // NewVerifierStats returns an empty aggregate; a nil clock means time.Now.
@@ -98,12 +104,24 @@ func (s *VerifierStats) Record(wait, run time.Duration, category string) {
 	}
 }
 
+// SetRunCapSeconds stores the verifier run cap in seconds; 0 means no cap.
+// Negative values are treated as 0.
+func (s *VerifierStats) SetRunCapSeconds(sec int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sec < 0 {
+		sec = 0
+	}
+	s.runCapSec = sec
+}
+
 // Snapshot returns a copy of the aggregates; averages are zero with no runs.
 func (s *VerifierStats) Snapshot() VerifierStatsView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := s.v
 	out.Since = s.since
+	out.RunCapSeconds = s.runCapSec
 	out.Categories = make(map[string]int, len(VerifierCategories))
 	for _, c := range VerifierCategories {
 		out.Categories[c] = s.v.Categories[c]
