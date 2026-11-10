@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Projects tab (PWA).** A top-level Projects nav button opens a picker fed by `GET /api/projects`. The first entry, Overview, is the cross-project in-flight view; each other entry shows that project's directory, default backend and description. The last choice is remembered in the browser and mirrored in the `#projects` / `#projects/<name>` hash. With no projects the tab points at Settings. Covered by `app-projects-nav.test.js`.
+
 - **Project roll-up read.** `GET /api/projects/{name}/rollup` reports each arc of a project and the whole project: the Automata each arc's Automation holds (with their session ids), task progress as done/total, cost in usage points and throughput per day over a `window` (days, 1–365, default 7). Automata of the project that no arc holds are listed as `unassigned`. Points come from the cost report's billing-profile point calibration; API dollars are never shown. No new storage. Contract in `docs/api/openapi.yaml`.
 
 ## v9.118.3 — Shell backend hands long script tasks over by file

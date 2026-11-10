@@ -3012,6 +3012,9 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailPRD = null;
       _automationState.detailId = null;
       renderAutonomousView();
+    } else if (view === 'projects') {
+      headerTitle.textContent = t('nav_projects') || 'Projects';
+      renderProjectsView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -3045,6 +3048,125 @@ function navigate(view, sessionId, fromPopstate) {
       renderSettingsView();
     }
   }
+}
+
+// ── Projects view ────────────────────────────────────────────────────────────
+// Top-level Projects tab. The picker's first entry, Overview, is the
+// cross-project in-flight view (the Automata list). Each other entry is a
+// project from GET /api/projects. The last choice is remembered in
+// localStorage, and mirrored in the URL hash (#projects or #projects/<name>)
+// so a link reopens the same choice. Storage and history can be blocked
+// (private windows), so each touch is wrapped and the view still renders.
+const _PROJECTS_LAST_KEY = 'cs_projects_last';
+const _PROJECTS_OVERVIEW = '';
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW };
+
+function _projectsRememberLast(name) {
+  try { localStorage.setItem(_PROJECTS_LAST_KEY, name || ''); } catch (_) { /* not remembered */ }
+}
+function _projectsRecallLast() {
+  try { return localStorage.getItem(_PROJECTS_LAST_KEY) || ''; } catch (_) { return ''; }
+}
+// _projectsHashParse returns the project named by a #projects hash ('' for
+// Overview), or null when the hash is not a projects route.
+function _projectsHashParse(hash) {
+  const m = /^#projects(?:\/(.+))?$/.exec(String(hash || ''));
+  if (!m) return null;
+  try { return m[1] ? decodeURIComponent(m[1]) : _PROJECTS_OVERVIEW; } catch (_) { return null; }
+}
+function _projectsHashBuild(name) {
+  return name ? '#projects/' + encodeURIComponent(name) : '#projects';
+}
+function _projectsCurrentHash() {
+  return typeof location !== 'undefined' ? location.hash : '';
+}
+
+// Picker and body share one render. Loading: the Overview body shows at once.
+// Load failure: Overview with the error. No projects: a message pointing at
+// Settings, with no picker.
+function _projectsPaint() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const err = _projectsState.error;
+  if (list && list.length === 0 && !err) {
+    view.innerHTML = `<div id="projectsView" style="padding:16px;">
+      <div id="projectsNone" style="color:var(--text2);font-size:14px;line-height:1.5;">${escHtml(t('projects_none') || 'No projects yet.')}
+        <button class="btn-secondary" style="margin-left:8px;" onclick="navigate('settings')">${escHtml(t('projects_none_settings_action') || 'Open Settings')}</button>
+      </div></div>`;
+    return;
+  }
+  const sel = _projectsState.selected;
+  const known = sel === _PROJECTS_OVERVIEW || (list && list.some(p => p.name === sel));
+  const selected = known ? sel : _PROJECTS_OVERVIEW;
+  if (selected === _PROJECTS_OVERVIEW) {
+    // Overview is the cross-project in-flight view; it draws the whole
+    // #view, so the picker goes back on top of it afterwards.
+    renderAutonomousView();
+    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
+  } else {
+    const p = list.find(x => x.name === selected);
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectDetailHTML(p);
+  }
+}
+
+function _projectsPickerHTML(list, selected, err) {
+  const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
+    .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
+  const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
+  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+      <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
+      <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+    </div>`;
+}
+
+// The project card: the fields the project list carries. The closing div
+// closes the #projectsView wrapper that _projectsPickerHTML leaves open.
+function _projectDetailHTML(p) {
+  if (!p) return '</div>';
+  const rows = [
+    ['projects_field_dir', 'Directory', p.dir],
+    ['projects_field_backend', 'Default backend', p.default_backend],
+    ['projects_field_description', 'Description', p.description],
+  ].filter(r => r[2]);
+  const body = rows.map(([key, fallback, val]) =>
+    `<div style="margin:4px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key) || fallback)}:</span> ${escHtml(val)}</div>`).join('');
+  return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
+    <div style="font-weight:600;margin-bottom:6px;">${escHtml(p.name)}</div>${body}</div></div>`;
+}
+
+function renderProjectsView() {
+  _projectsState.selected = (() => {
+    const fromHash = _projectsHashParse(_projectsCurrentHash());
+    return fromHash !== null ? fromHash : _projectsRecallLast();
+  })();
+  _projectsPaint();
+  return _projectsLoad().then(() => {
+    // Paint again only while the Projects tab is still the active view.
+    if (state.activeView === 'projects') _projectsPaint();
+  });
+}
+
+function _projectsLoad() {
+  return apiFetch('/api/projects').then(list => {
+    _projectsState.list = Array.isArray(list) ? list : [];
+    _projectsState.error = '';
+  }).catch(err => {
+    _projectsState.list = _projectsState.list || [];
+    _projectsState.error = (err && err.message) || String(err);
+  });
+}
+
+// selectProjectsView is the picker's change handler. It remembers the choice
+// and mirrors it in the hash without adding a history entry.
+function selectProjectsView(name) {
+  _projectsState.selected = name || _PROJECTS_OVERVIEW;
+  _projectsRememberLast(_projectsState.selected);
+  try {
+    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
+  } catch (_) { /* the hash is a convenience; the choice still applies */ }
+  _projectsPaint();
 }
 
 // Handle Android/browser back button via popstate
