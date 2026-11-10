@@ -45,7 +45,7 @@ leaves the version fields exactly as they are.
 
 - `CHANGELOG.md` entry for the peer-stale badge removal / `observer.peers.silent_alert_minutes`
   connectivity alert (the story's changelog task).
-- Parity-issue draft: `docs/plans/parity-issues/2026-11-10-peer-silence-alert-parity.md`.
+- Parity-issue draft: `docs/plans/parity-issues/20070001.md`.
 - Docs set: the federated-observer howto, the definitions "Federated peers" entry,
   and the `operations.md` entry for this story.
 

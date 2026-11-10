@@ -7146,4 +7146,4 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 
 ### Android / iPhone
 
-The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/2026-11-10-pwa-peer-stale-badge-removal-parity.md`.
+The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
