@@ -86,6 +86,12 @@ questions below are answered, one at a time.
   configuration inputs for limits such as a lane cap, set per repository; examples use placeholder values; the
   tier-to-entry mapping lives in each installation's LLM entries).
 
+- 2026-11-09, on leak pattern question 5 (identity and secrets): "A" (block secrets in full: tokens, key material,
+  credentials, URLs carrying key paths, vault entry names; block identity in full: email addresses, user and
+  organization handles, signing identities, commit author names; examples use reserved placeholders such as
+  user@example.invalid; the check runs a general secret scanner plus an exact-value scan against this
+  installation's configured identities, so a value in real use fails even if it looks generic).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
