@@ -16,12 +16,13 @@ const (
 	VerifierCatTimeout   = "timeout"
 	VerifierCatCapacity  = "capacity"
 	VerifierCatEscalated = "escalated"
+	VerifierCatRunCap    = "run_cap"
 )
 
 // VerifierCategories lists every category in a stable order.
 var VerifierCategories = []string{
 	VerifierCatPass, VerifierCatContent, VerifierCatInfra, VerifierCatWatchdog,
-	VerifierCatTimeout, VerifierCatCapacity, VerifierCatEscalated,
+	VerifierCatTimeout, VerifierCatCapacity, VerifierCatEscalated, VerifierCatRunCap,
 }
 
 // VerifierStatsView is the JSON shape of the rolling verifier aggregates, as
@@ -37,7 +38,11 @@ type VerifierStatsView struct {
 	Categories   map[string]int `json:"categories"`
 	WatchdogEnds int            `json:"watchdog_ends"`
 	Escalations  int            `json:"escalations"`
-	Since        time.Time      `json:"since"`
+	// RunCapSeconds is the hard run cap in effect for a verifier run; 0 means no cap.
+	RunCapSeconds int `json:"run_cap_seconds"`
+	// RunCapEnds counts runs ended by the run cap (category run_cap).
+	RunCapEnds int       `json:"run_cap_ends"`
+	Since      time.Time `json:"since"`
 }
 
 // VerifierStats keeps rolling aggregates of verifier queue wait, run time and
@@ -47,6 +52,8 @@ type VerifierStats struct {
 	now   func() time.Time
 	since time.Time
 	v     VerifierStatsView
+	// runCapSec is configuration, not a counter, so reset leaves it alone.
+	runCapSec int
 }
 
 // NewVerifierStats returns an empty aggregate; a nil clock means time.Now.
@@ -95,7 +102,20 @@ func (s *VerifierStats) Record(wait, run time.Duration, category string) {
 		s.v.WatchdogEnds++
 	case VerifierCatEscalated:
 		s.v.Escalations++
+	case VerifierCatRunCap:
+		s.v.RunCapEnds++
 	}
+}
+
+// SetRunCapSeconds stores the verifier run cap in seconds; 0 means no cap.
+// Negative values are treated as 0.
+func (s *VerifierStats) SetRunCapSeconds(sec int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sec < 0 {
+		sec = 0
+	}
+	s.runCapSec = sec
 }
 
 // Snapshot returns a copy of the aggregates; averages are zero with no runs.
@@ -104,6 +124,7 @@ func (s *VerifierStats) Snapshot() VerifierStatsView {
 	defer s.mu.Unlock()
 	out := s.v
 	out.Since = s.since
+	out.RunCapSeconds = s.runCapSec
 	out.Categories = make(map[string]int, len(VerifierCategories))
 	for _, c := range VerifierCategories {
 		out.Categories[c] = s.v.Categories[c]
@@ -118,8 +139,18 @@ func (s *VerifierStats) Snapshot() VerifierStatsView {
 // VerifierCategoryFor maps a verifier result to a category. escalated wins
 // over the outcome, as the run used the fallback backend.
 func VerifierCategoryFor(ok bool, resultCategory, summary string, escalated bool) string {
+	return VerifierCategoryForRunCap(ok, resultCategory, summary, escalated, false)
+}
+
+// VerifierCategoryForRunCap is VerifierCategoryFor plus runCap: true when the
+// run cap (autonomous.verifier_max_run_seconds) ended a verifier session. A cap
+// end is the most specific fact about the run, so it wins over every other
+// category, escalated included, and is counted once per run.
+func VerifierCategoryForRunCap(ok bool, resultCategory, summary string, escalated, runCap bool) string {
 	s := strings.ToLower(summary)
 	switch {
+	case runCap:
+		return VerifierCatRunCap
 	case escalated:
 		return VerifierCatEscalated
 	case strings.Contains(s, "no-progress watchdog"):
@@ -162,7 +193,11 @@ func FormatVerifierLine(v VerifierStatsView) string {
 	if avgR == 0 && v.RunTotalSec > 0 {
 		avgR = v.RunTotalSec / float64(v.Runs)
 	}
-	return fmt.Sprintf("verifiers: %d runs, avg wait %s, avg run %s, infra %d, watchdog %d\n",
+	line := fmt.Sprintf("verifiers: %d runs, avg wait %s, avg run %s, infra %d, watchdog %d",
 		v.Runs, fmtVerifierSeconds(avgW), fmtVerifierSeconds(avgR),
 		v.Categories[VerifierCatInfra], v.Categories[VerifierCatWatchdog])
+	if n := v.Categories[VerifierCatRunCap]; n > 0 {
+		line += fmt.Sprintf(", run_cap %d", n)
+	}
+	return line + "\n"
 }

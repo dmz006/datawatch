@@ -4756,6 +4756,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = json.Unmarshal(b, &cfg.Autonomous.Scan)
 			}
 		}
+		// Verifier stats show the configured run cap (0 = no cap).
+		autonomouspkg.DefaultVerifierStats.SetRunCapSeconds(config.VerifierRunCapSeconds(acfgIn.VerifierMaxRunSeconds))
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30
 		}
@@ -6271,6 +6273,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// granted, run time from the grant to the verifier result.
 			vRequestedAt := time.Now()
 			var vGrantedAt time.Time
+			// vRunCapEnded is set by the onCap hook below when the run cap
+			// ended a verifier session, so the record counts it as run_cap.
+			var vRunCapEnded bool
 			defer func() {
 				end := time.Now()
 				var wait, run time.Duration
@@ -6284,10 +6289,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					summary += " " + verr.Error()
 				}
 				ok := verr == nil && vres.OK
-				cat := autonomouspkg.VerifierCategoryFor(ok, vres.Category, summary, verifierEscalated)
-				if verr != nil && cat == autonomouspkg.VerifierCatContent {
-					cat = autonomouspkg.VerifierCatInfra
-				}
+				cat := verifierStatsCategory(ok, vres.Category, summary, verifierEscalated, verr, vRunCapEnded)
 				autonomouspkg.DefaultVerifierStats.Record(wait, run, cat)
 				metricsPkg.VerifierRuns.WithLabelValues(cat).Inc()
 				metricsPkg.VerifierWaitSeconds.Add(wait.Seconds())
@@ -6423,19 +6425,52 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				outputFile := filepath.Join(taskDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
 				deliverPrompt := autonomouspkg.JudgePromptForDelivery(taskDir, task.ID+"-verify", vbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
 				sessionTask := sessionJudgmentTask(deliverPrompt, taskDir, outputFile)
-				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
-					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode,
-					withSessionProfile(autonomousMgrRef, launchTagsForVerify(prd.ID, task.StoryID), "verifier", prd, task))
+				// A session ended at the run cap is retried exactly once on the
+				// next backend in the verifier policy order; the retry backend
+				// runs on its registry default model (or the pi-family guard).
+				// Only the first backend keeps the lease's node.
+				content, serr := runVerifierSessionWithRunCapHook(
+					effectiveVerifierPolicy(liveCfg).EffectiveBackends(vpool, vglobalBackend), vbackend, verifyModel,
+					func(backend, model string) (string, error) {
+						node := vnode
+						if backend != vbackend {
+							node = ""
+						}
+						return runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, backend, model,
+							mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
+							"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), node,
+							withSessionProfile(autonomousMgrRef, launchTagsForVerify(prd.ID, task.StoryID), "verifier", prd, task))
+					},
+					func(backend string) (string, bool) {
+						if resolveAskBackend == nil {
+							return "", true
+						}
+						kind, model, rerr := resolveAskBackend(backend)
+						if rerr != nil {
+							return "", false
+						}
+						if isPiFamilyKind(kind) && model == "" {
+							m, setup := guardPiFamilyVerifyModel(backend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)
+							if setup != nil || m == "" {
+								return "", false
+							}
+							return m, true
+						}
+						return model, true
+					},
+					// Before the retry decision: free the verifier's lease and
+					// record the run-cap decision.
+					func(capEnd *autonomouspkg.OneShotNoOutputError) {
+						if capEnd != nil && capEnd.RunCap {
+							vRunCapEnded = true
+						}
+						verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)
+					})
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
-					return autonomouspkg.VerificationResult{
-						OK: false, Severity: "medium",
-						Summary:    "verifier(session): " + serr.Error(),
-						VerifiedAt: time.Now(),
-						Category:   "infra",
-					}, nil
+					// A run-cap end lands here too, as infra.
+					return verifierSessionInfraResult(serr), nil
 				}
 				var parsed autonomouspkg.VerificationResult
 				if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
@@ -12040,6 +12075,7 @@ func newConfigSetCmd() *cobra.Command {
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
+			"Verifier run cap key: autonomous.verifier_max_run_seconds (whole seconds >= 0; 0 = no cap; a negative or non-whole value is refused).\n\n" +
 			"Memory ceiling keys: resource_limits.memory_share_percent (1 to 100), " +
 			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).\n\n" +
 			"Platform context keys: platform_context.enabled (true|false; default true) turns the platform context " +
@@ -12089,6 +12125,24 @@ func newConfigGetCmd() *cobra.Command {
 	}
 }
 
+// verifierRunCapConfigKey is the dotted key that caps one verifier session's
+// wall-clock length. runConfigSet refuses bad values for it before any request.
+const verifierRunCapConfigKey = "autonomous.verifier_max_run_seconds"
+
+// parseVerifierRunCapValue accepts a whole, non-negative number of seconds
+// (0 = no cap). A negative value is refused by config.ValidateVerifierRunCapSeconds;
+// any other non-whole text is refused here. Both errors name the key.
+func parseVerifierRunCapValue(value string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a whole number of seconds (0 = no cap), got %q", verifierRunCapConfigKey, value)
+	}
+	if err := config.ValidateVerifierRunCapSeconds(n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func runConfigSet(cfg *config.Config, key, value string) error {
 	if isWorkerProfileConfigKeyFamily(key) {
 		return runWorkerProfileConfigSet(cfg, key, value)
@@ -12103,6 +12157,17 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	// sent typed, with their help link printed on success.
 	if handled, err := mergeShadowConfigSet(cfg, key, value); handled {
 		return err
+	}
+	if key == verifierRunCapConfigKey {
+		n, err := parseVerifierRunCapValue(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		if err := putConfig(url, cfg.Server.Token, fmt.Sprintf(`{"%s": %d}`, key, n)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %d\n", key, n)
+		return nil
 	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {

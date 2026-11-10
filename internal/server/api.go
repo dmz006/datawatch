@@ -6664,6 +6664,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"scope_breadth_enabled":                s.cfg.Autonomous.ScopeBreadthEnabled,
 			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
+			"verifier_max_run_seconds":             s.cfg.Autonomous.VerifierMaxRunSeconds, // 0 = no cap
 
 			// Read-only: the idle-nudge windows the daemon applies after the
 			// unset or non-positive fallback (180s nudge, 600s stall).
@@ -7075,6 +7076,20 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		mode, _ := v.(string)
 		if verr := config.ValidateScopeLint(mode); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// verifier_max_run_seconds — a whole, non-negative JSON number (0 = no
+	// cap). A negative or fractional value rejects the whole PUT so the
+	// stored cap is never silently truncated or ignored.
+	if v, ok := patch["autonomous.verifier_max_run_seconds"]; ok {
+		f, isNum := v.(float64)
+		if !isNum || f != math.Trunc(f) {
+			http.Error(w, "autonomous.verifier_max_run_seconds: must be a whole number of seconds (0 = no cap)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateVerifierRunCapSeconds(int(f)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -10260,6 +10275,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.VerificationRecordScores = &b
 		case "autonomous.fallback_verification_backend":
 			cfg.Autonomous.FallbackVerificationBackend = toString(v)
+		case "autonomous.verifier_max_run_seconds":
+			// Validated in handlePutConfig; 0 means no cap and is stored as zero.
+			if n, ok := toInt(v); ok && config.ValidateVerifierRunCapSeconds(n) == nil {
+				cfg.Autonomous.VerifierMaxRunSeconds = n
+			}
 		case "autonomous.verifier_no_progress_timeout_seconds":
 			// Zero falls back to the default via
 			// config.NormalizeVerifierNoProgressTimeoutSeconds at read time.

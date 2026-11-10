@@ -307,6 +307,14 @@ func judgeAskBody(question, kind, llm, model, node string) map[string]any {
 // verifier one-shot session ("autonomous:verify:<task id>").
 const verifierSessionNamePrefix = "autonomous:verify"
 
+// oneShotPollInterval is the period at which the one-shot wait loop polls
+// the session. Tests shorten it; production keeps the 3-second cadence.
+var oneShotPollInterval = 3 * time.Second
+
+// oneShotClock is the clock the verifier run cap reads on every poll. Tests
+// inject a fake clock; production reads the wall clock.
+var oneShotClock = time.Now
+
 // sessionPaneMarker returns a fingerprint of the session's captured pane
 // output tail, or "" when it cannot be read. A read failure yields an
 // unchanged marker, which counts as no activity.
@@ -519,7 +527,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 	role := strings.TrimPrefix(sessionName, "autonomous:")
 
 	// Poll for session completion.
-	tick := time.NewTicker(3 * time.Second)
+	tick := time.NewTicker(oneShotPollInterval)
 	defer tick.Stop()
 	waitingInputTicks := 0
 	// Session idle detector (autonomous.session_idle_timeout_seconds):
@@ -531,9 +539,15 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 	// verifier sessions only; decompose and worker sessions are untouched.
 	var verifierWatchdog *autonomouspkg.VerifierWatchdog
 	var watchdogLimit time.Duration
+	// Verifier run cap (autonomous.verifier_max_run_seconds): a progress-blind
+	// ceiling on one verifier run's accumulated run time, excluding time spent
+	// waiting for a capacity slot. Verifier sessions only.
+	var verifierRunLimit *autonomouspkg.VerifierRunLimit
 	if strings.HasPrefix(sessionName, verifierSessionNamePrefix) {
 		watchdogLimit = time.Duration(config.NormalizeVerifierNoProgressTimeoutSeconds(cfg.Autonomous.VerifierNoProgressTimeoutSeconds)) * time.Second
 		verifierWatchdog = autonomouspkg.NewVerifierWatchdog(spawnedAt, watchdogLimit)
+		runCapSeconds := config.VerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds)
+		verifierRunLimit = autonomouspkg.NewVerifierRunLimit(time.Duration(runCapSeconds) * time.Second)
 	}
 	for {
 		select {
@@ -614,6 +628,22 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 					fmt.Printf("[%s] %s no progress for %v — no-progress watchdog ending session (runner: %v; model-server request: %v; capacity slot: %v; no output file, no pane change)\n",
 						sessionName, startOut.ID, watchdogLimit, runner, request, slot)
 					return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: autonomouspkg.VerifierWatchdogMessage(watchdogLimit)}
+				}
+				// Run cap: decided on every poll with the same slot state the
+				// watchdog saw, so waiting-for-slot time is excluded.
+				runNow := oneShotClock()
+				if verifierRunLimit.Decide(runNow, signals.Slot) {
+					ran := verifierRunLimit.Elapsed(runNow)
+					capSeconds := config.VerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds)
+					fmt.Printf("[%s] %s run cap reached — ran %v, cap %ds (autonomous.verifier_max_run_seconds); ending session\n",
+						sessionName, startOut.ID, ran, capSeconds)
+					return "", sessionID, &autonomouspkg.OneShotNoOutputError{
+						Msg: fmt.Sprintf("verifier session %s ended at its run cap: ran %v, cap %ds (autonomous.verifier_max_run_seconds)",
+							startOut.ID, ran.Round(time.Second), capSeconds),
+						RunCap:        true,
+						RunCapElapsed: ran,
+						RunCapSeconds: capSeconds,
+					}
 				}
 			}
 			// waiting_input debounce, mirroring the task executor's

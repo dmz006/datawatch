@@ -3248,6 +3248,12 @@ type AutonomousConfig struct {
 	// output file and no pane activity for this long. 0 or unset => 600
 	// (see NormalizeVerifierNoProgressTimeoutSeconds).
 	VerifierNoProgressTimeoutSeconds int `yaml:"verifier_no_progress_timeout_seconds,omitempty" json:"verifier_no_progress_timeout_seconds,omitempty"`
+	// VerifierMaxRunSeconds caps the total wall-clock run of one verifier
+	// session, counted from its start. Default 2700 seconds (45 minutes) (see
+	// VerifierRunCapDefaultSeconds). 0 means no cap and is kept as 0, never
+	// mapped to the default; negative values are rejected (see
+	// ValidateVerifierRunCapSeconds). No omitempty, so an explicit 0 round-trips.
+	VerifierMaxRunSeconds int `yaml:"verifier_max_run_seconds" json:"verifier_max_run_seconds"`
 	// WorkerIdleNudgeSeconds is how long a PRD-owned claude-code worker may sit
 	// idle with no output and no completion marker before it gets one nudge to
 	// finish. 0 or unset => 180 (see NormalizeWorkerIdleNudgeSeconds).
@@ -7357,6 +7363,7 @@ func DefaultConfig() *Config {
 			JudgeSizeThresholdLines:                  JudgeSizeThresholdDefaultLines,
 			JudgePromptFileThresholdLines:            JudgePromptFileThresholdDefaultLines,
 			JudgeDeliveryWaitPerThousandLinesSeconds: 60,
+			VerifierMaxRunSeconds:                    VerifierRunCapDefaultSeconds,
 			GateDisagreement:                         autonomousGateDisagreementWarn,
 			FailureEscalation:                        DefaultFailureEscalationConfig(),
 			// Starting plan-tier table — operator policy, see the field
@@ -8296,6 +8303,9 @@ func Load(path string) (*Config, error) {
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
 		return nil, err
 	}
+	if err := ValidateVerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds); err != nil {
+		return nil, err
+	}
 	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
 		return nil, err
 	}
@@ -8352,6 +8362,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
+		return nil, err
+	}
+	if err := ValidateVerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds); err != nil {
 		return nil, err
 	}
 	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
