@@ -3327,6 +3327,8 @@
   "held_question_failed": "Failed to load held questions: %1$s",
   "held_question_settings_mode": "Held questions mode (off, shadow or on; default shadow)",
   "held_question_settings_states": "Held question states (comma-separated held task state ids; empty = all five)",
+  "automation_help_triage_card": "Abre la guía de triaje de la bandeja: qué muestra la tarjeta de triaje, sus botones y cómo se libera un autómata atascado",
+  "automation_help_held_questions": "Abre la guía de preguntas retenidas: qué significa una pregunta retenida y cómo ver o cambiar la retención",
   "settings_automation_merged_member_policy": "Automaton merged-member policy (completed, manual or block; default completed)",
   "automation_merged_members_title": "Automaton merged-member decisions",
   "automation_merged_member_member": "Automaton member",
