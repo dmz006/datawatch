@@ -108,6 +108,7 @@ you already have a daemon you can talk to.
 | [Push notifications](push-notifications.md) | ntfy-compatible SSE endpoint + UnifiedPush discovery; self-hosted; mobile alerts for session events |
 | [Push setup — registration API](push-setup.md) | Register/unregister/notify endpoints; Android UnifiedPush integration; CLI `datawatch push` |
 | [Secret scan push gate](secret-scan-push-gate.md) | Pre-push secret scan of about-to-be-pushed commits: off/shadow (default)/enforce, detector + allow-list config, what a refusal looks like, where findings are recorded, clearing a false positive; secrets are never printed |
+| [Release push and tag](release-push-and-tag.md) | The off-by-default unattended release publication: the three settings with defaults, the secret-scan refusal rule, the audit entry, the CI window, and the read surfaces |
 | [Agent tracing](agent-tracing.md) | What agents did: tool calls, model requests, state changes, capability and permission decisions, loop warnings and errors — modes (off/summary/full), the four `tracing.*` settings, coverage level per backend, reading the timeline and roll-ups, redaction before storage, retention, every channel (PWA, CLI, REST, MCP, chat); OpenTelemetry export is a follow-up |
 | [Async PRD decompose](decompose-async.md) | Async decompose: 202 Accepted + SSE story stream + polling fallback + Last-Event-ID resume |
 | [Alert Rules](alert-rules.md) | Create and manage threshold-based alert rules; firings log; PWA + Android + CLI/REST/MCP |
