@@ -45181,6 +45181,7 @@ function _dashConsoleCardHTML(spec) {
   const href = _dashConsoleSafeHref(sec.link);
   const linkText = escHtml(t(spec.linkKey) || spec.label);
   const linkEl = `<a class="dash-console-link" href="${href}">↗ ${linkText}</a>`;
+  if (sec.available && sec.release) return _dashCIReleaseBodyHTML(sec, linkEl);
   if (sec.available) {
     const n = Number(sec.count);
     const num = Number.isFinite(n) ? n : 0;
@@ -45193,6 +45194,51 @@ function _dashConsoleCardHTML(spec) {
   const reason = escHtml(sec.reason || (t('dash_console_unavailable') || 'Unavailable'));
   return `<div class="dash-console-card">
     <div class="dash-console-line dash-console-reason">${reason}</div>
+    ${linkEl}
+  </div>`;
+}
+
+// _dashCIReleaseBodyHTML: the CI & release card body from the release detail.
+// Release and ship state always show. A repo CI watch that is off says exactly
+// "repo CI watch off" with the setting as the next action; failing or hung runs
+// are listed only while the watch is on. Run links must be https.
+function _dashCIReleaseBodyHTML(sec, linkEl) {
+  const r = sec.release || {};
+  const lines = [];
+  if (r.release_state === 'update_available' && r.latest_release) {
+    lines.push(t('dash_console_ci_latest', [r.latest_release]));
+  } else if (r.release_state === 'up_to_date') {
+    lines.push(t('dash_console_ci_running', [r.current_version || '']));
+  } else if (r.release_state === 'check_failed') {
+    lines.push(t('dash_console_ci_check_failed'));
+  } else {
+    lines.push(t('dash_console_ci_not_wired'));
+  }
+  if (r.ship_push || r.ship_tag || r.ship_ci_watch) {
+    lines.push(t('dash_console_ci_ship', [r.ship_push || '', r.ship_tag || '', r.ship_ci_watch || '']));
+  }
+  if (r.ship_last_note) lines.push(t('dash_console_ci_ship_note', [r.ship_last_note]));
+  let watch;
+  if (r.watch_off) {
+    watch = `<div class="dash-console-line dash-console-reason">${escHtml(t('dash_console_ci_watch_off'))}</div>
+      <a class="dash-console-link" href="${_dashConsoleSafeHref(r.watch_link)}">↗ ${escHtml(t('dash_console_ci_watch_link'))}</a>`;
+  } else {
+    const runs = Array.isArray(r.failing_runs) ? r.failing_runs : [];
+    if (!runs.length) {
+      watch = `<div class="dash-console-line">${escHtml(t('dash_console_ci_none_failing'))}</div>`;
+    } else {
+      watch = `<div class="dash-console-line">${escHtml(t('dash_console_ci_failing', [String(runs.length)]))}</div>` +
+        runs.map(run => {
+          const url = typeof run.run_url === 'string' && /^https:\/\//.test(run.run_url) ? run.run_url : '';
+          const open = url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">↗ ${escHtml(t('dash_console_ci_run_link'))}</a> ` : '';
+          const label = escHtml([run.repo, run.workflow, run.status].filter(Boolean).join(' · '));
+          return `<div class="dash-console-line">${open}${label}</div>`;
+        }).join('');
+    }
+  }
+  return `<div class="dash-console-card">
+    ${lines.map(l => `<div class="dash-console-line">${escHtml(l)}</div>`).join('')}
+    ${watch}
     ${linkEl}
   </div>`;
 }
@@ -45306,6 +45352,20 @@ const DASH_DEFAULT_LAYOUT = [
 // install; with it off they render in a single line saying why they are
 // empty, with a link to the related setting's help page.
 const DASH_CARD_FEATURES = {
+  // The CI & release console card is shown once the daemon has reported a
+  // release check or ship policy. A repo CI watch that is off does not hide
+  // it: the card still shows the release and ship state with the next action.
+  'console-ci-release': {
+    docsKey: 'dash_card_events',
+    reasonKey: 'dash_card_off_ci_release_reason',
+    reasonDefault: 'No release or ship state reported yet — this card fills after the first release check.',
+    linkKey: 'dash_card_off_ci_release_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const s = _dash && _dash._console && _dash._console.ci_release;
+      return !!(s && s.available && s.release && (s.release.release_state || s.release.ship_push));
+    },
+  },
   'heatmap': {
     docsKey: 'dash_card_heatmap',
     reasonKey: 'dash_card_off_heatmap_reason',
@@ -45447,6 +45507,7 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
   kick(_dashCardFeature('heatmap'), _dashFetchHeatmap);
+  kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
   if (!jobs.length) return;
