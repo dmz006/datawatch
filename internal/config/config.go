@@ -682,7 +682,7 @@ type Config struct {
 	// sub-process monitoring. Ships in three shapes; this block
 	// covers Shape A (in-process plugin). Enabled by default on
 	// v4.1.0+. See docs/api/observer.md.
-	Observer ObserverConfig `yaml:"observer,omitempty" json:"observer,omitempty"`
+	Observer ObserverConfig `yaml:"observer" json:"observer"`
 
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`
@@ -5826,7 +5826,7 @@ type ObserverConfig struct {
 
 	// Peers (BL172, v4.5.0; bridge added v5.21.0) — federated peer
 	// registry knobs.
-	Peers ObserverPeersConfig `yaml:"peers,omitempty" json:"peers,omitempty"`
+	Peers ObserverPeersConfig `yaml:"peers" json:"peers"`
 }
 
 // ObserverPeersConfig (v5.21.0 bridge) mirrors observer.PeersCfg.
@@ -5842,6 +5842,10 @@ type ObserverPeersConfig struct {
 	// ListenAddr is the optional sidecar listen address Shape B peers
 	// expose (e.g. ":9001").
 	ListenAddr string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`
+	// SilentAlertMinutes is how long a peer may stay silent before an
+	// alert is raised; default 5, 0 disables. No omitempty so an explicit
+	// 0 survives a YAML round trip instead of reverting to the default.
+	SilentAlertMinutes int `yaml:"silent_alert_minutes" json:"silent_alert_minutes"`
 }
 
 // ObserverOllamaTapConfig — BL180 Phase 1 — mirrors observer.OllamaTapCfg.
@@ -6135,6 +6139,9 @@ func DefaultConfig() *Config {
 		Hostname:        hostname,
 		DataDir:         filepath.Join(home, ".datawatch"),
 		PinCheckSeconds: 300,
+		Observer: ObserverConfig{
+			Peers: ObserverPeersConfig{SilentAlertMinutes: 5},
+		},
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
 			DeviceName: hostname,
