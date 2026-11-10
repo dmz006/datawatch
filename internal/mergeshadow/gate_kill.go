@@ -23,7 +23,9 @@ func configureGateProcessGroup(cmd *exec.Cmd) {
 			return nil
 		}
 		// A negative pid addresses the process group led by that pid.
+		// end-reason-ok: kills a trial-merge gate's own OS process group at its deadline, not a datawatch session
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			// end-reason-ok: falls back to killing the gate's own OS process, not a datawatch session
 			return cmd.Process.Kill()
 		}
 		return nil

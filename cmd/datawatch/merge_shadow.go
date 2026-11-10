@@ -89,11 +89,11 @@ func newMergeShadowStatusCmd() *cobra.Command {
 				}
 			}
 			if total == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), mergeShadowNoComparisonLine)
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), mergeShadowNoComparisonLine)
 				return nil
 			}
 			for _, sz := range []string{"patch", "minor", "major", "none"} {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s: matched %d, different %d\n", sz, matched[sz], different[sz])
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: matched %d, different %d\n", sz, matched[sz], different[sz])
 			}
 			return nil
 		},
@@ -119,18 +119,18 @@ func newMergeShadowCompareCmd() *cobra.Command {
 						continue
 					}
 					found = true
-					fmt.Fprintf(w, "Automaton %s (%s): matched %d, different %d, not compared %d\n",
+					_, _ = fmt.Fprintf(w, "Automaton %s (%s): matched %d, different %d, not compared %d\n",
 						id, c.ReleaseSize, c.Matched, c.Different, c.NotCompared)
 					if len(c.Differences) == 0 {
-						fmt.Fprintln(w, "no differences")
+						_, _ = fmt.Fprintln(w, "no differences")
 					}
 					for _, d := range c.Differences {
-						fmt.Fprintf(w, "  %s [%s]: planned %q, landed %q\n", d.Field, d.Severity, d.Planned, d.Landed)
+						_, _ = fmt.Fprintf(w, "  %s [%s]: planned %q, landed %q\n", d.Field, d.Severity, d.Planned, d.Landed)
 					}
 				}
 			}
 			if !found {
-				fmt.Fprintf(w, "no merge shadow comparison exists for Automaton %s\n", id)
+				_, _ = fmt.Fprintf(w, "no merge shadow comparison exists for Automaton %s\n", id)
 			}
 			return nil
 		},
