@@ -11542,6 +11542,7 @@ func newConfigSetCmd() *cobra.Command {
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
 			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"Peer silence key: observer.peers.silent_alert_minutes (whole minutes >= 0; 0 = silence watcher off, default 5). Read it back with `config get observer.peers.silent_alert_minutes`.\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).",
