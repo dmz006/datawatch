@@ -298,6 +298,8 @@ test('the Autonomous settings group has the six merge_pipeline fields and the th
     'autonomous.merge_pipeline.fallback_on_bad_file': 'select',
     'autonomous.merge_pipeline.conflict_policy': 'select',
     'autonomous.merge_pipeline.conflict_model': 'text',
+    'autonomous.merge_pipeline.conflict_mode': 'select',
+    'autonomous.merge_pipeline.conflict_confirm_first_n': 'number',
     'autonomous.merge_pipeline.version_files': 'text',
     // Release settings: their own help link, checked in the next test.
     'autonomous.merge_pipeline.release_size_map': 'release_size_map',
@@ -308,12 +310,15 @@ test('the Autonomous settings group has the six merge_pipeline fields and the th
     'autonomous.merge_pipeline.release_approval.minor': 'select',
     'autonomous.merge_pipeline.release_approval.major': 'select',
   };
-  assert.equal(fields.length, 13, 'expected thirteen fields: ' + fields.map(f => f.key).join(','));
+  assert.equal(fields.length, 15, 'expected fifteen fields: ' + fields.map(f => f.key).join(','));
   for (const [key, type] of Object.entries(want)) {
     assert.ok(byKey[key], key + ' missing');
     assert.equal(byKey[key].type, type, key + ' has the wrong type');
   }
   assert.deepEqual(byKey['autonomous.merge_pipeline.conflict_policy'].options, ['stop_and_ask', 'mechanical', 'mechanical_and_model']);
+  assert.deepEqual(byKey['autonomous.merge_pipeline.conflict_mode'].options, ['shadow', 'on']);
+  assert.equal(byKey['autonomous.merge_pipeline.conflict_mode'].default, 'shadow');
+  assert.equal(byKey['autonomous.merge_pipeline.conflict_confirm_first_n'].min, 0);
   assert.deepEqual(byKey['autonomous.merge_pipeline.fallback_on_bad_file'].options, ['record', 'default', 'none']);
   assert.equal(byKey['autonomous.merge_pipeline.source_order'].csv, true);
   assert.equal(byKey['autonomous.merge_pipeline.version_files'].csv, true);
@@ -806,4 +811,54 @@ test('no merge lock or validator string uses the word PRD', () => {
       assert.ok(!/\bPRD/i.test(b[k]), k + ' uses PRD in ' + lang);
     }
   }
+});
+
+// ── conflict confirmation ───────────────────────────────────────────────────
+
+function confirmation(over) {
+  return Object.assign({ mode: 'on', confirm_first_n: 5, counted: 2, remaining: 3, enabled: true, error: '' }, over || {});
+}
+
+test('conflict confirmation line renders the count and the remaining when enabled and counted is a number', () => {
+  const html = render(view({ conflict_confirmation: confirmation() }));
+  assert.ok(html.includes('class="merge-pipeline-confirmation"'), 'confirmation line missing: ' + html);
+  assert.ok(html.includes('2 conflicts confirmed'), 'count missing: ' + html);
+  assert.ok(html.includes('3 confirmations remaining'), 'remaining missing: ' + html);
+  assert.ok(!html.includes('{count}') && !html.includes('{remaining}'), 'placeholder left unfilled: ' + html);
+  assert.ok(html.includes('Conflict confirmations'), 'label missing: ' + html);
+});
+
+test('conflict confirmation line shows a zero count when enabled', () => {
+  const html = render(view({ conflict_confirmation: confirmation({ counted: 0, remaining: 5 }) }));
+  assert.ok(html.includes('0 conflicts confirmed'), html);
+});
+
+test('conflict confirmation line omits the remaining part when it is not a number', () => {
+  const html = render(view({ conflict_confirmation: confirmation({ remaining: null }) }));
+  assert.ok(html.includes('2 conflicts confirmed'), html);
+  assert.ok(!html.includes('confirmations remaining'), 'remaining shown without a number: ' + html);
+});
+
+test('conflict confirmation renders nothing when confirmation is off', () => {
+  const html = render(view({ conflict_confirmation: confirmation({ enabled: false, mode: 'shadow', confirm_first_n: 5 }) }));
+  assert.ok(!html.includes('merge-pipeline-confirmation'), 'line rendered while off: ' + html);
+  assert.ok(!html.includes('conflicts confirmed'), html);
+});
+
+test('conflict confirmation renders nothing when the count is empty or never a number', () => {
+  for (const counted of [null, undefined, 'never', '2']) {
+    const html = render(view({ conflict_confirmation: confirmation({ counted }) }));
+    assert.ok(!html.includes('merge-pipeline-confirmation'), 'line rendered for counted=' + String(counted) + ': ' + html);
+  }
+});
+
+test('conflict confirmation renders nothing when the block is missing', () => {
+  const html = render(view({}));
+  assert.ok(!html.includes('merge-pipeline-confirmation'), html);
+});
+
+test('the conflict mode and confirm-first-N settings link to their how-to sections', () => {
+  assert.equal(docsLink('autonomous.merge_pipeline.conflict_mode'), 'howto/merge-pipeline.md#conflict-mode');
+  assert.equal(docsLink('autonomous.merge_pipeline.conflict_confirm_first_n'), 'howto/merge-pipeline.md#confirm-the-first-n-model-conflicts');
+  assert.equal(docsLink('settings_merge_pipeline_conflict_mode'), 'howto/merge-pipeline.md#conflict-mode');
 });
