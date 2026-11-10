@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.123.0 (2026-11-09).** The built-in task pack is now called standard tasks, and the Automata page's Templates tab lists them in a Standard tasks sub-tab next to the Automaton templates. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.124.0 (2026-11-09).** Release push and tag settings, tool and machinery for Automata, off by default; the daemon's ship path does not call the push and tag code yet. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

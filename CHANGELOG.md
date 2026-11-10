@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.124.0 — Release push and tag settings and machinery for Automata (not yet called by the daemon's ship path)
+
+### Added
+
+- **Release push and tag machinery for Automata, with three settings, in place but not yet called by the daemon's ship path.** The push and tag code, the settings, the refusal rule, the audit record shape and the tests are in this release; the daemon's ship path does not call the push and tag code yet, so turning the switch on stores the setting and nothing is pushed or tagged by the daemon. `autonomous.push_and_tag` (bool, default `false`) says whether the daemon publishes a finished release itself; `autonomous.release_path` (`direct_push` or `pull_request`, default `direct_push`; any other value is refused) picks how; `git.release_ci_window_minutes` (whole minutes, greater than 0, default 60) is how long the release CI is waited for. The code is `internal/autonomous/release_push.go` (direct push: fast-forward the default branch to the release commit, create the annotated tag, push both, never force), `release_pull_request.go` (pull request path: push the release branch, open a pull request, poll its checks, merge only when every check succeeded, via new provider calls in `internal/git`), `release_ci_fallback.go` (a red release CI inside the window falls the release approval mode back to ask and files a defect; the fall-back is held in memory only, so a daemon restart clears it) and `release_record.go` (the release record, one per project and tag, kept as a JSON-lines file). With the pre-push secret scan in enforce mode, a finding refuses the release push and writes one audit entry that carries only the credential source label, never a credential.
+- **`release_push_status` MCP tool, read-only.** It takes a project name and answers `push_and_tag`, `release_path`, `ci_window_minutes` and `last_release` (null when no record exists; this build installs no release record store, so it is null for every project). The tool is registered in the capability map as an autonomous read.
+- **The three release settings are on every settings surface.** The PWA Settings page has a *Push and tag finished releases* switch, a *Release path* select and a *CI window (minutes)* field, plus a `Last release:` line drawn only when a release record exists; `PUT /api/config`, `datawatch config set` and the comm channel `configure` verb take the three keys, and `GET /api/config` returns them. A new how-to, `docs/howto/release-push-and-tag.md`, starts with a *Status in this build* section that says what is not wired yet. There is no `datawatch release` subcommand and no per-project release-status REST endpoint.
+
 ## v9.123.0 — Standard tasks: the built-in task pack is renamed and listed under Automata, Templates
 
 ### Added
