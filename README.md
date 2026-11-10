@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.131.0 (2026-11-10).** A Vault that stays unreachable now raises a real alert (and a recovery alert) instead of a Settings nav badge; the delay is the new secrets.vault.unreachable_alert_after_seconds setting (default 120, 0 = off), and the Vault row shows last success and last error. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.132.0 (2026-11-10).** The Settings nav button no longer carries a peer-stale badge; the daemon raises a silent-peer alert after observer.peers.silent_alert_minutes (default 5, 0 disables) and each Observer peer row shows how stale it is. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

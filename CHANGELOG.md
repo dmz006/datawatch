@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.132.0 — Peer silence alert replaces the PWA peer-stale nav badge
+
+- **Peer-stale badge replaced by a connectivity alert.** The Settings nav button no longer shows the peer-stale count badge, and the 30-second poll behind it is removed. Each peer row in the Observer list now shows an inline "Stale (age)" note when the peer last pushed over a minute ago, or "Never pushed" if it has not pushed yet (the daemon's own row is skipped; labels in en, de, es, fr, ja). The daemon now raises one system alert when a registered observer peer stays silent longer than `observer.peers.silent_alert_minutes` (default 5; 0 disables), and one recovery alert when it pushes again. Set the threshold from PWA Settings, the CLI, REST, MCP or the comm channel; see `docs/howto/federated-observer.md`. No migration step.
+
 ## v9.131.0 — Vault unreachable alert
 
 ### Added
