@@ -6228,3 +6228,11 @@ When the splash is shown for a new version, the version line now carries the **p
 ### Android / iPhone
 
 The mobile apps (datawatch-app) do not yet mirror these dwell settings. The parity issue asking them to adopt the two dwell timetables is filed at `docs/plans/parity-issues/splash-dwell-settings.md`.
+
+## Peer outage visibility (PWA)
+
+| Surface | What the operator sees |
+|---|---|
+| Settings nav button | No peer-stale badge (removed) |
+| Observer Federated Peers card | Per-row **Stale (age)** after 60 s, **Never pushed** if no push yet |
+| Alerts tab | Peer-health transition alerts (60 s) and a connectivity alert past a configurable threshold, default 5 minutes (operator to confirm) |

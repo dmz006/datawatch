@@ -239,6 +239,16 @@ channels:  # see comm-channels.md
   is a shallow check. Use `diagnose` for the deep one — backends,
   channels, observer, memory, KG.
 
+## Peer connectivity alert
+
+The PWA no longer shows a peer-stale badge on the Settings nav button.
+Peer outages surface two ways: per-row **Stale (age)** / **Never
+pushed** notes on the Observer Federated Peers card, and a connectivity
+alert in the Alerts tab once a peer has been unreachable past a
+configurable threshold (default 5 minutes, pending operator
+confirmation). Details: [federated-observer](federated-observer.md#connectivity-alert).
+
+
 ## Linked references
 
 - See also: [`setup-and-install.md`](setup-and-install.md) — first-run.

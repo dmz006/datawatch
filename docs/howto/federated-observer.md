@@ -210,6 +210,24 @@ datawatch observer peer-remove lab-east-peer
     an inline **Stale (age)** note on its row, and a peer that has
     never pushed shows **Never pushed**. The daemon's own row is
     skipped. The Settings nav button has no peer badge any more.
+    To get attention for a real outage, use the connectivity alert
+    described under *Connectivity alert* below.
+
+## Connectivity alert
+
+The Settings nav badge was replaced by a connectivity alert: a peer
+that stays unreachable past a configurable threshold raises an entry
+in the Alerts tab (`source: system`) instead of decorating the nav
+button. The short 60 s Stale note on a row is only a hint; the
+connectivity alert fires on a longer outage. The default threshold is
+**5 minutes**, picked by the supervisor and **not yet confirmed by the
+operator**. Peer-health state-transition alerts (60 s stale) keep
+firing as before.
+
+> Operator review: confirm or change the 5-minute default, and check
+> the exact setting name in the config reference once the
+> implementation story ships; this page does not name a key it has
+> not verified.
 
 ## Other channels
 
@@ -427,7 +445,7 @@ bash install/install-stats.sh \
 - [ ] Mint peer token modal
 - [ ] Peer drill-down with last snapshot
 - [ ] Cross-host envelope view
-- [ ] Cog-icon stale badge with breadcrumb to flashing peer row
+- [ ] Stale / Never pushed inline note on a peer row (no Settings nav badge)
 - [ ] CLI `datawatch observer peers` output
 
 ---
