@@ -125,8 +125,8 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: nine rules —
-the six `block` rules first, then the three `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: ten rules —
+the six `block` rules first, then the four `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.

@@ -1,14 +1,14 @@
 ---
 docs:
   index: true
-  topics: [automaton, automata, task templates, daemon mode, script gate, project gate, settings]
+  topics: [automaton, automata, standard tasks, daemon mode, script gate, project gate, settings]
 exec_params:
   - {name: task_templates_mode, required: false, description: "Per-template modes, as id=mode pairs or a JSON object, e.g. changelog_entry=daemon,final_gate=llm"}
   - {name: script_gate_timeout_seconds, required: false, description: "Time cap on one script gate run, in whole seconds (0 = no cap, default 900)"}
   - {name: project_gate_command, required: false, description: "The project gate command, one line of shell text (empty = unset)"}
 exec_steps:
   - tool: autonomous_config_get
-    description: Read the current task template modes, script gate time cap and project gate command
+    description: Read the current standard task modes, script gate time cap and project gate command
     args: {}
     read_only: true
   - tool: autonomous_config_set
@@ -23,7 +23,7 @@ exec_steps:
 # How-to: daemon task modes and the script gate
 
 An Automaton is planned as stories and tasks. The planner adds some of those
-tasks from **task templates** (a changelog entry, a parity issue draft, a docs
+tasks from **standard tasks** (a changelog entry, a parity issue draft, a docs
 set, a final gate and so on). Each template runs in one of three **modes**:
 an LLM session, the daemon itself, or not at all. A closing check, the **script
 gate**, is run by the daemon with no session. This how-to covers the modes and

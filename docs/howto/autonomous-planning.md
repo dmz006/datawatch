@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automata, decompose, planning, task templates]
+  topics: [autonomous, automata, decompose, planning, standard tasks]
 exec_params:
   - {name: spec, required: true, description: "Free-form goal specification"}
   - {name: project_dir, required: false, default: "", description: "Project directory (empty = use default)"}
@@ -340,7 +340,7 @@ gate with nothing runnable — fails it.
 - **A verification script must be a script file that lives in the project.** A template's `verification_script` names one repo-relative script that already exists as an executable (for example `scripts/verify.sh`), and the verifier's pre-start check runs *that file*. A command string such as `go build ./... && go test ./...` is not a script: a value that looks like a command — whitespace, shell operators, an absolute path, a parent reference or the project root itself — is refused at config write with an error naming the template id, nothing is stored, and a template that still carries one is skipped when the templates are applied, so it never becomes a task the verifier cannot start. The same bar is enforced on the plan side: plan coverage and the decompose lint flag a task whose verification script is not a script file, because a failure of it would otherwise leave nothing to inspect.
 - **The note tasks are records, not checks — and in their default daemon mode no verifier ever sees them.** The built-in note tasks — the release version note and the bounded load-step rule — write no files and carry no verification script. In their default `daemon` mode the daemon records the note as the story's decision and completes the task; the decompose lint and the plan-structure checks skip daemon-mode tasks, so they never kick a decompose back and nothing is held against them. If an operator switches either template to `llm` mode, the session path applies instead, and the explicit escape hatch for scriptless work is what carries it: a task may carry a stated **verification-exemption reason** (`verification_script_reason`) explaining why it needs no script, and a task with that exemption passes the plan-structure check with no changes — both built-in note tasks carry one, saying a note task changes no files by design. Where a plan-coverage record does call out a scriptless task (a `missing_verification` finding), you acknowledge it like any other failing surface when the gate is in its default `block` mode (or leave it to the `warn`/`off` modes, which report but do not gate).
 - **A read-only task may write exactly one file: its report, and any other change still fails.** The only write a read-only task is allowed is to the one `report_path` it carries, and that path has to live under `.datawatch/reports/`. The read-only tree check that runs after the task compares the tree before and after and sets aside only `.datawatch/` (in which the report lives) plus that one report path. If the task leaves an extra report file under the older `docs/plans/reports/` location, that file is moved under `.datawatch/reports/` and the move is recorded as the decision for the write, so the report file itself does not fail the task. Any other change the task left behind still fails it, and the daemon records that read-only violation, naming the file.
-- **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old template tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
+- **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old standard tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
 
 ## Choose the verifier per task, story or Automaton
 
@@ -575,7 +575,7 @@ than reading any log that is not the session's own.
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
-- [howto/automaton-decompose-lint](automaton-decompose-lint.md) — the decompose-lint quality check and the task templates the closing tasks come from
+- [howto/automaton-decompose-lint](automaton-decompose-lint.md) — the decompose-lint quality check and the standard tasks the closing tasks come from
 - [howto/automata-orchestrator](automata-orchestrator.md)
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [howto/algorithm-mode](algorithm-mode.md)
