@@ -4778,6 +4778,20 @@ cost_report:
   # Default false: peer spend is excluded from the report.
   include_peer_spend: false
 
+# ── Standard-task packs ──
+# The standard-task pack feature: installable, named, versioned folders that
+# ship Automaton task prompts, verification scripts and Automaton templates.
+# Off by default, so a daemon that never sets packs.* behaves as before.
+packs:
+  # Turn the pack feature on. Default false.
+  enabled: false
+  # The packs in use, in order. Each name is "builtin" (the pack that ships in
+  # the binary, always valid) or the name of an installed pack. A name that is
+  # neither, an empty name or a repeated name is rejected by validation.
+  # Default: [builtin].
+  active:
+    - builtin
+
 # ── Onboarding report ──
 # The Automation onboarding report: what is configured, what is missing and
 # what to try next. Read from the PWA card, `datawatch automation
