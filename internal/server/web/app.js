@@ -10310,6 +10310,7 @@ const DOCS_LINKS_BY_KEY = {
   dash_card_memory_scope: 'memory.md',
   dash_card_smoke: DOCS_DEFINITIONS + '#dashboard',
   dash_card_events: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_gantt: DOCS_DEFINITIONS + '#dashboard',
   dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
@@ -45257,7 +45258,7 @@ const DASH_CARD_DEFS = [
   { id: 'sparklines', label: 'Sessions',        icon: '▬',  defaultCs: 2,
     body: () => '<canvas id="dashSparkCanvas" style="width:100%;height:100%;display:block;"></canvas>' },
   { id: 'gantt',      label: 'Timeline · 6h',  icon: '≡',  defaultCs: 12,
-    body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;"></svg></div>' },
+    body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;max-width:960px;"></svg></div>' },
   { id: 'heatmap',    label: '30-Day Activity', icon: '🔥', defaultCs: 3,
     body: () => `<div style="position:relative;width:100%;height:100%;">
       <canvas id="dashHeatmapCanvas" style="width:100%;height:100%;display:block;"></canvas>
@@ -45308,6 +45309,14 @@ const DASH_DEFAULT_LAYOUT = [
 // install; with it off they render in a single line saying why they are
 // empty, with a link to the related setting's help page.
 const DASH_CARD_FEATURES = {
+  'gantt': {
+    docsKey: 'dash_card_gantt',
+    reasonKey: 'dash_card_off_gantt_reason',
+    reasonDefault: 'No Automaton task has run in the last 6 hours — its bar appears here when one starts.',
+    linkKey: 'dash_card_off_gantt_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _ganttGroups(Date.now()).length > 0; },
+  },
   'events': {
     docsKey: 'dash_card_events',
     reasonKey: 'dash_card_off_events_reason',
@@ -46633,7 +46642,12 @@ function _dashFetchPRDs() {
   // (the all-servers aggregate has no summary or filter form).
   return apiFetch(_tagFilterAppend(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?status=running,blocked,planning&limit=500', 'dashboard')).then(d => {
     const list = Array.isArray(d) ? d : ((d && d.prds) || []);
+    const ganttWas = _dashCardFeature('gantt').active();
     _dash._prds = _dashTagFilter(list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning'));
+    // The Timeline card joins or leaves the grid as its first or last bar comes and goes.
+    if (_dashCardFeature('gantt').active() !== ganttWas && typeof _dashBuildGrid === 'function') {
+      try { _dashBuildGrid(_dash._layout || []); } catch (_e) { /* grid not mounted yet */ }
+    }
   });
 }
 
@@ -47028,123 +47042,117 @@ function _ganttStateColour(s, accent, muted) {
   return ({ completed: '#10b981', running: accent, in_progress: accent, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || muted);
 }
 
+// Timeline card (dashboard 'gantt'): one row per Automaton with a task running
+// now or finished inside the 6h window, one bar per such task. Bars come from
+// the task records' started_at / completed_at in the Automata list fetch
+// (_dashFetchPRDs), not from hook events, and are coloured by task status.
+const _GANTT_WINDOW_MS = 6 * 3600000;
+const _GANTT_MAX_W = 960;
+const _GANTT_LIVE_TASK = { in_progress: true, running_tests: true, verifying: true };
+
+// _ganttTaskBars returns one Automaton's bars for the window ending at `now`.
+// A task needs a start timestamp. A live task runs to `now`; any other task
+// needs completed_at. A bar that began before the window is clipped to its
+// start, and a task that ended before the window is dropped.
+function _ganttTaskBars(prd, now, winMs) {
+  const winStart = now - winMs;
+  const out = [];
+  for (const st of ((prd && prd.stories) || [])) {
+    for (const tk of (st.tasks || [])) {
+      const start = Date.parse(tk.started_at || '');
+      if (!Number.isFinite(start) || start > now) continue;
+      const live = !!_GANTT_LIVE_TASK[tk.status];
+      let end = Date.parse(tk.completed_at || '');
+      if (!Number.isFinite(end)) end = live ? now : NaN;
+      if (!Number.isFinite(end) || end < winStart) continue;
+      out.push({
+        id: tk.id || '',
+        title: tk.title || tk.id || '',
+        status: tk.status || '',
+        live,
+        start: Math.max(start, winStart),
+        end: Math.min(Math.max(end, start), now),
+      });
+    }
+  }
+  return out;
+}
+
+// _ganttGroups returns { prd, bars } for each placed Automaton with at least one
+// bar in the window. An empty result means the Timeline card has nothing to show.
+function _ganttGroups(now) {
+  const groups = [];
+  for (const prd of _dashPlacedPrds()) {
+    const bars = _ganttTaskBars(prd, now, _GANTT_WINDOW_MS);
+    if (bars.length) groups.push({ prd, bars });
+  }
+  return groups;
+}
+
+// _ganttBarState maps the task statuses that have no colour of their own onto
+// the state they read as: verifying and running tests look like running.
+function _ganttBarState(s) {
+  return ({ running_tests: 'running', verifying: 'running' })[s] || s;
+}
+
 function _drawGantt() {
   const svgEl = document.getElementById('dashGanttSvg');
   if (!svgEl) return;
   const container = svgEl.parentElement;
   if (!container) return;
-  const W = container.clientWidth || 600;
+  const W = Math.min(container.clientWidth || 600, _GANTT_MAX_W);
   const LABEL_W = 164;
   const BAR_X = LABEL_W;
   const BAR_W = W - LABEL_W - 24;
   const now = Date.now();
-  const WIN_MS = 6 * 3600000;
-  const winStart = now - WIN_MS;
-  const HEADER_H = 24, AUTO_H = 28, STORY_H = 22, GAP = 8;
-  const prds = _dashPlacedPrds();
+  const winStart = now - _GANTT_WINDOW_MS;
+  const HEADER_H = 24, AUTO_H = 28, TASK_H = 22, GAP = 8;
+  const groups = _ganttGroups(now);
   const css = getComputedStyle(document.documentElement);
-  const bg = css.getPropertyValue('--bg').trim() || '#0f1117';
   const bg2 = css.getPropertyValue('--bg2').trim() || '#161b2e';
   const bdr = css.getPropertyValue('--border').trim() || '#2d3148';
   const txt = css.getPropertyValue('--text').trim() || '#e2e8f0';
   const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
   const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
-  const stC = s => _ganttStateColour(s, acc, txt2);
-  const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / WIN_MS)) * BAR_W;
+  const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / _GANTT_WINDOW_MS)) * BAR_W;
   let totalH = HEADER_H + GAP;
-  for (const p of prds) {
+  for (const g of groups) {
     totalH += AUTO_H;
-    if (_dash._ganttTreeExpand[p.id] !== false) totalH += (p.stories || []).length * STORY_H;
+    if (_dash._ganttTreeExpand[g.prd.id] !== false) totalH += g.bars.length * TASK_H;
     totalH += GAP;
   }
   totalH = Math.max(totalH, 80);
-  let html = '';
-  html += `<rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="${bg2}"/>`;
+  let html = `<rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="${bg2}"/>`;
   const startH = Math.ceil(winStart / 3600000), endH = Math.floor(now / 3600000);
   for (let h = startH; h <= endH; h++) {
-    const ts = h * 3600000;
-    const x = tsX(ts);
+    const x = tsX(h * 3600000);
     if (x < BAR_X - 2 || x > W - 10) continue;
-    const d = new Date(ts);
-    const lbl = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const lbl = new Date(h * 3600000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     html += `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${totalH}" stroke="${bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
     html += `<text x="${x.toFixed(1)}" y="14" text-anchor="middle" font-size="9" fill="${txt2}">${escHtml(lbl)}</text>`;
   }
   const nowX = tsX(now);
   html += `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${totalH}" stroke="${acc}" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>`;
   html += `<text x="${nowX.toFixed(1)}" y="10" text-anchor="middle" font-size="8" fill="${acc}" font-weight="bold">NOW</text>`;
-  let y = HEADER_H + GAP;
-  if (prds.length === 0) {
-    html += `<text x="${W / 2}" y="${HEADER_H + 50}" text-anchor="middle" font-size="13" fill="${txt2}" opacity="0.6">No active automata — start an Automaton to see its timeline</text>`;
-    html += `<text x="${W / 2}" y="${HEADER_H + 68}" text-anchor="middle" font-size="10" fill="${txt2}" opacity="0.4">Live story bars appear here as hooks fire</text>`;
+  if (groups.length === 0) {
+    html += `<text x="${W / 2}" y="${HEADER_H + 40}" text-anchor="middle" font-size="12" fill="${txt2}" opacity="0.7">${escHtml(t('dash_card_off_gantt_reason'))}</text>`;
   }
-  for (const prd of prds) {
-    const stories = prd.stories || [];
-    const tTotal = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
-    const tDone = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
-    const pct = tTotal > 0 ? Math.round(tDone / tTotal * 100) : 0;
-    const prdColor = stC(prd.status);
-    const expanded = _dash._ganttTreeExpand[prd.id] !== false;
-    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="${escHtml(`window._dashToggleGanttRow(${JSON.stringify(prd.id)})`)}"/>`;
-    html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${prdColor}" style="cursor:pointer;">${expanded ? '▼' : '▶'}</text>`;
-    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}">${escHtml((prd.title || prd.id).slice(0, 26))}</text>`;
-    const pbX = W - 96, pbY = y + AUTO_H / 2 - 5, pbW = 72, pbH = 7;
-    html += `<rect x="${pbX}" y="${pbY}" width="${pbW}" height="${pbH}" rx="3" fill="${bdr}"/>`;
-    html += `<rect x="${pbX}" y="${pbY}" width="${(pbW * pct / 100).toFixed(1)}" height="${pbH}" rx="3" fill="${prdColor}" opacity="0.8"/>`;
-    html += `<text x="${pbX + pbW + 4}" y="${pbY + pbH - 1}" font-size="9" fill="${txt2}">${pct}%</text>`;
+  let y = HEADER_H + GAP;
+  for (const g of groups) {
+    const expanded = _dash._ganttTreeExpand[g.prd.id] !== false;
+    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="${escHtml(`window._dashToggleGanttRow(${JSON.stringify(g.prd.id)})`)}"/>`;
+    html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${acc}" style="cursor:pointer;">${expanded ? '▼' : '▶'}</text>`;
+    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(g.prd.id)})`)}">${escHtml((g.prd.title || g.prd.id).slice(0, 26))}</text>`;
+    html += `<text x="${W - 10}" y="${y + AUTO_H / 2 + 4}" text-anchor="end" font-size="9" fill="${txt2}">${g.bars.length}</text>`;
     y += AUTO_H;
     if (!expanded) { y += GAP; continue; }
-    const completedCount = stories.filter(s => s.status === 'completed').length;
-    for (let si = 0; si < stories.length; si++) {
-      const st = stories[si];
-      const key = prd.id + ':' + si;
-      const timing = _dash._ganttTimings[key];
-      let barStart, barEnd;
-      if (timing && timing.start) {
-        barStart = timing.start;
-        barEnd = st.status === 'completed' ? (timing.end || timing.lastSeen || now) : now;
-      } else {
-        const slotMs = WIN_MS / Math.max(stories.length, 1);
-        if (st.status === 'completed') {
-          barStart = winStart + si * slotMs;
-          barEnd = winStart + (si + 1) * slotMs;
-        } else if (st.status === 'running' || st.status === 'in_progress') {
-          barStart = winStart + completedCount * slotMs;
-          barEnd = now;
-        } else {
-          barStart = now + (si - completedCount) * (WIN_MS / 12);
-          barEnd = barStart + WIN_MS / 12;
-        }
-      }
-      const bx = tsX(barStart);
-      const bx2 = Math.min(W - 16, tsX(barEnd));
-      const bw = Math.max(3, bx2 - bx);
-      const color = stC(st.status);
-      const isPending = !st.status || st.status === 'draft' || st.status === 'not_started';
-      const rowY = y + 2, rowH = STORY_H - 4;
-      html += `<rect x="0" y="${y}" width="${W}" height="${STORY_H}" fill="transparent" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}" style="cursor:pointer;"/>`;
-      const sIcon = { completed: '✓', running: '▶', in_progress: '▶', blocked: '!', needs_review: '?', failed: '✗' }[st.status] || '○';
-      html += `<text x="${LABEL_W - 8}" y="${y + STORY_H / 2 + 4}" text-anchor="end" font-size="10" fill="${color}">${sIcon}</text>`;
-      html += `<text x="8" y="${y + STORY_H / 2 - 1}" font-size="9" fill="${txt}" opacity="0.8">${escHtml((st.title || `Story ${si + 1}`).slice(0, 24))}</text>`;
-      const tD2 = (st.tasks || []).filter(t => t.status === 'completed').length;
-      const tT2 = (st.tasks || []).length;
-      if (tT2 > 0) html += `<text x="8" y="${y + STORY_H / 2 + 9}" font-size="8" fill="${txt2}">${tD2}/${tT2}</text>`;
-      if (isPending) {
-        html += `<rect x="${bx.toFixed(1)}" y="${rowY}" width="${bw.toFixed(1)}" height="${rowH}" rx="2" fill="none" stroke="${color}" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.35"/>`;
-      } else {
-        const op = st.status === 'completed' ? '0.55' : '0.82';
-        html += `<rect x="${bx.toFixed(1)}" y="${rowY}" width="${bw.toFixed(1)}" height="${rowH}" rx="2" fill="${color}" opacity="${op}"/>`;
-        if (bw > 44) {
-          const bl = (st.status === 'running' || st.status === 'in_progress')
-            ? `▶ ${(st.title || `S${si + 1}`).slice(0, 14)}`
-            : (st.title || `S${si + 1}`).slice(0, 16);
-          html += `<text x="${(bx + Math.min(bw, 120) / 2).toFixed(1)}" y="${rowY + rowH / 2 + 4}" text-anchor="middle" font-size="9" fill="white" opacity="0.92" style="pointer-events:none;">${escHtml(bl)}</text>`;
-        }
-        if ((st.verdicts || []).some(v => v.outcome === 'block')) {
-          html += `<text x="${(bx + bw + 4).toFixed(1)}" y="${rowY + rowH - 1}" font-size="10" fill="#ef4444">⛔</text>`;
-        }
-      }
-      y += STORY_H;
+    for (const b of g.bars) {
+      const bx = tsX(b.start);
+      const bw = Math.max(3, tsX(b.end) - bx);
+      const color = _ganttStateColour(_ganttBarState(b.status), acc, txt2);
+      html += `<text x="8" y="${y + TASK_H / 2 + 3}" font-size="9" fill="${txt}" opacity="0.8">${escHtml(b.title.slice(0, 24))}</text>`;
+      html += `<rect x="${bx.toFixed(1)}" y="${y + 2}" width="${bw.toFixed(1)}" height="${TASK_H - 4}" rx="2" fill="${color}" opacity="${b.live ? '0.82' : '0.55'}"><title>${escHtml(b.title)}</title></rect>`;
+      y += TASK_H;
     }
     y += GAP;
   }

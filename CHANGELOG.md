@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Dashboard Timeline card draws from task timestamps.** The Timeline · 6h card (`gantt`) was empty because it was drawn from hook-event timings. It now draws one bar per task that is running or finished inside the last 6 hours, using the task start and end times from the Automata list. Bars are grouped under their Automaton and coloured by task status. The chart is capped at 960px wide so it does not stretch on wide screens.
+- **Off-state.** When no Automaton task has a bar in the window, the Timeline is hidden from the grid (or, with *hide inactive cards* off, shows one line saying why). It returns on its own once a task starts.
+- **Locales.** Two new strings, the off-state reason and its link, are in English, German, Spanish, French and Japanese.
+
 ## v9.131.0 — Vault unreachable alert
 
 ### Added

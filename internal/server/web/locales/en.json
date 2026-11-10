@@ -4613,5 +4613,7 @@
   "settings_secrets_vault_unreachable_alert_after_seconds_help": "Seconds the Vault backend may stay unreachable before datawatch raises an alert. Default 120; 0 disables the alert.",
   "dash_card_off_events_reason": "No Automata or session events yet — this card fills as work runs.",
   "dash_card_off_events_link": "Dashboard card reference",
+  "dash_card_off_gantt_reason": "No Automaton task has run in the last 6 hours — its bar appears here when one starts.",
+  "dash_card_off_gantt_link": "Dashboard card reference",
   "dash_card_events_purpose": "Newest Automata and session events."
 }
