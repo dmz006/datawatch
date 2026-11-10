@@ -215,3 +215,40 @@ func eqF(t *testing.T, got, want float64) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+// TestBurnGuardProjectionGapSurfaceValues pins the max_projection_gap_points rule the
+// config layer applies on load: the default is 25, zero is kept (never compare), and a
+// negative, NaN or over-maximum value is replaced by the default with a warning.
+func TestBurnGuardProjectionGapSurfaceValues(t *testing.T) {
+	if got := DefaultBurnGuard().MaxProjectionGapPoints; got != 25 || BurnGuardProjectionGapDefault != 25 {
+		t.Fatalf("default max_projection_gap_points = %v, want 25", got)
+	}
+	cases := []struct {
+		name string
+		v    float64
+		want float64
+		warn bool
+	}{
+		{"zero kept", 0, 0, false},
+		{"at maximum kept", BurnGuardProjectionGapMax, BurnGuardProjectionGapMax, false},
+		{"negative degraded", -1, 25, true},
+		{"NaN degraded", math.NaN(), 25, true},
+		{"over maximum degraded", BurnGuardProjectionGapMax + 1, 25, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := DefaultBurnGuard()
+			in.MaxProjectionGapPoints = tc.v
+			var lines []string
+			out := normalizeBurnGuard(in, func(f string, a ...interface{}) { lines = append(lines, sprintf(f, a...)) })
+			eqF(t, out.MaxProjectionGapPoints, tc.want)
+			joined := strings.Join(lines, "\n")
+			if tc.warn && !strings.Contains(joined, "max_projection_gap_points") {
+				t.Errorf("no warning naming max_projection_gap_points: %q", joined)
+			}
+			if !tc.warn && len(lines) > 0 {
+				t.Errorf("unexpected warning: %q", joined)
+			}
+		})
+	}
+}
