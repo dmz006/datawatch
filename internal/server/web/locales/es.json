@@ -4613,6 +4613,13 @@
   "settings_secrets_vault_unreachable_alert_after_seconds_help": "Segundos que el backend de Vault puede permanecer inaccesible antes de que datawatch genere una alerta. Valor predeterminado 120; 0 desactiva la alerta.",
   "dash_card_off_events_reason": "Aún no hay eventos de trabajo en segundo plano ni de sesiones: esta tarjeta se llena cuando hay trabajo en marcha.",
   "dash_card_off_events_link": "Referencia de tarjetas del panel",
+  "dash_card_off_heatmap_reason": "Ningún autómatas completado o enviado en los últimos 30 días; el mes se llena a medida que avanza el trabajo.",
+  "dash_card_off_heatmap_link": "Referencia de tarjetas del panel",
+  "dash_heatmap_tip_completed": "autómatas completados hasta este día: %1$d",
+  "dash_heatmap_tip_shipped": "Enviados: %1$d",
+  "dash_heatmap_tip_release": "Release: %1$s",
+  "dash_heatmap_tip_none": "Sin actividad registrada",
+  "dash_heatmap_total": "%1$d enviados · %2$d releases · últimos %3$d días",
   "dash_card_off_gantt_reason": "Ninguna tarea de autómatas se ha ejecutado en las últimas 6 horas: su barra aparecerá aquí cuando empiece una.",
   "dash_card_off_gantt_link": "Referencia de tarjetas del panel",
   "dash_card_events_purpose": "Eventos más recientes del trabajo en segundo plano y de las sesiones."

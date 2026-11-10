@@ -4544,6 +4544,7 @@ func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Re
 	}
 	ship := s.shippedSettings()
 	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	shippedByDay := shippedDayCounts{}
 	prds := map[string]int{}
 	for _, raw := range s.autonomousMgr.ListPRDs() {
 		p, err := toPRD(raw)
@@ -4551,15 +4552,22 @@ func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Re
 			continue
 		}
 		prds[autonomous.PRDEffectiveDisplayStatus(p, sep)]++
+		if p.IsShipped() {
+			shippedByDay.add(p.MergedAt, "prds")
+		}
 	}
 	autos := map[string]int{}
 	for _, raw := range s.autonomousMgr.ListAutomations() {
 		a := rawAutomationOf(raw)
 		autos[autonomous.AutomationEffectiveDisplayStatus(a, sep)]++
+		if a.IsShipped() {
+			shippedByDay.add(a.MergedAt, "automations")
+		}
 	}
 	pay := map[string]any{
 		"prds":        prds,
 		"automations": autos,
+		"by_day":      shippedByDay,
 		"settings": map[string]any{
 			"enabled":          ship.EffectiveEnabled(),
 			"show_chip":        ship.EffectiveShowChip(),

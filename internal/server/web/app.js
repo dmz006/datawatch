@@ -10311,6 +10311,7 @@ const DOCS_LINKS_BY_KEY = {
   dash_card_smoke: DOCS_DEFINITIONS + '#dashboard',
   dash_card_events: DOCS_DEFINITIONS + '#dashboard',
   dash_card_gantt: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_heatmap: DOCS_DEFINITIONS + '#dashboard',
   dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
@@ -44744,11 +44745,7 @@ function _dashLoop(ts) {
 
   // Fetch heatmap data every ~60s
   if ((_dash._frameCount === 1 || _dash._frameCount % 1800 === 0) && !_dash._heatmapFetching) {
-    _dash._heatmapFetching = true;
-    apiFetch('/api/analytics?range=30d').then(d => {
-      _dash._heatmapData = (d && d.buckets) || [];
-      _dashClearFedError('heatmap');
-    }).catch(e => _dashSetFedError('heatmap', e)).finally(() => { _dash._heatmapFetching = false; });
+    _dashFetchHeatmap();
   }
 
   // Fetch compute nodes every ~60s for runtime badges
@@ -45309,6 +45306,17 @@ const DASH_DEFAULT_LAYOUT = [
 // install; with it off they render in a single line saying why they are
 // empty, with a link to the related setting's help page.
 const DASH_CARD_FEATURES = {
+  'heatmap': {
+    docsKey: 'dash_card_heatmap',
+    reasonKey: 'dash_card_off_heatmap_reason',
+    reasonDefault: 'No Automata completed or shipped in the last 30 days — the month fills as work lands.',
+    linkKey: 'dash_card_off_heatmap_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      return (Array.isArray(_dash._heatmapData) ? _dash._heatmapData : []).some(
+        r => r.hasProgress || r.shipped > 0 || (r.tags && r.tags.length > 0));
+    },
+  },
   'gantt': {
     docsKey: 'dash_card_gantt',
     reasonKey: 'dash_card_off_gantt_reason',
@@ -45438,6 +45446,7 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('events'), _dashFetchDaemonEvents);
   kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
+  kick(_dashCardFeature('heatmap'), _dashFetchHeatmap);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
   if (!jobs.length) return;
@@ -45871,7 +45880,114 @@ window._dashDragEnd = function(e) {
   });
 };
 
-// 30-day GitHub-style heatmap ————————————————————————————
+// 30-day activity heatmap ————————————————————————————
+// One cell per UTC day for the last 30 days. Built by _heatmapActivityDays
+// from the progress trend (Automata completed to date, throughput), the
+// shipped counts (shipped per merge day) and the release tags, which are drawn
+// as a marker above their day. _dashFetchHeatmap fills _dash._heatmapData.
+const HEATMAP_DAYS = 30;
+
+// _heatmapActivityDays returns one row per UTC day, oldest first. A trend
+// point with zero completed and zero throughput is the empty post-restart
+// state: it is skipped, so it neither plots nor replaces a real point.
+function _heatmapActivityDays(points, byDay, tags, nowMs, days) {
+  const n = days || HEATMAP_DAYS;
+  const byDate = {};
+  for (const p of (Array.isArray(points) ? points : [])) {
+    if (!p || !p.date) continue;
+    const completed = Number(p.completed_prds) || 0;
+    const throughput = Number(p.throughput_3d) || 0;
+    if (completed === 0 && throughput === 0) continue;
+    byDate[p.date] = { completed, throughput };
+  }
+  const tagsByDate = {};
+  for (const tg of (Array.isArray(tags) ? tags : [])) {
+    if (!tg || !tg.date) continue;
+    (tagsByDate[tg.date] = tagsByDate[tg.date] || []).push(tg.name);
+  }
+  const now = new Date(nowMs);
+  const rows = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    const date = d.toISOString().slice(0, 10);
+    const pt = byDate[date];
+    const day = (byDay && byDay[date]) || {};
+    rows.push({
+      date,
+      hasProgress: !!pt,
+      completed: pt ? pt.completed : 0,
+      throughput: pt ? pt.throughput : 0,
+      shipped: Number(day.prds) || 0,
+      tags: tagsByDate[date] || [],
+    });
+  }
+  return rows;
+}
+
+// _dashFetchHeatmap reads the three sources. A source that fails is left out
+// rather than blanking the card; only when all three fail is the fed error set.
+function _dashFetchHeatmap() {
+  if (_dash._heatmapFetching) return Promise.resolve();
+  _dash._heatmapFetching = true;
+  const soft = (p) => Promise.resolve(p).catch(() => null);
+  return Promise.all([
+    soft(apiFetch('/api/autonomous/progress/trend?days=' + HEATMAP_DAYS)),
+    soft(apiFetch('/api/autonomous/shipped/counts')),
+    soft(apiFetch('/api/autonomous/release-tags')),
+  ]).then(([trend, counts, tags]) => {
+    if (!trend && !counts && !tags) {
+      _dashSetFedError('heatmap', new Error('Failed to load'));
+      return;
+    }
+    _dash._heatmapData = _heatmapActivityDays(
+      trend && trend.points, counts && counts.by_day, tags && tags.tags, Date.now(), HEATMAP_DAYS);
+    _dashClearFedError('heatmap');
+    // The card may have been built while its data was still empty: rebuild
+    // once so it appears as soon as a day has anything to show.
+    const feat = _dashCardFeature('heatmap');
+    if (feat && feat.active() && typeof document !== 'undefined' &&
+        !document.getElementById('dashHeatmapCanvas') && _dash._layout) {
+      _dashBuildGrid(_dash._layout);
+    }
+  }).finally(() => { _dash._heatmapFetching = false; });
+}
+
+function _dashHeatmapTip(canvas) {
+  let tip = canvas._heatTip;
+  if (!tip && canvas.parentElement && typeof document !== 'undefined') {
+    tip = document.createElement('div');
+    tip.style.cssText = 'position:absolute;pointer-events:none;display:none;z-index:5;background:var(--bg,#0f1424);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:10px;line-height:1.4;color:var(--text);white-space:nowrap;';
+    canvas.parentElement.appendChild(tip);
+    canvas._heatTip = tip;
+  }
+  return tip;
+}
+
+function _dashHeatmapHover(canvas, ev) {
+  const g = _dash._heatmapGeom;
+  const tip = _dashHeatmapTip(canvas);
+  if (!g || !tip) return;
+  const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+  const x = ev.clientX - rect.left;
+  const i = Math.floor((x - g.PAD) / g.step);
+  if (i < 0 || i >= g.rows.length || x < g.PAD) { tip.style.display = 'none'; return; }
+  const r = g.rows[i];
+  const lines = [`<b>${escHtml(r.date)}</b>`];
+  lines.push(escHtml(t('dash_heatmap_tip_completed', [r.completed])));
+  lines.push(escHtml(t('dash_heatmap_tip_shipped', [r.shipped])));
+  if (r.tags.length) lines.push(escHtml(t('dash_heatmap_tip_release', [r.tags.join(', ')])));
+  if (!r.hasProgress && !r.shipped && !r.tags.length) lines.push(escHtml(t('dash_heatmap_tip_none')));
+  tip.innerHTML = lines.join('<br>');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(x + 10, g.W - 170) + 'px';
+  tip.style.top = '4px';
+}
+
+function _dashHeatmapHide(canvas) {
+  const tip = canvas && canvas._heatTip;
+  if (tip) tip.style.display = 'none';
+}
+
 function _drawHeatmap() {
   const canvas = document.getElementById('dashHeatmapCanvas');
   if (!canvas) return;
@@ -45887,95 +46003,65 @@ function _drawHeatmap() {
   const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
   ctx.fillStyle = bg2;
   ctx.fillRect(0, 0, W, H);
-  const buckets = _dash._heatmapData || [];
+  const rows = _dash._heatmapData;
   const loadingEl = document.getElementById('dashHeatmapLoading');
-  if (buckets.length === 0) {
+  if (!rows) {
     if (loadingEl) loadingEl.style.display = 'flex';
     return;
   }
   if (loadingEl) loadingEl.style.display = 'none';
 
-  // Issue #101 — narrow mode: card width < 300px → 7-day bar chart
-  const cardEl = canvas.closest('[data-card-id="heatmap"]');
-  const cardCs = cardEl ? parseInt(cardEl.getAttribute('data-cs') || '3', 10) : 3;
-  const narrowMode = W < 300 || cardCs <= 3;
-
-  if (narrowMode) {
-    // 7-day vertical bar chart
-    const last7 = buckets.slice(-7);
-    const maxTotal = Math.max(1, ...last7.map(b => b.total || b.session_count || 0));
-    const PAD = 6;
-    const barCount = last7.length;
-    const barGap = 2;
-    const barW = Math.max(4, Math.floor((W - PAD * 2 - barGap * (barCount - 1)) / barCount));
-    for (let i = 0; i < barCount; i++) {
-      const b = last7[i];
-      const total = b.total || b.session_count || 0;
-      const errors = (b.failed || 0) + (b.killed || 0);
-      const errRate = total ? errors / total : 0;
-      let fill;
-      if (!total) {
-        fill = bdr;
-      } else if (errRate > 0.2) {
-        fill = 'rgba(239,68,68,0.8)';
-      } else if (errRate >= 0.05) {
-        fill = 'rgba(245,158,11,0.8)';
-      } else {
-        fill = 'rgba(16,185,129,0.8)';
-      }
-      const barH = Math.max(2, Math.round((total / maxTotal) * (H - PAD * 2)));
-      const x = PAD + i * (barW + barGap);
-      const y = H - PAD - barH;
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, 2);
-      else ctx.rect(x, y, barW, barH);
-      ctx.fill();
-    }
-    // "7d" label bottom-right
-    ctx.fillStyle = txt2; ctx.font = '8px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText('7d', W - 3, H - 2);
-    ctx.textAlign = 'left';
-    return;
-  }
-
-  const COLS = Math.min(buckets.length, 30);
-  const PAD = 10, LBL_H = 14;
-  const cellPad = 2;
-  const cellW = Math.max(4, Math.floor((W - PAD * 2) / COLS) - cellPad);
-  const cellH = Math.max(4, H - PAD * 2 - LBL_H);
-  const maxCount = Math.max(1, ...buckets.map(b => b.session_count || 0));
-  for (let i = 0; i < COLS; i++) {
-    const b = buckets[buckets.length - COLS + i];
-    const x = PAD + i * (cellW + cellPad);
-    const errors = (b.failed || 0) + (b.killed || 0);
-    const errRate = b.session_count ? errors / b.session_count : 0;
+  const n = rows.length;
+  const PAD = 8, LBL_H = 14, MARK_H = 8, cellPad = 2;
+  const cellW = Math.max(3, Math.floor((W - PAD * 2) / n) - cellPad);
+  const step = cellW + cellPad;
+  const cellTop = PAD + MARK_H;
+  const cellH = Math.max(4, H - cellTop - PAD - LBL_H);
+  const maxShipped = Math.max(1, ...rows.map(r => r.shipped));
+  for (let i = 0; i < n; i++) {
+    const r = rows[i];
+    const x = PAD + i * step;
     let fill;
-    if (!b.session_count) {
-      fill = bdr;
-    } else if (errRate > 0.3) {
-      fill = 'rgba(239,68,68,0.7)';
+    if (r.shipped > 0) {
+      const f = r.shipped / maxShipped;
+      fill = f < 0.34 ? 'rgba(124,58,237,0.35)' : f < 0.67 ? 'rgba(124,58,237,0.65)' : acc;
+    } else if (r.hasProgress) {
+      fill = 'rgba(124,58,237,0.14)';
     } else {
-      const t = b.session_count / maxCount;
-      fill = t < 0.25 ? 'rgba(124,58,237,0.25)' : t < 0.5 ? 'rgba(124,58,237,0.5)' : t < 0.75 ? 'rgba(124,58,237,0.75)' : acc;
+      fill = bdr;
     }
     ctx.fillStyle = fill;
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x, PAD, cellW, cellH, 2);
-    else ctx.rect(x, PAD, cellW, cellH);
+    if (ctx.roundRect) ctx.roundRect(x, cellTop, cellW, cellH, 2);
+    else ctx.rect(x, cellTop, cellW, cellH);
     ctx.fill();
+    if (r.tags.length) {
+      const cx = x + cellW / 2;
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.moveTo(cx - 3, PAD);
+      ctx.lineTo(cx + 3, PAD);
+      ctx.lineTo(cx, PAD + 5);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
   ctx.fillStyle = txt2; ctx.font = '8px monospace';
-  for (let i = 0; i < COLS; i += 7) {
-    const b = buckets[buckets.length - COLS + i];
-    if (!b) continue;
-    ctx.fillText((b.date || '').slice(5), PAD + i * (cellW + cellPad), PAD + cellH + 10);
+  for (let i = 0; i < n; i += 7) {
+    ctx.fillText(rows[i].date.slice(5), PAD + i * step, cellTop + cellH + 10);
   }
-  const total = buckets.reduce((n, b) => n + (b.session_count || 0), 0);
+  const shippedTotal = rows.reduce((s, r) => s + r.shipped, 0);
+  const releases = rows.reduce((s, r) => s + r.tags.length, 0);
   ctx.textAlign = 'right';
-  ctx.fillText(`${total} / 30d`, W - PAD, PAD + cellH + 10);
+  ctx.fillText(t('dash_heatmap_total', [shippedTotal, releases, n]), W - PAD, cellTop + cellH + 10);
   ctx.textAlign = 'left';
+
+  _dash._heatmapGeom = { PAD, step, W, rows };
+  if (!canvas._heatHover) {
+    canvas._heatHover = true;
+    canvas.onmousemove = (ev) => _dashHeatmapHover(canvas, ev);
+    canvas.onmouseleave = () => _dashHeatmapHide(canvas);
+  }
 }
 
 // Guardrail verdicts bar chart ————————————————————————————

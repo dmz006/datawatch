@@ -4613,6 +4613,13 @@
   "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm.",
   "dash_card_off_events_reason": "Noch keine Ereignisse aus Hintergrundarbeit oder Sitzungen — diese Karte füllt sich, sobald Arbeit läuft.",
   "dash_card_off_events_link": "Dashboard-Kartenreferenz",
+  "dash_card_off_heatmap_reason": "In den letzten 30 Tagen wurden keine Automaten abgeschlossen oder ausgeliefert — der Monat füllt sich, sobald Arbeit ankommt.",
+  "dash_card_off_heatmap_link": "Dashboard-Kartenreferenz",
+  "dash_heatmap_tip_completed": "Bis zu diesem Tag abgeschlossene Automaten: %1$d",
+  "dash_heatmap_tip_shipped": "Ausgeliefert: %1$d",
+  "dash_heatmap_tip_release": "Release: %1$s",
+  "dash_heatmap_tip_none": "Keine Aktivität erfasst",
+  "dash_heatmap_total": "%1$d ausgeliefert · %2$d Releases · letzte %3$d Tage",
   "dash_card_off_gantt_reason": "In den letzten 6 Stunden lief keine Automaten-Aufgabe — ihr Balken erscheint hier, sobald eine startet.",
   "dash_card_off_gantt_link": "Dashboard-Kartenreferenz",
   "dash_card_events_purpose": "Neueste Ereignisse aus Hintergrundarbeit und Sitzungen."

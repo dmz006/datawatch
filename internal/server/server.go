@@ -566,6 +566,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                 // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
 	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                              // resolved checks policy + recorded check findings
 	apiMux.HandleFunc("/api/autonomous/restart-interruptions", api.handleAutonomousRestartInterruptions) // what a restart now would interrupt + the restart policy
+	apiMux.HandleFunc("/api/autonomous/release-tags", api.handleAutonomousReleaseTags)                // GET release tags (vX.Y.Z) of the base repository, oldest first; read-only
 	apiMux.HandleFunc("/api/autonomous/ship", api.handleAutonomousShip)                                  // resolved ship policy + recorded push/tag/CI-watch outcomes
 	apiMux.HandleFunc("/api/autonomous/rules-context", api.handleAutonomousRulesContext)                 // GET config + resolved policy + planning record; PUT replaces the config
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                              // triage records: the Automata waiting (failed/blocked), newest first
