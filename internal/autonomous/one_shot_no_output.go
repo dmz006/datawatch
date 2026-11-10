@@ -10,6 +10,10 @@ type OneShotNoOutputError struct {
 	// TimedOut is set when the session hit its time limit, as opposed to a
 	// no-progress stall. A judge uses it to move on to its next backend.
 	TimedOut bool
+	// RunCap is set when the verifier run-time cap
+	// (autonomous.verifier_max_run_seconds) ended the session, as opposed to
+	// the no-progress watchdog or the session timeout.
+	RunCap bool
 }
 
 func (e *OneShotNoOutputError) Error() string { return e.Msg }
