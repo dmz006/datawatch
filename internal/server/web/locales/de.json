@@ -4447,5 +4447,5 @@
   "automata_std_off": "Aus",
   "automata_std_load_failed": "Laden fehlgeschlagen:",
   "automata_std_howto": "Anleitung Standardaufgaben",
-  "automata_std_mode_note": "Der Modus ist vorerst auf Modell-Sitzung festgelegt. Eine Änderung erfolgt später in den Einstellungen unter den Standardaufgaben-Einstellungen, sobald es diese Einstellung gibt; der Einstellungsschlüssel ist"
+  "automata_std_mode_note": "Jede Standardaufgabe läuft in einem von drei Modi: llm (eine Modell-Sitzung), daemon (der Daemon führt sie aus, ohne Sitzung) oder off (wird nicht zur Story hinzugefügt). Das finale Gate läuft über das Script-Gate. Die Aufgabeneinstellung wird in den Einstellungen geändert; der Einstellungsschlüssel ist"
 }

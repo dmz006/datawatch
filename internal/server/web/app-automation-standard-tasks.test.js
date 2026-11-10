@@ -1,5 +1,5 @@
 // Templates tab, Standard tasks sub-tab: a read-only table loaded from the
-// REST read, with the fixed-mode note and how-to link.
+// REST read, with the three-mode note and how-to link.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -51,12 +51,13 @@ test('every value is escaped', async () => {
   assert.ok(out.includes('&lt;img'));
 });
 
-test('the fixed-mode note and the how-to link render', async () => {
+test('the mode note and the how-to link render', async () => {
   const { sb, panel } = load(okBody({ tasks: [] }));
   await run(sb);
   const out = html(panel);
-  assert.ok(out.includes('fixed to model session'));
-  assert.ok(out.includes('autonomous.task_templates'));
+  assert.ok(out.includes('one of three modes: llm (a model session), daemon (the daemon performs it, no session) or off (not added to the story)'));
+  assert.ok(out.includes('The final gate runs through the script gate'));
+  assert.ok(out.includes('autonomous.task_templates.mode'));
   assert.ok(out.includes(encodeURIComponent('docs/howto/automata-standard-tasks.md')));
 });
 
