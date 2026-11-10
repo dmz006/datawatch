@@ -30,6 +30,16 @@ questions below are answered, one at a time.
   the recommended default is on (escalate once, then raise a question with what was tried), configurable on
   every surface that configures the daemon.
 
+- 2026-11-09, on question 6 (local or community registry): "Hey, yes, publish them. We do have to make sure we don't
+  get any project-specific things in there. There should be configuration options in the scripts that can
+  inject things that might come from rules or definitions, which we can make sure are available in different
+  repo configurations. But we need to set up something to make sure that we don't leak data watch-specific
+  things or anything that is required for us of a bank module so it can work with anybody." (as heard; read
+  as: publish supervisor units in the community registry; units carry no project-specific content; project
+  facts are injected through configuration from rules or definitions, available per repository; a check
+  must stop datawatch-specific content leaking in, so the published unit is a blank module that works for
+  anybody.)
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
@@ -116,3 +126,19 @@ item 9).
 | 7 | Retire each manual check after a full day of agreement with its unit (section 11a, item 9) | each unit | rolling |
 
 Targets stay open until the operator sets them; the supervisor lists, recommends and waits.
+
+## Requirements that follow from the operator's answers
+
+1. **Blank published units.** A supervisor unit in the community registry holds no datawatch-specific names,
+   paths, hosts, release rules, tracker identifiers or lane rules. It works for any repository.
+2. **Injected configuration.** Everything project-specific is an input the unit reads from configuration, which
+   comes from the project's rules and definitions files. Each repository supplies its own values; a unit with a
+   missing required value stops with a plain message naming it. datawatch's own values live in this repository,
+   not in the unit.
+3. **Leak check.** A check runs when a unit is authored and at publish time, and fails on datawatch-specific
+   content in a unit (project name, repository paths, host names, tracker identifiers, version numbers, lane
+   and capacity numbers, and any value that appears in this repository's own rules and definitions files). It
+   reuses the existing local-leak and tracker-identifier checks where they fit, and it is a script file in the
+   verify folder like any other gate. Its exact patterns are an open question for the operator.
+4. **Same trust path.** A published supervisor unit is a pack: accepted by the operator per version, with the
+   community source accepted once, as decided for packs.
