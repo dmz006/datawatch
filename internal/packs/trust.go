@@ -78,32 +78,58 @@ func (s *TrustStore) Accept(pack *Pack, acceptedBy string, at time.Time) (TrustR
 	if pack == nil {
 		return TrustRecord{}, fmt.Errorf("pack trust: no pack to accept")
 	}
+	recs, err := s.acceptAll([]*Pack{pack}, acceptedBy, at)
+	if err != nil {
+		return TrustRecord{}, err
+	}
+	return recs[0], nil
+}
+
+// acceptAll records every pack in packs as accepted by acceptedBy at time at.
+// It checks every pack before it writes anything and then writes trust.json
+// once, so a refused pack leaves the store and the file unchanged. Each new
+// record replaces an earlier record with the same name and version.
+func (s *TrustStore) acceptAll(packs []*Pack, acceptedBy string, at time.Time) ([]TrustRecord, error) {
 	acceptedBy = strings.TrimSpace(acceptedBy)
 	if acceptedBy == "" {
-		return TrustRecord{}, fmt.Errorf("pack trust: accepted_by is required")
+		return nil, fmt.Errorf("pack trust: accepted_by is required")
 	}
-	if pack.Digest == "" {
-		return TrustRecord{}, fmt.Errorf("pack trust: pack %s %s has no digest to accept", pack.Name, pack.Version)
+	recs := make([]TrustRecord, 0, len(packs))
+	replaced := make(map[string]bool, len(packs))
+	for _, pack := range packs {
+		if pack == nil {
+			return nil, fmt.Errorf("pack trust: no pack to accept")
+		}
+		if pack.Digest == "" {
+			return nil, fmt.Errorf("pack trust: pack %s %s has no digest to accept", pack.Name, pack.Version)
+		}
+		recs = append(recs, TrustRecord{
+			Name:       pack.Name,
+			Version:    pack.Version,
+			Digest:     pack.Digest,
+			AcceptedBy: acceptedBy,
+			AcceptedAt: at.UTC(),
+		})
+		replaced[recordKey(pack.Name, pack.Version)] = true
 	}
-	rec := TrustRecord{
-		Name:       pack.Name,
-		Version:    pack.Version,
-		Digest:     pack.Digest,
-		AcceptedBy: acceptedBy,
-		AcceptedAt: at.UTC(),
-	}
-	next := make([]TrustRecord, 0, len(s.records)+1)
+	next := make([]TrustRecord, 0, len(s.records)+len(recs))
 	for _, r := range s.records {
-		if r.Name != rec.Name || r.Version != rec.Version {
+		if !replaced[recordKey(r.Name, r.Version)] {
 			next = append(next, r)
 		}
 	}
-	next = append(next, rec)
+	next = append(next, recs...)
 	if err := writeTrustFile(s.path, next); err != nil {
-		return TrustRecord{}, err
+		return nil, err
 	}
 	s.records = next
-	return rec, nil
+	return recs, nil
+}
+
+// recordKey identifies a name and version pair for replacement. The NUL byte
+// cannot appear in a pack name or version, so distinct pairs never collide.
+func recordKey(name, version string) string {
+	return name + "\x00" + version
 }
 
 // Record returns the trust record for name and version, if one exists.
