@@ -29,6 +29,13 @@ type Registry struct {
 	LastSyncError string    `json:"last_sync_error,omitempty"`
 }
 
+// Entry types for AvailableSkill.Type and Synced.Type. A "pack" is a
+// folder that holds a pack.yaml; everything else is a "skill".
+const (
+	SkillTypeSkill = "skill"
+	SkillTypePack  = "pack"
+)
+
 // AvailableSkill is what `connect+browse` discovers in a registry's
 // shallow clone — present in the registry but not yet copied into the
 // synced area.
@@ -36,6 +43,7 @@ type AvailableSkill struct {
 	Registry string    `json:"registry"`
 	Name     string    `json:"name"`
 	Path     string    `json:"path"` // path relative to registry root
+	Type     string    `json:"type"` // "skill" | "pack"; empty loads as "skill"
 	Manifest *Manifest `json:"manifest,omitempty"`
 	Synced   bool      `json:"synced"`
 }
@@ -46,6 +54,7 @@ type Synced struct {
 	Registry string    `json:"registry"`
 	Name     string    `json:"name"`
 	Path     string    `json:"path"`
+	Type     string    `json:"type"` // "skill" | "pack"; empty loads as "skill"
 	Manifest *Manifest `json:"manifest,omitempty"`
 	SyncedAt time.Time `json:"synced_at"`
 	Version  string    `json:"version,omitempty"`
@@ -113,6 +122,20 @@ func (s *Store) load() error {
 	}
 	if idx.AvailableCache == nil {
 		idx.AvailableCache = map[string][]*AvailableSkill{}
+	}
+	// Store files written before the type field existed carry no type;
+	// they all describe plain skills.
+	for _, sk := range idx.Synced {
+		if sk.Type == "" {
+			sk.Type = SkillTypeSkill
+		}
+	}
+	for _, list := range idx.AvailableCache {
+		for _, a := range list {
+			if a.Type == "" {
+				a.Type = SkillTypeSkill
+			}
+		}
 	}
 	s.idx = idx
 	return nil

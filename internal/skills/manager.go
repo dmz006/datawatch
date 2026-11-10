@@ -152,6 +152,7 @@ func (m *Manager) Connect(name string) ([]*AvailableSkill, error) {
 		_ = m.Store.SetLastSync(name, err.Error())
 		return nil, err
 	}
+	m.classifyAvailable(reg, available)
 	if err := m.Store.SetAvailable(name, available); err != nil {
 		return nil, err
 	}
@@ -159,9 +160,22 @@ func (m *Manager) Connect(name string) ([]*AvailableSkill, error) {
 	return m.Store.Available(name), nil
 }
 
+// classifyAvailable sets Type on each entry from the folder it lives in
+// inside the registry's clone (pack when it holds pack.yaml, else skill).
+func (m *Manager) classifyAvailable(reg *Registry, list []*AvailableSkill) {
+	for _, av := range list {
+		av.Type = ClassifySkillDir(m.Git.SkillSourcePath(reg, av))
+	}
+}
+
 // Browse returns the cached available list (calls Connect if cache is empty).
+// Cached entries are re-classified against the clone so types stay correct
+// for cache files written before the type field existed.
 func (m *Manager) Browse(name string) ([]*AvailableSkill, error) {
 	if avail := m.Store.Available(name); len(avail) > 0 {
+		if reg, ok := m.Store.GetRegistry(name); ok {
+			m.classifyAvailable(reg, avail)
+		}
 		return avail, nil
 	}
 	return m.Connect(name)
@@ -210,14 +224,16 @@ func (m *Manager) Sync(registry string, skillNames []string) ([]*Synced, error) 
 		if err := pathsafe.ValidateRecordName(av.Name); err != nil {
 			return out, fmt.Errorf("skill %q from registry %s: invalid name: %w", av.Name, registry, err)
 		}
+		src := m.Git.SkillSourcePath(reg, av)
 		dst := filepath.Join(m.SyncedRoot, registry, av.Name)
-		if err := copyDir(m.Git.SkillSourcePath(reg, av), dst); err != nil {
+		if err := copyDir(src, dst); err != nil {
 			return out, fmt.Errorf("copy skill %s/%s: %w", registry, av.Name, err)
 		}
 		s := &Synced{
 			Registry: registry,
 			Name:     av.Name,
 			Path:     dst,
+			Type:     ClassifySkillDir(src),
 			Manifest: av.Manifest,
 			SyncedAt: time.Now().UTC(),
 		}
