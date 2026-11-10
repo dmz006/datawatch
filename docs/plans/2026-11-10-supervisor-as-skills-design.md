@@ -240,3 +240,24 @@ surface that configures the daemon; secret inputs hold a vault reference; one da
 when a pack task is created and records the resolved values on the task). This must be added to the packs
 Automaton before it is approved: the packs spec needs a requirement and a task for the input declaration, the
 resolver and the settings on every surface.
+
+## Visibility and reporting (operator direction, 2026-11-09)
+
+Operator: "Make sure that the supervisor packs also have ways of tracking consumption, usage, logs, and the
+details we have for the reports we'll be doing later. And that they tie into the projects, automations, and
+automata to make sure that we have the full visibility of how these tie together in our dashboards and
+eventually our reports for all the actions that are using these functions."
+
+Requirement (proposed wording, to confirm): every run of a pack unit, and every task a pack creates, leaves one
+run record that carries: the pack name and version, the unit and step, the trigger (schedule, event or manual),
+the runner (daemon or session), the tier and the LLM entry actually used, tokens and cost where the entry
+reports them, duration, outcome, the escalation that happened (if the small tier was unsure), the log location,
+the resolved inputs (secret inputs shown only as references), and the identifiers of the project, Automation,
+Automaton and task it acted on or for. The record is readable on every surface that reads Automata and
+sessions today, appears in the existing dashboards and cost and usage views, and is the source the later
+reports read. The same record applies to every pack kind, not only the supervisor, so the standard tasks are
+attributed to their pack the same way.
+
+Open point: whether the record reuses the existing trace, cost and audit stores (with new link fields) or adds a
+store of its own. Not yet checked against the code: which of those stores already carry per-task token and cost
+figures for daemon-run script steps. That check comes before the question is asked of the operator.
