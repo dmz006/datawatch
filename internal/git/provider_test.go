@@ -334,3 +334,164 @@ func TestGitLab_CreateIssue_Stub(t *testing.T) {
 		t.Errorf("err=%v want ErrNotImplemented", err)
 	}
 }
+
+// PR lifecycle methods (open / checks / merge) — GitLab is a stub and
+// must return ErrNotImplemented verbatim.
+func TestGitLab_PullRequestMethods_Stub(t *testing.T) {
+	g := NewGitLab()
+	ctx := context.Background()
+	if _, err := g.OpenPullRequest(ctx, "/d", "main", "feat", "t", "b"); !errors.Is(err, ErrNotImplemented) {
+		t.Errorf("OpenPullRequest err=%v want ErrNotImplemented", err)
+	}
+	if _, err := g.PullRequestChecks(ctx, "/d", "1"); !errors.Is(err, ErrNotImplemented) {
+		t.Errorf("PullRequestChecks err=%v want ErrNotImplemented", err)
+	}
+	if err := g.MergePullRequest(ctx, "/d", "1"); !errors.Is(err, ErrNotImplemented) {
+		t.Errorf("MergePullRequest err=%v want ErrNotImplemented", err)
+	}
+}
+
+func TestResolve_StubProviderPullRequestMethods(t *testing.T) {
+	p := Resolve("bogus")
+	ctx := context.Background()
+	if _, err := p.OpenPullRequest(ctx, "/d", "main", "feat", "t", "b"); !errors.Is(err, ErrNotImplemented) {
+		t.Errorf("OpenPullRequest err=%v", err)
+	}
+	if _, err := p.PullRequestChecks(ctx, "/d", "1"); !errors.Is(err, ErrNotImplemented) {
+		t.Errorf("PullRequestChecks err=%v", err)
+	}
+	if err := p.MergePullRequest(ctx, "/d", "1"); !errors.Is(err, ErrNotImplemented) {
+		t.Errorf("MergePullRequest err=%v", err)
+	}
+}
+
+func TestGitHub_OpenPullRequest_Success(t *testing.T) {
+	dir := newFakeGH(t)
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+	_ = os.WriteFile(filepath.Join(dir, "output.pr.create"),
+		[]byte("Creating pull request\nhttps://github.com/owner/repo/pull/42\n"), 0644)
+
+	id, err := NewGitHub().OpenPullRequest(context.Background(), dir, "main", "feat/x", "Add x", "body")
+	if err != nil {
+		t.Fatalf("OpenPullRequest: %v", err)
+	}
+	if id != "42" {
+		t.Errorf("id=%q want 42", id)
+	}
+	log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+	for _, want := range []string{"pr create", "--head feat/x", "--base main", "--title Add x"} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("log missing %q:\n%s", want, log)
+		}
+	}
+}
+
+func TestGitHub_OpenPullRequest_RequiredArgs(t *testing.T) {
+	g := NewGitHub()
+	ctx := context.Background()
+	if _, err := g.OpenPullRequest(ctx, "", "main", "feat", "t", "b"); err == nil {
+		t.Error("missing dir: expected error")
+	}
+	if _, err := g.OpenPullRequest(ctx, "/d", "main", "", "t", "b"); err == nil {
+		t.Error("missing head: expected error")
+	}
+	if _, err := g.OpenPullRequest(ctx, "/d", "", "feat", "t", "b"); err == nil {
+		t.Error("missing base: expected error")
+	}
+}
+
+func TestGitHub_OpenPullRequest_GhFailure(t *testing.T) {
+	dir := newFakeGH(t)
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+	_ = os.WriteFile(filepath.Join(dir, "exitcode.pr.create"), []byte("1"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "output.pr.create"), []byte("error: HTTP 422"), 0644)
+
+	_, err := NewGitHub().OpenPullRequest(context.Background(), dir, "main", "feat", "t", "b")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 422") {
+		t.Errorf("err=%v want gh stderr", err)
+	}
+}
+
+func TestGitHub_PullRequestChecks_States(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{"all pass", `[{"bucket":"pass"},{"bucket":"skipping"}]`, "success"},
+		{"one pending", `[{"bucket":"pass"},{"bucket":"pending"}]`, "pending"},
+		{"one fail", `[{"bucket":"pass"},{"bucket":"fail"}]`, "failure"},
+		{"cancelled", `[{"bucket":"cancel"}]`, "failure"},
+		{"fail beats pending", `[{"bucket":"pending"},{"bucket":"fail"}]`, "failure"},
+		{"no checks yet", `[]`, "pending"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := newFakeGH(t)
+			prev := os.Getenv("PATH")
+			t.Setenv("PATH", dir+":"+prev)
+			// gh exits 8 when checks are pending and 1 when failing; the
+			// JSON output must win over the exit status.
+			_ = os.WriteFile(filepath.Join(dir, "exitcode.pr.checks"), []byte("8"), 0644)
+			_ = os.WriteFile(filepath.Join(dir, "output.pr.checks"), []byte(c.output), 0644)
+
+			got, err := NewGitHub().PullRequestChecks(context.Background(), dir, "42")
+			if err != nil {
+				t.Fatalf("PullRequestChecks: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("state=%q want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestGitHub_PullRequestChecks_Errors(t *testing.T) {
+	dir := newFakeGH(t)
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+	_ = os.WriteFile(filepath.Join(dir, "exitcode.pr.checks"), []byte("1"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "output.pr.checks"), []byte("no pull requests found"), 0644)
+
+	g := NewGitHub()
+	if _, err := g.PullRequestChecks(context.Background(), dir, "42"); err == nil ||
+		!strings.Contains(err.Error(), "no pull requests found") {
+		t.Errorf("err=%v want gh stderr", err)
+	}
+	if _, err := g.PullRequestChecks(context.Background(), "", "42"); err == nil {
+		t.Error("missing dir: expected error")
+	}
+	if _, err := g.PullRequestChecks(context.Background(), dir, ""); err == nil {
+		t.Error("missing id: expected error")
+	}
+}
+
+func TestGitHub_MergePullRequest(t *testing.T) {
+	dir := newFakeGH(t)
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+
+	g := NewGitHub()
+	if err := g.MergePullRequest(context.Background(), dir, "42"); err != nil {
+		t.Fatalf("MergePullRequest: %v", err)
+	}
+	log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+	if !strings.Contains(string(log), "pr merge 42 --merge") {
+		t.Errorf("merge not invoked as expected:\n%s", log)
+	}
+
+	_ = os.WriteFile(filepath.Join(dir, "exitcode.pr.merge"), []byte("1"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "output.pr.merge"), []byte("Pull request is not mergeable"), 0644)
+	if err := g.MergePullRequest(context.Background(), dir, "42"); err == nil ||
+		!strings.Contains(err.Error(), "not mergeable") {
+		t.Errorf("err=%v want gh stderr", err)
+	}
+	if err := g.MergePullRequest(context.Background(), "", "42"); err == nil {
+		t.Error("missing dir: expected error")
+	}
+	if err := g.MergePullRequest(context.Background(), dir, ""); err == nil {
+		t.Error("missing id: expected error")
+	}
+}

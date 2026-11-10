@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -140,8 +141,110 @@ func (g *GitHub) CreateIssue(ctx context.Context, opts IssueOptions) (string, er
 	return strings.TrimSpace(out), nil
 }
 
+// OpenPullRequest shells out to `gh pr create` from the checkout at dir.
+// Returns the pull request number (parsed from the URL gh prints) so
+// PullRequestChecks and MergePullRequest can address it directly.
+func (g *GitHub) OpenPullRequest(ctx context.Context, dir, base, head, title, body string) (string, error) {
+	if dir == "" {
+		return "", fmt.Errorf("OpenPullRequest: dir required")
+	}
+	if head == "" {
+		return "", fmt.Errorf("OpenPullRequest: head required")
+	}
+	if base == "" {
+		return "", fmt.Errorf("OpenPullRequest: base required")
+	}
+	args := []string{
+		"pr", "create",
+		"--head", head,
+		"--base", base,
+		"--title", title,
+		"--body", body,
+	}
+	out, err := g.runIn(ctx, dir, args...)
+	if err != nil {
+		return "", fmt.Errorf("gh pr create: %w\n%s", err, strings.TrimSpace(out))
+	}
+	url := ""
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.HasPrefix(line, "https://") {
+			url = strings.TrimSpace(line)
+		}
+	}
+	if url == "" {
+		return "", fmt.Errorf("gh pr create: no pull request URL in output: %s", strings.TrimSpace(out))
+	}
+	id := url[strings.LastIndex(url, "/")+1:]
+	if _, convErr := strconv.Atoi(id); convErr != nil {
+		return "", fmt.Errorf("gh pr create: cannot read pull request number from %q", url)
+	}
+	return id, nil
+}
+
+// PullRequestChecks shells out to `gh pr checks --json bucket` and folds
+// the per-check buckets into one state:
+//   - any fail/cancel bucket → "failure"
+//   - otherwise any pending bucket, or no checks reported yet → "pending"
+//   - otherwise (all pass/skipping) → "success"
+//
+// gh exits non-zero while checks are pending or failing, so the exit
+// status is ignored whenever the JSON output parses.
+func (g *GitHub) PullRequestChecks(ctx context.Context, dir, id string) (string, error) {
+	if dir == "" {
+		return "", fmt.Errorf("PullRequestChecks: dir required")
+	}
+	if id == "" {
+		return "", fmt.Errorf("PullRequestChecks: id required")
+	}
+	out, err := g.runIn(ctx, dir, "pr", "checks", id, "--json", "bucket")
+	var checks []struct {
+		Bucket string `json:"bucket"`
+	}
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &checks); jsonErr != nil {
+		if err != nil {
+			return "", fmt.Errorf("gh pr checks: %w\n%s", err, strings.TrimSpace(out))
+		}
+		return "", fmt.Errorf("gh pr checks: unparseable output: %w", jsonErr)
+	}
+	if len(checks) == 0 {
+		return "pending", nil
+	}
+	state := "success"
+	for _, c := range checks {
+		switch c.Bucket {
+		case "fail", "cancel":
+			return "failure", nil
+		case "pending":
+			state = "pending"
+		}
+	}
+	return state, nil
+}
+
+// MergePullRequest shells out to `gh pr merge --merge` from the checkout
+// at dir. The merge strategy is fixed to a merge commit; gh refuses to
+// merge non-interactively without an explicit strategy flag.
+func (g *GitHub) MergePullRequest(ctx context.Context, dir, id string) error {
+	if dir == "" {
+		return fmt.Errorf("MergePullRequest: dir required")
+	}
+	if id == "" {
+		return fmt.Errorf("MergePullRequest: id required")
+	}
+	out, err := g.runIn(ctx, dir, "pr", "merge", id, "--merge")
+	if err != nil {
+		return fmt.Errorf("gh pr merge: %w\n%s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
 // run is gh exec with a 30s cap; combined stdout+stderr returned.
 func (g *GitHub) run(ctx context.Context, args ...string) (string, error) {
+	return g.runIn(ctx, "", args...)
+}
+
+// runIn is run with the working directory set to dir (empty = inherit).
+func (g *GitHub) runIn(ctx context.Context, dir string, args ...string) (string, error) {
 	bin := g.Bin
 	if bin == "" {
 		bin = "gh"
@@ -149,6 +252,7 @@ func (g *GitHub) run(ctx context.Context, args ...string) (string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(callCtx, bin, args...)
+	cmd.Dir = dir
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
