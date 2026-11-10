@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Vault-unreachable alert replaces the Settings badge
+
+- **What changed.** The Vault-unreachable badge on the PWA Settings nav button is gone. When the Vault stays unreachable past the threshold, datawatch now raises a real alert (shown in Alerts and sent to your messaging channels) and clears it when the Vault recovers.
+- **Threshold.** `secrets.vault.unreachable_alert_after_seconds` sets how many whole seconds the Vault must be unreachable before the alert fires. Default 120; `0` turns the alert off. It is set in the config file, REST (`secrets.vault.unreachable_alert_after_seconds`), MCP, the CLI, the comm channel, and a new field in PWA Settings (en, de, es, fr, ja).
+- **Migration.** None. Existing configs get the 120-second default; set `0` if you do not want the alert.
+
 ## v9.96.3 — Template tasks no longer fail decompose
 
 New Automata can plan again when the task template pack is on.
