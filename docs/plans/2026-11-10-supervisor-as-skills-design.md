@@ -10,6 +10,12 @@ questions below are answered, one at a time.
 - 2026-11-09, on how to take it forward: "A, but it should be designed to fit into the packs" (option A: a
   separate design proposal first; it must fit the packs design in `72bc0001`).
 
+- 2026-11-09, on question 2 (what the first cut covers): "A, even though we need to make sure we have the full
+  feature set planned out of when we're going to get the rest of it" (option A: read-only units first, state-
+  changing units second in the same release train; a full roadmap is required so the rest has a date).
+- 2026-11-09, on scratch and notes: "For scratch and notes datawatch has extensive memory that should be used"
+  (as heard; the supervisor's working notes go in datawatch memory, not scratch files).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
@@ -82,3 +88,17 @@ off by default.
 No implementation, no change to the current cron jobs, and no change to who holds scope decisions. The current
 procedures keep running as they are until a unit replaces one and a full day of agreement is shown (section 11a,
 item 9).
+
+## Roadmap (required by the operator's answer; dates are for the operator to set)
+
+| Step | Content | Depends on | Target |
+|---|---|---|---|
+| 1 | Pack format and supervisor unit kind agreed in the packs design | packs Automaton decomposed and reviewed | open |
+| 2 | Read-only units as a pack: watch, budget position, registry audit, CI read | step 1 | open |
+| 3 | Scheduler: the daemon runs a unit on a schedule and alerts on failure | scheduler question | open |
+| 4 | State-changing units: lane fill, merge, deploy-after-ship, with the restart-safety checks | steps 2 and 3, restart-safe verifier work shipped | open |
+| 5 | Failure triage and decompose validation units (strong tier, operator stop points) | step 4 | open |
+| 6 | Tier-to-model mapping run on the post-10.0 matrix test; smaller models take tiers they pass | matrix test | after 10.0 |
+| 7 | Retire each manual check after a full day of agreement with its unit (section 11a, item 9) | each unit | rolling |
+
+Targets stay open until the operator sets them; the supervisor lists, recommends and waits.
