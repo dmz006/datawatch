@@ -43799,19 +43799,40 @@ function loadVaultStatusRow() {
       const st = d.status || {};
       const reachable = !!st.reachable;
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${reachable ? 'var(--success)' : 'var(--error)'};margin-right:6px;"></span>`;
-      const last = st.last_success ? new Date(st.last_success).toLocaleTimeString() : '—';
-      const err = st.last_error ? `<div style="color:var(--error);font-size:11px;margin-top:2px;">${escHtml(st.last_error)}</div>` : '';
       const reqID = st.last_request_id ? ` <span style="opacity:0.6;">req=${escHtml(st.last_request_id)}</span>` : '';
+      // Last success: a labelled line. Render the backend's last successful
+      // read as an ISO timestamp (deterministic; the previous toLocaleTimeString
+      // call was locale-dependent and unlabelled). Fall back to the 'never'
+      // string when the backend has never reported a success. ISO keeps a
+      // malformed timestamp from silently turning into "Invalid Date": if the
+      // value cannot be parsed as a Date we show the raw string instead.
+      let successValue = null;
+      if (st.last_success) {
+        const dt = new Date(st.last_success);
+        successValue = isNaN(dt.getTime()) ? String(st.last_success) : dt.toISOString();
+      }
+      const successLabel = escHtml(t('vault_last_success_label') || 'Last success');
+      const successLine = `<div style="font-size:11px;">${successLabel}: ${successValue !== null ? escHtml(successValue) : escHtml(t('vault_last_success_never') || 'never')}</div>`;
+      // Last error: a labelled line. The message is escaped and shown in the
+      // error colour; when the backend has no error to report we show the
+      // 'none' string so the line is always present (a hidden line would hide
+      // the surface an operator is explicitly looking for).
+      const errorLabel = escHtml(t('vault_last_error_label') || 'Last error');
+      const errorValue = st.last_error
+        ? `<span style="color:var(--error);">${escHtml(st.last_error)}</span>`
+        : escHtml(t('vault_last_error_none') || 'none');
+      const errorLine = `<div style="font-size:11px;">${errorLabel}: ${errorValue}</div>`;
       el.innerHTML = `
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:2px;">
           <div style="display:flex;align-items:center;width:100%;">
             ${dot}<strong>${escHtml(t('vault_status_label')||'Vault')}</strong>
             <span style="opacity:0.7;margin-left:6px;font-size:11px;">${escHtml(st.address||'')}</span>
-            <span style="margin-left:auto;font-size:11px;color:var(--text2);">${reachable ? (t('vault_reachable')||'reachable') : (t('vault_unreachable')||'unreachable')} · last=${escHtml(last)}${reqID}</span>
+            <span style="margin-left:auto;font-size:11px;color:var(--text2);">${reachable ? (t('vault_reachable')||'reachable') : (t('vault_unreachable')||'unreachable')}${reqID}</span>
           </div>
           <div style="font-size:11px;color:var(--text2);">${escHtml(t('vault_meta_label')||'mount')}=${escHtml(st.kv_mount||'')} · ${escHtml(t('vault_path_prefix')||'prefix')}=${escHtml(st.path_prefix||'')} · ${escHtml(t('vault_path_layout')||'layout')}=${escHtml(st.path_layout||'')}${st.namespace?(' · ns='+escHtml(st.namespace)):''}
           </div>
-          ${err}
+          ${successLine}
+          ${errorLine}
         </div>`;
       el.style.display = '';
     })
