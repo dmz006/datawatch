@@ -206,9 +206,10 @@ datawatch observer peer-remove lab-east-peer
    only).
 9. Click into a peer row → drill-down modal: last snapshot, push
    history, per-envelope detail.
-10. Cog-nav badge: when any peer goes stale (no push in >60s), the
-    gear icon shows a numeric badge. Click → navigates to Federated
-    Peers + flashes the offending row.
+10. Stale indicator: a peer that last pushed more than 60s ago shows
+    an inline **Stale (age)** note on its row, and a peer that has
+    never pushed shows **Never pushed**. The daemon's own row is
+    skipped. The Settings nav button has no peer badge any more.
 
 ## Other channels
 
@@ -409,9 +410,9 @@ bash install/install-stats.sh \
 - **Memory summaries not flowing.** Opt-in: `push_memory_summaries:
   true` on the peer. Off by default to avoid leaking content across
   trust boundaries.
-- **Cog badge stuck on N stale.** A registered peer hasn't pushed in
-  >60s. Either bring it back or remove the peer record. Click the
-  badge in the PWA to navigate to it.
+- **A row shows Stale or Never pushed.** A registered peer hasn't
+  pushed in >60s, or has not pushed at all. Either bring it back or
+  remove the peer record from its row.
 
 ## Linked references
 
