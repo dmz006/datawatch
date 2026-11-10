@@ -88,7 +88,7 @@ func TestSessionPlacement(t *testing.T) {
 		},
 		{
 			name:      "project dir sets project to its base name",
-			s:         &session.Session{ProjectDir: "/home/dmz/workspace/datawatch"},
+			s:         &session.Session{ProjectDir: "/work/projects/datawatch"},
 			localNode: "local-box",
 			want:      Placement{Node: "local-box", Project: "datawatch"},
 		},

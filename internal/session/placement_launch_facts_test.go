@@ -32,7 +32,7 @@ func TestLaunchFactsRoundTripThroughStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen NewStore: %v", err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }()
 	got, ok := reopened.Get("h-lf01")
 	if !ok {
 		t.Fatal("session not found after reopen")
@@ -55,7 +55,7 @@ func TestLaunchFactsOlderRecordLoadsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	got, ok := store.Get("h-old1")
 	if !ok {
 		t.Fatal("legacy session not loaded")
