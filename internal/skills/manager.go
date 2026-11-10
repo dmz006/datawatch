@@ -57,6 +57,7 @@ var CommunityDefaultRegistry = &Registry{
 	Enabled:     true,
 	Description: "Official datawatch community skills + plugins registry. Connect to browse and install community-contributed extensions.",
 	IsBuiltin:   true,
+	FirstParty:  true,
 }
 
 // PAIDefaultRegistry is the canonical built-in default. The

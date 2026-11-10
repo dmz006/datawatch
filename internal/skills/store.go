@@ -22,7 +22,8 @@ type Registry struct {
 	AuthSecretRef string    `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
 	Enabled       bool      `json:"enabled"`
 	Description   string    `json:"description,omitempty"`
-	IsBuiltin     bool      `json:"is_builtin,omitempty"` // marks PAI default registry
+	IsBuiltin     bool      `json:"is_builtin,omitempty"`  // marks PAI default registry
+	FirstParty    bool      `json:"first_party,omitempty"` // official datawatch-maintained source; see IsFirstPartyPackSource
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	LastSyncedAt  time.Time `json:"last_synced_at,omitempty"`
