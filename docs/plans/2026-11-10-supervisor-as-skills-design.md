@@ -267,3 +267,7 @@ and Automaton ids, backend, kind, name, outcome, duration and token counts, and 
 a cost report package and an audit package. It has no field for pack name and version, unit and step, project,
 Automation, runner, the escalation, a cost figure or the resolved inputs. Reuse therefore means extending the trace
 event with those fields, not adding a store.
+
+Operator answer (2026-11-10): "A. Extend the existing one." (extend the existing trace event with the pack, unit,
+project, Automation, runner, escalation, cost and resolved-input fields; no new store.) The operator then asked
+about the data store mechanism itself; see the data store note in the handover plan.
