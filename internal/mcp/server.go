@@ -751,6 +751,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousMerge(), tracked(s.handleAutonomousMerge))
 	mcpSrv.AddTool(s.toolAutonomousSafeToDelete(), tracked(s.handleAutonomousSafeToDelete))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineGet(), tracked(s.handleAutonomousMergePipelineGet))
+	mcpSrv.AddTool(s.toolAutonomousReleaseReadiness(), tracked(s.handleAutonomousReleaseReadiness))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineSetRecord(), tracked(s.handleAutonomousMergePipelineSetRecord))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineValidate(), tracked(s.handleAutonomousMergePipelineValidate))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))

@@ -65,6 +65,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Generated artefacts](#generated-artefacts)
   - [Merge pipeline](#merge-pipeline)
   - [Release size](#release-size)
+  - [Release readiness bar](#release-readiness-bar)
   - [Post-ship hooks](#post-ship-hooks)
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge lock](#merge-lock)
@@ -2173,6 +2174,8 @@ Every key of the block can be overridden for one project under `autonomous.merge
 ### Release size
 
 **Release size** — the step one merge takes on the project's version: `patch`, `minor`, `major`, or `none` (no version step). The daemon resolves it per Automaton, most specific first: an explicit `release_size` on the Automaton (an explicit major applies under any major trigger); a completed Automation marked `milestone` while the project's `major_trigger` is `milestone` (steps major); the `release_size_map` entry for the Automaton's kind; the built-in (kind `feature` steps minor, kind `bug` steps patch, other kinds step no version). The resolution never reads the diff and a major is never inferred from a kind. In this release the size is stored, and the resolver that applies these layers exists, but no merge step calls it yet: the merge runner's version-bump step that reads it is wired in the following work, so nothing set here changes a ship's bump until then. See [howto/release-size-and-milestones.md](howto/release-size-and-milestones.md) for the walkthrough, and [howto/merge-pipeline.md](howto/merge-pipeline.md) for the pipeline it applies to.
+
+**Release readiness bar** — the evidence a release size must show before it can move from shadow to on. The bar is the same for every size: at least 10 comparison records where the daemon's plan is equal to or better than the manual merge, at least 2 of them with conflicts, at least 2 with PWA changes, and no comparison with a blocking defect. It is read with the release readiness read: `datawatch merge-pipeline readiness --size`, `GET /api/autonomous/release-readiness`, the `autonomous_release_readiness` MCP tool, the comm verb `autonomous merge-pipeline release-readiness`, and the Release readiness card on the Automation Setup sub-tab. Reaching the bar does not change a size's mode. The bar is fixed in this release; making it configurable is still to come, and the comparison records it counts are written by a stage that is still to come, so until then the counts stay at zero. See [howto/merge-pipeline.md](howto/merge-pipeline.md#move-from-shadow-to-on).
 
 **Release size layers** — the four places a release size can come from, most specific first: an explicit `release_size` on the Automaton, a completed milestone Automation under the `milestone` major trigger, the project kind map (`release_size_map`), and the built-in default. The resolution reports the layer that decided, shown as a chip on the Automaton row and header (set on this Automaton, Automation milestone, project size map or built-in default).
 

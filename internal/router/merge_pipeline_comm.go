@@ -8,6 +8,7 @@
 //	autonomous merge-pipeline clear-record [project]
 //	autonomous merge-pipeline validate [project=NAME] <pipeline>
 //	autonomous merge-pipeline validate [project=NAME] file[=NAME]
+//	autonomous merge-pipeline release-readiness <patch|minor|major> [project]
 //
 // A pipeline is written inline as YAML or JSON (JSON is YAML), for example
 // {"steps":[{"name":"tests","kind":"test","command":"make test"}]}. The
@@ -18,6 +19,7 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -28,12 +30,14 @@ import (
 
 const (
 	mergePipelineCommPath = "/api/autonomous/merge-pipeline"
+	// mergePipelineReadinessPath is the REST release readiness read.
+	mergePipelineReadinessPath = "/api/autonomous/release-readiness"
 	// mergePipelineCommMaxChars bounds one chat reply.
 	mergePipelineCommMaxChars = 3000
 	// mergePipelineCommMaxInput bounds the pipeline text a chat message carries.
 	mergePipelineCommMaxInput = 16 * 1024
 
-	mergePipelineUsage = "usage: autonomous merge-pipeline [show] [project] | set-record [project=NAME] <pipeline as YAML or JSON> | clear-record [project] | validate [project=NAME] <pipeline> | validate [project=NAME] file[=NAME]"
+	mergePipelineUsage = "usage: autonomous merge-pipeline [show] [project] | set-record [project=NAME] <pipeline as YAML or JSON> | clear-record [project] | validate [project=NAME] <pipeline> | validate [project=NAME] file[=NAME] | release-readiness <patch|minor|major> [project]"
 )
 
 // MergePipelineCommVerbs lists the merge pipeline comm verbs, for the parity
@@ -99,6 +103,18 @@ func checkMergePipelineConfigure(key, value string) error {
 	return config.ValidateReleaseApprovalModeKey(key, strings.TrimSpace(value))
 }
 
+// configureMergePipelineReleaseMode sends one release approval mode through
+// PUT /api/config tagged with the comm surface, so the daemon records the change
+// as a comm change. The daemon stores it through SetReleaseApprovalMode.
+func (r *Router) configureMergePipelineReleaseMode(key, value string) error {
+	b, err := json.Marshal(map[string]any{key: strings.TrimSpace(value)})
+	if err != nil {
+		return err
+	}
+	_, err = r.commJSON(http.MethodPut, "/api/config?surface=comm", string(b))
+	return err
+}
+
 // replyMergePipeline answers the merge-pipeline verb. args[0] is the verb.
 func (r *Router) replyMergePipeline(args []string) {
 	const label = "autonomous merge-pipeline"
@@ -106,13 +122,16 @@ func (r *Router) replyMergePipeline(args []string) {
 	sub := "show"
 	if len(words) > 0 {
 		switch s := strings.ToLower(words[0]); s {
-		case "show", "set-record", "set_record", "clear-record", "clear_record", "validate":
+		case "show", "set-record", "set_record", "clear-record", "clear_record", "validate", "release-readiness", "release_readiness":
 			sub, words = strings.ReplaceAll(s, "_", "-"), words[1:]
 		}
 	}
 	fail := func(msg string) { r.reply(label+" failed", msg) }
 
 	switch sub {
+	case "release-readiness":
+		r.replyReleaseReadiness(words)
+
 	case "show", "clear-record":
 		if len(words) > 1 {
 			fail(mergePipelineUsage)
@@ -240,4 +259,51 @@ func cutMergePipelineChat(text string) string {
 		cut = cut[:i]
 	}
 	return cut + note
+}
+
+// mergePipelineReadinessUsage is the usage line of the release readiness read.
+const mergePipelineReadinessUsage = "usage: autonomous merge-pipeline release-readiness <patch|minor|major> [project]"
+
+// replyReleaseReadiness answers release-readiness <size> [project]. The size is
+// required and must be patch, minor or major (size= is accepted too); the
+// project is optional, bare or project=NAME. The read goes through
+// GET /api/autonomous/release-readiness, the same REST read the CLI and the
+// MCP tool use, so the daemon computes the counts with ComputeReleaseReadiness.
+func (r *Router) replyReleaseReadiness(words []string) {
+	const label = "autonomous merge-pipeline release-readiness"
+	fail := func(msg string) { r.reply(label+" failed", msg) }
+
+	if len(words) == 0 || len(words) > 2 {
+		fail(mergePipelineReadinessUsage)
+		return
+	}
+	size := strings.ToLower(strings.TrimSpace(words[0]))
+	size = strings.TrimPrefix(size, "size=")
+	if !mergepipeline.ValidReadinessSize(size) {
+		fail(fmt.Sprintf("size must be patch, minor or major; got %q. %s", words[0], mergePipelineReadinessUsage))
+		return
+	}
+	q := url.Values{"size": {size}}
+	if len(words) == 2 {
+		project := strings.TrimSpace(words[1])
+		if i := strings.Index(strings.ToLower(project), "project="); i == 0 {
+			project = strings.TrimSpace(project[len("project="):])
+		}
+		if project == "" {
+			fail("project is empty; " + mergePipelineReadinessUsage)
+			return
+		}
+		q.Set("project", project)
+	}
+	out, err := r.commGet(mergePipelineReadinessPath, q)
+	if err != nil {
+		fail(err.Error())
+		return
+	}
+	rep, err := mergepipeline.ParseReadiness([]byte(out))
+	if err != nil {
+		fail(err.Error())
+		return
+	}
+	r.reply(label, cutMergePipelineChat(mergepipeline.RenderReadinessText(rep)))
 }

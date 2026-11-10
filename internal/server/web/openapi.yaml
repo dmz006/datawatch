@@ -2483,6 +2483,45 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: The daemon configuration is not available}
 
+  /api/autonomous/release-readiness:
+    get:
+      summary: Release readiness of one size, judged from the stored shadow-merge comparisons
+      description: |
+        Judges whether a release of the given size is ready, from the stored
+        shadow-merge comparisons: how many of the plans held up against the
+        landed state, how many of those merges would have had conflicts, how
+        many of them touched the PWA, and whether any comparison found a
+        defect that blocks the release. The bar is the default (10 records,
+        2 conflicts, 2 PWA changes). A size with no comparisons is not
+        hidden: the answer is the same full shape with zero counts and a
+        sentence for each short condition. `project` keeps only the
+        comparisons whose plan belongs to that project. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: releaseReadiness
+      tags: [Autonomous]
+      parameters:
+        - {name: size, in: query, required: true, description: "The release size to judge; required", schema: {type: string, enum: [patch, minor, major]}}
+        - {name: project, in: query, required: false, description: "Optional. Keep only the comparisons whose plan belongs to this project", schema: {type: string}}
+      responses:
+        "200":
+          description: The readiness for the size, zeros included
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  size: {type: string, description: The size that was evaluated}
+                  project: {type: string, description: The project filter applied, empty when none}
+                  readiness: {$ref: "#/components/schemas/ReleaseReadiness"}
+                  bar: {$ref: "#/components/schemas/ReleaseReadinessBar"}
+        "400": {description: size is missing or not patch, minor or major; the error names the size it got}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The comparison or plan store exists but cannot be read}
+        "503": {description: The daemon configuration is not available}
+
   /api/autonomous/repo-ci-watch:
     get:
       summary: Repo CI watch state
@@ -9922,6 +9961,28 @@ components:
         version_files:
           type: array
           items: {type: string}
+    ReleaseReadinessBar:
+      type: object
+      description: The minimum counts a release of one size must reach before it is considered ready
+      properties:
+        records: {type: integer, description: Minimum number of plan-equal-or-better comparison records}
+        conflicts: {type: integer, description: Minimum counted records that show conflicts}
+        pwa_changes: {type: integer, description: Minimum counted records that show PWA changes}
+    ReleaseReadiness:
+      type: object
+      description: The computed readiness of one release size
+      properties:
+        size: {type: string, description: The release size that was evaluated}
+        records: {type: integer, description: Records where the plan was equal or better}
+        conflicts: {type: integer, description: Counted records that show conflicts}
+        pwa_changes: {type: integer, description: Counted records that show PWA changes}
+        blocking_defects: {type: integer, description: Records with a blocking defect}
+        required: {$ref: "#/components/schemas/ReleaseReadinessBar"}
+        missing:
+          type: array
+          description: One operator-facing sentence per unmet condition; empty when ready
+          items: {type: string}
+        ready: {type: boolean, description: True only when missing is empty}
     MergePipelineView:
       type: object
       description: The merge pipeline in effect for a project, as GET /api/autonomous/merge-pipeline returns it.

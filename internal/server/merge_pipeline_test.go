@@ -602,6 +602,7 @@ func TestMergePipelineConfigKeyHelpers(t *testing.T) {
 // each release size is stored in the global block through PUT /api/config.
 func TestMergePipelineReleaseApprovalStoresGlobal(t *testing.T) {
 	s, _, _ := newMaxConcurrentTasksServer(t)
+	wireReleaseModeRecords(t, s)
 	patch := map[string]any{
 		"autonomous.merge_pipeline.release_approval.patch": "manual",
 		"autonomous.merge_pipeline.release_approval.minor": "ask",
@@ -623,6 +624,7 @@ func TestMergePipelineReleaseApprovalStoresGlobal(t *testing.T) {
 // stored and that it wins over the global value for that project.
 func TestMergePipelineReleaseApprovalStoresProject(t *testing.T) {
 	s, _, _ := newMaxConcurrentTasksServer(t)
+	wireReleaseModeRecords(t, s)
 	patch := map[string]any{"autonomous.merge_pipeline.projects.demo.release_approval.minor": "manual"}
 	if rec := putMergePipelineConfig(s, patch); rec.Code != http.StatusOK {
 		t.Fatalf("PUT: want 200, got %d: %s", rec.Code, rec.Body.String())
@@ -675,6 +677,7 @@ func TestMergePipelineReleaseApprovalRefusesBadValue(t *testing.T) {
 // release approval mode is kept, then dropped once that mode is cleared.
 func TestMergePipelineReleaseApprovalClearKey(t *testing.T) {
 	s, _, _ := newMaxConcurrentTasksServer(t)
+	wireReleaseModeRecords(t, s)
 	if rec := putMergePipelineConfig(s, map[string]any{
 		"autonomous.merge_pipeline.release_approval.patch":               "ask",
 		"autonomous.merge_pipeline.projects.demo.release_approval.patch": "manual",

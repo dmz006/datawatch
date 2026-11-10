@@ -66,6 +66,12 @@ const (
 	// reconciliation match (or un-confirmed a prior one), so admission no longer
 	// pools it with the peer. Details: kind, local, peer.
 	ActionFingerprintMatchRejected = "fingerprint_match_rejected"
+	// ActionReleaseModeChanged — a release approval mode was changed for one
+	// release size (patch, minor or major). Emitted once per successful change;
+	// a no-op emits nothing. Subject: the operator-facing headline. Details:
+	// headline, size, old_mode, new_mode, actor, surface, decision_record_id
+	// ("" when the decision record could not be stored).
+	ActionReleaseModeChanged = "release_mode_changed"
 	// ActionAutomationImportGraph — an orchestrator graph was converted into a
 	// new Automation. A dry run is not audited. Subject: the Automation.
 	// Details: graph_id, automation_id, member_count.

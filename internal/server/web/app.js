@@ -9744,6 +9744,8 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     'merge_pipeline_release_size_', 'merge_pipeline_major_', 'merge_pipeline_cadence_', 'merge_pipeline_scheme_'],
     DOCS_DEFINITIONS + '#release-size'],
   [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
+  // The Release readiness card and its help control link to the Move from shadow to on section.
+  [['release_readiness_'], 'howto/merge-pipeline.md#move-from-shadow-to-on'],
   // The release approval fields, their card rows and the card label link to the
   // Release approval modes section of the how-to. Before the generic prefixes.
   [['autonomous.merge_pipeline.release_approval.', 'settings_merge_pipeline_release_approval_',
@@ -34795,14 +34797,15 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_setup',
     bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationReleaseReadinessCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('setup')}`,
     mount() {
-      listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationRequestWatchLoader()]);
+      listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]);
       _automationSlotsMount('setup');
     },
     stop() {
-      _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_request_watch']);
+      _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_request_watch']);
       _automationSlotsStop('setup');
     },
   },
@@ -34875,7 +34878,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -35453,6 +35456,64 @@ window.loadNodeBackendVersions = function(name) {
     .then(d => { el.innerHTML = window.nodeBackendVersionsBody(d); })
     .catch(err => { el.innerHTML = `<span style="color:var(--error);">${escHtml(t('node_backend_versions_failed', [String((err && err.message) || err)]))}</span>`; });
 };
+
+// ── Release readiness card ──────────────────────────────────────────────────
+// releaseReadinessCardHtml(results) turns the three GET /api/autonomous/release-readiness
+// bodies, as [{size, readiness}], into the Release readiness card. A size is drawn
+// only when it has at least one comparison record: readiness.records > 0, or a
+// blocking defect (a blocking defect always sits on a comparison record). A size
+// with neither is left out, and when no size has records nothing is rendered. Each
+// drawn size shows its counts against the bar, its missing items and its ready
+// flag. The help control links to the Move from shadow to on section of the
+// merge pipeline how-to. Every value is escaped.
+const RELEASE_READINESS_SIZES = [
+  ['patch', 'release_readiness_size_patch'], ['minor', 'release_readiness_size_minor'], ['major', 'release_readiness_size_major'],
+];
+const RELEASE_READINESS_HOWTO = 'howto/merge-pipeline.md#move-from-shadow-to-on';
+function _releaseReadinessHasRecords(r) {
+  return !!r && ((Number(r.records) || 0) > 0 || (Number(r.blocking_defects) || 0) > 0);
+}
+function _releaseReadinessHelpLink() {
+  const tip = escHtml(t('release_readiness_help'));
+  return ` <a href="/diagrams.html#docs/${RELEASE_READINESS_HOWTO}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="release-readiness-help" title="${tip}" aria-label="${tip}" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+}
+function _releaseReadinessSizeHtml(sizeKey, labelKey, r) {
+  const bar = (r.required && typeof r.required === 'object') ? r.required : {};
+  const ready = r.ready === true;
+  const flag = `<span class="release-readiness-flag release-readiness-${ready ? 'ready' : 'not-ready'}" style="font-size:11px;border-radius:4px;padding:1px 6px;border:1px solid var(--border);color:${ready ? 'var(--success,#2a7d2a)' : 'var(--warning,#a06b00)'};">${escHtml(t(ready ? 'release_readiness_ready' : 'release_readiness_not_ready'))}</span>`;
+  const counts = `<div class="release-readiness-counts" style="font-size:12px;color:var(--text2);margin-top:4px;overflow-wrap:anywhere;">` +
+    `<div>${escHtml(t('release_readiness_records', [String(Number(r.records) || 0), String(Number(bar.records) || 0)]))}</div>` +
+    `<div>${escHtml(t('release_readiness_conflicts', [String(Number(r.conflicts) || 0), String(Number(bar.conflicts) || 0)]))}</div>` +
+    `<div>${escHtml(t('release_readiness_pwa', [String(Number(r.pwa_changes) || 0), String(Number(bar.pwa_changes) || 0)]))}</div>` +
+    `<div>${escHtml(t('release_readiness_blocking', [String(Number(r.blocking_defects) || 0)]))}</div></div>`;
+  const missing = Array.isArray(r.missing) && r.missing.length
+    ? `<ul class="release-readiness-missing" style="margin:4px 0 0;padding-left:18px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${r.missing.map(m => `<li>${escHtml(String(m))}</li>`).join('')}</ul>`
+    : `<div class="release-readiness-missing-none" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('release_readiness_none_missing'))}</div>`;
+  return `<div class="release-readiness-size" data-size="${sizeKey}" style="margin-top:8px;min-width:0;">` +
+    `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;min-width:0;"><strong style="font-size:12px;">${escHtml(t(labelKey))}</strong>${flag}</div>` +
+    counts + missing + `</div>`;
+}
+window.releaseReadinessCardHtml = function(results) {
+  const bySize = {};
+  (Array.isArray(results) ? results : []).forEach(x => { if (x && x.size) bySize[x.size] = x.readiness; });
+  const drawn = RELEASE_READINESS_SIZES.filter(([s]) => _releaseReadinessHasRecords(bySize[s]));
+  if (drawn.length === 0) return '';
+  const head = `<div class="cap-title">${escHtml(t('release_readiness_card_title'))}${_releaseReadinessHelpLink()}</div>`;
+  const body = drawn.map(([s, labelKey]) => _releaseReadinessSizeHtml(s, labelKey, bySize[s])).join('');
+  return `<div class="prd-capacity-card release-readiness-card" style="min-width:0;">${head}${body}</div>`;
+};
+// _automationReleaseReadinessLoader reads the readiness of the three release sizes
+// beside the merge pipeline card. Its failed state is the list loader's banner.
+function _automationReleaseReadinessLoader() {
+  return window._listLoaders.automation_release_readiness || listLoader({
+    key: 'automation_release_readiness', el: 'automationReleaseReadinessCard', url: '/api/autonomous/release-readiness', pollMs: 0,
+    fetch: () => Promise.all(RELEASE_READINESS_SIZES.map(([s]) => apiFetch('/api/autonomous/release-readiness?size=' + s)))
+      .then(bodies => bodies.map(b => ({ size: b.size, readiness: b.readiness }))),
+    failedText: msg => t('release_readiness_failed', [msg]),
+    active: () => !!document.getElementById('automationReleaseReadinessCard'),
+    render: results => window.releaseReadinessCardHtml(results),
+  });
+}
 
 // _automationMergePipelineLoader polls the merge pipeline of the project the
 // card shows beside the infrastructure retry card. Its url follows the chosen

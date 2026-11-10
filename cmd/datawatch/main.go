@@ -6802,10 +6802,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var lifecycleAuditFn func(string, map[string]any)
 			if wiredAuditLog != nil {
 				lifecycleAuditFn = func(a string, d map[string]any) {
-					// The Events view renders Subject; a judge outcome's
-					// plain-language headline becomes that subject.
+					// The Events view renders Subject; a judge outcome's and a
+					// release mode change's plain-language headline become that subject.
 					subject := ""
-					if a == auditpkg.ActionJudgeOutcome {
+					if a == auditpkg.ActionJudgeOutcome || a == auditpkg.ActionReleaseModeChanged {
 						subject, _ = d["headline"].(string)
 					}
 					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Subject: subject, Details: d})
@@ -12047,8 +12047,9 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	}
 	url := loopbackBaseURL(cfg) + "/api/config"
 	if isMergePipelineReleaseApprovalKey(key) {
-		// auto|ask|manual only; refused here before anything is sent.
-		return runMergePipelineReleaseApprovalSet(url, cfg.Server.Token, key, value)
+		// auto|ask|manual only; refused here before anything is sent. The
+		// cli surface is named so the daemon records the change as a CLI change.
+		return runMergePipelineReleaseApprovalSet(url+"?surface=cli", cfg.Server.Token, key, value)
 	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {

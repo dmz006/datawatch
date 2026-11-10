@@ -697,3 +697,58 @@ func TestMergePipelineMCP_ReleaseApprovalConfigSchema(t *testing.T) {
 		}
 	}
 }
+
+const releaseReadinessMCPBody = `{"size":"minor","project":"demo","readiness":{"size":"minor","ready":false},"bar":{"records":10,"conflicts":2,"pwa_changes":2}}`
+
+func TestReleaseReadinessMCP_ToolRegistered(t *testing.T) {
+	have := map[string]bool{}
+	for _, n := range mergeTestToolNames(t) {
+		have[n] = true
+	}
+	if !have["autonomous_release_readiness"] {
+		t.Fatal("autonomous_release_readiness is not registered")
+	}
+	s := &Server{}
+	tool := s.toolAutonomousReleaseReadiness()
+	if h := tool.Annotations.ReadOnlyHint; h == nil || !*h {
+		t.Error("autonomous_release_readiness must be read-only")
+	}
+	if got, ok := federation.RequiredCapForMCPTool("autonomous_release_readiness"); !ok || got != federation.CapAutonomousRead {
+		t.Errorf("cap %q (known %v), want %q", got, ok, federation.CapAutonomousRead)
+	}
+}
+
+func TestReleaseReadinessMCP_ValidSizeProxiesBody(t *testing.T) {
+	var path, query string
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		path, query = r.URL.Path, r.URL.RawQuery
+		_, _ = w.Write([]byte(releaseReadinessMCPBody))
+	})
+	res, _ := s.handleAutonomousReleaseReadiness(context.Background(), callReq(map[string]any{"size": " Minor ", "project": " demo "}))
+	if res == nil || res.IsError {
+		t.Fatalf("res=%+v", res)
+	}
+	if path != releaseReadinessPath || query != "project=demo&size=minor" {
+		t.Errorf("proxied %s?%s", path, query)
+	}
+	if got := automationText(t, res); got != releaseReadinessMCPBody {
+		t.Errorf("body must pass through untouched: %s", got)
+	}
+}
+
+func TestReleaseReadinessMCP_InvalidSizeRefused(t *testing.T) {
+	called := false
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		_, _ = w.Write([]byte(releaseReadinessMCPBody))
+	})
+	for _, bad := range []any{"huge", "", nil, 3} {
+		res, _ := s.handleAutonomousReleaseReadiness(context.Background(), callReq(map[string]any{"size": bad}))
+		if res == nil || !res.IsError {
+			t.Errorf("size %v must be refused", bad)
+		}
+	}
+	if called {
+		t.Error("an invalid size must not reach the daemon")
+	}
+}

@@ -24,6 +24,8 @@ import (
 
 const (
 	mergePipelineAPI = "/api/autonomous/merge-pipeline"
+	// mergePipelineReadinessAPI is the REST release readiness read.
+	mergePipelineReadinessAPI = "/api/autonomous/release-readiness"
 	// mergePipelineFileMax is the most pipeline text the daemon accepts.
 	mergePipelineFileMax = 1 << 20
 )
@@ -138,6 +140,7 @@ pipeline; the order is a setting.
   validate --from-file F | --repo-file    Check a pipeline without saving it
   post-ship show                          The post-ship hook block: switch, hooks, targets
   post-ship set KEY VALUE                 Set one key of it (the daemon validates the value)
+  readiness --size S [--project P]        Release readiness of one size: counts against the bar, missing items, ready
 
   POST-SHIP KEY: enabled, registry_file, registry_row_pattern, companion_repository,
   issue_title_template, notify_template (text; empty clears), hooks (a JSON array of
@@ -150,7 +153,58 @@ pipeline; the order is a setting.
 		newMergePipelineClearRecordCmd(),
 		newMergePipelineValidateCmd(),
 		newMergePipelinePostShipCmd(),
+		newMergePipelineReadinessCmd(),
 	)
+	return c
+}
+
+// mergePipelineReadinessDocs links the release readiness help to its how-to.
+const mergePipelineReadinessDocs = "docs/howto/merge-pipeline.md#move-from-shadow-to-on"
+
+// newMergePipelineReadinessCmd reads the release readiness of one size: the
+// counts against the bar, one line per missing item and the ready flag. It is
+// the REST read GET /api/autonomous/release-readiness, the same read the chat
+// verb and the MCP tool make.
+func newMergePipelineReadinessCmd() *cobra.Command {
+	var size, project string
+	c := &cobra.Command{
+		Use:   "readiness",
+		Short: "Show the release readiness of one size (patch, minor or major)",
+		Long: `Show the release readiness of one release size, judged from the stored shadow-merge
+comparisons: the records where the plan held up, the conflicts, the PWA changes and
+any blocking defect, each against the bar, then one line per missing item and the
+ready flag. Zero counts are printed. Read-only.
+
+  readiness --size patch|minor|major [--project P]
+
+The how-to is in ` + mergePipelineReadinessDocs + `.
+`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s := strings.ToLower(strings.TrimSpace(size))
+			if !mergepipeline.ValidReadinessSize(s) {
+				cmd.SilenceUsage = true
+				return fmt.Errorf("--size must be patch, minor or major; got %q", size)
+			}
+			q := url.Values{"size": {s}}
+			if p := strings.TrimSpace(project); p != "" {
+				q.Set("project", p)
+			}
+			body, err := mergePipelineSend(http.MethodGet, mergePipelineReadinessAPI, q, nil)
+			if err != nil {
+				return err
+			}
+			rep, err := mergepipeline.ParseReadiness(body)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), mergepipeline.RenderReadinessText(rep))
+			return err
+		},
+	}
+	c.Flags().StringVar(&size, "size", "", "the release size: patch, minor or major (required)")
+	c.Flags().StringVar(&project, "project", "", "keep only one project's comparisons (default: every project)")
+	_ = c.MarkFlagRequired("size")
 	return c
 }
 

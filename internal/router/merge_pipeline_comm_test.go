@@ -1,6 +1,8 @@
 package router
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -194,7 +196,11 @@ func releaseApprovalConfigure(t *testing.T, text string) (string, []string) {
 		sent  string
 		calls []string
 	)
-	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) {
+	// A release approval mode set from chat now reaches the daemon over the
+	// REST config endpoint (so the change is recorded as a comm change); the
+	// fake daemon records that request body as the key=value pair handed over.
+	call, port := mergePipelineCommDaemon(t, http.StatusOK, `{"ok":true}`)
+	r := &Router{hostname: "h", webPort: port, backend: &captureBackend{name: "test", capture: func(s string) {
 		mu.Lock()
 		sent = s
 		mu.Unlock()
@@ -209,6 +215,14 @@ func releaseApprovalConfigure(t *testing.T, text string) (string, []string) {
 	wg.Wait()
 	mu.Lock()
 	defer mu.Unlock()
+	if call.calls > 0 {
+		var body map[string]any
+		if err := json.Unmarshal([]byte(call.body), &body); err == nil {
+			for k, v := range body {
+				calls = append(calls, fmt.Sprintf("%s=%v", k, v))
+			}
+		}
+	}
 	return sent, calls
 }
 

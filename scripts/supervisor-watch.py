@@ -10,7 +10,13 @@ newly failed, blocked or need review, PRDs finished but not merged, idle lanes w
 work waiting, running PRDs whose worktree is broken or silent, a dirty main checkout
 (it makes a ship abort), and red or stuck CI on main and the tags.
 
-With --record <path> the findings are additionally written to <path> as
+After the verdict, one READINESS line per release size (patch, minor, major) that has
+at least one comparison record: "ready", or "not ready" with the missing items, read from
+the daemon's release readiness endpoint. These lines are informational and never change
+the OK/ATTENTION verdict or the exit code.
+
+With --record <path> the findings (and the READINESS lines, kind release_readiness, subject
+the size) are additionally written to <path> as
 {"at": <unix seconds>, "findings": [{"kind": <stable finding kind>,
 "subject": <id or empty>, "text": <line>}]} (the daemon-side supervisor watch
 compares its own findings against that record); without the option stdout and
@@ -253,11 +259,40 @@ def usage_snapshot():
         pass
 
 
+READINESS_SIZES = ("patch", "minor", "major")
+READINESS_URL = "https://localhost:8443/api/autonomous/release-readiness?size=%s"
+
+
+def release_readiness_lines():
+    """[(size, line)] for each release size with at least one comparison record.
+
+    Reads GET /api/autonomous/release-readiness through get_json, the same helper the
+    rest of the script uses. The endpoint counts plan-equal-or-better records and
+    blocking-defect records per size, so a size with neither prints nothing. A failed
+    read is skipped and prints nothing; the caller never lets these lines change the verdict.
+    """
+    out = []
+    for size in READINESS_SIZES:
+        d = get_json(READINESS_URL % size, insecure=True)
+        r = (d or {}).get("readiness") or {}
+        if not (r.get("records") or r.get("blocking_defects")):
+            continue
+        if r.get("ready"):
+            line = "READINESS %s: ready" % size
+        else:
+            line = "READINESS %s: not ready, missing: %s" % (size, "; ".join(r.get("missing") or []))
+        out.append((size, line))
+    return out
+
+
 def map_finding(text):
     """(stable finding kind, subject id) for one printed finding line, or None when the line is outside the stable vocabulary the daemon watch understands.
 
     The kinds are the daemon-side supervisor watch's stable vocabulary; subject is the id the line is about (the PRD id, the CI run id, the model host or lane name) or the empty string when the line carries no id.
     """
+    m = re.match(r"^READINESS (patch|minor|major): ", text)
+    if m:
+        return "release_readiness", m.group(1)
     m = re.match(r"^NEW (failed|review_needed) task \S+ of (\S+)", text)
     if m:
         return ("task_failed" if m.group(1) == "failed" else "task_review_needed"), m.group(2)
@@ -442,9 +477,15 @@ def main(argv=None):
     except OSError:
         pass
 
+    # release readiness per size: informational, printed after the verdict and never counted in it
+    try:
+        readiness = [line for _, line in release_readiness_lines()]
+    except Exception:
+        readiness = []
+
     if record_path is not None:
         recs = []
-        for f in findings:
+        for f in findings + readiness:
             mapped = map_finding(f)
             if mapped is None:
                 continue  # outside the stable vocabulary; the daemon watch cannot key it
@@ -462,9 +503,11 @@ def main(argv=None):
         print("ATTENTION " + summary)
         for f in findings:
             print(" - " + f)
-        return 1
-    print("OK " + summary)
-    return 0
+    else:
+        print("OK " + summary)
+    for line in readiness:
+        print(line)
+    return 1 if findings else 0
 
 
 if __name__ == "__main__":

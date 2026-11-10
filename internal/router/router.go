@@ -998,7 +998,15 @@ func (r *Router) handleConfigure(cmd Command) {
 		r.send(fmt.Sprintf("[%s] Refused: %v", r.hostname, err))
 		return
 	}
-	if err := r.configureFn(key, value); err != nil {
+	var err error
+	if isMergePipelineReleaseApprovalKey(key) {
+		// Release approval modes are applied by the daemon through
+		// SetReleaseApprovalMode, which needs the comm surface named.
+		err = r.configureMergePipelineReleaseMode(key, value)
+	} else {
+		err = r.configureFn(key, value)
+	}
+	if err != nil {
 		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
 	} else {
 		r.send(fmt.Sprintf("[%s] Set %s = %s. Restart may be required.", r.hostname, key, value))

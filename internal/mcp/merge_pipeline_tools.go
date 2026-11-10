@@ -36,6 +36,46 @@ func MergePipelineToolNames() []string {
 	return []string{"autonomous_merge_pipeline_get", "autonomous_merge_pipeline_set_record", "autonomous_merge_pipeline_validate"}
 }
 
+// releaseReadinessPath is the REST read the autonomous_release_readiness tool
+// proxies. The daemon computes the readiness there with the same
+// ComputeReleaseReadiness path, so the tool returns that body unchanged.
+const releaseReadinessPath = "/api/autonomous/release-readiness"
+
+// releaseReadinessSizes are the release sizes the tool accepts; the daemon
+// refuses any other size with the same rule.
+var releaseReadinessSizes = map[string]bool{"patch": true, "minor": true, "major": true}
+
+// toolAutonomousReleaseReadiness registers the read-only readiness tool for
+// one release size: the same object as GET /api/autonomous/release-readiness.
+func (s *Server) toolAutonomousReleaseReadiness() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_release_readiness",
+		mcpsdk.WithDescription("Read the readiness of one release size (patch, minor or major), judged from the stored shadow-merge comparisons: how many plans held up against the landed state, how many would have conflicted, how many touched the PWA, and whether a blocking defect was found, with the bar each count must reach. Read-only; the same object as GET /api/autonomous/release-readiness. project optionally keeps only one project's comparisons."),
+		mcpsdk.WithString("size", mcpsdk.Required(), mcpsdk.Enum("patch", "minor", "major"), mcpsdk.Description("The release size: patch, minor or major")),
+		mcpsdk.WithString("project", mcpsdk.Description("Optional — the project name; default is every project")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleAutonomousReleaseReadiness(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const op = "autonomous_release_readiness"
+	args := req.GetArguments()
+	size, _ := args["size"].(string)
+	size = strings.ToLower(strings.TrimSpace(size))
+	if !releaseReadinessSizes[size] {
+		return toolErrorf(op, "size is required and must be patch, minor or major; got %v", args["size"]), nil
+	}
+	q := url.Values{}
+	q.Set("size", size)
+	if v, ok := args["project"].(string); ok && strings.TrimSpace(v) != "" {
+		q.Set("project", strings.TrimSpace(v))
+	}
+	out, err := s.proxyGet(releaseReadinessPath, q)
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousMergePipelineGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_pipeline_get",
 		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the release settings in effect (the release size by kind, the major release trigger, the release cadence and the version scheme), the release approval mode in effect for each release size (patch, minor, major), the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
