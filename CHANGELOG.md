@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Project page (PWA).** Selecting a project shows its header (description, owner, repository, default branch, target and definition of done, lane and backend defaults, weekly share) and its arcs from the project roll-up, in priority order with each arc's state. Each arc expands to its Automata and their sessions; rows open the existing Automaton and session views. A header field, arc or section that is off or empty is left out, and its line appears under Events on the page instead. The roll-up is read only for the selected project.
+
 - **Projects tab (PWA).** A top-level Projects nav button opens a picker fed by `GET /api/projects`. The first entry, Overview, is the cross-project in-flight view; each other entry shows that project's directory, default backend and description. The last choice is remembered in the browser and mirrored in the `#projects` / `#projects/<name>` hash. With no projects the tab points at Settings. Covered by `app-projects-nav.test.js`.
 
 - **Project roll-up read.** `GET /api/projects/{name}/rollup` reports each arc of a project and the whole project: the Automata each arc's Automation holds (with their session ids), task progress as done/total, cost in usage points and throughput per day over a `window` (days, 1–365, default 7). Automata of the project that no arc holds are listed as `unassigned`. Points come from the cost report's billing-profile point calibration; API dollars are never shown. No new storage. Contract in `docs/api/openapi.yaml`.
