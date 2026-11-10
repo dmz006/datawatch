@@ -411,6 +411,16 @@ def main(argv=None):
         if st not in ("running", "blocked"):
             continue
         done = sum(1 for k in tasks if k.get("status") == "completed")
+        cancelled = sum(1 for k in tasks if k.get("status") == "cancelled")
+        # A cancelled task is finished work for the purpose of "every task is terminal",
+        # but the completion judge refuses to run while any task is cancelled. An Automaton
+        # whose tasks are all completed or cancelled and that has no verdict is therefore
+        # stuck, and used to be invisible here because completed != len(tasks) (found
+        # 2026-11-10, a daemon restart-safety Automaton sat blocked for nineteen hours).
+        if cancelled and tasks and done + cancelled == len(tasks):
+            findings.append("STUCK %s: every task is done or cancelled (%d cancelled) but the completion judge refuses to run while a task is cancelled; reset or remove the cancelled tasks: %s" % (p["id"], cancelled, (p.get("title") or "")[:40]))
+        if st == "blocked" and "stuck running" in str(p.get("blocked_reason") or ""):
+            findings.append("STUCK %s is blocked: %s" % (p["id"], str(p.get("blocked_reason"))[:90]))
         for k in tasks:
             if k.get("status") in ("failed", "review_needed"):
                 key = (p["id"], k["id"], k["status"])
