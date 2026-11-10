@@ -66,6 +66,11 @@ questions below are answered, one at a time.
   the documentation must show how context and agent definitions create and manage a repository's own rules.
   The remaining pattern questions follow, one at a time.
 
+- 2026-11-09, on leak pattern question 1 (the product name): "A" (allow the product name and its command, MCP tool
+  and REST path names, because every unit needs them; block this repository's name, organization and project
+  names and anything that identifies our deployment; the check holds an explicit allowlist of product terms,
+  so a new term fails closed until added).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
