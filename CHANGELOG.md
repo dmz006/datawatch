@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.133.1 — Retry and fail loudly on the Trivy install step in the workflows
+
+- **The CI "Install Trivy" steps retry the download and fail loudly, and fetch the installer for the pinned version tag.** The eight "Install Trivy" steps in `release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) used to pipe an installer fetched from the moving `main` branch straight into `sh`. A failed or partial download could finish the step green and leave the worker with no Trivy binary. Each step now runs `scripts/ci-install-trivy.sh <tag> <install-dir>`, which downloads `aquasecurity/trivy/<tag>/contrib/install.sh` for the pinned tag into a temp file, retries the download 5 times 10 seconds apart, and on a persistent failure exits non-zero, naming curl's status and the URL. The installer runs from that file, never from a pipe. Coverage is in `scripts/tests/ci-install-trivy_test.sh`; the operator-facing write-up is in [howto/container-image-refresh.md](docs/howto/container-image-refresh.md#how-ci-installs-trivy).
+  - **Migration:** none. The Trivy pins are unchanged: `containers.yaml` still uses `v0.70.0`, and `release.yaml` and `image-refresh.yaml` use `v0.73.0`. Unifying them is an operator decision.
+
 ## v9.133.0 — Verifier run cap for verifier sessions
 
 - **Every verifier run now has a hard maximum run time, so one verifier cannot hold a worker slot for hours (found 2026-11-08).** A new setting, `autonomous.verifier_max_run_seconds`, caps the total run time of one verifier session. It defaults to 2700 seconds (45 minutes), `0` turns the cap off, and a negative value is refused when the config loads. Run time is counted from the verifier's capacity grant, so queue wait does not count, and the cap applies even when the verifier keeps producing output.
