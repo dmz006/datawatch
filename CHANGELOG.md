@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.117.2 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 25 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.129.0 — Standard task list shows each task's real mode
 
 - **The daemon task-mode Settings help no longer says the daemon never runs `final_gate`.** In all five locales, `settings_daemon_task_modes_help` now says what actually happens: `final_gate` takes only `llm` or `off`, and when on it is carried out by the daemon's script gate, not by a model session. The **Standard task runner** glossary entry was re-checked against the PWA code at the same time — the Automata sub-tab still draws no runner column, so that entry stays as written. Copy change only.
