@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.122.0 (2026-11-09).** Merge conflicts are resolved by file class, with a model gate and a confirm-first-N counter; two new settings, autonomous.merge_pipeline.conflict_mode and conflict_confirm_first_n, on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.123.0 (2026-11-09).** The built-in task pack is now called standard tasks, and the Automata page's Templates tab lists them in a Standard tasks sub-tab next to the Automaton templates. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
