@@ -217,14 +217,37 @@ datawatch observer peer-remove lab-east-peer
 
 The daemon watches every registered observer peer (never its own row).
 When a peer has not pushed for longer than
-`observer.peers.silent_alert_minutes` (default 5; `0` turns the watcher
-off) it raises one warning system alert, "Observer peer silent: <name>";
-when the peer pushes again it raises one info alert, "Observer peer
-recovered: <name>". A peer that never pushed is measured from its
-registration time. Set the threshold from PWA Settings (Observer),
-`datawatch config set observer.peers.silent_alert_minutes <n>`, the MCP
-`config_set` tool, or the comm channel `configure
-observer.peers.silent_alert_minutes=<n>`.
+`observer.peers.silent_alert_minutes` it raises a system alert.
+
+- **Setting.** `observer.peers.silent_alert_minutes` is a whole number
+  of minutes. The default is 5. `0` turns the watcher off.
+- **Once per outage.** The warning alert, "Observer peer silent:
+  <name>", names the peer, how long it has been silent and the time of
+  its last push. You get it once, not again on every check while the
+  peer stays down. A peer that never pushed is measured from its
+  registration time and shows "never" as its last push.
+- **Recovery alert.** When the peer pushes again, an info alert,
+  "Observer peer recovered: <name>", closes the outage. If it goes
+  silent again later, that is a new outage and a new alert.
+- **Momentary gaps never alert.** A peer that is quiet for less than the
+  threshold, such as a late push or a short network blip, raises
+  nothing and needs no clean-up.
+- **Stale indicator.** Separate from the alert, a peer that last pushed
+  more than a minute ago shows an inline "Stale (age)" note on its row
+  in the Observer peer list ("Never pushed" if it has not pushed at
+  all). The note appears well before the alert fires, so you can spot a
+  struggling peer early.
+
+Ways to read or change the setting:
+
+| Access method | How |
+|---|---|
+| YAML | Set `silent_alert_minutes` under `observer.peers` in `~/.datawatch/config.yaml`. |
+| CLI | `datawatch config set observer.peers.silent_alert_minutes <n>` |
+| Web UI | Settings, Observer section, "Silent peer alert after (minutes; 0 = disabled)" field. |
+| REST | `PUT /api/config` with `observer.peers.silent_alert_minutes`; read it back with `GET /api/config`. |
+| MCP | `config_set` with key `observer.peers.silent_alert_minutes`; read it back with `get_config` section `observer`. |
+| Comm channel | `configure observer.peers.silent_alert_minutes=<n>` |
 
 ## Other channels
 
