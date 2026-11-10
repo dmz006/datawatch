@@ -78,7 +78,7 @@ Two companion pieces travel with it:
   draft, docs set, bounded load-step rule, final gate, version note)
   appended to a story the planner left incomplete, idempotently, run in
   the `model session` mode — the ones the Automata page's Templates tab
-  shows as *standard tasks* (previously "template tasks"; details in §5);
+  shows as *standard tasks* (previously "task templates"; details in §5);
 - **Decompose guidance** — the text handed to the planner *before* it
   writes the plan, generated from your active rules unless you supply your
   own.
@@ -242,7 +242,7 @@ it must run after, and the resulting task also depends on the story's
 other tasks. Each standard task runs in the `model session` mode — a model
 session does the work like any other task.
 
-> **Naming.** These are called **standard tasks** (previously "template tasks").
+> **Naming.** These are called **standard tasks** (previously "task templates").
 > The PWA's Automata page shows them under the Templates tab, whose first
 > sub-tabs are *Automaton templates* and *Standard tasks* (the 2026-11-08
 > operator decision). The config keys keep the code-level name
@@ -376,7 +376,7 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
   standard-task gate, the guidance string and the rules (as JSON). Saves
   through `PUT /api/autonomous/decompose-lint/config`.
 - **Automata page → Templates tab → Standard tasks** — the built-in pack
-  by its operator-facing name (previously "template tasks"); the same list the
+  by its operator-facing name (previously "task templates"); the same list the
   reads below return.
 - **Automaton detail → “Decompose lint” panel** — the last recorded pass
   (mode, attempts, findings with severity chips), with a **dry-run

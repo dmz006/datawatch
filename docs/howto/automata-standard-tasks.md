@@ -113,7 +113,7 @@ project.
 |---|---|
 | **YAML** | Edit `~/.datawatch/config.yaml` → `autonomous.task_templates` (the `enabled` switch and the `projects` overrides) |
 | **CLI** | `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`. A table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw body |
-| **Web UI** | Automata tab → **Templates** → **Standard tasks** sub-tab |
+| **Web UI** | Automata tab → **Templates** tab (labelled **Automaton templates** in the current UI) → **Standard tasks** sub-tab |
 | **REST API** | `GET /api/autonomous/standard-tasks` with an optional `?project=<dir-or-alias>`. The body is `{enabled, tasks[]}`. Any other method returns 405. The config itself is read and written through `GET` and `PUT /api/config` |
 | **MCP** | The `autonomous_standard_tasks` tool, with an optional `project` argument. The switches are read and written with `autonomous_config_get` and `autonomous_config_set` |
 | **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode`. An empty list replies "no standard tasks are defined." |
