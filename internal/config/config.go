@@ -8000,6 +8000,9 @@ func Load(path string) (*Config, error) {
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
 		return nil, err
 	}
+	if err := ValidateVerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds); err != nil {
+		return nil, err
+	}
 	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
 		return nil, err
 	}
@@ -8053,6 +8056,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
+		return nil, err
+	}
+	if err := ValidateVerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds); err != nil {
 		return nil, err
 	}
 	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
