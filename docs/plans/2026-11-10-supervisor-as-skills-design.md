@@ -81,6 +81,11 @@ questions below are answered, one at a time.
   placeholder examples written as X.Y.Z; a unit that needs the current version reads it through a configuration
   input such as a version-file path and pattern, which is the version-detection skill).
 
+- 2026-11-09, on leak pattern question 4 (lane, capacity and model names): "A" (block concrete lane and capacity
+  numbers, backend names and model names; a unit refers only to a tier (script, small, strong) and to
+  configuration inputs for limits such as a lane cap, set per repository; examples use placeholder values; the
+  tier-to-entry mapping lives in each installation's LLM entries).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
