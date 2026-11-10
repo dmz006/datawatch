@@ -1382,6 +1382,22 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `git.push_on_complete` | string | `branch` | What to push to the remote when work completes: `never` (no push at all), `branch` (push the finished work branch after each validated task and again at completion; the default), or `default_branch` (plain fast-forward push of HEAD onto the remote's default branch, only after the automaton's final gates passed at completion). Empty/unknown values behave as `branch`. Read from the live config on every push attempt (no restart needed). Pushes are never force. A PRD's own `Git.PushOnComplete` override wins over this when set. See `docs/operations.md` → “Pushing finished work to the remote”. |
 | `git.push_remote` | string | `origin` | Remote name the finished branch is pushed to. Read live on every push attempt. |
 
+### Git hosts (`git.hosts`)
+
+`git.hosts` is the list of git hosts datawatch may push to and read CI or release state from. Each entry is a `GitHostConfig` in `internal/config/git_hosts.go`; defaults are applied at config load and `ValidateGitHosts` reports every problem in one pass, so a malformed list fails the load with all errors listed.
+
+| Field (`git.hosts[].<field>`) | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | required | Lowercase slug (letters, digits, single hyphens), unique within the list. It is the `<name>` part of the dotted key `git.hosts.<name>.<field>` and cannot be changed through the dotted-key setter. |
+| `kind` | string | required | `github`, `gitlab`, `gitea`, `bitbucket` or `git` (a plain remote). |
+| `base_url` | string | empty | Web/API base URL. Required for `gitea`, `bitbucket` and `git`; for `gitlab` required only when self-hosted (empty = gitlab.com); for `github` empty = github.com. Resolved by kind at use time. |
+| `credential_source` | string | `host_login` | How the token is obtained: `host_login` (the login already configured on the host), `vault` (read the secrets vault entry named by `vault_secret`) or `broker` (ask the credential broker). |
+| `vault_secret` | string | empty | Name of the secrets vault entry holding the token. Required when `credential_source` is `vault`. Only the entry name is stored; the secret value never is. |
+| `sign_tags` | bool | `false` | Sign the tags datawatch creates for this host. |
+| `signing_key` | string | empty | Key id used when signing tags. Empty uses the git default signing key. |
+
+Surfaces: `config.yaml` (`git.hosts`), `GET /api/config` and `PUT /api/config`, `GET /api/git/hosts` (list with readiness), `POST /api/git/hosts/{name}/test` (connection test), the MCP git-hosts tools, `datawatch config set git.hosts.<name>.<field>`, the comm `configure` verb, and the Settings card in the PWA. Operator walkthrough: [`docs/howto/git-hosts.md`](howto/git-hosts.md) and [`docs/howto/connect-git-host.md`](howto/connect-git-host.md).
+
 ### Session list views
 
 `GET /api/sessions` accepts three optional query parameters. Without any

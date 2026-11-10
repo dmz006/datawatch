@@ -6854,6 +6854,37 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "Git hosts (git.hosts: /api/git/hosts and /api/git/hosts/{name}/test)"
+# Read-only checks: the list answers with a hosts array (empty is fine on a
+# fresh daemon), an unknown host name is 404 on the test route, a non-POST on
+# the test route is 405, and an unknown action under the prefix is 404. No
+# host is created, so no cleanup entry is needed.
+GH_LIST=$(curl "${curl_args[@]}" "$BASE/api/git/hosts" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d["hosts"],list);print("ok")' 2>/dev/null || echo "")
+if [[ "$GH_LIST" == "ok" ]]; then
+  ok "git hosts: GET /api/git/hosts returns a hosts list"
+else
+  ko "git hosts: GET /api/git/hosts did not return a hosts list"
+fi
+GH_404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/git/hosts/no-such-host/test" 2>/dev/null || echo "000")
+if [[ "$GH_404" == "404" ]]; then
+  ok "git hosts: POST /api/git/hosts/{unknown}/test is refused with HTTP 404"
+else
+  ko "git hosts: unknown host test answered HTTP $GH_404, expected 404"
+fi
+GH_405=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/git/hosts/no-such-host/test" 2>/dev/null || echo "000")
+if [[ "$GH_405" == "405" ]]; then
+  ok "git hosts: GET /api/git/hosts/{name}/test is refused with HTTP 405"
+else
+  ko "git hosts: GET on the test route answered HTTP $GH_405, expected 405"
+fi
+GH_BADACT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/git/hosts/no-such-host/bogus" 2>/dev/null || echo "000")
+if [[ "$GH_BADACT" == "404" ]]; then
+  ok "git hosts: an unknown action under /api/git/hosts/{name} is HTTP 404"
+else
+  ko "git hosts: unknown action answered HTTP $GH_BADACT, expected 404"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
