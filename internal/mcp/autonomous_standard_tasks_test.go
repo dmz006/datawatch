@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -34,6 +35,13 @@ func TestStandardTaskMCPTool(t *testing.T) {
 
 	if got := s.toolAutonomousStandardTasks().Name; got != "autonomous_standard_tasks" {
 		t.Fatalf("tool name = %q", got)
+	}
+	// The description names the mode and runner vocabularies.
+	desc := s.toolAutonomousStandardTasks().Description
+	for _, want := range []string{"llm, daemon or off", "script gate, session, daemon or none"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("tool description %q, want it to contain %q", desc, want)
+		}
 	}
 
 	res, err := s.handleAutonomousStandardTasks(context.Background(), callReq(map[string]any{"project": "/work/app"}))
@@ -61,7 +69,7 @@ func TestStandardTaskMCPTool(t *testing.T) {
 	// The tool prints the fixture's fields; each must match the fixture row.
 	for i, w := range want.Tasks {
 		row, _ := rows[i].(map[string]any)
-		for _, k := range []string{"id", "title", "kind", "enabled", "mode"} {
+		for _, k := range []string{"id", "title", "kind", "enabled", "mode", "runner"} {
 			if _, ok := row[k]; !ok {
 				t.Errorf("task row %d missing field %q", i, k)
 				continue

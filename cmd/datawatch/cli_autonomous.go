@@ -2092,10 +2092,14 @@ type standardTaskRow struct {
 	Kind    string `json:"kind"`
 	Enabled bool   `json:"enabled"`
 	Mode    string `json:"mode"`
+	Runner  string `json:"runner"`
 }
 
-// renderStandardTasksTable writes the id/title/kind/enabled/mode table for a
-// GET /api/autonomous/standard-tasks response body.
+// renderStandardTasksTable writes the id/title/kind/enabled/mode/runner table
+// for a GET /api/autonomous/standard-tasks response body. The mode column
+// shows the row's effective mode (llm, daemon or off) and the runner column
+// shows who carries the task out (script gate, session, daemon or none), both
+// as resolved by the daemon.
 func renderStandardTasksTable(w io.Writer, body []byte) error {
 	var resp struct {
 		Tasks []standardTaskRow `json:"tasks"`
@@ -2104,9 +2108,9 @@ func renderStandardTasksTable(w io.Writer, body []byte) error {
 		return fmt.Errorf("decode standard tasks: %w", err)
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tTITLE\tKIND\tENABLED\tMODE")
+	_, _ = fmt.Fprintln(tw, "ID\tTITLE\tKIND\tENABLED\tMODE\tRUNNER")
 	for _, t := range resp.Tasks {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", t.ID, t.Title, t.Kind, t.Enabled, t.Mode)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\n", t.ID, t.Title, t.Kind, t.Enabled, t.Mode, t.Runner)
 	}
 	return tw.Flush()
 }
@@ -2119,9 +2123,11 @@ func newAutonomousStandardTasksCmd() *cobra.Command {
 		Short: "List the standard tasks the decomposer adds to each story",
 		Long: `List the standard tasks the decomposer adds to each story.
 
-Each row shows the task id, its title, its kind, whether it is enabled and
-the mode it runs in. Use --project to see the list as one project resolves it,
-including that project's own overrides. Use --json for the raw response.`,
+Each row shows the task id, its title, its kind, whether it is enabled, its
+mode (llm, daemon or off) and its runner (script gate, session, daemon or
+none). Use --project to see the list as one project resolves it, including
+that project's own overrides. Use --json for the raw response.`,
+
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			path := "/api/autonomous/standard-tasks"

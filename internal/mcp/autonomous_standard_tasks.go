@@ -18,7 +18,8 @@ import (
 func (s *Server) toolAutonomousStandardTasks() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_standard_tasks",
 		mcpsdk.WithDescription("Lists the built-in standard tasks the decomposer adds to each story. "+
-			"Each row shows whether the task is on for the project and its mode. "+
+			"Each row shows whether the task is on for the project, its mode (llm, daemon or off) "+
+			"and its runner (script gate, session, daemon or none). "+
 			"Returns {enabled, tasks[]}; enabled is the global switch."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional project directory or alias. Selects the per-project override; empty reports the global enabled value.")),
 	)
