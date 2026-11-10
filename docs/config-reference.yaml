@@ -3841,6 +3841,15 @@ secrets:
   op_vault: ""             # optional vault name or ID; omit = default vault
   op_token: ""             # prefer DATAWATCH_OP_TOKEN env var
 
+  # HashiCorp Vault / OpenBao backend (backend: vault)
+  vault:
+    # Whole seconds the Vault must stay unreachable before the
+    # Vault-unreachable alert is raised. Default 120; 0 disables the alert;
+    # a negative value is rejected (REST PUT /api/config returns 400, a
+    # config file fails to load). REST key: secrets.vault.unreachable_alert_after_seconds;
+    # GET /api/config returns the effective value under secrets.vault.
+    unreachable_alert_after_seconds: 120
+
 # ── Tailscale k8s Sidecar (BL243 — v6.5.0+) ──
 # Injects a Tailscale sidecar container into every F10 agent pod when enabled.
 # Supports headscale (self-hosted, set coordinator_url) and commercial Tailscale
