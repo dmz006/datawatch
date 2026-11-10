@@ -67,6 +67,21 @@ A cap end counts as verifier infrastructure trouble, not as a judgment about the
 - [Verifier throughput in operations](../operations.md#verifier-throughput)
 - [Judge routing and time limit](judge-policy.md)
 
+## How many cap ends you have seen
+
+The capacity API (`GET /api/capacity`) carries a `verifier` object with the rolling
+verifier aggregates since the daemon started. Two fields cover the cap:
+
+- `run_cap_seconds`: the cap in effect (`0` = no cap). It is read from the loaded
+  config at daemon start, so it reflects the configured value, not a default.
+- `run_cap_ends`: how many verifier runs the cap ended. It is the same count as the
+  `run_cap` category in `categories`; a cap end is counted under `run_cap` and not
+  under `infra`.
+
+The status text line adds `, run_cap N` after the `watchdog` count once N is above
+zero, for example `verifiers: 12 runs, avg wait 4s, avg run 9m, infra 0, watchdog 1, run_cap 2`.
+The counters reset with the daemon; the cap itself is configuration and is not reset.
+
 ## What a cap end records
 
 When the cap ends a verifier session, datawatch frees the verifier's capacity slot
