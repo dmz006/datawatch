@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
-- **Vault status moves off the Settings nav button.** The PWA no longer shows the "Vault unreachable" badge on the Settings nav button. To check the Vault, open the Vault status row in Settings. It shows the reachable or unreachable state and now also shows a **Last error** line (or "none") and a **Last success** line (or "never"). The labels are translated in English, German, Spanish, French and Japanese. No migration step.
+- **Vault status moves off the Settings nav button.** The PWA no longer shows the "Vault unreachable" badge on the Settings nav button. To check the Vault, open the Vault status row in Settings. It shows the reachable or unreachable state and now also shows a **Last error** line (or "none") and a **Last success** line (or "never"). The labels are translated in English, German, Spanish, French and Japanese. No migration step. Known gap: no separate alert fires when the Vault is unreachable yet; the Settings row is the only place the state shows.
 
 ## v9.96.3 — Template tasks no longer fail decompose
 
