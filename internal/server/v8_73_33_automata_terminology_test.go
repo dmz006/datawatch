@@ -38,6 +38,10 @@ func isAutomationObjectKey(key string) bool {
 	if key == "nav_automation" || strings.HasPrefix(key, "automation_") {
 		return true
 	}
+	// The Events tab owner label names the Automation object, so it carries the Automation word in every locale.
+	if key == "automata_events_label_automation" {
+		return true
+	}
 	// These two settings fields name the Automation object specifically -- the
 	// named Automation that receives kind-bug defect filings -- not the
 	// Automaton unit of work. Their de/es/fr/ja values therefore legitimately
@@ -260,6 +264,8 @@ var pendingTranslationKeys = map[string]bool{
 	"settings_host_load_alert_mode":     true,
 	"settings_host_load_alert_multiple": true,
 	"settings_host_load_alert_minutes":  true,
+	// Automata Events tab: the Automaton label stays English in de/es/fr until the app translation lands.
+	"automata_events_label_automaton": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
