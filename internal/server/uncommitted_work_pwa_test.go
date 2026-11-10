@@ -57,7 +57,8 @@ func TestUncommittedPWAHasCardAndPoll(t *testing.T) {
 		"window.uncommittedWorkCardHtml(status)",
 		// the slot is in the Overview body and the loader is mounted and stopped with its neighbours
 		`id="automationUncommittedWorkCard"`,
-		"_automationCleanupLoader(), _automationUncommittedWorkLoader()",
+		"_automationCleanupLoader()",
+		"_automationUncommittedWorkLoader()",
 		"'automation_cleanup', 'automation_uncommitted_work'",
 		// the Automaton detail: task chip, task file list, Automaton banner
 		"window.uncommittedWorkChipHtml(task)",
