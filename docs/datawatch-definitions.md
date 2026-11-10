@@ -754,7 +754,9 @@ Other datawatch instances pushing observer / stats data into this one. Each peer
 - **📊** — last snapshot drill-down.
 - **×** — remove peer (rotates token; peer auto-re-registers if it's still alive).
 
-When ANY peer goes stale, the gear icon in the bottom nav shows a numeric badge. Click the badge to land on this card with the offending peer flashed.
+A peer that last pushed more than a minute ago shows an inline "Stale (age)" note on its row, and a peer that has never pushed shows "Never pushed". The daemon's own row is skipped. The Settings nav button no longer shows a stale-peer badge.
+
+**Silent-peer alert:** the daemon raises one system alert ("Observer peer silent: <name>") when a registered peer has not pushed for longer than `observer.peers.silent_alert_minutes` (default 5; 0 = off), and one recovery alert when it pushes again. The threshold is settable from PWA Settings, the CLI, MCP and the comm channel.
 
 **Peer health alerts (v8.9.25):** a background goroutine polls each registered peer's push timestamps every 30 s and fires a system alert on every state transition — `online → stale`, `stale → online`, or `peer → unreachable`. Alerts appear in the Alerts tab with `source: system` and the peer name so you can correlate observer gaps with network or daemon restarts on the remote host. Alert thresholds match the health-dot thresholds: stale > 60 s, unreachable on first push-timeout after a previously-healthy period.
 
