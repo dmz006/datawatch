@@ -3664,5 +3664,7 @@
   "prd_dl_dryrun": "Essai à blanc",
   "prd_dl_dryrun_done": "Essai à blanc (non enregistré)",
   "prd_dl_running": "Exécution du linte de décomposition...",
-  "prd_dl_dryrun_error": "L'essai à blanc du linte de décomposition a échoué :"
+  "prd_dl_dryrun_error": "L'essai à blanc du linte de décomposition a échoué :",
+  "observer_peer_stale": "Obsolète",
+  "observer_peer_never_pushed": "Jamais envoyé"
 }

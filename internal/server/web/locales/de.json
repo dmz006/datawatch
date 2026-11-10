@@ -3664,5 +3664,7 @@
   "prd_dl_dryrun": "Trockenlauf",
   "prd_dl_dryrun_done": "Trockenlauf (nicht aufgezeichnet)",
   "prd_dl_running": "Decompose Lint läuft...",
-  "prd_dl_dryrun_error": "Decompose-Lint-Trockenlauf fehlgeschlagen:"
+  "prd_dl_dryrun_error": "Decompose-Lint-Trockenlauf fehlgeschlagen:",
+  "observer_peer_stale": "Veraltet",
+  "observer_peer_never_pushed": "Nie gesendet"
 }

@@ -3664,5 +3664,7 @@
   "prd_dl_dryrun": "Prueba en seco",
   "prd_dl_dryrun_done": "Prueba en seco (no almacenada)",
   "prd_dl_running": "Ejecutando decompose lint...",
-  "prd_dl_dryrun_error": "La prueba en seco de decompose lint falló:"
+  "prd_dl_dryrun_error": "La prueba en seco de decompose lint falló:",
+  "observer_peer_stale": "Obsoleto",
+  "observer_peer_never_pushed": "Nunca enviado"
 }
