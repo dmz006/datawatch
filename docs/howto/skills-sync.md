@@ -276,3 +276,4 @@ session_inject: true                     # auto-inject into session prompt
 - [howto/council-mode](council-mode.md)
 - [howto/algorithm-mode](algorithm-mode.md)
 - [skills](../skills.md)
+- [Standard tasks and installable packs](automata-standard-tasks.md#installable-packs-backend-only-not-yet-wired) — packs are versioned folders read from skills registry sources; their trust and auto-accept rules (backend only, not yet wired)

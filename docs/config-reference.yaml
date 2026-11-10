@@ -4784,6 +4784,11 @@ cost_report:
 # Off by default, so a daemon that never sets packs.* behaves as before.
 packs:
   # Turn the pack feature on. Default false.
+  # Turning it on should need at least one enabled skills registry source (the
+  # community registry by default). That check is in the packs package and is
+  # not yet run when this key is set, so the daemon does not enforce it yet.
+  # Install, trust and auto-accept are not exposed on any surface yet; see
+  # docs/howto/automata-standard-tasks.md#installable-packs-backend-only-not-yet-wired.
   enabled: false
   # The packs in use, in order. Each name is "builtin" (the pack that ships in
   # the binary, always valid) or the name of an installed pack. A name that is
