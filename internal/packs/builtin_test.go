@@ -7,12 +7,12 @@ import (
 // builtinTaskTitles are the six standard tasks the built-in pack ships, in
 // manifest order.
 var builtinTaskTitles = []string{
-	"Changelog entry",
-	"Parity issue draft",
-	"Docs set",
-	"Bounded load-step rule",
-	"Release version note",
-	"Final gate",
+	"Changelog entry for {{feature}}",
+	"Parity issue draft for {{feature}}",
+	"Docs set for {{feature}}",
+	"Bounded load-step rule for {{feature}}",
+	"Final gate for {{feature}}",
+	"Release version note for {{feature}}",
 }
 
 func TestLoadBuiltinStandardTasks(t *testing.T) {
