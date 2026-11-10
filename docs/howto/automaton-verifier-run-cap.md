@@ -45,14 +45,22 @@ total run time.
 | **Comm channel** | `configure autonomous.verifier_max_run_seconds=<n>` — the handler refuses a negative or non-whole value before it reaches the REST setter, which validates through the same function. |
 | **MCP** | `autonomous_config_set` with `verifier_max_run_seconds` (whole seconds ≥ 0; `0` = no cap; negative or fractional values are refused). |
 
-## Current enforcement status
+## How it is enforced
 
-**The enforcing run loop has not landed yet.** No runtime code outside config
-loading reads the key: it is loaded, validated and settable from every surface
-above, but nothing ends a run once it hits the cap. The live bound on a verifier
-run today is the no-progress watchdog plus `autonomous.verification_timeout_seconds`.
-[operations.md — Verifier throughput](../operations.md#verifier-throughput) records the
-same state; check it before relying on the cap to stop a run.
+The cap is enforced. On every poll of a verifier session, datawatch adds the time
+since the previous poll to a run-time total and ends the session once the total
+reaches `autonomous.verifier_max_run_seconds`.
+
+- **Progress-blind:** output, pane changes and a live runner do not extend the cap. A
+  verifier that keeps working is still ended at the limit.
+- **Queue time is not counted:** time a verifier spends waiting for a capacity slot is
+  left out of the total, so the cap measures the run, not the queue.
+- **Off with `0`:** no run is ever ended by the cap.
+- **Verifier sessions only:** decompose and worker sessions are not bound by it.
+- **Read once per session:** the value is read when the verifier session starts, so a
+  change applies to the next session, not one already running.
+
+A cap end counts as verifier infrastructure trouble, not as a judgment about the task.
 
 ## Related
 
@@ -62,8 +70,24 @@ same state; check it before relying on the cap to stop a run.
 ## What a cap end records
 
 When the cap ends a verifier session, datawatch frees the verifier's capacity slot
-at once, so queued work can take it before the retry starts. It then writes a
+at once, so queued work can take it before the retry starts. It writes a
 `verifier_run_cap` entry in the Automaton's decision log, with the task id, the
 elapsed seconds and the cap in seconds, and a matching audit record. The task's
 attempt ends with the reason `verifier_max_run`, so you can tell a cap end from a
 crashed session.
+
+## Retry after a cap end
+
+A verifier session ended at the cap is retried **once**, on the next backend in the
+verifier policy order after the one that was cut. The retry backend runs on its
+registry default model. If the retry was already spent, or the policy lists only one
+backend, there is no retry and the verification ends as an infra failure, which the
+usual infra escalation handles.
+
+## Operator review
+
+- Raise the cap if a verification legitimately runs longer than 45 minutes; a cap
+  that is too low turns every long verification into a cap end plus one retry.
+- Single-backend verifier policies get no retry after a cap end.
+- Look for `verifier_run_cap` entries in the decision log and `autonomous.verifier_run_cap`
+  audit records to see how often the cap fires.
