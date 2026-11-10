@@ -173,3 +173,11 @@ up folder into history then run via datawatch" (option A: the cut-over is gated 
 types are shipped, the import of the registry rows is checked against the files, and encryption covers the Automaton,
 trace and decision files; the operator approves the switch). On the switch, the plans folder is cleaned up into history
 (the files leave the working tree and remain in the repository history) and the work runs through datawatch from then on.
+
+Operator answer on migration question 6, numbering (2026-11-10): "A, datawatch id, maybe uid?" (option A: new records get
+their own datawatch ids; each imported registry row keeps its old number as a legacy number field so existing
+references resolve; whether the id is also a globally unique uid is a follow-up question, below).
+
+Follow-up (open): ids today are short, readable ids (Automata look like four hex characters plus a counter). A short id
+is easy to say and type but can collide across installations or across the repositories of a product; a uid (a UUID) is
+unique everywhere but unreadable.
