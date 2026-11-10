@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.125.0 (2026-11-09).** Automaton worker, verifier and judge sessions now start from their worker session profile when one resolves; with nothing configured, every launch is unchanged. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.126.0 (2026-11-10).** The daemon now plans each finished Automaton's merge in the background (a throwaway trial merge, gates run, release size and changelog worked out), compares the plan with the real merge after it lands and records a defect candidate per difference; nothing is ever applied, and it is read on REST, MCP, CLI, chat and the PWA. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

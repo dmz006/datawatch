@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.126.0 — Merge shadow mode
+
+### Added
+
+- **Each difference from a merge comparison is kept as a defect candidate.** The merge shadow now turns every difference in a comparison into a candidate with a stable key (Automaton id, field, planned and landed values, release size, status and created_at) and stores it under the daemon data directory. Running the comparison again on unchanged data does not store a second copy: a candidate with the same content keeps the created_at and key it was first stored with. Candidates are recorded only; they are not filed into the defect queue, which stays with the existing defect intake (`internal/mergeshadow/defect_candidate.go`).
+- **An Automaton that finishes now gets a shadow merge plan.** When an Automaton reaches the finished state, the daemon runs the shadow merge in the background: a trial merge of its work branch into the default branch in a throwaway worktree, the conflicts classified by file class, the build, lint and test gates run on the trial tree, the changelog entry read from the entry task, and the release size worked out from the planned version against the base version. The plan is stored under the data directory with `applied` set to false. The project branch and the project checkout are never changed, and the finish path never waits on it. Controlled by `autonomous.merge_shadow.enabled` (default on). The runner is in `internal/mergeshadow/runner.go` and the hook in `internal/autonomous/merge_shadow_hook.go`.
+
+### Fixed
+
+- **A merge gate that times out now kills everything it started, not only its make process.** Each gate runs in its own process group (`internal/mergeshadow/gate_kill.go`), so when the gate timeout ends the whole group is killed and a hung test suite cannot leave child processes running. The gate still records status `timeout`. A test in `internal/mergeshadow/replay_hung_pwa_suite_test.go` runs a fake suite that sleeps far longer than the test timeout and checks that the gate ends as `timeout` within a bounded time with no process left behind. On platforms without process groups, a timed-out gate kills only make, as before.
+
 ## v9.125.0 — Worker session profiles reach Automaton launches
 
 ### Added
