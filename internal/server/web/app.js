@@ -25432,6 +25432,9 @@ setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 // The sub-tab a first visit to the Automata tab opens on: Automation is the
 // high-level view, and the operator digs deeper from there.
 const _AUTOMATA_DEFAULT_TAB = 'automation';
+// Sub-tabs of the Automata view, in button order. 'events' sits between
+// 'automata' and 'templates'.
+const _AUTOMATA_TABS = ['automation', 'automata', 'events', 'templates'];
 // Remembering the last chosen sub-tab is an undecided operator design
 // question: this switch stays off, so every visit starts on the default.
 const _AUTOMATA_REMEMBER_TAB = false;
@@ -25440,12 +25443,12 @@ function _automataInitialTab() {
   if (!_AUTOMATA_REMEMBER_TAB) return _AUTOMATA_DEFAULT_TAB;
   try {
     const v = localStorage.getItem(_AUTOMATA_TAB_STORE_KEY);
-    if (v === 'automation' || v === 'automata' || v === 'templates') return v;
+    if (_AUTOMATA_TABS.indexOf(v) >= 0) return v;
   } catch (_) { /* storage blocked: use the default */ }
   return _AUTOMATA_DEFAULT_TAB;
 }
 const _automataState = {
-  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'templates'
+  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'events' | 'templates'
   historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
   filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
   selectMode: false,    // BL246 v6.6.0 — per-card checkboxes hidden until Select toggled
@@ -26643,10 +26646,23 @@ function switchAutomataTab(tab) {
   }
   // Entering the list sub-tabs drops any Automaton detail capacity timer.
   if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
-  if (tab === 'templates') loadAutomataTemplatesPanel();
+  if (tab === 'events') renderAutomataEventsPanel();
+  else if (tab === 'templates') loadAutomataTemplatesPanel();
   else _automataShowList();
 }
 window.switchAutomataTab = switchAutomataTab;
+
+// renderAutomataEventsPanel paints the Events sub-tab. The event log itself is
+// not wired yet, so the panel shows its heading and a placeholder line.
+function renderAutomataEventsPanel() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
+    <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(t('automata_events_tab') || 'Events')}</h3>
+    <p style="margin:0;color:var(--text2);">Automata events will appear here.</p>
+  </div>`;
+}
+window.renderAutomataEventsPanel = renderAutomataEventsPanel;
 
 function toggleAutomataFilter() {
   _automataState.filterOpen = !_automataState.filterOpen;
@@ -34412,6 +34428,7 @@ function renderAutonomousView() {
       <div class="output-tabs automata-tabs-bar">
         ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
+        <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(t('automata_events_tab') || 'Events')}</button>
         <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab!=='automata'?'display:none;':''}">&#9745;</button>
@@ -34440,7 +34457,8 @@ function renderAutonomousView() {
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
-    if (st.tab === 'templates') loadAutomataTemplatesPanel();
+    if (st.tab === 'events') renderAutomataEventsPanel();
+    else if (st.tab === 'templates') loadAutomataTemplatesPanel();
     else if (reuse) _automataShowList();
     else loadAutomataPanel();
     // The list body has no status card; drop any Automaton detail capacity
