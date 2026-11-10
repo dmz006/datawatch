@@ -277,3 +277,33 @@ Reading any of these never writes anything; only a key you set in the panel, a
 - **The daemon's values are never changed by this panel.** Setting
   `projects.core-api.policy.max_concurrent_tasks: 4` does not edit `autonomous.`
   The two tiers stay independent; the project tier just wins the resolution.
+
+## Daemon-level project defaults
+
+The `projects_defaults` block sets three defaults that a project inherits when it sets none of its own:
+
+| Key | Meaning | Default |
+|---|---|---|
+| `projects_defaults.branch_retention_days` | Days a project's merged branches are kept before cleanup, used when the project sets no `branch_retention_days`. | 0 (unset: branches are kept) |
+| `projects_defaults.weekly_share_percent` | A project's share of the weekly usage budget, 0 to 100, used when the project sets no `weekly_share`. | 0 (unset) |
+| `projects_defaults.major_trigger` | When a major release is raised for a project that sets no `major_trigger`: `manual`, `milestone` or `never`. | `manual` |
+
+The block is named `projects_defaults` rather than `projects.defaults` because `projects` is a map keyed by project name, and a project called `defaults` would collide with it.
+
+Set them in `config.yaml`:
+
+```yaml
+projects_defaults:
+  branch_retention_days: 30
+  weekly_share_percent: 20
+  major_trigger: manual
+```
+
+Or through the running daemon, on any surface:
+
+- REST: `PUT /api/config` with `{"projects_defaults.major_trigger": "milestone"}`; read back with `GET /api/config` under `projects_defaults`.
+- Comm channel: `configure projects_defaults.branch_retention_days=30`.
+- MCP: `config_set` with key `projects_defaults.weekly_share_percent`; `get_config` returns the block.
+- CLI: `datawatch config set projects_defaults.major_trigger milestone`.
+
+A project's own value always wins over these defaults. A refused value (a negative day count, a share outside 0 to 100, or a trigger other than `manual`, `milestone` or `never`) is rejected with the key named in the error, and nothing is changed.

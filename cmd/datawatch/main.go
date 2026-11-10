@@ -12010,6 +12010,9 @@ func newConfigSetCmd() *cobra.Command {
 			"and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind) " +
 			"autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template " +
 			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).\n\n" +
+			"Project defaults keys: projects_defaults.branch_retention_days (whole days, 0 = unset), " +
+			"projects_defaults.weekly_share_percent (0 to 100, 0 = unset), and projects_defaults.major_trigger " +
+			"(manual, milestone or never; default manual). A project with its own value keeps it.\n\n" +
 			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
 			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
 			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +

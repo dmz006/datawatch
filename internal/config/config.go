@@ -699,6 +699,12 @@ type Config struct {
 	// session.llm_backend for sessions launched into this project.
 	Projects map[string]ProjectConfigEntry `yaml:"projects,omitempty"`
 
+	// ProjectsDefaults — daemon-level defaults a project inherits when it sets
+	// none of its own (branch retention, weekly share, major trigger). Kept
+	// beside Projects, not inside it, so a project named "defaults" cannot
+	// collide. See projects_defaults.go.
+	ProjectsDefaults ProjectsDefaultsConfig `yaml:"projects_defaults,omitempty" json:"projects_defaults,omitempty"`
+
 	// Templates (BL5) — named session-start bundles.
 	Templates map[string]SessionTemplateEntry `yaml:"templates,omitempty"`
 
@@ -8014,6 +8020,9 @@ func validateLoaded(cfg *Config) error {
 	// refused the same way a bad PUT /api/config value is. Its messages
 	// already name the full autonomous.merge_pipeline.* key.
 	if err := cfg.Autonomous.MergePipeline.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.ProjectsDefaults.Validate(); err != nil {
 		return err
 	}
 	return nil
