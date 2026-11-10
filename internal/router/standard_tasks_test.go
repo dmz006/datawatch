@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
@@ -80,7 +79,7 @@ func TestStandardTaskRouterReply(t *testing.T) {
 		if parts[2] != wantState {
 			t.Errorf("line %q: want %s, got %q", line, wantState, parts[2])
 		}
-		if parts[3] != w.Mode || w.Mode != autonomous.StandardTaskModeModelSession {
+		if parts[3] != w.Mode {
 			t.Errorf("line %q: want mode %q, got %q", line, w.Mode, parts[3])
 		}
 	}

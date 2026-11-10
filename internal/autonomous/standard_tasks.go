@@ -15,11 +15,6 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// StandardTaskModeModelSession is the mode every standard task row
-// reports today. The per-task mode setting does not exist yet, so
-// every row carries this constant.
-const StandardTaskModeModelSession = "model session"
-
 // StandardTask is one row of the standard-task listing: a task
 // definition the decomposer can add, as resolved for one project.
 type StandardTask struct {
@@ -41,9 +36,15 @@ type StandardTask struct {
 	// ProjectOverride is the project's own enabled override, or nil
 	// when the project has no override.
 	ProjectOverride *bool `json:"project_override"`
-	// Mode is how the task runs. It is StandardTaskModeModelSession on
-	// every row.
+	// Mode is how the task runs, resolved from the global task-template
+	// mode setting: llm, daemon or off. The project does not change the
+	// mode — it only affects Enabled and ProjectOverride.
 	Mode string `json:"mode"`
+	// Runner says who carries out the task: "script gate" for
+	// final_gate when its mode is not off; "session" when the mode is
+	// llm; "daemon" when the mode is daemon; "none" when the mode is
+	// off.
+	Runner string `json:"runner"`
 }
 
 // standardTaskSummaries maps each built-in template id to its one-line
@@ -65,6 +66,9 @@ var standardTaskSummaries = map[string]string{
 // shipped default.
 func ListStandardTasks(cfg *config.Config, projectDir string) []StandardTask {
 	defs := EffectiveTaskTemplates(cfg)
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
 	key := strings.TrimSpace(projectDir)
 	enabled := taskTemplatesEnabledForProject(cfg, projectDir)
 	override := standardTaskProjectOverride(cfg, key)
@@ -78,6 +82,18 @@ func ListStandardTasks(cfg *config.Config, projectDir string) []StandardTask {
 		if !ok {
 			summary = def.Title
 		}
+		mode := string(cfg.Autonomous.EffectiveTaskTemplateMode(id))
+		var runner string
+		switch {
+		case mode == "off":
+			runner = "none"
+		case id == TemplateFinalGate:
+			runner = "script gate"
+		case mode == "llm":
+			runner = "session"
+		default:
+			runner = "daemon"
+		}
 		rows = append(rows, StandardTask{
 			ID:              id,
 			Title:           def.Title,
@@ -86,7 +102,8 @@ func ListStandardTasks(cfg *config.Config, projectDir string) []StandardTask {
 			OfferedWhen:     def.AppliesWhen,
 			Enabled:         enabled,
 			ProjectOverride: override,
-			Mode:            StandardTaskModeModelSession,
+			Mode:            mode,
+			Runner:          runner,
 		})
 	}
 	return rows

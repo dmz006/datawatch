@@ -1,11 +1,47 @@
 {
   "enabled": true,
   "tasks": [
-    {"id": "changelog_entry", "title": "Changelog entry for {{feature}}", "kind": "docs", "enabled": true, "mode": "model session"},
-    {"id": "parity_issue_draft", "title": "Parity issue draft for {{feature}}", "kind": "docs", "enabled": true, "mode": "model session"},
-    {"id": "docs_set", "title": "Docs set for {{feature}}", "kind": "docs", "enabled": true, "mode": "model session"},
-    {"id": "bounded_load_step", "title": "Bounded load-step rule for {{feature}}", "kind": "note", "enabled": true, "mode": "model session"},
-    {"id": "final_gate", "title": "Final gate for {{feature}}", "kind": "final_gate", "enabled": true, "mode": "model session"},
-    {"id": "version_bump_left_to_merge", "title": "Release version note for {{feature}}", "kind": "note", "enabled": true, "mode": "model session"}
+    {
+      "id": "changelog_entry",
+      "title": "Changelog entry for {{feature}}",
+      "kind": "docs",
+      "enabled": true,
+      "mode": "daemon"
+    },
+    {
+      "id": "parity_issue_draft",
+      "title": "Parity issue draft for {{feature}}",
+      "kind": "docs",
+      "enabled": true,
+      "mode": "daemon"
+    },
+    {
+      "id": "docs_set",
+      "title": "Docs set for {{feature}}",
+      "kind": "docs",
+      "enabled": true,
+      "mode": "llm"
+    },
+    {
+      "id": "bounded_load_step",
+      "title": "Bounded load-step rule for {{feature}}",
+      "kind": "note",
+      "enabled": true,
+      "mode": "daemon"
+    },
+    {
+      "id": "final_gate",
+      "title": "Final gate for {{feature}}",
+      "kind": "final_gate",
+      "enabled": true,
+      "mode": "llm"
+    },
+    {
+      "id": "version_bump_left_to_merge",
+      "title": "Release version note for {{feature}}",
+      "kind": "note",
+      "enabled": true,
+      "mode": "daemon"
+    }
   ]
 }
