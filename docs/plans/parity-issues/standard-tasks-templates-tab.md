@@ -1,5 +1,7 @@
 # [sync] draft(automaton): standard tasks shown under the Automata page's Templates tab
 
+**Filed 2026-11-09 as dmz006/datawatch-app#425, one consolidated issue for the standard tasks drafts** (shipped in v9.123.0).
+
 **Repo:** dmz006/datawatch-app
 **Status:** DRAFT — not yet filed. This file write only; it never runs any hosting CLI and creates nothing on any host.
 

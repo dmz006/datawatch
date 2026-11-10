@@ -1,5 +1,7 @@
 # Parity issue draft — the decomposer's standard tasks, shown under the Automata page's Templates tab (and never called "templates")
 
+**Filed 2026-11-09 as dmz006/datawatch-app#425, one consolidated issue for the standard tasks drafts** (shipped in v9.123.0).
+
 **Draft, not filed.** This is the tracked draft; the issue is opened against
 `dmz006/datawatch-app` when the operator files it. Writing this file changes
 nothing on any host, and filing it never runs a hosting CLI or creates anything

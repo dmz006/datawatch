@@ -1,5 +1,7 @@
 # [sync] Templates tab disambiguated: "Automaton templates" vs "Standard tasks" wording, new settings help key (datawatch next release)
 
+**Filed 2026-11-09 as dmz006/datawatch-app#425, one consolidated issue for the standard tasks drafts** (shipped in v9.123.0).
+
 Parent release: datawatch next release
 
 ## What changed in datawatch
