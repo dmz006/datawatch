@@ -4426,7 +4426,7 @@
   "settings_daemon_task_saved": "Guardado",
   "settings_daemon_task_save_failed": "Error al guardar",
   "settings_daemon_task_number_invalid": "Introduce un número entero de segundos (0 = sin límite)",
-  "settings_merge_pipeline_conflict_mode": "Modo de conflictos de fusión (shadow/on; por defecto shadow)",
+  "settings_merge_pipeline_conflict_mode": "Modo de conflictos de fusión (shadow u on; defecto shadow)",
   "settings_merge_pipeline_conflict_mode_hint": "Qué hace la propuesta de conflicto de un modelo que supera el paso de prueba. shadow (el valor por defecto) registra la propuesta y no aplica nada. on aplica la propuesta a la fusión.",
   "settings_merge_pipeline_conflict_confirm_first_n": "Conflictos de fusión que confirma el operador (número entero; 0 significa ninguno)",
   "settings_merge_pipeline_conflict_confirm_first_n_hint": "Las primeras N resoluciones de conflicto esperan la confirmación del operador. Las siguientes se aplican sin esperar.",
