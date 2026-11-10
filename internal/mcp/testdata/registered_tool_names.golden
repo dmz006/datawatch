@@ -164,6 +164,7 @@ autonomous_scan_config_set
 autonomous_shipped_backfill
 autonomous_shipped_counts
 autonomous_shipped_record
+autonomous_standard_tasks
 autonomous_status
 autonomous_subscribe
 autonomous_subscription_test

@@ -252,6 +252,7 @@ var MCPToolCap = map[string]string{
 	"usage_backoff_set":                    CapConfigWrite,
 	"usage_backoff_status":                 CapConfigRead,
 	"autonomous_protected_paths":           CapAutonomousRead,
+	"autonomous_standard_tasks":            CapAutonomousRead,
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.

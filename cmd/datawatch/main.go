@@ -3081,6 +3081,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
+		// The standard task reply reads the live task-template settings.
+		r.SetConfig(cfg)
 		// Sx2 — comm-channel parity needs the local REST loopback port.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
 			r.SetWebPort(cfg.Server.Port)

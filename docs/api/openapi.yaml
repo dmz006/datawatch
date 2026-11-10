@@ -4621,6 +4621,36 @@ paths:
         "400": {description: A supplied block failed validation (nothing was applied)}
         "405": {description: Method not allowed}
         "503": {description: Autonomous disabled}
+  /api/autonomous/standard-tasks:
+    get:
+      summary: List the standard tasks the decomposer adds to each story
+      description: |
+        Read-only listing of the standard tasks (the task-template pack,
+        operator-facing name "standard tasks") the decomposer appends to a
+        story when the planner left a task out, resolved for one project:
+        the built-in pack with any operator overlay applied at its position or appended,
+        in the same order `EffectiveTaskTemplates` returns. The optional
+        `project` query parameter names a project directory or alias and
+        selects that project's `enabled` override the same way the
+        decomposer does; with no `project`, every row reports the global
+        `enabled`. `enabled` in the body is the global
+        `autonomous.task_templates.enabled` (default true); each row's
+        `enabled` is the effective switch for the requested project and
+        `project_override` is nil when the project has no override. Every
+        row's `mode` is `model session`. `405` for any other method. A
+        federated peer needs the autonomous read capability.
+      operationId: autonomousStandardTasksList
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: false, schema: {type: string}, description: Project directory or alias whose override decides the per-row `enabled` and `project_override`}
+      responses:
+        "200":
+          description: The standard-task list
+          content:
+            application/json:
+              schema: {allOf: [{$ref: "#/components/schemas/StandardTaskList"}]}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous disabled}
   /api/autonomous/prds/{id}/decompose:
     post:
       summary: Run LLM decomposition for a PRD
@@ -9906,7 +9936,7 @@ components:
         describe the shape of a dangerous task spec.
       required: [id, severity, message]
       properties:
-        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files, read_only_unverifiable (block) and no_verification_script, names_tracker_id (warn)"}
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files, read_only_unverifiable (block) and no_verification_script, names_tracker_id, unbounded_load_step (warn)"}
         severity: {type: string, enum: [block, warn], description: "`block` stops decomposition in enforce mode and is fed back to the decomposer; `warn` is reported only"}
         message: {type: string, description: "Finding text shown when the rule fires (non-empty)"}
         match:
@@ -9927,7 +9957,7 @@ components:
       type: object
       description: |
         `autonomous.decompose_lint`. Defaults when unset: `mode: shadow`,
-        `max_retries: 2`, the seven-rule built-in pack, and an empty
+        `max_retries: 2`, the nine-rule built-in pack (six block, three warn), and an empty
         `disabled_rules`. `mode` empty normalizes to `shadow`; a typo is a
         validation error. `max_retries` clamps negatives to 0 (0 = valid,
         lint-and-record without retrying) and above the cap (5) to the cap.
@@ -9941,7 +9971,7 @@ components:
       description: One task template. A same-`id` operator template replaces the built-in template at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
       required: [id]
       properties:
-        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, final_gate, version_bump_left_to_merge"}
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, bounded_load_step, final_gate, version_bump_left_to_merge"}
         title: {type: string}
         spec: {type: string, description: "Task body; supports the slots {{feature}}, {{files}} and {{files_list}}"}
         files: {type: string, description: "Files the generated task declares"}
@@ -9962,6 +9992,31 @@ components:
         enabled: {type: boolean, description: "Apply the pack at decompose time (default true)"}
         templates: {type: array, items: {allOf: [{$ref: "#/components/schemas/TaskTemplateDef"}]}, description: "Operator template additions / same-id replacements of the built-in pack"}
         projects: {type: object, additionalProperties: {type: object, properties: {enabled: {type: boolean, description: "Per-project apply switch; null (absent) inherits the global `enabled`"}}}, description: "Per-project enable/disable overrides keyed by project key"}
+    StandardTaskList:
+      type: object
+      description: |
+        `GET /api/autonomous/standard-tasks` body. `enabled` is the global
+        `autonomous.task_templates.enabled` (default true). `tasks` holds one
+        row per effective task template (the operator-facing name for the
+        task-template pack: "standard tasks"), in the same order the
+        decomposer applies them; every row's `mode` is `model session`.
+      required: [enabled, tasks]
+      properties:
+        enabled: {type: boolean, description: "Global apply switch (`autonomous.task_templates.enabled`)"}
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [id, title, summary, enabled, mode]
+            properties:
+              id: {type: string, description: "Template id (built-in or operator)"}
+              title: {type: string, description: "Definition title, slots left unrendered"}
+              kind: {type: string, description: "Task kind tag the generated task carries (free text, may be empty)"}
+              summary: {type: string, description: "One-line description; an operator template with no entry falls back to its title"}
+              offered_when: {type: string, description: "Definition's applies-when condition"}
+              enabled: {type: boolean, description: "Effective apply switch for the requested project"}
+              project_override: {type: boolean, nullable: true, description: "The project's own override, or null when the project has no override"}
+              mode: {type: string, enum: [model session], description: "How the task runs; every standard task runs in the model session mode"}
     LintFinding:
       type: object
       required: [rule_id, severity, message, story, task]

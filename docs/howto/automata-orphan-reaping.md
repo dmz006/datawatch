@@ -243,7 +243,7 @@ An Automaton that plans a task leaves the host as it found it, so an
 unbounded load step in a plan is a defect in the plan — that is why the
 rule is part of the planning conversation, not just of the docs. The rule
 lives in one source and is carried verbatim into three surfaces: the
-built-in `bounded_load_step` task template a fresh story starts with (run
+built-in `bounded_load_step` standard task a fresh story starts with (run
 daemon-mode by default, so the task completes as a note with no model session — the rule
 still appears in the story record and is visible in the plan), the
 rules block appended to the decompose prompt, and a warn-severity
@@ -274,8 +274,8 @@ ends, the step is either already dead or ended by the session-end reap.
 
 ## How the three layers protect a host
 
-1. **Prevent.** The decompose prompt and the `bounded_load_step` template
-   tell the planner to bound any CPU pinning, and the `unbounded_load_step`
+1. **Prevent.** The decompose prompt and the `bounded_load_step` standard
+   task tell the planner to bound any CPU pinning, and the `unbounded_load_step`
    lint finding warns it back when it doesn't. Most sessions never leave
    load behind.
 2. **Reap.** A session that does leave a process behind — a watcher, a dev

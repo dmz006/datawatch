@@ -759,6 +759,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
+	// autonomous_standard_tasks: built-in standard tasks the decomposer adds to each story (same object as the REST read)
+	mcpSrv.AddTool(s.toolAutonomousStandardTasks(), tracked(s.handleAutonomousStandardTasks))
 	// autonomous_prd_set_authorized_paths: replace one Automaton's authorised protected paths
 	mcpSrv.AddTool(s.toolAutonomousPRDSetAuthorizedPaths(), tracked(s.handleAutonomousPRDSetAuthorizedPaths))
 	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))

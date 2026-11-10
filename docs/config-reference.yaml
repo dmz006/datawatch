@@ -4059,7 +4059,8 @@ autonomous:
     # are ignored, no error). Either mechanism drops the rule: disabled
     # here, or a {id, disabled: true} entry above.
     disabled_rules: []
-  # ── Task templates (usable task definitions offered at decompose time) ──
+  # ── Task templates — on screen called the *standard tasks* (usable task ──
+  #     definitions offered at decompose time) ──
   # Reusable task definitions appended to a story when the planner did not
   # produce a task for them. Applied in shadow AND enforce (off applies
   # nothing), idempotently — a task a previous apply added (or one the
@@ -4070,10 +4071,12 @@ autonomous:
   # (it also depends on the story's other tasks).
   # The built-in pack is the floor (internal/autonomous/
   # task_templates_defaults.go): changelog_entry, parity_issue_draft,
-  # docs_set, final_gate (read-only) and version_bump_left_to_merge (a note,
-  # never an edit) — written to hold two hard properties for every feature
+  # docs_set, bounded_load_step (the load-step rule), final_gate
+  # (read-only) and version_bump_left_to_merge (a note, never an edit) —
+  # written to hold two hard properties for every feature
   # name: no blocking decompose-lint finding, and no hosting-CLI side
-  # effects. Your templates are the ceiling over it: same id replaces the
+  # effects. Each standard task runs in the `model session` mode.
+  # Your templates are the ceiling over it: same id replaces the
   # built-in at its position, new id appends. Template ids must be
   # well-shaped ([a-z0-9_.-]+) and unique — the daemon validates before
   # applying, and a duplicate id is a 400, not a merge.

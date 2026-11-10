@@ -5794,3 +5794,9 @@ Tests for the resume outcome each failed attempt record carries: whether the att
 | Record JSON round trip for `resumed` and `resume_reason`; empty values are omitted | **Yes** | **No** | `TestAttemptResumeRecordJSONRoundTrip` (`internal/autonomous/attempt_resume_record_test.go`) | Unit only. |
 | A record stored before the fields existed loads with them false and empty | **Yes** | **No** | `TestOldAttemptRecordLoadsWithoutResumeFields` (`internal/autonomous/attempt_resume_record_test.go`) | Unit only. |
 | Automaton status held-task row carries `last_resumed` and `last_resume_reason` from the last attempt | **Yes** | **No** | `TestHeldEntryCarriesLastResume` (`internal/autonomous/attempt_resume_record_test.go`) | Unit only; the REST payload is the same struct as the summary view. |
+
+## Standard task list REST read — `GET /api/autonomous/standard-tasks` — unreleased
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `GET /api/autonomous/standard-tasks[?project=…]` returns `{enabled, tasks}`; `enabled` is the global `autonomous.task_templates.enabled`; each task row carries the snake_case fields `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override`, `mode`; the six built-in ids appear once each in config order; other methods answer 405 | **Yes** | **No** | `TestStandardTaskRESTRead` (`internal/server/autonomous_standard_tasks_test.go`), run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/server/ -run TestStandardTaskRESTRead` | Unit test through the handler. Live daemon check not yet run. |

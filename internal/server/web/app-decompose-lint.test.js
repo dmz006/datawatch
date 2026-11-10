@@ -64,6 +64,7 @@ test('autonomous settings expose a decompose_lint card field with the three mode
   assert.equal(f.maxRetriesDefault, 2);
   assert.equal(f.maxRetriesMax, 5);
   assert.ok(typeof f.taskTemplatesLabelKey === 'string' && f.taskTemplatesLabelKey.length, 'taskTemplatesLabelKey missing');
+  assert.equal(f.taskTemplatesHelpKey, 'settings_decompose_lint_task_templates_help');
   assert.ok(typeof f.saveKey === 'string' && f.saveKey.length, 'saveKey missing');
 });
 
@@ -75,6 +76,7 @@ const SETTINGS_KEYS = [
   'settings_decompose_lint_mode',
   'settings_decompose_lint_max_retries',
   'settings_decompose_lint_task_templates',
+  'settings_decompose_lint_task_templates_help',
   'settings_decompose_lint_guidance',
   'settings_decompose_lint_rules',
   'settings_decompose_lint_rules_help',

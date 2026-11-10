@@ -6,11 +6,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -179,13 +181,14 @@ Subcommands:
   scan-config-set <k=v,...>       Update scan config fields (BL221 Phase 3)
   types-list                      List automaton type registry (BL221 Phase 4)
   type-register                   Register or update an automaton type (BL221 Phase 4)
-  template-list                   List template store (BL221 Phase 2)
-  template-create                 Create a template (BL221 Phase 2)
-  template-get <id>               Fetch one template (BL221 Phase 2)
-  template-update <id>            Update a template (BL221 Phase 2)
-  template-delete <id>            Delete a template (BL221 Phase 2)
-  template-instantiate <id>       Create PRD from template (BL221 Phase 2)
-  template-clone <prd-id>         Clone PRD to template (BL221 Phase 2)
+  template-list                   List Automaton templates
+  standard-tasks                  List the standard tasks the decomposer adds to each story
+  template-create                 Create a template
+  template-get <id>               Fetch one template
+  template-update <id>            Update a template
+  template-delete <id>            Delete a template
+  template-instantiate <id>       Create PRD from template
+  template-clone <prd-id>         Clone PRD to template
   prd-instantiate <tmpl-id>       Instantiate legacy YAML template (BL191)
   learnings                       List extracted post-task learnings
   subscriptions [--owner X]       List persisted lifecycle event subscriptions (BL427)
@@ -284,6 +287,7 @@ Subcommands:
 		newAutonomousTypeRegisterCmd(),
 		// BL221 Phase 2 — template store.
 		newAutonomousTemplateListCmd(),
+		newAutonomousStandardTasksCmd(),
 		newAutonomousTemplateCreateCmd(),
 		newAutonomousTemplateGetCmd(),
 		newAutonomousTemplateUpdateCmd(),
@@ -2079,6 +2083,65 @@ func newAutonomousTemplateListCmd() *cobra.Command {
 		Short: "List all templates in the automaton template store",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/templates") },
 	}
+}
+
+// standardTaskRow is the subset of a standard-task row the table shows.
+type standardTaskRow struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Kind    string `json:"kind"`
+	Enabled bool   `json:"enabled"`
+	Mode    string `json:"mode"`
+}
+
+// renderStandardTasksTable writes the id/title/kind/enabled/mode table for a
+// GET /api/autonomous/standard-tasks response body.
+func renderStandardTasksTable(w io.Writer, body []byte) error {
+	var resp struct {
+		Tasks []standardTaskRow `json:"tasks"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("decode standard tasks: %w", err)
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tTITLE\tKIND\tENABLED\tMODE")
+	for _, t := range resp.Tasks {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", t.ID, t.Title, t.Kind, t.Enabled, t.Mode)
+	}
+	return tw.Flush()
+}
+
+func newAutonomousStandardTasksCmd() *cobra.Command {
+	var asJSON bool
+	var project string
+	cmd := &cobra.Command{
+		Use:   "standard-tasks",
+		Short: "List the standard tasks the decomposer adds to each story",
+		Long: `List the standard tasks the decomposer adds to each story.
+
+Each row shows the task id, its title, its kind, whether it is enabled and
+the mode it runs in. Use --project to see the list as one project resolves it,
+including that project's own overrides. Use --json for the raw response.`,
+		Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			path := "/api/autonomous/standard-tasks"
+			if project != "" {
+				path += "?project=" + url.QueryEscape(project)
+			}
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				fmt.Println(string(body))
+				return nil
+			}
+			return renderStandardTasksTable(os.Stdout, body)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the raw JSON response")
+	cmd.Flags().StringVar(&project, "project", "", "Project directory or alias to resolve the list for")
+	return cmd
 }
 
 func newAutonomousTemplateCreateCmd() *cobra.Command {

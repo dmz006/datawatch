@@ -1017,7 +1017,7 @@ the task. The path must be a clean repo-relative path under
 `.datawatch/reports/`, and a `verification_script`, when used, must name
 one repo-relative script file — a command string is not one, and the
 verifier's pre-start check rejects it as exactly the thing it is not: a
-file. The built-in final-gate template already ships in the report shape:
+file. The built-in final-gate standard task already ships in the report shape:
 its spec says to write its verdict to `.datawatch/reports/<feature>-final-
 gate.txt`, `report_path` names the same file, and it carries **no**
 verification script — a read-only task verified by exactly one output, the

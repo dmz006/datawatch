@@ -88,11 +88,19 @@ type Router struct {
 
 	// BL244 — plugin-declared comm commands (Manifest v2.1).
 	pluginReg PluginRegistry
+
+	// cfg is the live daemon config. The "standard tasks" reply reads the
+	// task-template settings from it; nil reports the shipped defaults.
+	cfg *config.Config
 }
 
 // SetWebPort (Sx2) wires the local HTTP port so comm-parity handlers
 // can proxy through the REST API.
 func (r *Router) SetWebPort(port int) { r.webPort = port }
+
+// SetConfig wires the live daemon config for the comm replies that read
+// settings (the standard task list).
+func (r *Router) SetConfig(cfg *config.Config) { r.cfg = cfg }
 
 // SetWebToken wires the bearer token the loopback presents to the REST
 // surface, so the comm-parity verbs reach a token-protected daemon.

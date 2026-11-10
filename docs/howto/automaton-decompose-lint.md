@@ -1,14 +1,18 @@
 ---
 docs:
   index: true
-  topics: [autonomous, decompose, decompose lint, task templates, guidance, findings]
+  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings]
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
   - {name: prd_id, required: false, description: "The id of the Automaton to dry-run or read the stored record for"}
 exec_steps:
+  - tool: autonomous_standard_tasks
+    description: List the standard tasks the decomposer adds to each story (id, title, kind, enabled, mode) — a read, writes nothing
+    args: {}
+    read_only: true
   - tool: autonomous_decompose_lint_config_get
-    description: Read the live decompose-lint configuration: mode, retry budget, the active rule pack, the task-template pack and the guidance text
+    description: Read the live decompose-lint configuration: mode, retry budget, the active rule pack, the standard-task pack and the guidance text
     args: {}
     read_only: true
   - tool: autonomous_decompose_lint_findings
@@ -30,7 +34,7 @@ exec_steps:
     read_only: false
 ------
 
-# How-to: the decompose-lint quality check and task templates
+# How-to: the decompose-lint quality check and the standard tasks
 
 ## 1. What it is, and when you need it
 
@@ -65,16 +69,18 @@ The check has hard guarantees, whichever mode you run it in:
 - **The check is deterministic and local.** It runs in the daemon with the
   active rule pack — no LLM call, no network, no writes anywhere but the
   plan's own record.
-- **Off is a complete no-op.** No templates, no lint pass, no record — a
+- **Off is a complete no-op.** No standard tasks, no lint pass, no record — a
   decompose behaves exactly as if the feature did not exist.
 
 Two companion pieces travel with it:
 
-- **Task templates** — reusable task definitions (a changelog entry, a
-  final gate, …) that are appended to every story the planner left
-  incomplete, idempotently. Each template runs as an LLM session, in the
+- **Standard tasks** (previously "task templates") — the built-in tasks (changelog entry,
+  parity-issue draft, docs set, bounded load-step rule, final gate, version
+  note) appended to every story the planner left incomplete, idempotently —
+  the ones the Automata page's Templates tab shows as *standard tasks*
+  (details in §5). Each runs as an LLM session, in the
   daemon, or not at all; see [daemon task modes and the script gate](automaton-daemon-task-modes.md)
-  for the per-template modes, the defaults and the gate settings;
+  for the per-task modes, the defaults and the gate settings;
 - **Decompose guidance** — the text handed to the planner *before* it
   writes the plan, generated from your active rules unless you supply your
   own.
@@ -86,13 +92,13 @@ Two companion pieces travel with it:
 error, not a guess**: `Load` refuses the file and the daemon rejects the
 write, rather than quietly reading it as `enforce`.
 
-| Mode | Templates | Lint pass | Stored record | Retry |
+| Mode | Standard tasks | Lint pass | Stored record | Retry |
 |---|---|---|---|---|
 | `off` | not applied | none | none | — |
 | `shadow` (default) | applied | one | yes — all findings | never |
 | `enforce` | applied | one, plus retries | yes — what remained | while block findings remain and budget lasts |
 
-**Shadow.** Templates are applied, one lint pass runs, and the pass — mode,
+**Shadow.** The standard tasks are applied, one lint pass runs, and the pass — mode,
 attempts, findings, timestamp — is recorded on the Automaton. Nothing is
 blocked and nothing is retried: the plan the planner produced is the plan
 that is stored, with the findings attached so you can judge them.
@@ -100,7 +106,7 @@ that is stored, with the findings attached so you can judge them.
 **Enforce.** Same as shadow, with one addition: while the pass contains a
 `block`-severity finding and the retry budget is unspent, the decomposer
 is **re-run with the findings fed back** as guidance. Each retry is
-re-parsed, re-templated and re-linted, so a fix is only credited once it
+re-parsed, the standard tasks re-applied and re-linted, so a fix is only credited once it
 survives the check. When the budget is spent (or a retry fails or comes
 back empty — in which case the last good plan is kept), the pass that
 remained is what is recorded.
@@ -119,8 +125,8 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: eight rules —
-the six `block` rules first, then the two `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: nine rules —
+the six `block` rules first, then the three `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -136,6 +142,7 @@ and never name a particular project, repository or home directory.
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
+| `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
 ## 4. Writing your own rules — a worked example
 
@@ -226,18 +233,27 @@ validator. Two shapes worth knowing:
    id **replaces** that built-in at its original position (your rule's
    match wins; the built-in's does not run).
 
-## 5. Task templates and per-project overrides
+## 5. Standard tasks (pack, per-project overrides, reading the list)
 
-**Task templates** are reusable task definitions appended to a story when
-the planner did not produce a task for them. Apply is **idempotent** — a
-task a previous apply added (or the planner marked with `template:<id>` in
-its title or spec, or whose title closely matches the template's) is
-detected, and nothing is added twice. Slots `{{feature}}`, `{{files}}` and
-`{{files_list}}` are filled from the feature name and the union of the
-story's task files; a template's `depends_on` lists *template* ids it must
-run after, and the resulting task also depends on the story's other tasks.
+**Standard tasks** are the built-in task definitions appended to a story
+when the planner did not produce a task for them. Apply is **idempotent**
+— a task a previous apply added (or the planner marked with
+`template:<id>` in its title or spec, or whose title closely matches the
+task's) is detected, and nothing is added twice. Slots `{{feature}}`,
+`{{files}}` and `{{files_list}}` are filled from the feature name and the
+union of the story's task files; a task's `depends_on` lists *standard-task* ids
+it must run after, and the resulting task also depends on the story's
+other tasks. Each standard task runs in the `model session` mode — a model
+session does the work like any other task.
 
-The **built-in pack** is the floor — six templates, written to hold three
+> **Naming.** These are called **standard tasks** (previously "task templates").
+> The PWA's Automata page shows them under the Templates tab, whose first
+> sub-tabs are *Automaton templates* and *Standard tasks* (the 2026-11-08
+> operator decision). The config keys keep the code-level name
+> `autonomous.task_templates.*`; operator-facing text says *standard
+> tasks*.
+
+The **built-in pack** is the floor — six standard tasks, written to hold three
 hard properties for every feature name a story can carry: no blocking
 decompose-lint finding, no hosting-CLI side effects, and no verification
 script that is not genuinely a script file (the read-only ones verify
@@ -349,10 +365,12 @@ autonomous:
   nothing runnable at all — never a model session, never a verifier, never
   a retry loop, even in its default `llm` mode.
 
-Templates are applied in **shadow and enforce** (off applies nothing), and
-`autonomous.task_templates.enabled` (default **true**) gates them globally.
-Your templates are the ceiling over the built-in pack: same id replaces,
-new id appends.
+Standard tasks are applied in **shadow and enforce** (off applies
+nothing), and `autonomous.task_templates.enabled` (default **true**) gates
+them globally. Your operator standard tasks are the ceiling over the built-in
+pack: **same id replaces, new id appends**; `autonomous.task_templates.projects`
+holds the per-project on/off switch (below), and the reads below list the
+resolved pack.
 
 **A template's `verification_script` is one file, not a command.** It must
 name a single repo-relative script that already exists in the project as an
@@ -369,7 +387,26 @@ value is skipped when the templates are applied, so it never becomes a task
 the verifier cannot start. Need checks like a full build on the closing
 task? Put them in a script under `scripts/` and name that file.
 
-### A custom template with slots
+### Reading the standard-task list
+
+The list is read on every surface (fields: `id`, `title`, `kind`,
+`summary`, `offered_when`, the effective `enabled`, `project_override`
+and `mode` — `model session` for each):
+
+- **REST** — `GET /api/autonomous/standard-tasks`; optional
+  `?project=<dir-or-alias>` resolves that project's overrides; the body
+  is `{enabled, tasks[]}`. Any other method is 405.
+- **MCP** — the `autonomous_standard_tasks` tool (optional `project`
+  argument).
+- **CLI** — `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`: a table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw body.
+- **Chat** — `standard tasks` (or `autonomous standard-tasks`): one line
+  per task — `id | title | on|off | mode`; an empty list replies "no
+  standard tasks are defined."
+
+All four render the same `autonomous.ListStandardTasks` listing, so they
+always agree (pinned against `testdata/standard-tasks/expected.json`).
+
+### A custom standard task with slots
 
 ```yaml
 autonomous:
@@ -411,14 +448,17 @@ named. If you want it as a session task instead, give it a different kind
 ### Per-project overrides
 
 `autonomous.task_templates.projects` maps a **project directory or alias**
-to an `enabled` override. The override wins for that project; an absent
-flag means *follow the global enabled*. There is no per-project mode —
-the `mode` map is global, per template id.
+to an `{enabled: …}` override. The override wins for that project; an
+absent flag means *follow the global*. A new project you have not
+configured follows the global `enabled`. Reads of the list (§5)
+take the same `project` / `--project` selector, so what you read is
+what apply sees for that project.
+There is no per-project mode — the `mode` map is global, per standard-task id.
 
 ```yaml
   projects:
     "/srv/projects/web":
-      enabled: false   # template apply off for this project only
+      enabled: false   # standard-task apply off for this project only
     "billing":
       enabled: true     # on, even if the global were off
 ```
@@ -513,7 +553,7 @@ in the prompt automatically; once you set `decompose_guidance`, yours wins
 until you clear it (clear it by writing an empty string through the same
 surface).
 
-## 7. Reading the findings — every surface
+## 7. Reading the findings and the standard-task list — every surface
 
 A finding is `{rule_id, severity, message, story, task, matched}` — the
 offending task, or its story when the finding is story-scoped, or `-`
@@ -531,8 +571,15 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 ### PWA
 
 - **Settings → “Decompose lint”** — the mode, the retry budget, the
-  task-template gate, the guidance string and the rules (as JSON). Saves
+  standard-task gate, the guidance string and the rules (as JSON). Saves
   through `PUT /api/autonomous/decompose-lint/config`.
+- **Automata page → Templates tab (labelled "Automaton templates" in the current UI) →
+  Standard tasks sub-tab** — the built-in pack by its operator-facing name
+  (previously "task templates"); the same list the reads below return. The sub-tab
+  is read-only: a per-task table (title, kind, summary, when offered, on/off, mode)
+  with a note that the mode is fixed at `model session` for now, an explanatory
+  empty state when there is nothing to list, and stacked labelled rows at phone
+  width; an empty list on the comm channel replies "no standard tasks are defined."
 - **Automaton detail → “Decompose lint” panel** — the last recorded pass
   (mode, attempts, findings with severity chips), with a **dry-run
   button** that lints the current stored plan read-only and says
@@ -546,8 +593,9 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 | `PUT /api/autonomous/decompose-lint/config` | full-replace of **any** of those blocks; each present key replaces its whole block, omitted keys are untouched; the whole value is validated before any of it is applied; 400 with the rejection on error |
 | `GET /api/autonomous/prds/{id}/decompose-lint` | the stored record — `decompose_lint: null` when none is stored (mode off records nothing; the same reply is the one before the first decompose and after deletion) |
 | `POST /api/autonomous/prds/{id}/decompose-lint` | **read-only dry run**: lints the stored plan with the current pack and returns the report; nothing is stored, re-decomposed or mutated |
+| `GET /api/autonomous/standard-tasks[?project=…]` | the standard-task list: `{enabled, tasks[]}`, each task's `id`, `title`, `kind`, `summary`, `offered_when`, effective `enabled`, `project_override` and `mode`; `project` is a project directory or alias; other methods are 405 |
 
-### MCP (4 tools)
+### MCP (5 tools)
 
 | Tool | Surfaces |
 |---|---|
@@ -555,6 +603,7 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 | `autonomous_decompose_lint_config_set` | config write — pass a `decompose_lint`, `task_templates` and/or `decompose_guidance` block; each replaces the current one, the daemon's PUT is the gate |
 | `autonomous_decompose_lint_dry_run` | the per-Automaton dry run (read-only, takes `id`) |
 | `autonomous_decompose_lint_findings` | the stored record read (read-only, takes `id`) |
+| `autonomous_standard_tasks` | the standard-task list (read-only; optional `project` argument) |
 
 ### CLI — `datawatch autonomous lint`
 
@@ -567,12 +616,20 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 
 `--json` prints the raw daemon reply. Exit 0 on success, 1 otherwise.
 
+The standard-task list is one verb up the `autonomous` group:
+`datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`
+— a table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw
+`GET /api/autonomous/standard-tasks` body.
+
 ### Comm channel — `autonomous lint`
 
 The same five verbs, one operator-facing wording everywhere (the CLI and
 the comm channel share the finding-line renderer): `autonomous lint
 config`, `lint config-set mode=enforce max_retries=2 disabled_rules=a,b`,
-`lint dry-run <id>`, `lint findings <id>`.
+`lint dry-run <id>`, `lint findings <id>`. The standard-task list is the
+word `standard tasks` (or `autonomous standard-tasks`): one line per
+standard task — `id | title | on|off | mode`; an empty list replies "no
+standard tasks are defined."
 
 ## 8. What it will never do
 
@@ -580,8 +637,8 @@ config`, `lint config-set mode=enforce max_retries=2 disabled_rules=a,b`,
   stored plan; a failed retry keeps the last good plan.
 - **Never calls the planner in shadow or in a dry run.** Retries are
   enforce-only; the dry run lints the stored plan and mutates nothing.
-- **Never applies templates in off mode.** Off is a complete no-op —
-  no templates, no pass, no record.
+- **Never applies standard tasks in off mode.** Off is a complete no-op —
+  no standard tasks, no pass, no record.
 - **Never guesses a mode.** `off`, `shadow`, `enforce` (case-insensitive)
   or empty; anything else is rejected, never coerced.
 - **Never re-triggers on config change.** A pass is recorded with the

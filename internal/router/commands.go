@@ -1387,6 +1387,12 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(text[len("question"):])
 		return Command{Type: CmdQuestion, Text: rest}
 
+	// "standard tasks" lists the standard task templates the decomposer can
+	// add to a story. It is the autonomous verb standard-tasks, so it routes
+	// through the same handler as "autonomous standard-tasks".
+	case lower == "standard tasks" || lower == "standard-tasks":
+		return Command{Type: CmdAutonomous, Text: "standard-tasks"}
+
 	case lower == "autonomous" || strings.HasPrefix(lower, "autonomous ") ||
 		lower == "prd" || strings.HasPrefix(lower, "prd "):
 		// BL197 — autonomous PRD lifecycle over chat. The verb +

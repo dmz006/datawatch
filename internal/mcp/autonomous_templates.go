@@ -14,7 +14,7 @@ import (
 
 func (s *Server) toolAutonomousTemplateList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_template_list",
-		mcpsdk.WithDescription("BL221 Phase 5 — list all automaton templates in the template store."),
+		mcpsdk.WithDescription("List all automaton templates in the template store."),
 	)
 }
 func (s *Server) handleAutonomousTemplateList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -27,7 +27,7 @@ func (s *Server) handleAutonomousTemplateList(_ context.Context, _ mcpsdk.CallTo
 
 func (s *Server) toolAutonomousTemplateCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_template_create",
-		mcpsdk.WithDescription("BL221 Phase 5 — create a new automaton template."),
+		mcpsdk.WithDescription("Create a new automaton template."),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Template title")),
 		mcpsdk.WithString("spec", mcpsdk.Required(), mcpsdk.Description("Template spec / intent text (may include {{variable}} placeholders)")),
 		mcpsdk.WithString("description", mcpsdk.Description("Optional human-readable description")),
@@ -54,7 +54,7 @@ func (s *Server) handleAutonomousTemplateCreate(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousTemplateGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_template_get",
-		mcpsdk.WithDescription("BL221 Phase 5 — fetch one automaton template by ID."),
+		mcpsdk.WithDescription("Fetch one automaton template by ID."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Template ID")),
 	)
 }
@@ -68,7 +68,7 @@ func (s *Server) handleAutonomousTemplateGet(_ context.Context, req mcpsdk.CallT
 
 func (s *Server) toolAutonomousTemplateUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_template_update",
-		mcpsdk.WithDescription("BL221 Phase 5 — update an existing automaton template."),
+		mcpsdk.WithDescription("Update an existing automaton template."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Template ID")),
 		mcpsdk.WithString("title", mcpsdk.Description("New title (empty = keep existing)")),
 		mcpsdk.WithString("spec", mcpsdk.Description("New spec (empty = keep existing)")),
@@ -97,7 +97,7 @@ func (s *Server) handleAutonomousTemplateUpdate(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousTemplateDelete() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_template_delete",
-		mcpsdk.WithDescription("BL221 Phase 5 — permanently delete an automaton template."),
+		mcpsdk.WithDescription("Permanently delete an automaton template."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Template ID")),
 	)
 }
@@ -113,7 +113,7 @@ func (s *Server) handleAutonomousTemplateDelete(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousTemplateInstantiate() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_template_instantiate",
-		mcpsdk.WithDescription("BL221 Phase 5 — create a new PRD from a template, filling in variables."),
+		mcpsdk.WithDescription("Create a new PRD from a template, filling in variables."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Template ID to instantiate")),
 		mcpsdk.WithString("project_dir", mcpsdk.Required(), mcpsdk.Description("Working directory for the new PRD")),
 		mcpsdk.WithString("vars_json", mcpsdk.Description(`JSON object of variable substitutions, e.g. {"service":"payments"}`)),
@@ -141,7 +141,7 @@ func (s *Server) handleAutonomousTemplateInstantiate(_ context.Context, req mcps
 
 func (s *Server) toolAutonomousPRDCloneToTemplate() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_clone_to_template",
-		mcpsdk.WithDescription("BL221 Phase 5 — save a completed PRD as a reusable template in the template store."),
+		mcpsdk.WithDescription("Save a completed PRD as a reusable template in the template store."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID to clone")),
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description for the new template")),
 	)
