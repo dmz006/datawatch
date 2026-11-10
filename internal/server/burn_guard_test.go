@@ -460,3 +460,51 @@ func TestBurnGuardGapLimitComesFromConfig(t *testing.T) {
 		t.Fatalf("zero gap limit: decision = %+v, want a climb on the guard projection", d)
 	}
 }
+
+// TestBurnGuardProjectionGapRESTRefusesInvalidAndAcceptsZeroAndDefault proves the REST
+// surface refuses an invalid max_projection_gap_points with 400 and stores nothing, and
+// accepts 0 (never compare) and 25 (the default), storing exactly the value sent.
+func TestBurnGuardProjectionGapRESTRefusesInvalidAndAcceptsZeroAndDefault(t *testing.T) {
+	for _, body := range []string{
+		`{"max_projection_gap_points": -1}`,
+		`{"max_projection_gap_points": 100.5}`,
+		`{"max_projection_gap_points": 101}`,
+		`{"max_projection_gap_points": "NaN"}`,
+		`{"max_projection_gap_points": "Inf"}`,
+	} {
+		s := burnGuardConfigServer(t)
+		before := s.cfg.Usage.BurnGuard.MaxProjectionGapPoints
+		rr := doBurnGuard(s, http.MethodPut, "/api/usage/burn-guard/config", body, s.handleBurnGuardConfig)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("%s: PUT = %d (%s), want 400", body, rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "max_projection_gap_points") {
+			t.Errorf("%s: refusal does not name the key: %s", body, rr.Body.String())
+		}
+		if s.cfg.Usage.BurnGuard.MaxProjectionGapPoints != before {
+			t.Errorf("%s: a refused PUT changed the stored value", body)
+		}
+	}
+	for _, v := range []float64{0, 25} {
+		s := burnGuardConfigServer(t)
+		if v == 25 {
+			s.cfg.Usage.BurnGuard.MaxProjectionGapPoints = 0 // so 25 is a real change
+		}
+		body := fmt.Sprintf(`{"max_projection_gap_points": %v}`, v)
+		rr := doBurnGuard(s, http.MethodPut, "/api/usage/burn-guard/config", body, s.handleBurnGuardConfig)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("PUT %v = %d: %s", v, rr.Code, rr.Body.String())
+		}
+		if got := s.cfg.Usage.BurnGuard.MaxProjectionGapPoints; got != v {
+			t.Fatalf("stored max_projection_gap_points = %v, want %v", got, v)
+		}
+		rr = doBurnGuard(s, http.MethodGet, "/api/usage/burn-guard/config", "", s.handleBurnGuardConfig)
+		var got config.BurnGuardConfig
+		if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.MaxProjectionGapPoints != v {
+			t.Fatalf("GET after PUT %v = %v", v, got.MaxProjectionGapPoints)
+		}
+	}
+}
