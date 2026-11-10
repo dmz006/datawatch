@@ -16,6 +16,10 @@ questions below are answered, one at a time.
 - 2026-11-09, on scratch and notes: "For scratch and notes datawatch has extensive memory that should be used"
   (as heard; the supervisor's working notes go in datawatch memory, not scratch files).
 
+- 2026-11-09, on question 3 (who runs a unit): "A is correct, configurable" (option A: the daemon on a schedule or a
+  session started for it, chosen by a setting per unit; a session runs it until the scheduler exists). The
+  setting is configurable on every surface that configures the daemon, like the packs settings.
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
