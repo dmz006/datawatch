@@ -27,8 +27,8 @@ work waits.
   a negative or fractional value sent through a settings surface is rejected (the REST
   `PUT` names the key: "must be a whole number of seconds (0 = no cap)").
 
-The cap counts run time from the verifier's capacity grant; time spent waiting for a slot is not counted. It is separate from the
-no-progress timeout (`autonomous.verifier_no_progress_timeout_seconds`), which only
+The cap counts run time from the verifier's capacity grant; time spent waiting for a
+slot is not counted. It is separate from the no-progress timeout (`autonomous.verifier_no_progress_timeout_seconds`), which only
 ends a session that shows no activity: no output file, no pane change, no live
 runner process and no held capacity slot. A busy verifier that keeps producing
 output is not stopped by the no-progress timeout, but the run cap still bounds its
@@ -64,12 +64,9 @@ reaches `autonomous.verifier_max_run_seconds`.
 - **Read once per session:** the value is read when the verifier session starts, so a
   change applies to the next session, not one already running.
 
-A cap end counts as verifier infrastructure trouble, not as a judgment about the task.
-
-## Related
-
-- [Verifier throughput in operations](../operations.md#verifier-throughput)
-- [Judge routing and time limit](judge-policy.md)
+A cap end is counted under the `run_cap` verifier category, not under `infra`, and it is
+not a judgment about the task's work. It is still verifier trouble: the session was cut
+short, so the verification is retried as described below.
 
 ## How many cap ends you have seen
 
@@ -105,6 +102,12 @@ retry was already spent, or the policy lists only one backend, there is no retry
 verification ends as an infrastructure result (not a content verdict), which the usual
 infra escalation handles.
 
+## Related
+
+- [Verifier throughput in operations](../operations.md#verifier-throughput)
+- [Judge routing and time limit](judge-policy.md)
+- [Verifier slots on compute nodes](compute-nodes.md#verifier-slots)
+
 ## Operator review
 
 - Raise the cap if a verification legitimately runs longer than 45 minutes; a cap
@@ -112,3 +115,9 @@ infra escalation handles.
 - Single-backend verifier policies get no retry after a cap end.
 - Look for `verifier_run_cap` entries in the decision log and `autonomous.verifier_run_cap`
   audit records to see how often the cap fires.
+- **For the operator to confirm:** the retry model. This page says the retry runs on the
+  backend's registry default model; the code resolves it through a `modelFor` callback
+  (`cmd/datawatch/verifier_run_cap_retry.go`), which this page did not trace. Confirm the
+  wording against the live resolver before release.
+- **For the operator to confirm:** the default of 2700 seconds against real verification
+  durations on the current verifier backends. The default has not been tuned from data here.
