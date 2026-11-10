@@ -250,6 +250,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("judge_strong_backend", mcpsdk.Description("The strong judge backend a large diff is routed to first when the size-aware rule fires. Empty (the default) = the last entry of the judge policy (autonomous.judge_strong_backend).")),
 		mcpsdk.WithBoolean("judge_verdict_cache_enabled", mcpsdk.Description("Per-commit judge verdict cache: pass/block verdicts replay by (commit, judge policy, rules), and a verified commit is held on a judge timeout instead of re-run (default true). Give false to re-judge every verified commit fresh (autonomous.judge_verdict_cache_enabled).")),
 		mcpsdk.WithNumber("verifier_no_progress_timeout_seconds", mcpsdk.Description("Bound in seconds for a verifier session that shows no output file, no pane activity, no live runner process and no held capacity slot before it is ended as an infra failure (default 900 = 15m; 0 or negative means use the default)")),
+		mcpsdk.WithNumber("verifier_max_run_seconds", mcpsdk.Description("Hard maximum run time in whole seconds for one verifier run, so a single verifier cannot hold a worker slot for hours (0 means no cap; default 2700 = 45m; negative or fractional values are refused)")),
 		mcpsdk.WithNumber("session_idle_timeout_seconds", mcpsdk.Description("Bound for one autonomous worker/verifier session in seconds — a session sitting in waiting_input/idle with no live child process longer than this is treated as an infra failure and retried through the auto_fix_retries budget (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("descendant_stall_seconds", mcpsdk.Description("Bound in seconds for a pi-prompt autonomous worker whose only liveness is its work child process — no output, no file change and no log write for this long means the session is stalled and is reaped as an infra failure (default 2700 = 45 minutes; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("verifier_infra_escalation_threshold", mcpsdk.Description("Consecutive infra verifier failures on one task after which its next verification runs on fallback_verification_backend (default 2; 0 = default)")),
@@ -288,6 +289,13 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	promptPatch, perr := judgePromptPatch(req)
 	if perr != nil {
 		return mcpsdk.NewToolResultError(perr.Error()), nil
+	}
+	runCap, runCapSet, rcerr := verifierMaxRunSeconds(req)
+	if rcerr != nil {
+		return mcpsdk.NewToolResultError(rcerr.Error()), nil
+	}
+	if runCapSet {
+		body["verifier_max_run_seconds"] = runCap
 	}
 	for _, k := range []string{"enabled", "security_scan"} {
 		if v := req.GetBool(k, false); v {
@@ -2028,4 +2036,24 @@ func (s *Server) handleAutonomousPRDRegenerateArtefact(_ context.Context, req mc
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+// verifierMaxRunSeconds reads the optional verifier_max_run_seconds argument.
+// It reports whether the argument was present; a negative or non-whole value
+// is refused rather than truncated.
+func verifierMaxRunSeconds(req mcpsdk.CallToolRequest) (int, bool, error) {
+	raw, ok := req.GetArguments()["verifier_max_run_seconds"]
+	if !ok || raw == nil {
+		return 0, false, nil
+	}
+	v, isNum := raw.(float64)
+	if !isNum {
+		if n, isInt := raw.(int); isInt {
+			v, isNum = float64(n), true
+		}
+	}
+	if !isNum || v < 0 || v != math.Trunc(v) || v > math.MaxInt32 {
+		return 0, true, fmt.Errorf("verifier_max_run_seconds: %v is invalid; use a whole number of seconds, 0 for no cap", raw)
+	}
+	return int(v), true, nil
 }
