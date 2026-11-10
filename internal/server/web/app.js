@@ -3066,6 +3066,13 @@ const _PROJECTS_OVERVIEW = '';
 // failure. histBusy guards a Load more click against a second request.
 let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false };
 const _PROJECTS_HISTORY_PAGE = 20;
+// _projectsLinks holds the read-only replies for the selected project (name):
+// its effective policy, its merge pipeline and its event stream. A reply for a
+// project no longer selected is dropped. Nothing on these sections edits.
+let _projectsLinks = { name: '', policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
+// The pending-events queue the page reads; ?project= keeps one project's events.
+const _PROJECTS_EVENTS_QUEUE = 'pwa';
+const _PROJECTS_EVENTS_LIMIT = 20;
 
 function _projectsRememberLast(name) {
   try { localStorage.setItem(_PROJECTS_LAST_KEY, name || ''); } catch (_) { /* not remembered */ }
@@ -3185,11 +3192,12 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       <span style="flex:1 1 160px;min-width:140px;">${_projectBarHTML(tasks.done, tasks.total, arc.automation_id)}</span>
       <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
     </summary>`;
+    const docs = _projectArcDocsHTML(p, arc);
     if (!automata.length) {
       events.push(t('projects_event_arc_empty', [arc.automation_id]));
-      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}</details>`;
+      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
     }
-    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${automataList(automata)}</details>`;
+    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
   };
 
   let body = '';
@@ -3208,6 +3216,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   }
   body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
+  body += _projectLinksHTML(p);
 
   const evs = events.length
     ? `<div id="projectEvents" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
@@ -3217,6 +3226,167 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 }
 
 // ── Project roll-up section: progress bars, cost in points, throughput ──────
+// ── Project links: read-only policy, merge pipeline, arc documents, events ──
+// These sections only show what the daemon holds. The policy and the merge
+// pipeline link to their Settings entries; nothing here has an edit control.
+
+// _projectsLoadLinks reads the three read-only replies for the selected project:
+// GET /api/projects/{name}/policy/effective, GET /api/autonomous/merge-pipeline
+// for the project, and GET /api/autonomous/events filtered by ?project=. Each
+// read is independent, so one failure does not hide the others.
+function _projectsLoadLinks() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  _projectsLinks = { name, policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
+  const enc = encodeURIComponent(name);
+  const msg = err => (err && err.message) || String(err);
+  const obj = r => (r && typeof r === 'object' && !Array.isArray(r) ? r : {});
+  const current = () => _projectsLinks.name === name;
+  const policy = apiFetch('/api/projects/' + enc + '/policy/effective').then(r => {
+    if (current()) _projectsLinks.policy = obj(r);
+  }).catch(err => { if (current()) _projectsLinks.policyError = msg(err); });
+  const merge = apiFetch('/api/autonomous/merge-pipeline?project=' + enc).then(r => {
+    if (current()) _projectsLinks.merge = obj(r);
+  }).catch(err => { if (current()) _projectsLinks.mergeError = msg(err); });
+  const evq = '?queue=' + encodeURIComponent(_PROJECTS_EVENTS_QUEUE) + '&project=' + enc + '&limit=' + _PROJECTS_EVENTS_LIMIT;
+  const evs = apiFetch('/api/autonomous/events' + evq).then(r => {
+    if (current()) _projectsLinks.events = obj(r);
+  }).catch(err => { if (current()) _projectsLinks.eventsError = msg(err); });
+  return Promise.all([policy, merge, evs]);
+}
+
+// _projectsSafeLink returns the value when it is an http or https link, else ''.
+// Anything else from a record is shown as text, never as a link.
+function _projectsSafeLink(v) {
+  const s = String(v || '').trim();
+  return /^https?:\/\//i.test(s) ? s : '';
+}
+
+// _projectsOpenSettings opens Settings and scrolls to a section that has an
+// element id (settings-sec-<key>). An empty key just opens Settings.
+function _projectsOpenSettings(sectionKey) {
+  try { navigate('settings'); } catch (_) { return; }
+  if (!sectionKey) return;
+  setTimeout(() => {
+    const el = document.getElementById('settings-sec-' + sectionKey);
+    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth' });
+  }, 200);
+}
+
+function _projectsSettingsLinkHTML(sectionKey, label) {
+  return `<a href="#" class="project-settings-link" onclick="${escHtml(`_projectsOpenSettings(${JSON.stringify(sectionKey)});return false;`)}" style="font-size:12px;">${escHtml(label)} ↗</a>`;
+}
+
+// _projectPolicyEffectiveHTML lists each policy value the project resolves to
+// and where it came from (the source), with a link to the Settings policy card.
+function _projectPolicyEffectiveHTML(pl, err) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_policy_heading'))}</div>`;
+  const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}</div>`;
+  let inner;
+  if (err) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
+  } else if (!pl) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
+  } else {
+    const pol = pl.policy && typeof pl.policy === 'object' ? pl.policy : {};
+    const keys = Object.keys(pol);
+    inner = keys.length ? keys.map(k => {
+      const e = pol[k] || {};
+      const val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      return `<div class="project-policy-row" style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(k)}:</span> ${escHtml(val)} <span style="color:var(--text2);font-size:12px;">(${escHtml(e.source || '')})</span></div>`;
+    }).join('') : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>`;
+  }
+  return `<div class="project-policy-effective" style="margin-top:10px;">${head}${link}${inner}</div>`;
+}
+
+// _projectMergePipelineHTML shows the merge pipeline in effect for the project:
+// where it comes from and why, its steps, and the conflict policy. The link
+// opens Settings, where the merge pipeline settings are.
+function _projectMergePipelineHTML(mp, err) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_merge_heading'))}</div>`;
+  const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML('', t('projects_links_merge_settings'))}</div>`;
+  let inner;
+  if (err) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
+  } else if (!mp) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
+  } else {
+    const sk = MERGE_PIPELINE_SOURCE_KEYS[mp.source];
+    const src = sk ? t(sk) : (mp.source || t('merge_pipeline_source_none'));
+    const polEntry = MERGE_PIPELINE_POLICIES.find(([v]) => v === mp.conflict_policy);
+    const polLabel = polEntry ? t(polEntry[1]) : (mp.conflict_policy || '');
+    const steps = mp.definition && Array.isArray(mp.definition.steps) ? mp.definition.steps : [];
+    inner = `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_source_label'))}:</span> ${escHtml(src)}</div>` +
+      (mp.reason ? `<div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_reason', [mp.reason]))}</div>` : '') +
+      (mp.file_error ? `<div style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_file_error', [mp.file_error]))}</div>` : '') +
+      (polLabel ? `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_conflict_policy_label'))}:</span> ${escHtml(polLabel)}</div>` : '') +
+      (steps.length
+        ? `<ol style="margin:4px 0 0;padding-left:20px;">${steps.map((st, i) => _mergePipelineStepHtml(st, i + 1)).join('')}</ol>`
+        : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('merge_pipeline_empty'))}</div>`);
+  }
+  return `<div class="project-merge-pipeline" style="margin-top:10px;">${head}${link}${inner}</div>`;
+}
+
+// _projectEventStreamHTML lists the event stream for this project, newest last
+// as the daemon returns it. dropped says that events were lost before the page
+// read them.
+function _projectEventStreamHTML(ev, err) {
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_events_heading'))}</div>`;
+  const note = `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('projects_links_events_note', [_PROJECTS_EVENTS_QUEUE]))}</div>`;
+  let inner;
+  if (err) {
+    inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
+  } else if (!ev) {
+    inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
+  } else {
+    const items = Array.isArray(ev.events) ? ev.events : [];
+    inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
+      (items.length
+        ? items.map(e => {
+          const when = e.at ? new Date(e.at).toLocaleString() : '';
+          const ids = [e.automation_id, e.task_id].filter(Boolean).join(' · ');
+          return `<div class="project-event-row" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(when)} · ${escHtml(e.kind || '')}${e.level ? ' (' + escHtml(e.level) + ')' : ''}${ids ? ' · ' + escHtml(ids) : ''}</div>`;
+        }).join('')
+        : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
+  }
+  return `<div class="project-event-stream" style="margin-top:10px;">${head}${note}${inner}</div>`;
+}
+
+// _projectLinksHTML is the policy, merge pipeline and event stream sections of
+// the selected project. A reply held for another project is not shown.
+function _projectLinksHTML(p) {
+  const L = _projectsLinks.name === p.name ? _projectsLinks : { policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
+  return `<div id="projectLinks" style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">` +
+    _projectPolicyEffectiveHTML(L.policy, L.policyError) +
+    _projectMergePipelineHTML(L.merge, L.mergeError) +
+    _projectEventStreamHTML(L.events, L.eventsError) + `</div>`;
+}
+
+// _projectArcDocsHTML lists an arc's plan and design document links and its
+// linked datawatch-app issues, read from the project's arc record. A link is
+// shown only for an http or https value; anything else is plain text.
+function _projectArcDocsHTML(p, arc) {
+  const rec = (Array.isArray(p.arcs) ? p.arcs : []).find(a => a && a.automation_id === arc.automation_id) || {};
+  const list = v => (Array.isArray(v) ? v : []).filter(x => x !== undefined && x !== null && String(x) !== '');
+  const link = v => {
+    const s = String(v);
+    const u = _projectsSafeLink(s);
+    return u ? `<a href="${escHtml(u)}" target="_blank" rel="noopener noreferrer">${escHtml(s)}</a>` : escHtml(s);
+  };
+  const issue = v => {
+    const s = String(v);
+    if (/^\d+$/.test(s)) return escHtml('datawatch-app #' + s);
+    return link(s);
+  };
+  const line = (key, items, fmt) => `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
+    (items.length ? items.map(fmt).join(', ') : `<span style="color:var(--text2);">${escHtml(t('projects_links_none'))}</span>`) + `</div>`;
+  return `<div class="project-arc-docs" style="margin:4px 0 6px 12px;">` +
+    line('projects_links_arc_plans', list(rec.plan_docs), link) +
+    line('projects_links_arc_designs', list(rec.design_docs), link) +
+    line('projects_links_arc_issues', list(rec.issues), issue) + `</div>`;
+}
+
 // A progress bar is done/total as a fill, with the count and percent beside it.
 // An empty total reads as 0%, not as an error. Costs are usage points only;
 // the roll-up never carries or shows API dollars.
@@ -3491,7 +3661,7 @@ function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
     if (state.activeView === 'projects') _projectsPaint();
     return _projectsLoadHistory(false);
-  });
+  }).then(() => _projectsLoadLinks());
 }
 
 function renderProjectsView() {
