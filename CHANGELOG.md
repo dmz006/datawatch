@@ -7,6 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Every verifier run now has a hard maximum run time, so one verifier can no longer hold a worker slot for hours (found 2026-11-08).** The verifier wait loop checks the elapsed time against `autonomous.verifier_max_run_seconds` (default 2700 seconds / 45 minutes) and ends the verifier session when the cap is reached. A verifier that produces no output is covered by the same cap. `0` turns the cap off.
+  - **How it shows up:** a verifier that runs past the cap is ended and its worker slot is freed; the follow-up behaviour (one retry on the next backend, the `verifier_run_cap` decision and the `verifier_max_run` attempt reason) is described in the entries below.
+  - **Migration:** none. The 45-minute default applies on upgrade; set `autonomous.verifier_max_run_seconds` to change it or to `0` to disable the cap.
 - **A verifier run-cap end frees the verifier's capacity slot and records a decision.** When `autonomous.verifier_max_run_seconds` ends a verifier session, the lease held for that verification is released once, before the retry on the next backend is decided. A `verifier_run_cap` decision is written on the Automaton, and an `autonomous.verifier_run_cap` audit record with it. The note names the task id, the elapsed seconds and the cap in seconds, for example `task=<id> elapsed_seconds=2711 cap_seconds=2700 end_reason=verifier_max_run`. The attempt that the cut verification ends is recorded with the end reason `verifier_max_run`.
   - **How it shows up:** the Automaton's decision log gains a `verifier_run_cap` entry for each cap end, and the task's last attempt shows `verifier_max_run` instead of `session_died`. The kill request that ends the session carries no reason field, so the reason is kept on the attempt.
   - **Migration:** none.
