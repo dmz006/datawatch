@@ -265,7 +265,20 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 		mcpsdk.WithString("description", mcpsdk.Description("Description")),
 		mcpsdk.WithObject("policy",
 			mcpsdk.Description(
-				"Optional per-project policy block (e.g. {\"plan_review_mode\":\"block\",\"max_concurrent_tasks\":2,\"retry_policy\":{\"infra\":3}}). Unset keys keep the daemon tier.")))
+				"Optional per-project policy block (e.g. {\"plan_review_mode\":\"block\",\"max_concurrent_tasks\":2,\"retry_policy\":{\"infra\":3}}). Unset keys keep the daemon tier.")),
+		mcpsdk.WithString("owner", mcpsdk.Description("Optional project record: who owns the project. Omit to keep the stored value; an empty string clears it.")),
+		mcpsdk.WithString("repository", mcpsdk.Description("Optional project record: repository (e.g. owner/name or URL). Omit to keep; empty clears.")),
+		mcpsdk.WithString("default_branch", mcpsdk.Description("Optional project record: default git branch. Omit to keep; empty clears.")),
+		mcpsdk.WithArray("arcs",
+			mcpsdk.Description("Optional ordered arc list, replacing the stored one: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned|active|done\"}]. Array position is the arc order. Omit to keep; [] clears."),
+			mcpsdk.Items(map[string]any{"type": "object"})),
+		mcpsdk.WithObject("target",
+			mcpsdk.Description("Optional outcome the project works toward: {\"name\":\"...\",\"definition_of_done\":\"...\"}. Omit to keep the stored value.")),
+		mcpsdk.WithObject("lane_defaults",
+			mcpsdk.Description("Optional lane defaults for new work: {\"lane\":\"...\",\"backend\":\"...\",\"model\":\"...\"}. Omit to keep the stored value.")),
+		mcpsdk.WithNumber("weekly_share", mcpsdk.Description("Optional weekly share (percent of the weekly budget). Omit to keep the stored value.")),
+		mcpsdk.WithNumber("branch_retention_days", mcpsdk.Description("Optional number of days to keep merged task branches. Omit to keep the stored value.")),
+		mcpsdk.WithString("major_trigger", mcpsdk.Description("Optional major-release trigger. Omit to keep; empty clears.")))
 }
 func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{
@@ -293,6 +306,9 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 		// json.RawMessage keeps the block an object on the wire; a plain
 		// []byte would marshal as a base64 string.
 		body["policy"] = json.RawMessage(b)
+	}
+	if err := applyProjectRecordArgs(req.GetArguments(), body); err != nil {
+		return toolErrorf("project_upsert", "%v", err), nil
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/projects", body)
 	if err != nil {
@@ -338,6 +354,204 @@ func (s *Server) handleProjectPolicyEffective(_ context.Context, req mcpsdk.Call
 	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/policy/effective", q)
 	if err != nil {
 		return toolError("project_policy_effective", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// projectRecordStringKeys are the optional project record fields that hold a
+// plain string. A key the caller omits keeps the stored value; a key sent as
+// an empty string clears it.
+var projectRecordStringKeys = []string{"owner", "repository", "default_branch", "major_trigger"}
+
+// projectRecordIntKeys are the optional project record fields that hold a
+// whole number.
+var projectRecordIntKeys = []string{"weekly_share", "branch_retention_days"}
+
+// projectRecordObjectKeys are the optional project record fields that hold a
+// JSON object.
+var projectRecordObjectKeys = []string{"target", "lane_defaults"}
+
+// jsonValueArg accepts a tool argument that is either already decoded JSON or
+// a string holding JSON, and returns the decoded value.
+func jsonValueArg(name string, raw any) (any, error) {
+	if s, ok := raw.(string); ok {
+		var out any
+		if err := json.Unmarshal([]byte(s), &out); err != nil {
+			return nil, fmt.Errorf("%s must be JSON (or a JSON string encoding it): %v", name, err)
+		}
+		return out, nil
+	}
+	return raw, nil
+}
+
+// applyProjectRecordArgs copies the optional project record fields from the
+// project_upsert arguments into the upsert body. Only keys the caller sent are
+// copied, so the daemon keeps every other stored value.
+func applyProjectRecordArgs(args map[string]any, body map[string]any) error {
+	for _, k := range projectRecordStringKeys {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%s must be a string", k)
+		}
+		body[k] = str
+	}
+	for _, k := range projectRecordIntKeys {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return fmt.Errorf("%s must be a whole number", k)
+		}
+		body[k] = int(f)
+	}
+	for _, k := range projectRecordObjectKeys {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		decoded, err := jsonValueArg(k, v)
+		if err != nil {
+			return err
+		}
+		if _, isObj := decoded.(map[string]any); !isObj {
+			return fmt.Errorf("%s must be an object", k)
+		}
+		body[k] = decoded
+	}
+	if v, ok := args["arcs"]; ok && v != nil {
+		decoded, err := jsonValueArg("arcs", v)
+		if err != nil {
+			return err
+		}
+		arcs, err := arcsArg(decoded)
+		if err != nil {
+			return err
+		}
+		body["arcs"] = arcs
+	}
+	return nil
+}
+
+// arcsArg checks that a decoded arcs argument is an array of arc objects and
+// returns it. Each arc is {automation_id, priority?, state?}; the daemon
+// validates the values themselves.
+func arcsArg(decoded any) ([]any, error) {
+	arr, ok := decoded.([]any)
+	if !ok {
+		return nil, fmt.Errorf("arcs must be an array of arc objects")
+	}
+	for i, item := range arr {
+		if _, isObj := item.(map[string]any); !isObj {
+			return nil, fmt.Errorf("arcs[%d] must be an object", i)
+		}
+	}
+	return arr, nil
+}
+
+// toolProjectRollup exposes GET /api/projects/{name}/rollup: the project's arcs
+// with per-arc progress, cost in points, and throughput over a window.
+func (s *Server) toolProjectRollup() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_rollup",
+		mcpsdk.WithDescription(
+			"Project roll-up: arcs in order with their Automata, task progress, cost in points and throughput over a window of days. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithNumber("window", mcpsdk.Description("Throughput window in days (1–365, default 7).")),
+	)
+}
+func (s *Server) handleProjectRollup(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_rollup", "name is required"), nil
+	}
+	q := url.Values{}
+	if v, ok := req.GetArguments()["window"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return toolErrorf("project_rollup", "window must be a whole number of days"), nil
+		}
+		q.Set("window", fmt.Sprintf("%d", int(f)))
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/rollup", q)
+	if err != nil {
+		return toolError("project_rollup", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// toolProjectHistory exposes GET /api/projects/{name}/history: finished and
+// archived Automata, daily progress and Gantt rows, one page at a time.
+func (s *Server) toolProjectHistory() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_history",
+		mcpsdk.WithDescription(
+			"Project history: finished and archived Automata, daily progress and Gantt rows. Paged with limit and the cursor from the previous page. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Maximum rows per page (the daemon's default applies when omitted).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Opaque cursor from the previous page's next_cursor. Omit for the first page.")),
+	)
+}
+func (s *Server) handleProjectHistory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_history", "name is required"), nil
+	}
+	q := url.Values{}
+	if v, ok := req.GetArguments()["limit"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return toolErrorf("project_history", "limit must be a whole number"), nil
+		}
+		q.Set("limit", fmt.Sprintf("%d", int(f)))
+	}
+	if c := req.GetString("cursor", ""); c != "" {
+		q.Set("cursor", c)
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/history", q)
+	if err != nil {
+		return toolError("project_history", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// toolProjectSetArcs exposes PUT /api/projects/{name}/arcs: it replaces the
+// project's ordered arc list and returns the project record.
+func (s *Server) toolProjectSetArcs() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_set_arcs",
+		mcpsdk.WithDescription(
+			"Replace a project's ordered arc list. The array order is the arc order. Each arc is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithArray("arcs",
+			mcpsdk.Required(),
+			mcpsdk.Description("Ordered arcs: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned\"}]."),
+			mcpsdk.Items(map[string]any{"type": "object"})),
+	)
+}
+func (s *Server) handleProjectSetArcs(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_set_arcs", "name is required"), nil
+	}
+	raw, ok := req.GetArguments()["arcs"]
+	if !ok || raw == nil {
+		return toolErrorf("project_set_arcs", "arcs is required (an array; [] clears the list)"), nil
+	}
+	decoded, err := jsonValueArg("arcs", raw)
+	if err != nil {
+		return toolErrorf("project_set_arcs", "%v", err), nil
+	}
+	arcs, err := arcsArg(decoded)
+	if err != nil {
+		return toolErrorf("project_set_arcs", "%v", err), nil
+	}
+	body := map[string]any{"arcs": arcs}
+	out, err := s.proxyJSON(http.MethodPut, "/api/projects/"+url.PathEscape(name)+"/arcs", body)
+	if err != nil {
+		return toolError("project_set_arcs", err), nil
 	}
 	return textOK(string(out)), nil
 }
