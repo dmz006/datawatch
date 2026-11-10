@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.121.0 (2026-11-09).** Release readiness evidence is readable on every surface, and each release approval mode change is recorded as a decision with the evidence at that moment. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.122.0 (2026-11-09).** Merge conflicts are resolved by file class, with a model gate and a confirm-first-N counter; two new settings, autonomous.merge_pipeline.conflict_mode and conflict_confirm_first_n, on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

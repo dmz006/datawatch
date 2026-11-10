@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.122.0 — Conflict resolution by file class, with the model gate and the confirm-first-N counter
+
+Merge conflicts are now resolved by file class, behind a model gate and a confirm-first-N counter.
+
+- Each conflicted file is sorted into a class (`internal/mergepipeline/conflict_class.go`), and a mechanical resolver handles the classes that need no model (`conflict_mechanical.go`). The model proposes a resolution only for the rest, and only when the model gate allows it (`conflict_gate.go`).
+- 2 new settings under `autonomous.merge_pipeline`: `conflict_mode` (`shadow`, the default, records the model's proposal without acting on it; `on` acts on it) and `conflict_confirm_first_n` (default 5; the first N conflict resolutions of a project wait for the operator to confirm them, 0 turns it off). Both are readable and settable on REST, MCP, the command line, chat and the PWA, and as per-project overrides.
+- A per-project confirmation counter (`conflict_counter.go`, `conflict_confirm.go`) shows how many confirmations are counted and how many remain.
+- 7 new locale keys in the 5 shipped locales.
+- Touches 7 packages: `cmd/datawatch`, `internal/autonomous`, `internal/config`, `internal/mcp`, `internal/mergepipeline`, `internal/router`, `internal/server`.
+- 27 tests added.
+
 ## v9.121.0 — Release readiness evidence and recorded release approval mode changes
 
 - Release readiness evidence: a read of the stored shadow-merge comparisons that counts, for one release size (patch, minor or major), the records where the plan held up, the conflicts, the PWA changes and blocking defects against a bar, and says what is missing. It is available on REST, MCP, the CLI, chat and a PWA card.
