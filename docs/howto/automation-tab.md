@@ -501,6 +501,9 @@ log as `autonomous_judge_outcome`.
 
 ## Related
 
+- [projects-tab.md](projects-tab.md): the Projects tab, a separate top-level
+  tab that groups an Automation under its project as an arc, with the project's
+  Automata, sessions, progress, history and policy on one page
 - [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
   Automaton in your Automations — how the pass fills, refreshes and clears
   it, the single alert it can raise, and where to read it (REST, MCP, CLI,

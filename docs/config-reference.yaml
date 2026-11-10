@@ -4795,6 +4795,21 @@ projects:
   # optional and the block below shows every key the daemon validates.
   core-api:
     dir: ~/projects/core-api
+    # Record fields (all optional; an absent field keeps its stored value).
+    # They are shown on the Projects tab and set with the projects CLI,
+    # REST or MCP. See howto/projects-tab.md.
+    # owner: platform-team
+    # repository: example-org/core-api
+    # default_branch: main
+    # target:
+    #   name: Core API 2.0
+    #   definition_of_done: All v1 endpoints served by v2 and the v1 routes removed
+    # lane_defaults: {lane: gpu, backend: claude-code, model: qwen3.8:27b}
+    # arcs:                       # the array order is the arc order
+    #   - {automation_id: a1b2c3d4, priority: 1, state: active}   # planned | active | done
+    # weekly_share: 40            # 0-100; stored and shown, no scheduler reads it yet
+    # branch_retention_days: 14   # >= 0; stored and shown, the worktree cleanup does not read it yet
+    # major_trigger: milestone    # manual | milestone | never; the release decision reads the merge pipeline's trigger
     policy:
       # ── Plan checks (apply before any Automaton's own settings) ──
       # plan_coverage_check: what the coverage gate does to a short plan:
@@ -4843,6 +4858,19 @@ projects:
       # Absent = inherit the daemon value; an explicit "" unsets it for this
       # project only, so its gate runs no project command.
       # project_gate_command: make test
+
+# projects_defaults: daemon-wide values a registered project inherits when it
+# sets none of its own. Every surface uses the dotted key form
+# projects_defaults.<field> (GET/PUT /api/config, configure, config set).
+# They are stored and shown; no scheduler reads the first two yet. See
+# howto/projects-tab.md.
+projects_defaults:
+  # branch_retention_days: whole days to keep finished Automaton branches; 0 = unset.
+  branch_retention_days: 0
+  # weekly_share_percent: a project's share of the weekly usage budget, 0-100; 0 = unset.
+  weekly_share_percent: 0
+  # major_trigger: manual | milestone | never; empty = manual.
+  major_trigger: manual
 
 # ── Auto-Update ──
 # Automatic self-update configuration.
