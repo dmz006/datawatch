@@ -116,3 +116,7 @@ migration imports records into it).
 
 Next design questions on products (open, asked one at a time): what a product record holds, how a repository
 attaches to it, how cross-project relations are expressed, and how the Projects tab and the repo export show a product.
+
+Operator answer on migration question 2 (2026-11-10): "A" (the plans, backlog and status records live in the existing
+per-record JSON files, which stay the source of truth, like Automata today; the derived SQLite reporting index decided
+on 2026-11-10 is rebuildable from them; no new store and no database as source of truth yet).
