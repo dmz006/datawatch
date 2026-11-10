@@ -113,12 +113,33 @@ project.
 |---|---|
 | **YAML** | Edit `~/.datawatch/config.yaml` → `autonomous.task_templates` (the `enabled` switch and the `projects` overrides) |
 | **CLI** | `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`. A table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw body |
-| **Web UI** | Automata tab → **Templates** tab (labelled **Automaton templates** in the current UI) → **Standard tasks** sub-tab |
+| **Web UI** | Automata page → the **Templates** tab (labelled **Automaton templates** in the current UI) → **Standard tasks** sub-tab. A read-only table; your sub-tab choice is remembered |
 | **REST API** | `GET /api/autonomous/standard-tasks` with an optional `?project=<dir-or-alias>`. The body is `{enabled, tasks[]}`. Any other method returns 405. The config itself is read and written through `GET` and `PUT /api/config` |
 | **MCP** | The `autonomous_standard_tasks` tool, with an optional `project` argument. The switches are read and written with `autonomous_config_get` and `autonomous_config_set` |
 | **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode`. An empty list replies "no standard tasks are defined." |
 
 All of these render the same listing, so they always agree.
+
+### What the web sub-tab shows
+
+The **Standard tasks** sub-tab is read-only. It loads the same body as
+`GET /api/autonomous/standard-tasks` and draws one row per task: **title**,
+**kind**, **summary**, **when it is offered** (the `offered_when` text),
+**on or off**, and **mode** (always `model session` — a note under the table says
+the mode is fixed for now and links back to this page).
+
+- **Empty state.** When there are no tasks to show, the sub-tab says what standard
+  tasks are — the tasks the decomposer adds to every story, added when
+  `autonomous.task_templates.enabled` is on — instead of drawing an empty table.
+- **Load failure.** If the read fails, a "Load failed" line shows where the table
+  would be (with the error) and clears any stale list; a failed reload never leaves
+  an old list behind.
+- **Phone width.** The sub-tab bar wraps inside its own container, each row stacks
+  into its labelled cells (title, kind, summary, when, on/off, mode) and the body
+  keeps a side gutter, so nothing scrolls sideways.
+- **Choice persisted.** The sub-tab you leave it on (Automaton templates or
+  Standard tasks) is the one it opens on next time; a fresh install with no stored
+  choice opens **Automaton templates**.
 
 ## How a standard task differs from an Automaton template
 
@@ -143,6 +164,23 @@ is a complete Automaton you start from, it is an Automaton template.
 For Automaton templates, open the Automata tab's **Templates** tab and its
 **Automaton templates** sub-tab. The **Start from template** strip on the Automaton create form and the **Clone to Template**
 action both use it.
+
+## Open items to check
+
+Flagged here so an operator looking at the web tab knows what it does **not** have
+yet:
+
+- **Mode setting.** The per-task/per-project mode choice is not available yet; every
+  standard task runs in the `model session` mode (see the section above).
+- **No per-project selection in the web tab.** The sub-tab reads the global list; the
+  per-project resolved read (the `?project=` parameter) is on REST, MCP, CLI and the
+  comm channel. If you rely on a project override, read the list with `--project`
+  to see the resolved state.
+- **The datawatch app does not show this tab yet, and does not yet use the new
+  wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
+  (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
+  They are drafts, not yet filed: the operator opens them on the app tracker when
+  ready.
 
 ## Troubleshooting
 

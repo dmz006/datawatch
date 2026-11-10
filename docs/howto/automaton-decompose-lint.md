@@ -375,9 +375,13 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 - **Settings → “Decompose lint”** — the mode, the retry budget, the
   standard-task gate, the guidance string and the rules (as JSON). Saves
   through `PUT /api/autonomous/decompose-lint/config`.
-- **Automata page → Templates tab → Standard tasks** — the built-in pack
-  by its operator-facing name (previously "task templates"); the same list the
-  reads below return.
+- **Automata page → Templates tab (labelled "Automaton templates" in the current UI) →
+  Standard tasks sub-tab** — the built-in pack by its operator-facing name
+  (previously "task templates"); the same list the reads below return. The sub-tab
+  is read-only: a per-task table (title, kind, summary, when offered, on/off, mode)
+  with a note that the mode is fixed at `model session` for now, an explanatory
+  empty state when there is nothing to list, and stacked labelled rows at phone
+  width; an empty list on the comm channel replies "no standard tasks are defined."
 - **Automaton detail → “Decompose lint” panel** — the last recorded pass
   (mode, attempts, findings with severity chips), with a **dry-run
   button** that lints the current stored plan read-only and says
