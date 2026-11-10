@@ -235,3 +235,6 @@ Operator (pasted text, as heard): backlog, plans and status should run inside da
 
 The supervisor asked where the standard-tasks pack content is authored. Operator: "We said when designing that it was too go on community registry" (read as: it was decided at design time that it goes in the community registry; option A). This restates the 2026-11-09 decision: no pinned copy inside the binary or this repository. The packs Automaton's pack-folder task was rewritten to author only a test fixture under internal/packs/testdata/, and its embed task is to be rewritten to build the defaults pack in memory from the existing Go definitions (the pack active while packs are off). The real pack is authored in the community registry repository as a separate step.
 Operator reading, 2026-11-10 14:17 EST: "Claude at 33%".
+
+Operator, 2026-11-10, on the Vault unreachable alert default (120 seconds): "A" (keep 120 seconds; confirmed).
+Operator, 2026-11-10, on the peer silence alert default (5 minutes): not yet asked.
