@@ -17316,6 +17316,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'cost_report.week_start', label: 'Week starts on', labelKey: 'settings_cost_report_week_start', type: 'select', options: ['monday','sunday'] },
     { key: 'cost_report.include_peer_spend', label: 'Include peer spend', labelKey: 'settings_cost_report_include_peer_spend', type: 'toggle' },
   ]},
+  { id: 'observer_peers_cfg', sectionKey: 'settings_observer_peers', section: 'Observer peers', docs: 'howto/federated-observer.md', fields: [
+    { key: 'observer.peers.silent_alert_minutes', label: 'Silent peer alert after (minutes; 0 = disabled)', labelKey: 'settings_observer_peer_silent_alert_minutes', helpKey: 'settings_observer_peer_silent_alert_minutes_hint', type: 'number', placeholder: '0', min: 0, step: 1 },
+  ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },

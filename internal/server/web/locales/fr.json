@@ -3666,5 +3666,8 @@
   "prd_dl_running": "Exécution du linte de décomposition...",
   "prd_dl_dryrun_error": "L'essai à blanc du linte de décomposition a échoué :",
   "observer_peer_stale": "Obsolète",
-  "observer_peer_never_pushed": "Jamais envoyé"
+  "observer_peer_never_pushed": "Jamais envoyé",
+  "settings_observer_peers": "Pairs de l'observer",
+  "settings_observer_peer_silent_alert_minutes": "Alerte pair silencieux après (minutes ; 0 = désactivé)",
+  "settings_observer_peer_silent_alert_minutes_hint": "Déclenche une alerte lorsqu'un pair d'observer enregistré n'a rien envoyé depuis ce nombre de minutes. 0 désactive la vérification."
 }

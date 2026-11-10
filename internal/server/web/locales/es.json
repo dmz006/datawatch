@@ -3666,5 +3666,8 @@
   "prd_dl_running": "Ejecutando decompose lint...",
   "prd_dl_dryrun_error": "La prueba en seco de decompose lint falló:",
   "observer_peer_stale": "Obsoleto",
-  "observer_peer_never_pushed": "Nunca enviado"
+  "observer_peer_never_pushed": "Nunca enviado",
+  "settings_observer_peers": "Peers del observer",
+  "settings_observer_peer_silent_alert_minutes": "Alerta por peer silencioso tras (minutos; 0 = desactivado)",
+  "settings_observer_peer_silent_alert_minutes_hint": "Genera una alerta cuando un peer del observer registrado no envía datos durante estos minutos. 0 desactiva la comprobación."
 }

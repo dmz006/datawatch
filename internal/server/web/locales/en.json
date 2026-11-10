@@ -3666,5 +3666,8 @@
   "prd_dl_running": "Running decompose lint...",
   "prd_dl_dryrun_error": "Decompose lint dry run failed:",
   "observer_peer_stale": "Stale",
-  "observer_peer_never_pushed": "Never pushed"
+  "observer_peer_never_pushed": "Never pushed",
+  "settings_observer_peers": "Observer peers",
+  "settings_observer_peer_silent_alert_minutes": "Silent peer alert after (minutes; 0 = disabled)",
+  "settings_observer_peer_silent_alert_minutes_hint": "Raise an alert when a registered observer peer has not pushed for this many minutes. 0 disables the check."
 }
