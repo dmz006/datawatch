@@ -108,3 +108,11 @@ Automata code for a product concept and found none (the word appears only in "Pr
 planning prompts). A product would sit above projects: one product with one or more repositories and one or more
 projects, with timeline, feature and dependency relations between its projects. Open questions on this are raised
 one at a time after the migration questions.
+
+Operator answer on product question 1 (2026-11-10): "A that is exactly what i had in mind" (option A: a product is a
+layer above projects; one product has one or more repositories and one or more projects; timeline, feature and
+dependency relations between projects live at the product level; the model is designed now and built later, so the
+migration imports records into it).
+
+Next design questions on products (open, asked one at a time): what a product record holds, how a repository
+attaches to it, how cross-project relations are expressed, and how the Projects tab and the repo export show a product.
