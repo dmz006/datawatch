@@ -3532,7 +3532,7 @@
   "merge_shadow_size_none": "None",
   "merge_shadow_failed": "Merge shadow failed: %1$s",
   "settings_merge_shadow_enabled": "Merge shadow (the finish-time shadow merge plan; on by default)",
-  "settings_merge_shadow_enabled_help": "When an Automaton finishes, the shadow merge plan works out what merging its branch would do and keeps the result per project for comparison with the real merge. On by default; set to false to turn the plan off. The question mark opens the merge shadow howto.",
+  "settings_merge_shadow_enabled_help": "Wenn ein Automat fertig ist, ermittelt der Schattenmerge-Plan, was das Zusammenführen seines Branches bewirken würde, und speichert das Ergebnis pro Projekt zum Vergleich mit dem echten Merge. Standardmäßig an; auf false setzen, um den Plan auszuschalten. Das Fragezeichen öffnet die Schattenmerge-Anleitung.",
   "settings_merge_shadow_gate_timeout": "Merge shadow gate timeout (a Go duration per gate, default 20m)",
   "settings_merge_shadow_gate_timeout_help": "How long each gate of the shadow merge may wait before the run gives up. A Go duration such as 20m; the run gets this budget per gate. Default 20m.",
   "settings_merge_shadow_plan_keep": "Merge shadow plans kept per project (whole number, minimum 1, default 200)",
