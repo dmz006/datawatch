@@ -267,9 +267,34 @@ The Settings nav button no longer shows a badge for an unreachable Vault. Check 
 Settings → Secrets Store instead: it shows **Vault** reachable or unreachable, the mount and path
 layout, **Last error** (or `none`) and **Last success** (or `never`), each in your chosen language.
 
-> **Operator review:** the red `!` nav badge was removed in favour of a real alert for an
-> unreachable Vault. This page does not yet describe that alert (its trigger, channel and clearing
-> behaviour) because it is not part of the shipped change set. Confirm it exists, then document it here.
+### Vault-unreachable alert
+
+Instead of a nav badge, datawatch raises a real alert when the Vault stays unreachable.
+
+- **Trigger.** Only when `secrets.backend` is `vault`. datawatch checks the Vault every 15 seconds.
+  Once the Vault has been unreachable continuously for `secrets.vault.unreachable_alert_after_seconds`
+  (whole seconds, default 120), one **Vault unreachable** error alert is raised. It carries the Vault
+  address and the last error, with secrets scrubbed. It is raised once per outage, not repeated.
+- **Where it shows.** It is a system alert: it appears in Alerts in the PWA and goes to your messaging
+  channels like other system alerts.
+- **Recovery.** When the Vault answers again, datawatch raises a separate **Vault recovered** info
+  alert. The original error alert is not removed; mark it read as usual.
+- **Setting the threshold.** `0` turns the alert off; a negative value is rejected.
+
+```yaml
+# datawatch.yaml
+secrets:
+  vault:
+    unreachable_alert_after_seconds: 120
+```
+
+The same key (`secrets.vault.unreachable_alert_after_seconds`) is available through REST
+`PUT /api/config`, MCP, the CLI, the comm channel, and a field in PWA Settings (en, de, es, fr, ja).
+
+> **Operator review:** (1) The CHANGELOG says the alert "clears" on recovery; the code raises a separate
+> "Vault recovered" info alert and leaves the error alert in place. Confirm which wording is intended.
+> (2) The exact PWA field label and location, and the CLI/comm command spelling, were not verified
+> against the UI strings; check them before release.
 
 ### 5c. MCP
 
