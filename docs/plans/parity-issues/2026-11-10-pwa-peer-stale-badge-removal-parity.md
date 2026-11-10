@@ -96,3 +96,28 @@ plus the two locale keys as a reference list. Link this file and PRD
   `ja.json` — `observer_peer_stale` and `observer_peer_never_pushed`.
 - `internal/server/v5280_locales_test.go` — both keys guarded in
   `TestLocales_CommonNavKeysPresent`.
+
+## Related stories, docs and the silent-peer alert
+
+The "real connectivity alert" half of the operator request is delivered by the
+daemon-side silent-peer alert, not by the PWA, so it needs no app change beyond
+showing the alerts the app already lists:
+
+- `docs/howto/federated-observer.md` documents the per-row "Stale (age)" note
+  and the "Silent-peer alert". When a peer has pushed nothing for
+  `observer.peers.silent_alert_minutes` (default 5), the daemon raises one
+  warning alert, "Observer peer silent: <name>", once per outage. It reaches the
+  app through the normal alerts surface and the messaging channels.
+- `docs/config-reference.yaml` carries the `observer.peers.silent_alert_minutes`
+  key. Any app settings screen that mirrors observer settings may expose it; the
+  value is a whole number of minutes.
+- Story `scripts/test-stories/pwa/settings-nav-clear-of-peer-alert.mjs`
+  (run through `scripts/test-stories/TS-848.sh`) checks at a 390 px viewport that
+  nothing sits over the Settings nav button label. The datawatch-app team can
+  mirror that check on a narrow screen: after the badge is removed, the Settings
+  entry must show only its own icon and label.
+
+Parity gap closed by this work: the PWA no longer carries a stale count on the
+Settings nav, so the app's badge is the only remaining copy. Parity gap left
+open: the app has no per-row stale note yet and may not surface the silent-peer
+alert distinctly; the suggested next step above covers both.
