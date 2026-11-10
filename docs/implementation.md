@@ -3285,3 +3285,9 @@ requirements report" entries in `docs/operations.md`.
 
 - **Config:** `resource_limits.memory_share_percent` (1 to 100, default 50), `resource_limits.memory_floor_mb` and `resource_limits.memory_cap_mb` (whole MB, floor not above cap). Set them with `PUT /api/config`, `datawatch config set`, the chat command `configure <key>=<value>` (listed under `configure help` and `configure list`) or the `config_set` MCP tool.
 - **Status:** `GET /api/autonomous/status` and the `autonomous_status` MCP tool carry a `memory_ceiling` object: `effective_mb` (0 when none), `source` (`default`, `project`, `task_kind` or `none`), `enforcement_path` (`scope`, `watchdog` or `none`) and the `share_percent`, `floor_mb` and `cap_mb` it comes from. It describes a verification run with no project or task kind override; `source` is `none` while no ceiling settings are installed in the autonomous manager. Code: `internal/autonomous/memory_ceiling_status.go`.
+
+## Standard-task packs (packs.enabled, packs.active)
+
+- **Config:** `packs.enabled` (bool, default `false`) and `packs.active` (ordered list of pack names, default `["builtin"]`). The Go type is `PacksConfig` in `internal/config/packs_config.go`, held on `Config.Packs` and defaulted by `DefaultConfig()`. Both keys round-trip through YAML and JSON. The example block is in `docs/config-reference.yaml`.
+- **Validation:** `PacksConfig.Validate(installed []string)` accepts `builtin` or a name in `installed`. It rejects blank names, repeated names and unknown names, and names the `packs.active` key in its error. Names match exactly (case-sensitive). The method is not yet called from `Load` because no installed-pack registry exists yet; the caller that supplies that list is a later change.
+- **Tests:** `internal/config/packs_config_test.go` covers defaults, default independence, validation cases, the YAML keys and round trip, and loading with an absent or explicit section.
