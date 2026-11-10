@@ -19,12 +19,11 @@ import (
 // log uses. Every other AutonomousAPI method is nil, so a call to one panics.
 type eventLogFake struct {
 	AutonomousAPI
-	rawErrs   []automataRawError
-	repoCI    autonomous.RepoCIWatchStatus
-	cleanup   autonomous.CleanupStatus
-	safeErr   error
-	triageErr bool
-	prds      []any
+	rawErrs []automataRawError
+	repoCI  autonomous.RepoCIWatchStatus
+	cleanup autonomous.CleanupStatus
+	safeErr error
+	prds    []any
 }
 
 // ListPRDs returns the Automata the fake holds, so failed-task reasons reach

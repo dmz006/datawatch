@@ -6,7 +6,7 @@ import (
 )
 
 func TestAutomataEventErrorClassifyHarmlessPermission(t *testing.T) {
-	raw := "stat /home/dmz/.datawatch/worktrees/auto-9: permission denied (removed worktree)"
+	raw := "stat /var/lib/app/.datawatch/worktrees/auto-9: permission denied (removed worktree)"
 	got := automataEventErrorClassify(raw, "worktree")
 
 	if !got.Quiet {
