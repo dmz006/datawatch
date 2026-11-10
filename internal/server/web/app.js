@@ -23444,77 +23444,6 @@ function updateAlertBadge() {
   }
 }
 
-// BL172 — count of stale federated peers (last_push_at older than 60s
-// or never). Polled independently of the Settings panel so the
-// operator sees the badge without opening the Monitor card.
-function updatePeerStaleBadge() {
-  const badge = document.getElementById('peerStaleBadge');
-  if (!badge) return;
-  apiFetch('/api/observer/peers').then(data => {
-    const peers = (data && data.peers) || [];
-    if (peers.length === 0) {
-      badge.style.display = 'none';
-      return;
-    }
-    const now = Date.now();
-    let stale = 0;
-    for (const p of peers) {
-      const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
-      if (!lastPush || (now - lastPush) > 60000) {
-        stale++;
-      }
-    }
-    if (stale > 0) {
-      badge.textContent = stale > 99 ? '99+' : String(stale);
-      // 'flex' (not 'inline') so the 44x44 badge centers its count — the
-      // element is a position:absolute 44x44 box (see index.html) and an
-      // inline display would ignore the box sizing.
-      badge.style.display = 'flex';
-      badge.title = `${stale} federated peer(s) stale (>60s since last push)`;
-    } else {
-      badge.style.display = 'none';
-    }
-  }).catch(() => {
-    // 503 (registry disabled) or network error — hide silently.
-    badge.style.display = 'none';
-  });
-}
-
-// Refresh the peer-stale badge every 30s. Cheap GET; cached on the
-// daemon side and skipped when registry is disabled.
-setInterval(updatePeerStaleBadge, 30000);
-
-// v6.12.0 (Option A breadcrumb) — click handler for the cog stale badge.
-// Navigates to the Observer view (where the Federated Peers card lives),
-// scrolls the peers list into view, then briefly highlights any peer
-// row whose dot is red (stale or never-pushed).
-window.navigateToStalePeer = function() {
-  navigate('observer');
-  // Defer scroll/highlight until the observer view has rendered + peers
-  // list has loaded.
-  setTimeout(() => {
-    const list = document.getElementById('observerPeersList');
-    if (!list) return;
-    list.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    // Find peer rows whose dot color is the error/red shade. The row is
-    // built in loadObserverPeers — first child span is the dot.
-    const rows = list.querySelectorAll('div > span:first-child');
-    rows.forEach(dot => {
-      const bg = dot.style.background || '';
-      if (bg.includes('error') || bg.includes('239,68,68')) {
-        const row = dot.parentElement;
-        if (row) {
-          row.style.transition = 'background-color 0.4s ease';
-          const orig = row.style.backgroundColor;
-          row.style.backgroundColor = 'rgba(239,68,68,0.18)';
-          setTimeout(() => { row.style.backgroundColor = orig; }, 2600);
-        }
-      }
-    });
-  }, 600);
-};
-setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
-
 // BL221 (v6.2.0) — Automata tab redesign. Replaces the legacy flat PRD
 // list with a 2-tab layout (Automata | Templates), filter bar with status
 // badge multi-select, history toggle, and new compact card format.
@@ -42989,14 +42918,14 @@ function loadVaultStatusRow() {
 window.loadVaultStatusRow = loadVaultStatusRow;
 
 // Settings nav badge for Vault: shows a red dot when Vault is the
-// active backend AND unreachable. Re-uses the existing peerStaleBadge
-// element shape (red circle, top-right of the nav button).
+// active backend AND unreachable (red circle, top-right of the nav
+// button).
 function _setVaultBadge(unreachable, errMsg) {
   // Anchor at the settings nav BUTTON (not the .nav-icon span): an
   // absolutely positioned badge inside the icon span inflates the span's
   // scrollWidth (clipped-text finding), and the old 17x15 pill is below
-  // the 40px tap-target floor — same root cause as peerStaleBadge,
-  // fixed the same way by the mobile-fit gate 2026-10-22.
+  // the 40px tap-target floor — both fixed by the mobile-fit gate
+  // 2026-10-22.
   const settingsBtn = document.querySelector('.nav-btn[data-view="settings"]');
   if (!settingsBtn) return;
   let badge = document.getElementById('vaultUnreachableBadge');
