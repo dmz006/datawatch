@@ -10309,6 +10309,7 @@ const DOCS_LINKS_BY_KEY = {
   dash_card_websearch_usage: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
   dash_card_memory_scope: 'memory.md',
   dash_card_smoke: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_events: DOCS_DEFINITIONS + '#dashboard',
   dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
@@ -45307,6 +45308,17 @@ const DASH_DEFAULT_LAYOUT = [
 // install; with it off they render in a single line saying why they are
 // empty, with a link to the related setting's help page.
 const DASH_CARD_FEATURES = {
+  'events': {
+    docsKey: 'dash_card_events',
+    reasonKey: 'dash_card_off_events_reason',
+    reasonDefault: 'No Automata or session events yet — this card fills as work runs.',
+    linkKey: 'dash_card_off_events_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      return (Array.isArray(_dash._eventLog) && _dash._eventLog.length > 0) ||
+        (Array.isArray(_dash._daemonEvents) && _dash._daemonEvents.length > 0);
+    },
+  },
   'integration-status': {
     docsKey: 'dash_card_integration_status',
     reasonKey: 'dash_card_off_integration_reason',
@@ -45414,6 +45426,7 @@ function _dashPumpFeatureData() {
     }
   };
   kick(_dashCardFeature('integration-status'), _dashFetchIntegStatus);
+  kick(_dashCardFeature('events'), _dashFetchDaemonEvents);
   kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
@@ -46669,6 +46682,7 @@ function renderDashboardView() {
   if (!viewEl) return;
   if (_dash.rafId) { cancelAnimationFrame(_dash.rafId); _dash.rafId = null; }
   _dash._frameCount = 0;
+  _dashStartEventLogPoll();
 
   viewEl.innerHTML = `
     <div class="dboard-cards" id="dashboardWrap">
@@ -46950,29 +46964,61 @@ function _dashRenderTree() {
   el.innerHTML = html;
 }
 
+// Daemon event stream for the Live Events card: the newest entries of
+// GET /api/autonomous/event-log, so Automata workers on any lane show up and
+// not only Claude hook events. Polled with one shared window handle.
+const _DASH_DAEMON_EVENTS_LIMIT = 15;
+const _DASH_EVENT_KIND_COLOR = { error: '#ef4444', alert: '#f59e0b', watch: '#f59e0b', retry: '#8b5cf6', decision: '#60a5fa', check: '#10b981', cleanup: '#64748b' };
+
+function _dashFetchDaemonEvents() {
+  if (_dash._daemonEventsFetching) return Promise.resolve();
+  _dash._daemonEventsFetching = true;
+  return apiFetch('/api/autonomous/event-log?limit=' + _DASH_DAEMON_EVENTS_LIMIT).then(d => {
+    _dash._daemonEvents = (d && Array.isArray(d.events)) ? d.events : [];
+    _dashRenderEventFeed();
+  }).catch(() => {}).finally(() => { _dash._daemonEventsFetching = false; });
+}
+
+// One handle on window, never a DOM-stored interval. The tick ends itself
+// once the dashboard is no longer the active view.
+function _dashStartEventLogPoll() {
+  if (window._dashEventLogInterval) return;
+  _dashFetchDaemonEvents();
+  window._dashEventLogInterval = setInterval(() => {
+    if (state.activeView !== 'dashboard') {
+      clearInterval(window._dashEventLogInterval);
+      window._dashEventLogInterval = null;
+      return;
+    }
+    _dashFetchDaemonEvents();
+  }, 10000);
+}
+
+// Newest-first merge of daemon events and hook events, capped for the card.
+function _dashMergedEvents() {
+  const rows = [];
+  for (const e of (_dash._daemonEvents || [])) {
+    const ts = Date.parse(e.time);
+    rows.push({ t: isNaN(ts) ? 0 : ts, kind: e.kind || 'event', text: e.summary || '',
+      color: _DASH_EVENT_KIND_COLOR[e.kind] || 'var(--text2)' });
+  }
+  for (const e of (_dash._eventLog || [])) {
+    rows.push({ t: e.t, kind: 'hook', text: [e.name, e.event, e.tool, e.task].filter(Boolean).join(' · '), color: e.color });
+  }
+  rows.sort((a, b) => b.t - a.t);
+  return rows.slice(0, 40);
+}
+
 function _dashRenderEventFeed() {
   const feedEl = document.getElementById('dashEventFeed');
   if (!feedEl) return;
-  const log = _dash._eventLog;
-  if (log.length === 0) {
-    feedEl.innerHTML = `<div style="color:var(--text2);padding:6px 10px;font-size:10px;opacity:0.6;">Waiting for hook events…</div>`;
-    return;
-  }
-  feedEl.innerHTML = [...log].reverse().map(e => {
-    const ts = new Date(e.t).toLocaleTimeString('en-GB', { hour12: false });
-    const toolBadge = e.tool ? `<span style="color:var(--accent2,#60a5fa);margin-left:3px;font-size:9px;">${escHtml(e.tool.slice(0, 14))}</span>` : '';
-    const taskLine = e.task ? `<div style="color:var(--text2);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:10px;" title="${escHtml(e.task)}">▸ ${escHtml(e.task.slice(0, 32))}</div>` : '';
-    const evIcon = { Stop: '◼', PostToolUse: '▶', UserPromptSubmit: '💬', SubagentStop: '◻', update: '·' }[e.event] || '·';
-    return `<div style="padding:2px 6px;border-bottom:1px solid rgba(255,255,255,0.03);">
-      <div style="display:flex;align-items:center;gap:2px;flex-wrap:nowrap;overflow:hidden;">
-        <span style="color:var(--text2);font-size:8px;flex-shrink:0;">${ts}</span>
-        <span style="color:${e.color};font-size:8px;flex-shrink:0;">${evIcon}</span>
-        <span style="color:var(--text);font-size:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px;" title="${escHtml(e.name)}">${escHtml(e.name)}</span>
-        ${toolBadge}
-      </div>
-      ${taskLine}
-    </div>`;
-  }).join('');
+  const purpose = `<div style="color:var(--text2);padding:4px 8px;font-size:10px;opacity:0.7;">${escHtml(t('dash_card_events_purpose') || 'Newest Automata and session events.')}</div>`;
+  const rows = _dashMergedEvents();
+  feedEl.innerHTML = purpose + rows.map(e => `<div style="padding:2px 6px;border-bottom:1px solid rgba(255,255,255,0.03);display:flex;gap:4px;align-items:baseline;overflow:hidden;white-space:nowrap;">
+      <span style="color:${escHtml(e.color)};font-size:9px;font-weight:600;flex-shrink:0;">${escHtml(e.kind)}</span>
+      <span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis;flex:1;" title="${escHtml(e.text)}">${escHtml(e.text)}</span>
+      <span style="color:var(--text2);font-size:8px;flex-shrink:0;">${escHtml(timeAgo(e.t))}</span>
+    </div>`).join('');
 }
 
 // _ganttStateColour is the bar colour for a Gantt state. The dashboard Timeline

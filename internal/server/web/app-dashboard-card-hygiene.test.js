@@ -139,13 +139,13 @@ test('2026-11-02 audit: audit-dropped tiles absent from DASH_DEFAULT_LAYOUT, sti
 test('2026-11-02 audit: duplicate layout ids render once, not twice', async (t) => {
   const app = loadDashboardApp();
   const html = buildLayout(app, [
-    { id: 'events', cs: 2, rs: 2 },
-    { id: 'events', cs: 3, rs: 1 },
-    { id: 'events', cs: 12, rs: 2 },
+    { id: 'ekg', cs: 2, rs: 2 },
+    { id: 'ekg', cs: 3, rs: 1 },
+    { id: 'ekg', cs: 12, rs: 2 },
     { id: 'guardrails', cs: 3, rs: 2 },
     { id: 'guardrails', cs: 6, rs: 2 },
   ]);
-  assert.equal(countId(html, 'events'), 1, 'events card rendered once despite three layout entries');
+  assert.equal(countId(html, 'ekg'), 1, 'ekg card rendered once despite three layout entries');
   assert.equal(countId(html, 'guardrails'), 0, 'guardrails must be hidden by the default (off, feature has no data) — and any duplicate entry would still render at most once');
   // With the toggle off, the dedupe still applies: one guardrails wrapper,
   // not two.

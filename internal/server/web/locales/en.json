@@ -4610,5 +4610,8 @@
   "automata_events_help_card_cleanup_status": "Cleanup status — progress of automatic cleanup after Automata finish",
   "settings_secrets_vault": "Secrets Vault",
   "settings_secrets_vault_unreachable_alert_after_seconds": "Vault unreachable alert after (seconds)",
-  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Seconds the Vault backend may stay unreachable before datawatch raises an alert. Default 120; 0 disables the alert."
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Seconds the Vault backend may stay unreachable before datawatch raises an alert. Default 120; 0 disables the alert.",
+  "dash_card_off_events_reason": "No Automata or session events yet — this card fills as work runs.",
+  "dash_card_off_events_link": "Dashboard card reference",
+  "dash_card_events_purpose": "Newest Automata and session events."
 }

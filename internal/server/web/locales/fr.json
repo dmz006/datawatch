@@ -4610,5 +4610,8 @@
   "automata_events_help_card_cleanup_status": "État du nettoyage — progression du nettoyage automatique à la fin du travail",
   "settings_secrets_vault": "Vault des secrets",
   "settings_secrets_vault_unreachable_alert_after_seconds": "Alerte Vault injoignable après (secondes)",
-  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Secondes pendant lesquelles le backend Vault peut rester injoignable avant que datawatch ne déclenche une alerte. Valeur par défaut 120 ; 0 désactive l'alerte."
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Secondes pendant lesquelles le backend Vault peut rester injoignable avant que datawatch ne déclenche une alerte. Valeur par défaut 120 ; 0 désactive l'alerte.",
+  "dash_card_off_events_reason": "Aucun événement Automata ou de session pour l'instant — cette carte se remplit dès que du travail s'exécute.",
+  "dash_card_off_events_link": "Référence des cartes du tableau de bord",
+  "dash_card_events_purpose": "Événements Automata et de session les plus récents."
 }

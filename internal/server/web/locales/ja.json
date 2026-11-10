@@ -4610,5 +4610,8 @@
   "automata_events_help_card_cleanup_status": "クリーンアップ状況 — オートマトン完了後の自動クリーンアップの進捗",
   "settings_secrets_vault": "シークレット Vault",
   "settings_secrets_vault_unreachable_alert_after_seconds": "Vault 到達不能アラートまでの秒数",
-  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Vault バックエンドに到達できない状態が続いてから datawatch がアラートを出すまでの秒数。デフォルトは 120、0 でアラートを無効にします。"
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Vault バックエンドに到達できない状態が続いてから datawatch がアラートを出すまでの秒数。デフォルトは 120、0 でアラートを無効にします。",
+  "dash_card_off_events_reason": "Automata やセッションのイベントはまだありません。作業が始まるとこのカードに表示されます。",
+  "dash_card_off_events_link": "ダッシュボードカードのリファレンス",
+  "dash_card_events_purpose": "最新の Automata とセッションのイベント。"
 }
