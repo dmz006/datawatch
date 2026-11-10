@@ -653,6 +653,18 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_host_load_alert_mode",
 		"settings_host_load_alert_multiple",
 		"settings_host_load_alert_minutes",
+		// Release (autonomous.push_and_tag, autonomous.release_path,
+		// git.release_ci_window_minutes) — the PWA Settings *Release* section
+		// every non-English bundle must carry.
+		"settings_release_section",
+		"settings_release_push_and_tag",
+		"settings_release_push_and_tag_help",
+		"settings_release_path",
+		"settings_release_path_help",
+		"settings_release_ci_window",
+		"settings_release_ci_window_help",
+		"settings_release_help_link_label",
+		"settings_release_last_status",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

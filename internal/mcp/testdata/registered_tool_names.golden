@@ -461,6 +461,7 @@ queue_complete
 queue_fail
 queue_list
 queue_push
+release_push_status
 reload
 rename_session
 reply_to_parent

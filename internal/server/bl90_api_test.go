@@ -45,6 +45,7 @@ func bl90Server(t *testing.T) *Server {
 				TailLines:        20,
 			},
 			Server: config.ServerConfig{Host: "127.0.0.1", Port: 8080},
+			Git:    config.GitConfig{ReleaseCIWindowMinutes: 60},
 		},
 		cfgPath:     dir + "/cfg.yaml",
 		deviceStore: devStore,

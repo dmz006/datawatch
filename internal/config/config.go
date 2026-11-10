@@ -426,6 +426,10 @@ type GitConfig struct {
 	// and a mode other than off|shadow|enforce is refused on every
 	// write path.
 	SecretScan GitSecretScanConfig `yaml:"secret_scan" json:"secret_scan"`
+	// ReleaseCIWindowMinutes is how many minutes the daemon waits for the
+	// checks on a release to finish before it gives up and reports the
+	// release as not confirmed (default 60).
+	ReleaseCIWindowMinutes int `yaml:"release_ci_window_minutes" json:"release_ci_window_minutes"`
 }
 
 // GitSecretScanConfig is the git.secret_scan block: which detectors
@@ -496,6 +500,32 @@ func ValidateGitSecretScanMode(mode string) error {
 	default:
 		return fmt.Errorf("git.secret_scan.mode must be \"off\", \"shadow\" or \"enforce\", got %q", mode)
 	}
+}
+
+// Release paths (autonomous.release_path).
+const (
+	ReleasePathDirectPush  = "direct_push"
+	ReleasePathPullRequest = "pull_request"
+)
+
+// ValidateReleasePath requires autonomous.release_path to be direct_push or
+// pull_request.
+func ValidateReleasePath(v string) error {
+	switch v {
+	case "", ReleasePathDirectPush, ReleasePathPullRequest: // "" = unset, reads the default
+		return nil
+	default:
+		return fmt.Errorf("autonomous.release_path must be \"direct_push\" or \"pull_request\", got %q", v)
+	}
+}
+
+// ValidateReleaseCIWindowMinutes requires git.release_ci_window_minutes to be
+// greater than zero.
+func ValidateReleaseCIWindowMinutes(n int) error {
+	if n <= 0 {
+		return fmt.Errorf("git.release_ci_window_minutes must be greater than 0 (a whole number of minutes), got %d", n)
+	}
+	return nil
 }
 
 // ValidateGitSecretScanDetectors rejects a detector name that is not one of
@@ -3513,6 +3543,16 @@ type AutonomousConfig struct {
 	// overridden per project. An unset key reads its default. See
 	// MergePipelineConfig.
 	MergePipeline MergePipelineConfig `yaml:"merge_pipeline,omitempty" json:"merge_pipeline,omitempty"`
+	// PushAndTag — whether the daemon publishes a finished release on its
+	// own. Off (the default) means the daemon only prepares the release and
+	// leaves pushing and tagging to the operator; on lets it push the
+	// release commit and tag.
+	PushAndTag bool `yaml:"push_and_tag" json:"push_and_tag"`
+	// ReleasePath — how a prepared release reaches the remote: direct_push
+	// (the default) pushes the release commit straight to the default
+	// branch; pull_request opens a pull request instead and waits for it to
+	// merge.
+	ReleasePath string `yaml:"release_path" json:"release_path"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung
 	// request can be told from a slow one. Observation only: it never ends a
@@ -7200,6 +7240,7 @@ func DefaultConfig() *Config {
 				Mode:      GitSecretScanShadow,
 				Detectors: GitSecretScanDefaultDetectors,
 			},
+			ReleaseCIWindowMinutes: 60,
 		},
 		Server: ServerConfig{
 			Enabled:              true,
@@ -7251,6 +7292,7 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
+			ReleasePath:                              "direct_push",
 			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
 			AutoFixRetries:                           1,
 			MaxConcurrentTasks:                       1,
@@ -7895,6 +7937,12 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validatePluginServices(cfg.Plugins.Services, "plugins.services"); err != nil {
+		return err
+	}
+	if err := ValidateReleasePath(cfg.Autonomous.ReleasePath); err != nil {
+		return err
+	}
+	if err := ValidateReleaseCIWindowMinutes(cfg.Git.ReleaseCIWindowMinutes); err != nil {
 		return err
 	}
 	if err := ValidateSnapshotNeverStage(cfg.Autonomous.SnapshotNeverStage); err != nil {

@@ -356,4 +356,15 @@ const (
 	// (transport failure or a non-2xx body, value never usable). Details:
 	// widget_id, error.
 	ActionPluginWidgetPullFailed = "plugin_widget_pull_failed"
+
+	// Release git operations — the daemon records one entry per push or tag
+	// it performs for a release, or refuses. Details: project, ref, remote,
+	// credential_source (a label only: host-login, credential-helper,
+	// ssh-agent, an environment-variable name or a vault-secret name, never
+	// the token value), outcome.
+
+	// ActionReleasePush — a release push to a git remote (performed or refused).
+	ActionReleasePush = "release_push"
+	// ActionReleaseTag — a release tag created or pushed (performed or refused).
+	ActionReleaseTag = "release_tag"
 )

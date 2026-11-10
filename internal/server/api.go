@@ -6291,8 +6291,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 
 		"classifier": classifierForDisplay(s.cfg.Classifier),
 		"git": map[string]interface{}{
-			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
-			"push_remote":      s.cfg.Git.EffectivePushRemote(),
+			"push_on_complete":          s.cfg.Git.EffectivePushOnComplete(),
+			"push_remote":               s.cfg.Git.EffectivePushRemote(),
+			"release_ci_window_minutes": s.cfg.Git.ReleaseCIWindowMinutes,
 			// git.secret_scan — pre-push secret scan (v9.0.0). Effective
 			// values, mirroring push_* above: an unset config shows its
 			// defaults (mode shadow, all built-in detectors, empty allow-list).
@@ -6488,6 +6489,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// the PUT path now persists correctly.
 		"autonomous": map[string]interface{}{
 			"enabled":               s.cfg.Autonomous.Enabled,
+			"push_and_tag":          s.cfg.Autonomous.PushAndTag,
+			"release_path":          effectiveReleasePath(s.cfg.Autonomous.ReleasePath),
 			"poll_interval_seconds": s.cfg.Autonomous.PollIntervalSeconds,
 			"max_parallel_tasks":    s.cfg.Autonomous.MaxParallelTasks, // deprecated, ignored; removal deferred one release
 			// Daemon-wide default for how many independent tasks of one
@@ -7785,6 +7788,30 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if terr := validateTracingPatch(s.cfg.Tracing, patch); terr != nil {
 		http.Error(w, terr.Error(), http.StatusBadRequest)
 		return
+	}
+	// autonomous.release_path and git.release_ci_window_minutes — refused
+	// with the config layer's own message so every surface shows the same text.
+	if raw, ok := patch["autonomous.release_path"]; ok {
+		rs, isStr := raw.(string)
+		if !isStr {
+			http.Error(w, "autonomous.release_path must be \"direct_push\" or \"pull_request\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateReleasePath(strings.TrimSpace(rs)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["git.release_ci_window_minutes"]; ok {
+		n, isInt := toInt(raw)
+		if !isInt {
+			http.Error(w, "git.release_ci_window_minutes must be greater than 0 (a whole number of minutes)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateReleaseCIWindowMinutes(n); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	// git.secret_scan.mode — pre-validate like pi.thinking_level above: an
 	// unknown mode (a security-critical setting) rejects the whole PUT
@@ -10374,6 +10401,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// v5.17.0 — BL191 Q4 (recursion) + Q6 (guardrails) config
 		// surface. Pre-v5.17.0 these keys silently no-op'd through
 		// the PUT /api/config path because the case wasn't here.
+		case "autonomous.push_and_tag":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PushAndTag = b
+			} else if str, ok := v.(string); ok {
+				if bs, err := strconv.ParseBool(strings.TrimSpace(str)); err == nil {
+					cfg.Autonomous.PushAndTag = bs
+				}
+			}
+		case "autonomous.release_path":
+			// Pre-validated by the PUT handler.
+			if str, ok := v.(string); ok && config.ValidateReleasePath(strings.TrimSpace(str)) == nil {
+				cfg.Autonomous.ReleasePath = strings.TrimSpace(str)
+			}
+		case "git.release_ci_window_minutes":
+			// Pre-validated by the PUT handler.
+			if n, ok := toInt(v); ok && config.ValidateReleaseCIWindowMinutes(n) == nil {
+				cfg.Git.ReleaseCIWindowMinutes = n
+			}
 		case "autonomous.max_recursion_depth":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.MaxRecursionDepth = n
@@ -15192,4 +15237,12 @@ func (s *Server) sessionMemoryCeiling() *SessionMemoryCeiling {
 		out.Warning, out.Reason = true, "no_enforcement"
 	}
 	return out
+}
+
+// effectiveReleasePath shows the default when autonomous.release_path is unset.
+func effectiveReleasePath(v string) string {
+	if v == "" {
+		return config.ReleasePathDirectPush
+	}
+	return v
 }

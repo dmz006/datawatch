@@ -18304,6 +18304,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'git.secret_scan.detectors', label: 'Secret scan detectors (comma-separated; empty = all built-in)', labelKey: 'settings_git_secret_scan_detectors', helpKey: 'settings_git_secret_scan_detectors_help', type: 'text', placeholder: 'private_key, aws_access_key, github_token', csv: true },
     { key: 'git.secret_scan.allow_list.paths', label: 'Secret scan path allow-list (globs)', labelKey: 'settings_git_secret_scan_allow_paths', helpKey: 'settings_git_secret_scan_allow_paths_help', type: 'text', placeholder: 'vendor, testdata', csv: true },
     { key: 'git.secret_scan.allow_list.fingerprints', label: 'Secret scan fingerprint allow-list (16/64 hex)', labelKey: 'settings_git_secret_scan_allow_fingerprints', helpKey: 'settings_git_secret_scan_allow_fingerprints_help', type: 'text', placeholder: 'a1b2c3d4e5f60718', csv: true },
+    // Release settings (autonomous.push_and_tag, autonomous.release_path,
+    // git.release_ci_window_minutes) sit next to the git settings. One
+    // custom row draws all three controls from the config object; see
+    // releaseSettingsSectionHTML.
+    { key: 'release.section', type: 'release_section' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
@@ -19839,6 +19844,8 @@ function loadGeneralConfig() {
             </div>`;
           } else if (f.type === 'rules_context_card') {
             html += '<div id="rulesContextCard"></div>';
+          } else if (f.type === 'release_section') {
+            html += releaseSettingsSectionHTML(cfg);
           } else if (f.type === 'platform_context_card') {
             html += platformContextCardHtml(cfg && cfg.platform_context, state._daemonVersion);
           } else if (f.type === 'llm_select') {
@@ -21170,6 +21177,72 @@ function settingsHelpLink(f) {
   const tip = t(f.helpKey) || '';
   const lbl = t(f.helpLabelKey || 'settings_help_link_label') || '';
   return ` <a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="${escHtml(tip)}" aria-label="${escHtml(lbl)}">?</a>`;
+}
+
+// Release settings block (Settings > Sessions, next to the git settings).
+// Every value is read from the config object GET /api/config returns:
+// autonomous.push_and_tag (switch), autonomous.release_path (direct_push or
+// pull_request) and git.release_ci_window_minutes (whole minutes > 0). A
+// control is always drawn, so an off switch still shows. The last-release
+// status line renders only when the config object carries a release record
+// (autonomous.last_release with a version).
+const RELEASE_PATH_OPTIONS = ['direct_push', 'pull_request'];
+const RELEASE_HELP_DOCS = 'howto/release-push-and-tag.md';
+
+function releaseSettingsValues(cfg) {
+  const a = (cfg && cfg.autonomous) || {};
+  const g = (cfg && cfg.git) || {};
+  const win = Number(g.release_ci_window_minutes);
+  return {
+    pushAndTag: a.push_and_tag === true,
+    releasePath: RELEASE_PATH_OPTIONS.indexOf(a.release_path) >= 0 ? a.release_path : 'direct_push',
+    ciWindow: Number.isFinite(win) && win > 0 ? win : 60,
+    lastRelease: a.last_release || null,
+  };
+}
+
+// releaseStatusLineHTML draws the last-release line, or nothing when there
+// is no release record with a version.
+function releaseStatusLineHTML(rec) {
+  if (!rec || typeof rec !== 'object') return '';
+  const ver = String(rec.version || '').trim();
+  if (!ver) return '';
+  return `<div style="flex-basis:100%;font-size:11px;color:var(--text2);">${escHtml(t('settings_release_last_status', [ver]))}</div>`;
+}
+
+function releaseSettingsSectionHTML(cfg) {
+  const v = releaseSettingsValues(cfg);
+  const ptHelp = { helpDocs: RELEASE_HELP_DOCS, helpKey: 'settings_release_push_and_tag_help', helpLabelKey: 'settings_release_help_link_label' };
+  const pathHelp = { helpDocs: RELEASE_HELP_DOCS, helpKey: 'settings_release_path_help', helpLabelKey: 'settings_release_help_link_label' };
+  const winHelp = { helpDocs: RELEASE_HELP_DOCS, helpKey: 'settings_release_ci_window_help', helpLabelKey: 'settings_release_help_link_label' };
+  const label = (k) => { const s = t(k); return (s && s !== k) ? s : ''; };
+  const helpLink = (f) => settingsHelpLink(f);
+  const pathOpts = RELEASE_PATH_OPTIONS.map(o =>
+    `<option value="${escHtml(o)}" ${o === v.releasePath ? 'selected' : ''}>${escHtml(o)}</option>`).join('');
+  return `
+    <div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(label('settings_release_section') || 'Release')}</div>
+    </div>
+    <div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;">
+      <div class="settings-label" title="${escHtml(label(ptHelp.helpKey))}">${escHtml(label('settings_release_push_and_tag') || 'Push and tag finished releases')}${helpLink(ptHelp)}</div>
+      <label class="toggle-switch">
+        <input type="checkbox" data-cfg-key="autonomous.push_and_tag" ${v.pushAndTag ? 'checked' : ''} onchange="saveGeneralField('autonomous.push_and_tag', this.checked)" />
+        <span class="toggle-slider"></span>
+      </label>
+      ${_settingsHelpTextHTML(ptHelp)}
+    </div>
+    <div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;">
+      <div class="settings-label" title="${escHtml(label(pathHelp.helpKey))}">${escHtml(label('settings_release_path') || 'Release path')}${helpLink(pathHelp)}</div>
+      <select class="form-select general-cfg-input" data-cfg-key="autonomous.release_path" onchange="saveGeneralField('autonomous.release_path', this.value)">${pathOpts}</select>
+      ${_settingsHelpTextHTML(pathHelp)}
+    </div>
+    <div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;">
+      <div class="settings-label" title="${escHtml(label(winHelp.helpKey))}">${escHtml(label('settings_release_ci_window') || 'CI window (minutes)')}${helpLink(winHelp)}</div>
+      <input type="number" data-cfg-key="git.release_ci_window_minutes" class="form-input general-cfg-input" value="${escHtml(String(v.ciWindow))}"
+        min="1" step="1" placeholder="60" onchange="saveGeneralField('git.release_ci_window_minutes', Number(this.value))" />
+      ${_settingsHelpTextHTML(winHelp)}
+    </div>
+    ${releaseStatusLineHTML(v.lastRelease)}`;
 }
 
 // _settingsHelpTextHTML: the help text under a field, full row width so it

@@ -262,6 +262,10 @@ func cefSignature(action string) (int, string, int) {
 		return 82, "PluginTokenRemove", 2
 	case ActionPluginWidgetPullFailed:
 		return 83, "PluginWidgetPullFailed", 3
+	case ActionReleasePush:
+		return 84, "ReleasePush", 3
+	case ActionReleaseTag:
+		return 85, "ReleaseTag", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

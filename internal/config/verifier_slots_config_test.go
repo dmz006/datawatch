@@ -84,7 +84,7 @@ func TestVerifierSettingsConfigValidation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &Config{ComputeNodes: []ComputeNodeYAML{{Name: "gpubox", Kind: "ollama"}}}
+			cfg := &Config{Git: GitConfig{ReleaseCIWindowMinutes: 60}, ComputeNodes: []ComputeNodeYAML{{Name: "gpubox", Kind: "ollama"}}}
 			tc.mutate(&cfg.ComputeNodes[0])
 			applyDefaults(cfg)
 			err := validateLoaded(cfg)

@@ -92,7 +92,7 @@ func asInt(v interface{}) int {
 }
 
 func TestAttemptCostConfigAPI_RoundTrip(t *testing.T) {
-	s := attemptCostAPIServer(t, &config.Config{})
+	s := attemptCostAPIServer(t, &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}})
 
 	// Every key in one PUT, all valid.
 	if code, body := putConfigRaw(t, s, map[string]interface{}{
@@ -195,7 +195,7 @@ func TestAttemptCostConfigAPI_RefusalsLeaveStoredValueUnchanged(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := attemptCostAPIServer(t, &config.Config{Autonomous: config.AutonomousConfig{
+			s := attemptCostAPIServer(t, &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}, Autonomous: config.AutonomousConfig{
 				FirstAttemptEscalateAfterFailures: 2,
 				RetryResumeMaxContextTokens:       80000,
 			}})
@@ -242,7 +242,7 @@ func TestAttemptCostConfigAPI_RefusalsLeaveStoredValueUnchanged(t *testing.T) {
 }
 
 func TestAttemptCostConfigAPI_AbsentKeyKeepsItsValue(t *testing.T) {
-	s := attemptCostAPIServer(t, &config.Config{})
+	s := attemptCostAPIServer(t, &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}})
 
 	// Establish all three from one valid PUT.
 	if code, body := putConfigRaw(t, s, map[string]interface{}{

@@ -300,6 +300,11 @@ git:
   push_on_complete: branch
   # Remote name the finished branch is pushed to (default: origin).
   push_remote: origin
+  # How long the release CI is waited for (in minutes) after the daemon
+  # pushes the release commit and tag; applies only when
+  # autonomous.push_and_tag is on. 0 or unset reads as the 60-minute
+  # default. See docs/howto/release-push-and-tag.md.
+  release_ci_window_minutes: 60
   # Pre-push secret scan (the "secret scan push gate"). Before any daemon
   # push attempt (PRD push-on-complete, one-shot push, pre-teardown save
   # push) it scans the commits on HEAD that are on no ref of push_remote,
@@ -3370,6 +3375,25 @@ autonomous:
     remote: origin
     # Workflow names the CI watch follows; empty watches all of them.
     ci_workflows: []
+  # Whether the daemon publishes a finished release itself. When on, after
+  # the ship steps the daemon pushes the release commit to the default
+  # branch, pushes the release tag, and then waits for the release CI for
+  # git.release_ci_window_minutes. Off (the default): the work branch is
+  # pushed as usual and the operator publishes the release. A value other
+  # than true/false is refused by the daemon. See
+  # docs/howto/release-push-and-tag.md.
+  push_and_tag: false
+  # How a finished release is published when push_and_tag is on.
+  #   direct_push — (default) push the release commit to the default branch,
+  #                 then push the release tag.
+  #   pull_request — push the release branch, open a pull request into the
+  #                  default branch, poll its checks for
+  #                  git.release_ci_window_minutes, and merge only when every
+  #                  check succeeded; a failed or still-pending check set
+  #                  leaves the pull request open and unmerged.
+  # Anything else is treated as direct_push. See
+  # docs/howto/release-push-and-tag.md.
+  release_path: direct_push
   # Wall-clock cap on one task attempt, in seconds. When it expires the
   # attempt is stopped and failed with the max-attempt reason. 0 (the
   # default) means off. Recommended: 5400 (90 min).
