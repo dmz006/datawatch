@@ -135,3 +135,34 @@ func (m *VaultHealthMonitor) Stop() {
 		<-done
 	}
 }
+
+// StartVaultHealth builds a VaultHealthMonitor bound to this server's secrets
+// store, alert store and live config (secrets.vault.unreachable_alert_after_seconds
+// is re-read every poll, so config changes apply without a restart) and starts
+// it. Each poll runs CheckHealth to refresh the cached status. Returns nil
+// when no alert store is wired. Call after SetAlertStore and SetSecretsStore.
+func (s *HTTPServer) StartVaultHealth(ctx context.Context) *VaultHealthMonitor {
+	a := s.api
+	if a == nil || a.alertStore == nil {
+		return nil
+	}
+	m := &VaultHealthMonitor{
+		Alerts: a.alertStore,
+		Status: func() (secrets.VaultStatus, bool) {
+			v, ok := a.secretsStore.(vaultBacked)
+			if !ok {
+				return secrets.VaultStatus{}, false
+			}
+			_ = v.CheckHealth()
+			return v.Status(), true
+		},
+		ThresholdSeconds: func() int {
+			if a.cfg == nil {
+				return 0
+			}
+			return a.cfg.Secrets.Vault.EffectiveUnreachableAlertAfterSeconds()
+		},
+	}
+	m.StartVaultHealthMonitor(ctx)
+	return m
+}

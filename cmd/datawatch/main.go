@@ -4217,6 +4217,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
+			// Vault health monitor: alerts when Vault stays unreachable past
+			// secrets.vault.unreachable_alert_after_seconds.
+			httpServer.StartVaultHealth(context.Background())
 			// Call-time ${secret:name} API-key resolution in the inference
 			// dispatcher: the dispatcher was created above, before the
 			// secrets store existed, with its creation block already closed,
