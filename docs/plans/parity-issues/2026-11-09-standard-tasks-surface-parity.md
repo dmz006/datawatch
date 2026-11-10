@@ -56,7 +56,16 @@ explanatory empty state instead of an empty table, and a plain
 "Load failed: …" line on load failure — never a stale list.
 
 Every value is escaped, and at phone width the table becomes
-stacked rows with each cell carrying its column name.
+stacked rows with each cell carrying its column name. The two
+operator-facing limits on this surface are flagged in the how-to's
+"Open items to check" section (`docs/howto/automata-standard-tasks.md`)
+and belong on the gap record too. First, the standard-task **mode**
+setting is not available anywhere: every task reports `model session`
+and no config changes it, so no client may offer a mode control. Second,
+the web sub-tab reads the **global** list: the per-project resolved read
+(`?project=`) exists only on REST, MCP, CLI and the comm channel, so a
+client with a notion of the active project can show the resolved state
+even though the PWA does not yet.
 
 The app has none of this. Its Templates surface shows only the Automaton
 template store, and it has no place that shows which built-in tasks the
@@ -80,7 +89,9 @@ there is no create, edit or delete control on this surface and it must not
 pretend there is one; the only switch that exists is
 `autonomous.task_templates.enabled` (plus per-project overrides) in the
 daemon's config, which the app surfaces under Settings if it surfaces
-decompose-lint settings at all, labelled *Standard tasks*. Gating follows the
+decompose-lint settings at all, labelled *Standard tasks* — and equally, no
+mode control: the mode is fixed at `model session` today and there is no
+per-task or per-project mode setting to wire one to. Gating follows the
 PWA: when the read fails, or the daemon reports autonomous disabled, the
 surface shows a plain error line (or hides the content) rather than a stale
 list; when the body's `enabled` is false or `tasks` is empty, it shows a
@@ -115,6 +126,10 @@ separate control.
 - A failed read or a disabled autonomous subsystem shows a plain error line
   (or hides the content), never a stale list; an empty task list shows the
   empty state, not an error.
+- The app offers no create/edit/delete and no mode control on these rows,
+  and if it reads with `?project=` the rendered rows must agree with what
+  `datawatch autonomous standard-tasks --project <dir-or-alias>` reports
+  for the same project.
 - The app never calls the decomposer's built-in per-story tasks "templates",
   and never offers create/edit/delete on them.
 
@@ -122,7 +137,16 @@ separate control.
 
 - Drafted 2026-11-09 as part of the standard-tasks Templates-tab work (the
   sub-tab registry, the read-only renderer, the empty states and
-  phone-width layout, and the five locale bundles). Not filed: this session
-  is a file-write-only task and never runs the hosting CLI. File against
-  `dmz006/datawatch-app` from a session that can, after the PWA release
-  lands, and paste the issue number here.
+  phone-width layout, and the five locale bundles). Not filed: that session
+  was a file-write-only task and never ran the hosting CLI.
+- Updated 2026-11-09 in the story's second parity-draft round, after the
+  standard-tasks how-to was brought up to the finished sub-tab behaviour
+  and gained its "Open items to check" section: current-behaviour now
+  matches the how-to, and the two operator-visible limits (no mode setting
+  anywhere; the web tab reads the global list while per-project resolution
+  is on REST/MCP/CLI/comm) are recorded here as part of the gap. Companion
+  wording draft `2026-11-09-standard-tasks-templates-tab-parity.md` remains
+  unfiled.
+- File against `dmz006/datawatch-app` from a session that can, after the
+  PWA release lands, folding in the companion draft so the two do not both
+  live as open asks, and paste the issue number here.
