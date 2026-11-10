@@ -7105,10 +7105,17 @@ adds no tool, script or file scope; a widening version waits for an operator acc
    pack block are not run.
 4. The datawatch app (Android and iPhone) does not show packs.
 
-**The `builtin` name and the fixture folder.** `builtin` means the task and template
-definitions compiled into the binary; it is not read from a folder. The pack folder
-`internal/packs/testdata/standard-tasks-pack/` is test data only and is not embedded.
-Nothing on a running daemon reads that folder, and the real standard-tasks pack comes
+**The `builtin` name and the fixture folders.** `builtin` means the task and template
+definitions embedded in the binary from `internal/packs/builtinpacks/builtin/`. They are
+embedded as data files and written out and loaded on first use, not read from an
+install folder. The built-in standard-task list is produced by the pack resolver
+(`packs.ResolveTaskList`) for the `feature` kind only; the apply step does not filter by
+kind, so every Automaton kind receives the same list.
+
+Two pack folders under `internal/packs/testdata/` are test data only and are not
+embedded: `standard-tasks-pack/` (a copy of the standard tasks) and `fixture-one-kind/`
+(one extra task for the `feature` kind, used to check the resolver's kind filter).
+Nothing on a running daemon reads either folder, and the real standard-tasks pack comes
 from the community registry, not from this repository.
 
 **Review owed by the operator:** decide where the install and accept actions live and
