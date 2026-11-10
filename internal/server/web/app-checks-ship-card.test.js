@@ -176,11 +176,11 @@ test('the loaders read their routes and draw into the Overview slots', async () 
 test('the Resources sub-tab carries both slots and the stop lists end both loaders', () => {
   const sb = loadApp({});
   const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'resources').bodyHTML()", sb);
-  assert.ok(body.includes('id="automationChecksCard"'));
+  assert.ok(!body.includes('id="automationChecksCard"'), 'the checks card moved to the Events stream');
   assert.ok(body.includes('id="automationShipCard"'));
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/checks'") && src.includes("url: '/api/autonomous/ship'"));
-  assert.ok(src.includes("'automation_infra_retry', 'automation_checks', 'automation_ship']);"), 'the Resources stop() must end both loaders');
+  assert.ok(src.includes("'automation_usage', 'automation_ship']);"), 'the Resources stop() must end the ship loader');
   assert.ok(src.includes("'automation_onboarding_report', 'automation_checks', 'automation_ship'];"), 'the stop-all list must include both loaders');
 });
 

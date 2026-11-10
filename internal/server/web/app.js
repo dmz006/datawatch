@@ -35083,16 +35083,14 @@ const _AUTOMATION_SUBTABS = [
     bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
-      <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationChecksCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('resources')}`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationUsageLoader(), _automationInfraRetryLoader(), _automationChecksLoader(), _automationShipLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationUsageLoader(), _automationShipLoader()]);
       _automationSlotsMount('resources');
     },
     stop() {
-      _automationStopLoaders(['automation_capacity', 'automation_lane_fill', 'automation_usage', 'automation_infra_retry', 'automation_checks', 'automation_ship']);
+      _automationStopLoaders(['automation_capacity', 'automation_lane_fill', 'automation_usage', 'automation_ship']);
       _automationSlotsStop('resources');
     },
   },
@@ -35128,17 +35126,15 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
-    bodyHTML: () => `<div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+    bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationProtectedPathsCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('housekeeping')}`,
     mount() {
-      listLoaderAll([_automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationProtectedPathsLoader()]);
+      listLoaderAll([_automationUncommittedWorkLoader(), _automationProtectedPathsLoader()]);
       _automationSlotsMount('housekeeping');
     },
     stop() {
-      _automationStopLoaders(['automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_protected_paths']);
+      _automationStopLoaders(['automation_uncommitted_work', 'automation_protected_paths']);
       _automationSlotsStop('housekeeping');
     },
   },
