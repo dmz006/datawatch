@@ -27,7 +27,7 @@ work waits.
   a negative or fractional value sent through a settings surface is rejected (the REST
   `PUT` names the key: "must be a whole number of seconds (0 = no cap)").
 
-The cap counts from when the verifier session starts. It is separate from the
+The cap counts run time from the verifier's capacity grant; time spent waiting for a slot is not counted. It is separate from the
 no-progress timeout (`autonomous.verifier_no_progress_timeout_seconds`), which only
 ends a session that shows no activity: no output file, no pane change, no live
 runner process and no held capacity slot. A busy verifier that keeps producing
@@ -35,6 +35,10 @@ output is not stopped by the no-progress timeout, but the run cap still bounds i
 total run time.
 
 ## Where to set it
+
+There are five places to set the cap at runtime: the web Settings page, the REST API,
+the comm `configure` verb, the MCP tool and `datawatch config set`. The config file is
+the sixth place, for a daemon's starting value.
 
 | Method | How |
 |--------|-----|
@@ -95,9 +99,11 @@ crashed session.
 
 A verifier session ended at the cap is retried **once**, on the next backend in the
 verifier policy order after the one that was cut. The retry backend runs on its
-registry default model. If the retry was already spent, or the policy lists only one
-backend, there is no retry and the verification ends as an infra failure, which the
-usual infra escalation handles.
+registry default model. A cut run is **not a failed task**: the cap ends a verifier
+session, not the Automaton's work, so the verification runs again on the retry. If the
+retry was already spent, or the policy lists only one backend, there is no retry and the
+verification ends as an infrastructure result (not a content verdict), which the usual
+infra escalation handles.
 
 ## Operator review
 
