@@ -44,13 +44,12 @@ branch that can fail silently and leave the worker with no scanner. The
 repo now carries a hardened installer, `scripts/ci-install-trivy.sh
 <tag> <dir>`, which pulls the install script **for the pinned version
 tag** (not `main`), into a temp file (no pipe-to-shell), with retries and
-a loud failure on a persistent download error. Once the "Install Trivy"
-steps in `release.yaml`, `containers.yaml` and `image-refresh.yaml` are
-migrated to it — still pending review as of this note — the installer is
-no longer fetched from `main` by the workflows, the standing-note row
-above reports no workflow lines, and the drift-vs-`main` finding loses its
-workflow-side target. The watcher itself is unchanged and will keep
-reporting exactly as the row describes until then.
+a loud failure on a persistent download error. As of 2026-11-09 all eight
+"Install Trivy" steps in `release.yaml`, `containers.yaml` and
+`image-refresh.yaml` are migrated to it, so the workflows no longer fetch the
+installer from `main`. The watcher itself is unchanged, and this guide does not
+verify whether its standing-note row now reports no workflow lines; check the
+next upstream-watch run before relying on that.
 
 Rule of thumb: Dependabot opens pull requests for the three ecosystems it can
 see; the upstream-watch job reports (it never opens a PR, pushes, or edits a
@@ -229,13 +228,14 @@ PRD prepares for auto-merge; that is a later decision.
 
 ## Known gaps
 
-- **The Trivy installer is still fetched from the moving `main` branch** in
-  three workflows (`.github/workflows/containers.yaml`,
-  `.github/workflows/image-refresh.yaml`, `.github/workflows/release.yaml`).
-  The upstream-watch job reports this as a standing note — and reports a
-  finding when the installer text at `main` drifts (sha256) from the one at the
-  pinned `v${TRIVY_VERSION}` tag — but **changing it is a separate decision**,
-  not part of option C as built. `scripts/upstream_watch.py` is monitoring-only
+- **The workflows' Trivy install steps were moved off the moving `main` branch**
+  on 2026-11-09. All eight steps in `.github/workflows/containers.yaml`,
+  `.github/workflows/image-refresh.yaml` and `.github/workflows/release.yaml`
+  now run `scripts/ci-install-trivy.sh` with the pinned tag. The upstream-watch
+  job's standing note about `main` was written before that change. Whether it
+  still reports is not verified here. Its finding for `main` drift (sha256) from
+  the pinned `v${TRIVY_VERSION}` tag is unchanged, and **changing the watcher
+  itself is a separate decision**, not part of option C as built. `scripts/upstream_watch.py` is monitoring-only
   and never edits those workflows.
 - **AGENT.md still says "until upstream monitoring exists"** in its dependency
   rule (the operator change of 2026-10-25). The wording is now stale, but

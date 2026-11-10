@@ -91,3 +91,19 @@ pattern but not the script. Finally, when the migration lands, drop the
 "Still pending review" paragraph from
 `docs/howto/container-image-refresh.md` so the howto stops describing a gap
 that no longer exists.
+
+## Parity surface
+
+This is CI and shell only. No daemon, API, config or UI code changes, so every
+product surface is excluded.
+
+| Surface | Decision | Why |
+|---------|----------|-----|
+| REST | excluded | No endpoint is added or changed; the installer runs in GitHub Actions. |
+| MCP | excluded | No MCP tool is added or changed. |
+| CLI | excluded | `datawatch` gains no command; `scripts/ci-install-trivy.sh` is a repository script, not a CLI subcommand. |
+| comm channel | excluded | No channel command or message changes. |
+| YAML/config | excluded | No daemon config key is added. The Trivy pins stay in the workflow files. |
+| Web UI (PWA) | excluded | No UI change. |
+| Android app | excluded | No app change. |
+| iOS app | excluded | No app change. |
