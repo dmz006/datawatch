@@ -6,7 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
-- **The "Vault unreachable" badge is gone from the Settings nav button.** Nothing else on the nav shows Vault health, and no alert is raised when the Vault is unreachable — that replacement alert was not added (alerting is still deferred; see `internal/config` Vault notes, BL285). The only Vault-health signal is the Settings status row, which now also shows **Last success** (or "never") and **Last error** (or "none"), translated in English, German, Spanish, French and Japanese. No migration step.
+- **The "Vault unreachable" badge is removed from the Settings nav button.** The Settings nav button no longer carries a badge when the Vault backend cannot be reached; the nav no longer reports Vault health.
+- **How it shows up:** the **Vault** row on the Settings page is now where you check Vault health — it reports reachable or unreachable, shows the Vault address, and adds two labelled lines, **Last success** (or "never") and **Last error** (or "none"), in English, German, Spanish, French and Japanese.
+- **Known gap:** a Vault outage raises no push alert; the row above is the operator-facing signal.
+- **Migration:** none.
 
 ## v9.96.3 — Template tasks no longer fail decompose
 
