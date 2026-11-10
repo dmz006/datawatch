@@ -7107,6 +7107,21 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .automation-drawer-fields dd { margin-bottom: 8px; }
 }
 
+/* Triage detail panel: sections sit inside the automation drawer. */
+.triage-detail-panel { min-width: 0; font-size: 13px; }
+.triage-detail-headline { font-weight: 700; overflow-wrap: anywhere; }
+.triage-detail-rows { display: grid; gap: 4px; margin-top: 8px; }
+.triage-detail-row { overflow-wrap: anywhere; }
+.triage-detail-label { color: var(--text2); }
+.triage-detail-value { color: var(--text); }
+.triage-detail-section { margin-top: 12px; min-width: 0; }
+.triage-detail-heading { font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.triage-detail-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.triage-detail-history { margin: 0; padding-left: 18px; font-size: 12px; }
+.triage-detail-history li { margin-bottom: 8px; overflow-wrap: anywhere; }
+.triage-detail-when { color: var(--text2); font-size: 11px; }
+.triage-detail-empty { color: var(--text2); }
+
 /* ── listLoader states (skeleton, failed banner, cached badge) ───────────── */
 .list-state-skeleton { padding: 8px 0; }
 .list-state-loading-label { display: block; color: var(--text2); font-size: 12px; margin-bottom: 8px; }

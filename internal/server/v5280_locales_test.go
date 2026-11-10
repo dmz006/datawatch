@@ -666,6 +666,17 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_release_ci_window_help",
 		"settings_release_help_link_label",
 		"settings_release_last_status",
+		// 6a1b0001 — Automata Inbox triage cards: headline and primary-action keys.
+		"triage_headline_failed",
+		"triage_headline_blocked",
+		"triage_headline_merge_pending",
+		"triage_headline_none",
+		"triage_action_open_details",
+		"triage_action_retry",
+		"triage_action_resolve_review",
+		"triage_action_cancel",
+		"triage_detail_title",
+		"triage_question_answer_in_place",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

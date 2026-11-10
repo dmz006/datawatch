@@ -25,7 +25,7 @@
 // activate handler purges old caches AND force-navigates every
 // controlled window. Reload-to-update should Just Work after this.
 const CACHE_NAME = 'datawatch-v7-0-0-alpha-51';
-const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
+const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/automata-triage-model.js', '/style.css', '/manifest.json'];
 
 // GATE: navigate-on-activate guard (pure, testable). Return true only when
 // at least one existing cache key differs from the current name — i.e. a

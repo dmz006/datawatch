@@ -2974,8 +2974,6 @@ function navigate(view, sessionId, fromPopstate) {
     if (window._sessionStatsInterval) { clearInterval(window._sessionStatsInterval); window._sessionStatsInterval = null; }
     // Clean up pi progress polling interval (PWA poll-stacking rule)
     if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
-    // Repo CI watch status-line poll (Automaton view, same rule)
-    if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
     // Supervisor watch card poll (Automaton view, same rule)
     if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
     // Supervisor loop card poll (Automaton view, same rule)
@@ -31095,16 +31093,19 @@ function _mergePipelineFetch(url, o) {
 }
 
 // ── Triage card ─────────────────────────────────────────────────────────────
-// triageCardHtml(record) turns one triage record — the single self-contained
-// record a failed or blocked Automaton carries while it waits for operator
-// attention — into the record card: the Automaton's name, the Automation
-// that owns it when it is a member, the status chip, the failed task, its
-// error, the session end reason, the retry budget per category, the first
-// sighting and whether an alert has already been raised. A missing record
-// renders the placeholder; the loader owns the failed state. Every value is
-// escaped. The key maps hold literal locale keys, so the key-coverage guard
-// can see them.
-const TRIAGE_STATUS_KEYS = { failed: 'triage_status_failed', blocked: 'triage_status_blocked' };
+// triageCardHtml(record) turns one triage record — the self-contained record a
+// failed, blocked or merge-pending Automaton carries while it waits for operator
+// attention — into the inbox card. The card shows, in order: the bold headline
+// (window.AutomataTriageModel.triageHeadline), a kind chip and, when the record
+// has an owning Automation, an owner chip with its name, the reason clamped to
+// two lines (the full text is in the detail panel), the waiting time since
+// first_seen_at, and the action buttons. The retry budget is not on the card;
+// window.triageBudgetDetailHtml(record) renders it for the detail panel.
+// Every value is escaped, and a line whose value is empty, zero or never is
+// not rendered. Each button carries data-action and data-prd-id (plus
+// data-task-id when the record has a task). One delegated click handler on the
+// document dispatches the actions; a click on the card body that is not a
+// button calls window.openTriageDetail(prdID, taskID) when that opener exists.
 const TRIAGE_BUDGET_ROWS = [
   ['infra', 'triage_budget_infra'],
   ['content', 'triage_budget_content'],
@@ -31112,7 +31113,7 @@ const TRIAGE_BUDGET_ROWS = [
   ['policy', 'triage_budget_policy'],
 ];
 // _triageKey returns the locale key for an API value, or '' for anything that
-// is not one of ours (including inherited names such as "constructor").
+// is not one of the map's keys (including inherited names such as "constructor").
 function _triageKey(map, v) {
   return (typeof v === 'string' && Object.prototype.hasOwnProperty.call(map, v)) ? map[v] : '';
 }
@@ -31134,49 +31135,216 @@ function _triageBudgetRow(label, b) {
     `<span style="font-weight:600;min-width:64px;overflow-wrap:anywhere;">${escHtml(label)}</span>` +
     `<span style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(val)}</span></div>`;
 }
-window.triageCardHtml = function(record) {
-  const head = `<div class="cap-title">${escHtml(t('triage_card_title'))}</div>`;
-  if (!record || typeof record !== 'object') {
-    return `<div class="prd-capacity-card triage-card">${head}<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_record_empty'))}</div></div>`;
-  }
-  const statusKey = _triageKey(TRIAGE_STATUS_KEYS, record.status);
-  const statusLabel = statusKey ? t(statusKey) : String(record.status || '');
-  const chipName = (statusKey === 'triage_status_failed') ? 'failed' : (statusKey === 'triage_status_blocked') ? 'blocked' : 'unknown';
-  const chipColor = statusKey === 'triage_status_failed' ? 'var(--error,#c00)' : 'var(--warning,#a06b00)';
-  const chip = `<span class="triage-status-chip triage-status-${chipName}" style="display:inline-block;padding:1px 8px;border:1px solid ${chipColor};border-radius:10px;font-size:11px;font-weight:700;color:${chipColor};">${escHtml(statusLabel)}</span>`;
-  const name = `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(record.prd_title || record.prd_id || '')} ${chip}</div>`;
-  const automation = record.automation_name
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_triage_owner', [record.automation_name]))}${record.member_id ? escHtml(t('triage_member', [record.member_id])) : ''}</div>`
-    : '';
-  const task = record.task_title
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_failed_task', [record.task_title]))}</div>`
-    : '';
-  const error = record.error
-    ? `<div class="triage-error" style="margin-top:4px;color:var(--error,#c00);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(record.error)}</div>`
-    : '';
-  const blocked = record.blocked_reason
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_blocked_reason', [record.blocked_reason]))}</div>`
-    : '';
-  const ended = record.session_end_reason
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_session_end_reason', [record.session_end_reason]))}</div>`
-    : '';
-  const firstSeen = _triageTime(record.first_seen_at);
-  const first = firstSeen
-    ? `<div style="color:var(--text2);">${escHtml(t('triage_first_seen', [firstSeen]))}</div>`
-    : '';
-  const alertedAt = record.alerted_at ? _triageTime(record.alerted_at) : '';
-  const alert = alertedAt
-    ? `<div style="color:var(--text2);">${escHtml(t('triage_alerted_at', [alertedAt]))}</div>`
-    : `<div style="color:var(--text2);">${escHtml(t('triage_not_alerted'))}</div>`;
-  const bud = (record.retry_budget && typeof record.retry_budget === 'object') ? record.retry_budget : {};
+// triageBudgetDetailHtml renders the retry budget table (four categories and
+// the ceiling) for the detail panel. A record with no budget still gets the
+// heading and says no auto-retry was allowed.
+window.triageBudgetDetailHtml = function(record) {
+  const bud = (record && typeof record === 'object' && record.retry_budget && typeof record.retry_budget === 'object') ? record.retry_budget : {};
   const budgetHead = `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('triage_retry_budget'))}</div>`;
   const budgetRows = TRIAGE_BUDGET_ROWS.map(([k, key]) => _triageBudgetRow(t(key), bud[k])).join('');
   const ceilingTotal = Number(bud.ceiling_total) || 0;
   const ceiling = ceilingTotal > 0
     ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_budget_ceiling', [Number(bud.ceiling_left) || 0, ceilingTotal]))}</div>`
     : `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_budget_none'))}</div>`;
-  return `<div class="prd-capacity-card triage-card" style="min-width:0;">${head}${name}${automation}${task}${error}${blocked}${ended}${first}${alert}${budgetHead}${budgetRows}${ceiling}</div>`;
+  return budgetHead + budgetRows + ceiling;
 };
+// _triageHeadlineText turns the view model's locale key and parameters into
+// the headline text.
+function _triageHeadlineText(record) {
+  const h = window.AutomataTriageModel.triageHeadline(record);
+  return t(h.key, Object.values(h.params || {}));
+}
+// _triageSpan formats a whole number of minutes as a compact human span.
+function _triageSpan(mins) {
+  if (mins < 60) return mins + 'm';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h < 24) return h + 'h' + (m ? ' ' + m + 'm' : '');
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return d + 'd' + (rh ? ' ' + rh + 'h' : '');
+}
+// _triageWaitLine is the waiting-time line, or '' when there is no usable
+// first sighting or less than a minute has passed.
+function _triageWaitLine(record) {
+  const since = window.AutomataTriageModel.triageWaitingSince(record);
+  if (!since) return '';
+  const mins = Math.floor((Date.now() - Date.parse(since)) / 60000);
+  if (!(mins >= 1)) return '';
+  return `<div class="triage-wait" style="margin-top:4px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_waiting_for', [_triageSpan(mins)]))}</div>`;
+}
+// _triageInReview reports whether the record carries a review note, which
+// the review step writes when a task is held for operator review.
+function _triageInReview(record) {
+  const notes = Array.isArray(record.notes) ? record.notes : [];
+  return notes.some(n => n && n.source === 'review');
+}
+// _triageButtons renders the action row. Retry needs a task; Resolve review
+// needs a merge-pending record or a task held for review; Cancel is always
+// there.
+function _triageButtons(record, prdID, taskID) {
+  const id = escHtml(prdID);
+  const taskAttr = taskID ? ` data-task-id="${escHtml(taskID)}"` : '';
+  const btn = (action, key) => `<button type="button" class="btn-secondary triage-btn triage-btn-${action}" data-action="${action}" data-prd-id="${id}"${taskAttr} data-status="${escHtml(record.status || '')}">${escHtml(t(key))}</button>`;
+  const parts = [btn('open-detail', 'triage_action_open_details')];
+  if (taskID) parts.push(btn('retry', 'triage_action_retry'));
+  if (record.status === 'merge_pending' || _triageInReview(record)) parts.push(btn('resolve-review', 'triage_action_resolve_review'));
+  parts.push(btn('cancel', 'triage_action_cancel'));
+  return `<div class="triage-actions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-width:0;">${parts.join('')}</div>`;
+}
+// _automationHelpLinkHtml is the '?' help affordance on an Inbox card. It opens
+// the Automata howto section for that card in a new tab; helpKey names the
+// locale string used as its tooltip and accessible label.
+function _automationHelpLinkHtml(helpKey, anchor) {
+  const label = t(helpKey);
+  return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
+}
+window.triageCardHtml = function(record) {
+  _triageBindClick();
+  const head = `<div style="display:flex;align-items:center;gap:8px;min-width:0;"><div class="cap-title">${escHtml(t('triage_card_title'))}</div>${_automationHelpLinkHtml('automation_help_triage_card', '#the-needs-attention-card')}</div>`;
+  if (!record || typeof record !== 'object') {
+    return `<div class="prd-capacity-card triage-card">${head}<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_record_empty'))}</div></div>`;
+  }
+  const M = window.AutomataTriageModel;
+  const prdID = String(record.prd_id || '');
+  const taskID = String(record.task_id || '');
+  _triageRemember(record, prdID, taskID);
+  const headline = `<div class="triage-headline" style="margin-top:4px;font-weight:700;overflow-wrap:anywhere;">${escHtml(_triageHeadlineText(record))}</div>`;
+  const chipStyle = 'display:inline-block;max-width:100%;padding:1px 8px;border:1px solid var(--border);border-radius:10px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;';
+  const kindChip = `<span class="triage-kind-chip" style="${chipStyle}">${escHtml(t('triage_kind_automaton'))}</span>`;
+  const owner = M.triageOwnerLabel(record);
+  const ownerChip = owner ? `<span class="triage-owner-chip" style="${chipStyle}">${escHtml(t('triage_in_automation', [owner]))}</span>` : '';
+  const chips = `<div class="triage-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:0;">${kindChip}${ownerChip}</div>`;
+  const reason = M.triageReason(record);
+  const reasonText = reason.text || t(reason.key);
+  const reasonHtml = `<div class="triage-reason" style="margin-top:6px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
+  return `<div class="prd-capacity-card triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;">${head}${headline}${chips}${reasonHtml}${_triageWaitLine(record)}${_triageButtons(record, prdID, taskID)}</div>`;
+};
+// _triageCardClick is the single delegated handler for every triage card.
+// Buttons dispatch their action; a click elsewhere on the card opens details.
+function _triageCardClick(ev) {
+  const target = ev && ev.target;
+  if (!target || typeof target.closest !== 'function') return;
+  const card = target.closest('.triage-card');
+  if (!card) return;
+  const btn = target.closest('[data-action]');
+  const prdID = (btn && btn.getAttribute('data-prd-id')) || card.getAttribute('data-prd-id') || '';
+  const taskID = (btn && btn.getAttribute('data-task-id')) || '';
+  if (!btn) { _triageOpenDetail(prdID, taskID); return; }
+  _triageRunAction(btn.getAttribute('data-action'), prdID, taskID, btn.getAttribute('data-status') || '');
+}
+// _triageOpenDetail opens the detail panel when its opener is loaded.
+function _triageOpenDetail(prdID, taskID) {
+  if (typeof window.openTriageDetail === 'function') window.openTriageDetail(prdID, taskID);
+}
+// _triageRunAction is the one dispatcher for the four action buttons. The
+// card and the detail panel both call it, so a button does the same thing
+// wherever it is drawn.
+function _triageRunAction(action, prdID, taskID, status) {
+  if (action === 'open-detail') _triageOpenDetail(prdID, taskID);
+  else if (action === 'retry' && typeof window.prdResetTask === 'function') window.prdResetTask(prdID, taskID);
+  else if (action === 'resolve-review' && typeof window.prdResolveTaskReview === 'function') window.prdResolveTaskReview(prdID, taskID, { action: 'retry' });
+  else if (action === 'cancel' && typeof window.automataCancel === 'function') window.automataCancel(prdID, status || '');
+}
+// _triageRecordKey keys the record index by the PRD and task ids a card carries.
+function _triageRecordKey(prdID, taskID) {
+  return String(prdID || '') + '\u0000' + String(taskID || '');
+}
+// _triageRemember keeps the last drawn record for a PRD and task, so a card
+// click can open the detail panel with the full record.
+function _triageRemember(record, prdID, taskID) {
+  if (!window._triageRecordIndex) window._triageRecordIndex = new Map();
+  window._triageRecordIndex.set(_triageRecordKey(prdID, taskID), record);
+}
+// _triageRow is one labelled line of the detail panel.
+function _triageRow(label, value) {
+  return `<div class="triage-detail-row"><span class="triage-detail-label">${escHtml(label)}</span> <span class="triage-detail-value">${escHtml(value)}</span></div>`;
+}
+// _triageDetailHtml renders the detail panel body for one record. The full
+// headline, reason and error text are shown unclamped. A section whose data
+// is empty is left out, except the history, which says it is empty.
+function _triageDetailHtml(record) {
+  const M = window.AutomataTriageModel;
+  const prdID = String(record.prd_id || '');
+  const taskID = String(record.task_id || '');
+  // The card's reason keeps two lines; the panel shows the whole error.
+  const fullError = record.status === 'failed' ? String(record.error || '').trim() : '';
+  const reason = M.triageReason(record);
+  const reasonText = fullError || reason.text || t(reason.key);
+  const parts = [];
+  parts.push(`<div class="triage-detail-headline">${escHtml(_triageHeadlineText(record))}</div>`);
+  const automaton = String(record.prd_title || '') || prdID;
+  const rows = [];
+  if (automaton) rows.push(_triageRow(t('triage_kind_automaton'), automaton));
+  const owner = M.triageOwnerLabel(record);
+  if (owner) rows.push(_triageRow(t('triage_detail_automation'), owner));
+  if (rows.length) parts.push(`<div class="triage-detail-rows">${rows.join('')}</div>`);
+  parts.push(_triageWaitLine(record));
+  parts.push(`<div class="triage-detail-section"><div class="triage-detail-heading">${escHtml(t('triage_detail_reason'))}</div><div class="triage-detail-text">${escHtml(reasonText)}</div></div>`);
+  if (record.retry_budget && typeof record.retry_budget === 'object') {
+    parts.push(`<div class="triage-detail-section">${window.triageBudgetDetailHtml(record)}</div>`);
+  }
+  const notes = (Array.isArray(record.notes) ? record.notes : []).filter(n => n && typeof n === 'object');
+  const history = notes.length
+    ? `<ul class="triage-detail-history">${notes.map(n => {
+        const when = _triageTime(n.at);
+        const source = n.source ? ' · ' + String(n.source) : '';
+        return `<li><div class="triage-detail-when">${escHtml(when + source)}</div><div class="triage-detail-text">${escHtml(n.text || '')}</div></li>`;
+      }).join('')}</ul>`
+    : `<div class="triage-detail-empty">${escHtml(t('triage_detail_empty_history'))}</div>`;
+  parts.push(`<div class="triage-detail-section"><div class="triage-detail-heading">${escHtml(t('triage_detail_history'))}</div>${history}</div>`);
+  parts.push(_triageButtons(record, prdID, taskID));
+  return parts.join('');
+}
+// _triageFindRecord returns the record last drawn for a PRD and task id.
+function _triageFindRecord(prdID, taskID) {
+  const idx = window._triageRecordIndex;
+  return (idx && idx.get(_triageRecordKey(prdID, taskID))) || null;
+}
+// closeTriageDetail removes the detail panel if it is open.
+function closeTriageDetail() {
+  const el = document.getElementById('triageDetailDrawer');
+  if (el && typeof el.remove === 'function') el.remove();
+}
+window.closeTriageDetail = closeTriageDetail;
+// openTriageDetail(recordOrId, taskID) opens the detail panel for one triage
+// record. It takes the record itself, or the PRD id and task id a card carries
+// (the card body click and Open details). The panel's action buttons call the
+// same helpers as the card.
+window.openTriageDetail = function(recordOrId, taskID) {
+  const record = (recordOrId && typeof recordOrId === 'object')
+    ? recordOrId
+    : _triageFindRecord(String(recordOrId || ''), String(taskID || ''));
+  if (!record) return;
+  closeTriageDetail();
+  const el = document.createElement('div');
+  el.id = 'triageDetailDrawer';
+  el.className = 'automation-drawer';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', t('triage_detail_title'));
+  el.innerHTML = `<div class="automation-drawer-panel triage-detail-panel">
+    <div class="automation-drawer-head"><span class="automation-drawer-title">${escHtml(t('triage_detail_title'))}</span><button type="button" class="automation-drawer-close" onclick="closeTriageDetail()" aria-label="${escHtml(t('automation_drawer_close'))}" title="${escHtml(t('automation_drawer_close'))}">✕</button></div>
+    ${_triageDetailHtml(record)}
+  </div>`;
+  el.addEventListener('click', e => {
+    if (e.target === el) { closeTriageDetail(); return; }
+    const target = e.target;
+    if (!target || typeof target.closest !== 'function') return;
+    const btn = target.closest('[data-action]');
+    if (!btn) return;
+    _triageRunAction(btn.getAttribute('data-action'), btn.getAttribute('data-prd-id') || '', btn.getAttribute('data-task-id') || '', btn.getAttribute('data-status') || '');
+  });
+  document.body.appendChild(el);
+};
+// _triageBindClick arms the delegated handler once, on the first card drawn,
+// so nothing listens for clicks before there is a card to act on.
+function _triageBindClick() {
+  if (window._triageCardClickBound) return;
+  if (typeof document === 'undefined' || !document || typeof document.addEventListener !== 'function') return;
+  window._triageCardClickBound = true;
+  document.addEventListener('click', _triageCardClick);
+}
 // triageListHtml is the Automation sub-tab's list renderer: the GET
 // /api/autonomous/triage body is { records: [...], alert_minutes }; it draws
 // a card per stuck Automaton, an empty state when none wait for the
@@ -35268,90 +35436,6 @@ window.scrollToPRD = function(id) {
   showToast('Automaton ' + id + ' not in current filter', 'info', 2500);
 };
 
-// ── Repo CI watch — the read-only status line (the Automaton view)
-// The line shows the shared repo CI watch state the coordinator records
-// (every run's watched state; one alert per non-green run once it is
-// past the threshold): the mode in effect, how many watched runs are
-// failing / pending right now, and when it last polled.
-//
-// It is read-only: every read goes through GET /api/autonomous/repo-ci-
-// watch, and when that endpoint is unavailable (autonomous disabled,
-// a peer without the capability) the line stays hidden instead of
-// showing a stale state.
-//
-// PWA poll-stacking rule: the interval lives on
-// window._repoCIWatchInterval and is cleared both before it is
-// (re)set (each renderAutonomousView) and when leaving the view, so
-// re-renders and tab switches never stack a second timer.
-const REPO_CI_WATCH_STATUS_ELEMENT_ID = 'repoCIWatchStatusLine';
-const REPO_CI_WATCH_POLL_MS = 30000; // the same cadence as the Automata list loader (pollMs: 30000)
-
-function repoCIWatchAgeText(lastPollAt, nowMs) {
-  if (!lastPollAt || String(lastPollAt).slice(0, 4) === '0001' || Number.isNaN(Date.parse(lastPollAt))) {
-    return t('repo_ci_watch_last_poll_never');
-  }
-  const now = nowMs ? nowMs : Date.now();
-  const secs = Math.floor(Math.max(0, now - Date.parse(lastPollAt)) / 1000);
-  if (secs < 5) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_just_now')]);
-  if (secs < 60) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_seconds', [secs])]);
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_minutes', [mins])]);
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_hours', [hrs])]);
-  return t('repo_ci_watch_last_poll', [t('repo_ci_watch_age_days', [Math.floor(hrs / 24)])]);
-}
-
-// repoCIWatchStatusText renders the whole line for one read view
-// ({ mode, alert_minutes, repos, last_poll_at, records }) — pure so the
-// PWA test can pin its text for each mode/count. nowMs is injectable
-// for the same reason.
-function repoCIWatchStatusText(view, nowMs) {
-  if (!view || typeof view !== 'object') return null;
-  const mode = String(view.mode || 'off');
-  let modeText = t('repo_ci_watch_mode_' + mode);
-  if (modeText.indexOf('repo_ci_watch_mode_') === 0) modeText = mode; // unknown mode: raw value
-  const recs = Array.isArray(view.records) ? view.records : [];
-  const failing = recs.filter(r => r && r.status === 'failing').length;
-  const pending = recs.filter(r => r && r.status === 'pending').length;
-  const parts = [t('repo_ci_watch_prefix') + ': ' + modeText];
-  const counts = [];
-  if (failing) counts.push(t('repo_ci_watch_failing', [failing]));
-  if (pending) counts.push(t('repo_ci_watch_pending', [pending]));
-  parts.push(counts.length ? counts.join(', ') : t('repo_ci_watch_none_open'));
-  parts.push(repoCIWatchAgeText(view.last_poll_at, nowMs));
-  return parts.join(', ');
-}
-
-function repoCIWatchRenderLine(view, nowMs) {
-  const el = document.getElementById(REPO_CI_WATCH_STATUS_ELEMENT_ID);
-  if (!el) return;
-  const text = repoCIWatchStatusText(view, nowMs);
-  if (!text) { // endpoint missing — hide the line, never show a stale state
-    el.style.display = 'none';
-    el.textContent = '';
-    return;
-  }
-  el.textContent = text;
-  el.title = t('repo_ci_watch_status_title');
-  el.style.display = '';
-}
-
-function repoCIWatchRefreshStatusLine(nowMs) {
-  return apiFetch('/api/autonomous/repo-ci-watch')
-    .then(view => repoCIWatchRenderLine(view, nowMs))
-    .catch(() => repoCIWatchRenderLine(null, nowMs));
-}
-
-function repoCIWatchStartPolling() {
-  if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
-  repoCIWatchRefreshStatusLine();
-  window._repoCIWatchInterval = setInterval(repoCIWatchRefreshStatusLine, REPO_CI_WATCH_POLL_MS);
-}
-
-function repoCIWatchStopPolling() {
-  if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
-}
-
 function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
@@ -35372,10 +35456,6 @@ function renderAutonomousView() {
   view.innerHTML = `
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     <div class="view-content" style="position:relative;">
-      <!-- Repo CI watch — the read-only status line (mode, failing/
-           pending counts, last poll). Hidden until the endpoint answers;
-           stays hidden when it doesn't. -->
-      <div id="repoCIWatchStatusLine" role="status" style="font-size:12px;color:var(--text2);padding:0 0 8px;display:none;"></div>
       <!-- v6.12.4 — operator: "automata tab, automata and templates
            should be like tab headers, like tmux,channel,state are
            inside a session. not buttons". Reuse the output-tabs /
@@ -35427,10 +35507,6 @@ function renderAutonomousView() {
     if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
   }
   _automataReuseList = false;
-  // Repo CI watch status line — the immediate refresh plus a refresh on
-  // the Automaton view's own cadence; startPolling clears any existing
-  // window timer first so re-renders never stack (PWA poll-stacking rule).
-  repoCIWatchStartPolling();
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
@@ -35670,10 +35746,8 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_inbox',
     badge: () => _automationInboxBadgeCount(),
     bodyHTML: () => `
-      <!-- Needs-attention/triage card: judgment call — it lists the failed
-           and blocked records that need an operator, so it stays first on
-           the default Inbox view. -->
-      <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
+      <!-- Inbox order: the queue and hold cards first, then the triage card
+           (the failed and blocked records), then the rest. -->
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -35689,9 +35763,11 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationHeldQuestionsCard" class="prd-capacity-card held-questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('held_question_title'))}</div>
+          ${_automationHelpLinkHtml('automation_help_held_questions', '#the-held-questions-card')}
         </div>
         <div id="automationHeldQuestionsBody"></div>
       </div>
+      <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       ${_automationSlotsHTML('inbox')}`,
@@ -36972,6 +37048,15 @@ function _automationQuestionsRowHtml(q) {
         : '');
   }
   const idStyle = q.label ? 'font-size:11px;color:var(--text2);' : 'font-weight:600;font-size:12px;';
+  // Each option is a button that posts that answer in place
+  // (window.answerQuestionOption); the ids ride in data attributes, so the
+  // handler reads them with no inline JS string built from the id.
+  const opts = Array.isArray(q.options) ? q.options.filter(o => o && typeof o === 'object' && o.id) : [];
+  const optsHtml = opts.length
+    ? `<div class="questions-options" style="display:flex;flex-wrap:wrap;gap:6px;">` + opts.map(o =>
+      `<button type="button" class="btn-secondary questions-option-btn" data-question-id="${escHtml(id)}" data-option-id="${escHtml(String(o.id))}" title="${escHtml(String(o.tradeoffs || ''))}" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.answerQuestionOption === 'function') window.answerQuestionOption(this)">${escHtml(String(o.label || o.id))}</button>`
+    ).join('') + `</div>`
+    : '';
   return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
     `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
       (q.label ? `<span class="questions-label" style="font-weight:600;font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
@@ -36979,6 +37064,7 @@ function _automationQuestionsRowHtml(q) {
       high +
     `</div>` +
     textHtml +
+    optsHtml +
     `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
       `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
       `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(id)}')">${escHtml(t('automation_questions_open'))}</button>` +
@@ -37049,6 +37135,27 @@ window.onAutomationQuestionsSearchKeydown = onAutomationQuestionsSearchKeydown;
 window.refreshAutomationQuestions = function() {
   const ctl = window._listLoaders && window._listLoaders.automation_questions;
   if (ctl) ctl.load();
+};
+
+// window.answerQuestionOption posts one option of an open question in place:
+// POST /api/questions/{id}/answer with that option and no text, through the
+// same _questionAnswerSubmit the answer dialog uses. The row's option buttons
+// are disabled while the answer is in flight; on success the queue re-reads,
+// and on failure the server's message shows as a toast and the buttons return.
+window.answerQuestionOption = function(btn) {
+  if (!btn || !btn.dataset) return;
+  const qid = String(btn.dataset.questionId || '');
+  const optionId = String(btn.dataset.optionId || '');
+  if (!qid || !optionId) return;
+  const row = typeof btn.closest === 'function' ? btn.closest('.questions-queue-row') : null;
+  const buttons = row ? Array.from(row.querySelectorAll('.questions-option-btn')) : [btn];
+  buttons.forEach(b => { b.disabled = true; });
+  _questionAnswerSubmit(qid, '', optionId, '').then(() => {
+    window.refreshAutomationQuestions();
+  }).catch(err => {
+    buttons.forEach(b => { b.disabled = false; });
+    showToast(_questionAnswerErrorMessage(err), 'error');
+  });
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -37358,7 +37465,7 @@ window.heldQuestionDetailLinkHtml = function(entry) {
 // default-of-hold when the record carries them, and finally the
 // controls line — the detail link and the answer button (the guarded
 // hand-off to window.openQuestion, the existing answer control).
-window.heldQuestionRowHtml = function(entry) {
+window.heldQuestionRowHtml = function(entry, isShadow) {
   const e = (entry && typeof entry === 'object') ? entry : {};
   const question = String(e.question_id == null ? '' : e.question_id);
   const title = String(e.automaton_title == null ? '' : e.automaton_title);
@@ -37387,9 +37494,21 @@ window.heldQuestionRowHtml = function(entry) {
     ? `<button type="button" class="held-question-answer btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
     : '';
   const controls = [window.heldQuestionDetailLinkHtml(e), answerBtn].filter(Boolean).join('<span style="color:var(--border);">·</span>');
+  // A shadow entry is only a would-be hold, so it gets no change-the-hold
+  // line; an open entry is a real hold, and the line names where to change
+  // or view it (the Settings page under Automata, a navigation link only).
+  const changeLine = isShadow ? '' : `<div class="held-question-change" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_question_held_change'))} <a href="javascript:void(0)" class="held-question-settings-link" onclick="if (typeof window.openAutomataSettings === 'function') window.openAutomataSettings()" style="color:var(--accent,#2f6feb);text-decoration:none;">${escHtml(t('nav_settings'))}</a></div>`;
   return `<div class="held-question-row" style="padding:6px 0;border-top:1px solid var(--border);" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
-    + line1 + reasonLine + recLine + defLine
+    + line1 + reasonLine + recLine + defLine + changeLine
     + `<div style="margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${controls}</div></div>`;
+};
+
+// window.openAutomataSettings opens Settings on its Automata tab. It is a
+// navigation only: nothing here writes configuration.
+window.openAutomataSettings = function() {
+  _settingsTab = 'automata';
+  try { localStorage.setItem('cs_settings_tab', 'automata'); } catch (e) { /* the tab still opens */ }
+  navigate('settings');
 };
 
 // heldQuestionsCardHtml is the card body the listLoader polls into
@@ -37413,7 +37532,7 @@ window.heldQuestionsCardHtml = function(body) {
   if (mode === 'shadow' && shadow.length) {
     html += `<div class="held-question-shadow-section" style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
       <div class="held-question-shadow-title" style="font-weight:600;font-size:12px;">${escHtml(t('held_question_shadow_title'))}</div>
-      <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e)).join('')}</div></div>`;
+      <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
 };
