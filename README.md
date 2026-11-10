@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.130.0 (2026-11-10).** The Automata view has an Events sub-tab: one newest-first event log merged from the watch, decisions, retries, checks, cleanup, repo CI watch and errors, with kind, project and text filters, and the supervisor watch, infrastructure retries, checks, safe-to-delete and cleanup cards now live there. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.131.0 (2026-11-10).** A Vault that stays unreachable now raises a real alert (and a recovery alert) instead of a Settings nav badge; the delay is the new secrets.vault.unreachable_alert_after_seconds setting (default 120, 0 = off), and the Vault row shows last success and last error. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

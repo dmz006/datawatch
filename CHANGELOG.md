@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.131.0 — Vault unreachable alert
+
+### Added
+- **Vault unreachable alert.** When the Vault stays unreachable past a threshold, datawatch raises a real alert (shown in Alerts and sent to your messaging channels with the other system alerts) and raises a recovery alert when the Vault comes back. One alert is raised per outage, and token-like text is scrubbed from the last error it shows.
+- **Threshold.** `secrets.vault.unreachable_alert_after_seconds` sets how many whole seconds the Vault must be unreachable before the alert fires. Default 120; `0` turns the alert off. It is set in the config file, REST (`secrets.vault.unreachable_alert_after_seconds`), MCP, the CLI, the comm channel, and a new field in PWA Settings (en, de, es, fr, ja).
+- **Vault row.** The **Vault** row on the Settings page reports reachable or unreachable, shows the Vault address, and adds **Last success** (or "never") and **Last error** (or "none") lines, in English, German, Spanish, French and Japanese.
+
+### Changed
+- **The "Vault unreachable" badge is removed from the Settings nav button.** The alert and the Vault row replace it; the nav no longer reports Vault health.
+- **Migration:** none. Existing configs get the 120-second default; set `0` if you do not want the alert.
+- **Docs and checks.** The secrets-manager howto (`docs/howto/secrets-manager.md`) describes the alert and the threshold. The sandbox story `scripts/test-stories/pwa/vault-nav-label-clear.mjs` checks that the Settings nav label stays clear of any Vault badge.
+
 ## v9.130.0 — Automata Events sub-tab
 
 ### Added
