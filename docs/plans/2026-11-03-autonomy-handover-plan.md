@@ -220,3 +220,9 @@ Pack question 6 (first acceptance of the pre-seeded community registry). Options
 Operator: "We need to modulator even the supervisor, skills and eventually other models seem essential" (read as: make the supervisor modular; skills, and eventually other models, are essential). Scope and shape are open; first question asked of the operator is whether to draft a design Automaton or fold it into the packs work.
 
 Operator, on how to take it forward: "A, but it should be designed to fit into the packs". Design proposal: docs/plans/2026-11-10-supervisor-as-skills-design.md (open questions listed there, asked one at a time).
+
+### Reporting data store (operator, 2026-11-10)
+
+Current stores: Automata are one JSON file each (fsync and rename writes, side files for large text); trace is per-session JSONL plus an index; memory, web search, council and docs-index vectors use SQLite (memory also has a Postgres store); small state is single JSON files.
+
+Operator on how reports and dashboards read this data: "Let's go with A. I like that for initial step and if we find that we're using the database more we can look at a migration for a future version, but I like A for right now." Decision: files stay the source of truth; a derived SQLite reporting index, rebuildable from the files, serves reports and dashboards. A migration of the source of truth to a database is a possible future version, revisited if database use grows. Not yet drafted as an Automaton; it is part of the reports work and the pack run record (the trace event is extended, the index reads it).
