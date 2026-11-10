@@ -143,3 +143,8 @@ does not cover today. Encryption coverage becomes a requirement of the migration
 Operator answer on migration question 3 (2026-11-10): "Q3, A" (both the supervisor and Automata write records through the
 same datawatch tools: REST, MCP and the CLI; the supervisor writes findings and decisions, Automata write their own
 shipped and status records at the end; every write lands in the audit log).
+
+Operator answer on the encryption question (2026-11-10): "A" (the new plan, backlog and status records are encrypted
+under secure mode from the first release; bringing the Automaton, trace and decision files into the same coverage is a
+precondition for the cut-over; metadata that must stay readable for search or filtering stays plaintext and is named in
+the docs). Step 3 of the sequence (import) and step 4 (cut-over) now depend on that coverage.
