@@ -7105,7 +7105,16 @@ adds no tool, script or file scope; a widening version waits for an operator acc
    pack block are not run.
 4. The datawatch app (Android and iPhone) does not show packs.
 
+**The `builtin` name and the fixture folder.** `builtin` means the task and template
+definitions compiled into the binary; it is not read from a folder. The pack folder
+`internal/packs/testdata/standard-tasks-pack/` is test data only and is not embedded.
+Nothing on a running daemon reads that folder, and the real standard-tasks pack comes
+from the community registry, not from this repository.
+
 **Review owed by the operator:** decide where the install and accept actions live and
 whether they need a parity issue, confirm the default install root, and confirm that a
 first-party source's acceptance is taken at enable time (the planned behaviour) before
-the surfaces are built.
+the surfaces are built. Also decide whether the code comment on `PacksBuiltinName`
+(`internal/config/packs_config.go`), which says the builtin pack "ships inside the
+binary", should name the compiled-in task-template defaults explicitly; this docs set
+does not edit Go source.

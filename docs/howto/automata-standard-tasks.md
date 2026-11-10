@@ -170,8 +170,18 @@ action both use it.
 A **pack** is a named, versioned folder that ships standard tasks and Automaton
 templates together: the task prompts, their verification scripts and the template
 definitions. The folder holds a `pack.yaml` manifest at its root. The built-in
-standard tasks are the first pack, named `builtin`; it ships in the binary and needs
-no install. Packs from the community registry use the same path.
+standard tasks are the first pack, named `builtin`. Its task and template definitions
+are compiled into the binary (the built-in task-template defaults in
+`internal/autonomous`), so `builtin` is not a folder on disk and needs no install.
+Packs from the community registry use the same path.
+
+**The repository's pack folder is a test fixture.** `internal/packs/testdata/standard-tasks-pack/`
+holds a loadable copy of the standard tasks in the pack folder format: a `pack.yaml`,
+six prompts, five verification scripts and a `templates/README.md` that lists the
+Automaton templates. It is used only by the tests and is not embedded in the binary.
+The real standard-tasks pack is published in the community registry repository
+(operator decision, 2026-11-09); the fixture does not replace it, and installing the
+fixture is not a way to get the standard tasks on a daemon.
 
 **Status: the rules below exist in the `internal/packs` package, and the config keys
 are read, but no daemon surface calls them yet.** There is no REST, MCP, CLI or PWA
