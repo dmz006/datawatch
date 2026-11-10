@@ -446,11 +446,23 @@ lines=[l for l in sys.stdin.read().splitlines() if l.strip()]
 print(json.dumps([json.loads(l) for l in lines]))
 ' 2>/dev/null || echo "[]")
   local total_secs=$((PASS + FAIL + SKIP))
-  printf '{"run_id":"%s","type":"smoke","total":%d,"version":"%s","started_at":"%s","updated_at":"%s","active":%s,"current_id":"%s","current_name":"%s","pass":%d,"fail":%d,"skip":%d,"sections":%s}' \
+  local payload
+  payload=$(printf '{"run_id":"%s","type":"smoke","total":%d,"version":"%s","started_at":"%s","updated_at":"%s","active":%s,"current_id":"%s","current_name":"%s","pass":%d,"fail":%d,"skip":%d,"sections":%s}' \
     "${SMOKE_RUN_ID:-smoke}" "$total_secs" "${VER:-}" "$SMOKE_STARTED_AT" "$ts" "$active" \
     "$SMOKE_CUR_SEC" "$SMOKE_CUR_NAME" \
-    "$PASS" "$FAIL" "$SKIP" "$secs_json" \
-    > "$SMOKE_PROGRESS_FILE" 2>/dev/null || true
+    "$PASS" "$FAIL" "$SKIP" "$secs_json")
+  printf '%s' "$payload" > "$SMOKE_PROGRESS_FILE" 2>/dev/null || true
+  # The PWA Smoke card polls GET /api/smoke/progress. When this smoke talks to
+  # a daemon over HTTP (DW_BASE / CI), the local file write above is invisible
+  # to that daemon's data directory, so also upsert the run at the endpoint so
+  # a real run shows on the card. Fire-and-forget: a dashboard outage must
+  # never fail the smoke, and a 4xx (e.g. a read-only peer) is equally harmless.
+  if [[ -n "${BASE:-}" ]] && command -v curl >/dev/null 2>&1; then
+    curl -s --max-time 5 -o /dev/null \
+      ${TOK:+-H "Authorization: Bearer $TOK"} \
+      -H 'Content-Type: application/json' \
+      -X POST -d "$payload" "$BASE/api/smoke/progress" 2>/dev/null || true
+  fi
 }
 
 # v5.26.57 — operator-asked: "can't targeted smoke tests run instead
