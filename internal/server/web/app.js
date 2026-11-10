@@ -3059,7 +3059,9 @@ function navigate(view, sessionId, fromPopstate) {
 // (private windows), so each touch is wrapped and the view still renders.
 const _PROJECTS_LAST_KEY = 'cs_projects_last';
 const _PROJECTS_OVERVIEW = '';
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW };
+// rollup is the roll-up of the project named by rollupFor; rollupError is its
+// load failure. The page paints the roll-up only for the selected project.
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '' };
 
 function _projectsRememberLast(name) {
   try { localStorage.setItem(_PROJECTS_LAST_KEY, name || ''); } catch (_) { /* not remembered */ }
@@ -3106,7 +3108,8 @@ function _projectsPaint() {
     view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
   } else {
     const p = list.find(x => x.name === selected);
-    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectDetailHTML(p);
+    const forSel = _projectsState.rollupFor === selected;
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '');
   }
 }
 
@@ -3121,19 +3124,87 @@ function _projectsPickerHTML(list, selected, err) {
     </div>`;
 }
 
-// The project card: the fields the project list carries. The closing div
-// closes the #projectsView wrapper that _projectsPickerHTML leaves open.
-function _projectDetailHTML(p) {
+// The project page: the header fields, the ordered arcs with the Automata and
+// sessions under each, the unassigned Automata, and an Events list. A section
+// that is off or empty is left out, and what it would have said becomes an
+// Events entry. Rows link to the existing Automaton view (_statusOpenAutomaton)
+// and session view. The closing div closes the #projectsView wrapper that
+// _projectsPickerHTML leaves open. roll is this project's roll-up (null while
+// it loads); rollErr is the roll-up's load failure, if any.
+function _projectPageHTML(p, roll, rollErr) {
   if (!p) return '</div>';
-  const rows = [
-    ['projects_field_dir', 'Directory', p.dir],
-    ['projects_field_backend', 'Default backend', p.default_backend],
-    ['projects_field_description', 'Description', p.description],
-  ].filter(r => r[2]);
-  const body = rows.map(([key, fallback, val]) =>
-    `<div style="margin:4px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key) || fallback)}:</span> ${escHtml(val)}</div>`).join('');
+  const events = [];
+  const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
+  const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
+  const field = (key, val) => (val === undefined || val === null || val === '') ? unset(key) : row(key, val);
+  const pts = n => (Number(n) > 0 ? ` · ${Math.round(Number(n) * 10) / 10} ${escHtml(t('projects_page_points'))}` : '');
+
+  const tgt = p.target || {};
+  const ld = p.lane_defaults || {};
+  const laneVal = [ld.lane, ld.backend, ld.model].filter(Boolean).join(' · ');
+  const share = (p.weekly_share === undefined || p.weekly_share === null) ? '' : p.weekly_share + '%';
+  const head = [
+    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : unset('projects_field_description'),
+    field('projects_field_dir', p.dir),
+    field('projects_field_backend', p.default_backend),
+    field('projects_page_owner', p.owner),
+    field('projects_page_repository', p.repository),
+    field('projects_page_default_branch', p.default_branch),
+    field('projects_page_target', tgt.name),
+    field('projects_page_done_when', tgt.definition_of_done),
+    field('projects_page_lane_defaults', laneVal),
+    field('projects_page_weekly_share', share),
+  ].join('');
+
+  const sessionLink = id => `<a href="#" class="project-session-link" data-session="${escHtml(id)}" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(id)});return false;`)}" style="font-family:monospace;font-size:12px;margin-right:10px;">#${escHtml(String(id).split('-').pop())}</a>`;
+  const automatonHTML = a => {
+    const title = a.title || a.id;
+    const sessions = Array.isArray(a.session_ids) ? a.session_ids.filter(Boolean) : [];
+    if (!sessions.length) events.push(t('projects_event_automaton_no_sessions', [title]));
+    const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
+    return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
+      <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
+      <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${links}</div>`;
+  };
+  const automataList = list => list.map(automatonHTML).join('');
+  const arcHTML = arc => {
+    const state = arc.state || 'planned';
+    const stateKey = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[state];
+    const stateLabel = stateKey ? t(stateKey) : state;
+    const automata = Array.isArray(arc.automata) ? arc.automata : [];
+    const tasks = arc.tasks || {};
+    const summary = `<summary style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:4px 0;">
+      <span style="color:var(--text2);font-size:12px;">${escHtml(t('projects_page_priority'))} ${escHtml(arc.priority || 0)}</span>
+      <strong style="font-size:14px;">${escHtml(arc.automation_id)}</strong>
+      <span style="font-size:12px;">${escHtml(stateLabel)}</span>
+      <span style="font-size:12px;color:var(--text2);">${escHtml(tasks.done || 0)}/${escHtml(tasks.total || 0)} ${escHtml(t('projects_page_tasks'))}${pts(arc.points)}</span>
+    </summary>`;
+    if (!automata.length) {
+      events.push(t('projects_event_arc_empty', [arc.automation_id]));
+      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}</details>`;
+    }
+    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${automataList(automata)}</details>`;
+  };
+
+  let body = '';
+  if (rollErr) {
+    events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+  } else if (!roll) {
+    body = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+  } else {
+    const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
+    if (!arcs.length) events.push(t('projects_event_no_arcs'));
+    else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+    const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
+    if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
+    else events.push(t('projects_event_no_unassigned'));
+  }
+
+  const evs = events.length
+    ? `<div id="projectEvents" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
+    : '';
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;margin-bottom:6px;">${escHtml(p.name)}</div>${body}</div></div>`;
+    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${head}${body}${evs}</div></div>`;
 }
 
 function renderProjectsView() {
@@ -3142,7 +3213,7 @@ function renderProjectsView() {
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   _projectsPaint();
-  return _projectsLoad().then(() => {
+  return _projectsLoad().then(() => _projectsLoadRollup()).then(() => {
     // Paint again only while the Projects tab is still the active view.
     if (state.activeView === 'projects') _projectsPaint();
   });
@@ -3158,6 +3229,26 @@ function _projectsLoad() {
   });
 }
 
+// _projectsLoadRollup reads GET /api/projects/{name}/rollup for the selected
+// project. Overview and a name not in the list read nothing. A reply for a
+// project that is no longer selected is dropped.
+function _projectsLoadRollup() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/rollup').then(r => {
+    if (_projectsState.selected !== name) return;
+    _projectsState.rollup = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    _projectsState.rollupFor = name;
+    _projectsState.rollupError = '';
+  }).catch(err => {
+    if (_projectsState.selected !== name) return;
+    _projectsState.rollup = null;
+    _projectsState.rollupFor = name;
+    _projectsState.rollupError = (err && err.message) || String(err);
+  });
+}
+
 // selectProjectsView is the picker's change handler. It remembers the choice
 // and mirrors it in the hash without adding a history entry.
 function selectProjectsView(name) {
@@ -3167,6 +3258,9 @@ function selectProjectsView(name) {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
+  return _projectsLoadRollup().then(() => {
+    if (state.activeView === 'projects') _projectsPaint();
+  });
 }
 
 // Handle Android/browser back button via popstate
