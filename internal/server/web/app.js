@@ -29847,24 +29847,10 @@ window.projectPolicyApply = function (key) {
 // decisions and the recent idle-lane alerts. A missing status renders the
 // placeholder; the loader owns the failed state. Every value is escaped.
 // The key maps hold literal locale keys, so the key-coverage guard can see them.
-const LANE_FILL_DECISION_ROWS = 10;
 const LANE_FILL_ALERT_ROWS = 5;
 const LANE_FILL_MODE_KEYS = { off: 'lane_fill_mode_off', shadow: 'lane_fill_mode_shadow', on: 'lane_fill_mode_on' };
 const LANE_FILL_TYPE_KEYS = { gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
 const LANE_FILL_PREF_KEYS = { any: 'lane_fill_pref_any', gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
-const LANE_FILL_ELIGIBILITY_KEYS = {
-  stale: 'lane_fill_eligibility_stale', held: 'lane_fill_eligibility_held',
-  sequenced_after_unshipped: 'lane_fill_eligibility_sequenced_after_unshipped',
-  proposal_not_confirmed: 'lane_fill_eligibility_proposal_not_confirmed',
-  proposal_missing: 'lane_fill_eligibility_proposal_missing',
-  main_carries_work: 'lane_fill_eligibility_main_carries_work',
-  worktree_invalid: 'lane_fill_eligibility_worktree_invalid',
-};
-const LANE_FILL_ACTION_KEYS = {
-  start_prd: 'lane_fill_action_start', decompose: 'lane_fill_action_decompose',
-  decompose_ahead: 'lane_fill_action_decompose_ahead', report_merge: 'lane_fill_action_report_merge',
-  blocked: 'lane_fill_action_blocked', idle: 'lane_fill_action_idle',
-};
 // _laneFillKey returns the locale key for an API value, or '' for anything that
 // is not one of ours (including inherited names such as "constructor").
 function _laneFillKey(map, v) {
@@ -29936,24 +29922,6 @@ function _laneFillLaneHtml(l) {
     `<span>${escHtml(stateLabel)}</span>${waiting}${waitReasonHtml}` +
     `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
 }
-function _laneFillDecisionHtml(d) {
-  const clock = _laneFillClock(d.at);
-  const actionKey = _laneFillKey(LANE_FILL_ACTION_KEYS, d.action);
-  const action = actionKey ? t(actionKey) : String(d.action || '');
-  // Only a start is worded as a start; other actions show their own name.
-  const wording = d.action === 'start_prd' ? (d.executed ? t('lane_fill_started') : t('lane_fill_would_start')) : '';
-  const reason = d.blocker || d.reason || '';
-  // A refusal carries a stable code; it shows as a small labelled chip in front
-  // of the refusal text. A decision with no code (or an unknown one) shows none.
-  const eligKey = _laneFillKey(LANE_FILL_ELIGIBILITY_KEYS, d.eligibility_reason);
-  const chip = eligKey
-    ? `<span class="lane-fill-eligibility lane-fill-eligibility-${escHtml(d.eligibility_reason)}" style="display:inline-block;padding:0 6px;margin-right:4px;border:1px solid var(--text2);border-radius:8px;font-size:11px;font-weight:600;">${escHtml(t(eligKey))}</span>` : '';
-  const err = d.error ? `<div style="color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(d.error)}</div>` : '';
-  return `<div class="lane-fill-decision" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
-    `<span style="color:var(--text2);">${escHtml(clock)}</span> ${escHtml(d.lane_id)} · ${escHtml(action)} · ${escHtml(d.title)}` +
-    (wording ? ` <span style="font-weight:600;">— ${escHtml(wording)}</span>` : '') +
-    ((chip || reason) ? `<div style="color:var(--text2);">${chip}${escHtml(reason)}</div>` : '') + err + `</div>`;
-}
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
@@ -29974,13 +29942,11 @@ window.laneFillCardHtml = function(status, cap) {
     ? t('lane_fill_evidence_error', [ev.error])
     : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
   const evidence = `<div style="margin-top:6px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(evidenceLine)}</div>`;
-  const decisions = (Array.isArray(status.decisions) ? status.decisions : []).slice(0, LANE_FILL_DECISION_ROWS);
-  const decisionsHtml = decisions.length ? decisions.map(_laneFillDecisionHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_decisions'))}</div>`;
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
   const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
   return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
     _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
-    _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
+    `<div class="lane-fill-gap" aria-hidden="true" style="height:14px;"></div>` +
     _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
 };
 
@@ -35046,7 +35012,6 @@ function _automationInboxBackgroundStart() {
     if (s.loading) return;
     if (s.stopped || !s.pollTimer) l.load();
   });
-  if (!window._supervisorWatchInterval) supervisorWatchStartPolling();
 }
 
 const _AUTOMATION_SUBTABS = [
@@ -35078,12 +35043,10 @@ const _AUTOMATION_SUBTABS = [
         <div id="automationHeldQuestionsBody"></div>
       </div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
       listLoaderAll(_automationInboxLoaders());
-      supervisorWatchStartPolling();
       _automationSlotsMount('inbox');
     },
     // The Inbox loaders keep polling behind the other sub-tabs so the badge
