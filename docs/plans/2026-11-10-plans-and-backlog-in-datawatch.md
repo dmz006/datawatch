@@ -21,6 +21,13 @@ Read as two decisions:
 2. Skills and packs for synchronizing files between datawatch and the repository are a low-priority background
    helper until the migration is done. They are not where effort goes now.
 
+2026-11-10, on question 1 (what the migration covers first): "I tiered approach starting with A, then getting to
+all, then clean up repo, this will help with leaks a lot, we may need to consider how we manage products, that
+may have one or more repos, that have projects, and they can inter relate time line, features, etc." (read as:
+a tiered migration: registry rows and findings first (option A), then everything else, then clean up the
+repository, which will help prevent leaks; and a product layer needs designing: a product can have one or more
+repositories and projects, and products and projects can relate across timeline, features and so on.)
+
 ## What is on the file system today (counted 2026-11-10)
 
 - `docs/plans/` holds about 154 entries at the top level, plus parity issue drafts, generated drafts and gate
@@ -61,6 +68,7 @@ and Automaton it concerns:
 | 3 | One-time import of the registry and the live design docs into datawatch records, with the files kept read-only as the archive | open |
 | 4 | Stop writing new registry rows and plan files; the supervisor and Automata write records instead | open |
 | 5 | Optional export to a repository, off by default | open |
+| 5b | Clean up the repository: remove the migrated plans, registry and drafts from the tree (this also removes the main source of internal-detail leaks into the public repo) | open |
 | 6 | Retire the tidy scripts and registry checks once nothing writes the folders | open |
 
 Until step 4 the files stay as they are. The supervisor keeps adding registry rows by hand, so nothing is lost
@@ -87,3 +95,16 @@ None of these is cancelled. They wait, and the migration replaces their reason.
 4. What does the export look like: which records, what file layout, and who may turn it on?
 5. When is the cut-over (step 4)? The operator sets the date; I will list and recommend.
 6. Does the registry row numbering continue, or do records get ids of their own?
+
+## Tier order (operator, 2026-11-10)
+
+Tier 1: registry rows and findings. Tier 2: everything else (design proposals, handover plans, supervisor lessons,
+decisions, parity links). Tier 3: clean up the repository. The leak benefit is part of the reason for tier 3.
+
+## New design area: products (operator, 2026-11-10)
+
+The current model has projects, arcs (Automations) and Automata. I searched the Automata pages redesign doc and the
+Automata code for a product concept and found none (the word appears only in "Product Requirements Document" in the
+planning prompts). A product would sit above projects: one product with one or more repositories and one or more
+projects, with timeline, feature and dependency relations between its projects. Open questions on this are raised
+one at a time after the migration questions.
