@@ -175,7 +175,7 @@ For GitLab, set `git.provider: gitlab` on the Project Profile;
 the provider is implemented — it opens merge requests (`glab mr create`),
 issues (`glab issue create`) and releases (`glab release create`), and
 clone/push ride the `glab` host login. Only token *minting* remains a stub
-returning `ErrNotImplemented` (BL164 / Sprint 5 prereq), so the broker's
+returning `ErrNotImplemented`, so the broker's
 per-spawn mint flow is GitHub-only.
 
 ---
