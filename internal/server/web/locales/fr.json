@@ -4408,7 +4408,7 @@
   "review_attempt_resume_reason": "motif de la reprise",
   "review_attempt_no_retry": "Pas de nouvel essai",
   "settings_daemon_task_modes": "Modes des modèles de tâche (llm, daemon ou off, par modèle)",
-  "settings_daemon_task_modes_help": "Indique qui exécute chaque modèle de tâche de décomposition : llm (une session LLM), daemon (le daemon lui-même, si le modèle le permet) ou off (le modèle est ignoré). daemon n’est proposé que pour les modèles que le daemon sait exécuter. Le daemon n’exécute jamais final_gate.",
+  "settings_daemon_task_modes_help": "Indique qui exécute chaque modèle de tâche de décomposition : llm (une session LLM), daemon (le daemon lui-même, si le modèle le permet) ou off (le modèle est ignoré). daemon n’est proposé que pour les modèles que le daemon sait exécuter. final_gate n’accepte que llm ou off, et quand il est actif, c’est la porte de script du daemon qui l’exécute, pas une session de modèle.",
   "settings_daemon_task_mode_llm": "llm",
   "settings_daemon_task_mode_daemon": "daemon",
   "settings_daemon_task_mode_off": "off",

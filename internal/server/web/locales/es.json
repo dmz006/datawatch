@@ -4408,7 +4408,7 @@
   "review_attempt_resume_reason": "motivo de la retoma",
   "review_attempt_no_retry": "Sin reintento",
   "settings_daemon_task_modes": "Modos de las plantillas de tarea (llm, daemon u off, por plantilla)",
-  "settings_daemon_task_modes_help": "Indica quién ejecuta cada plantilla de tarea de descomposición: llm (una sesión de LLM), daemon (el propio daemon, cuando la plantilla lo permite) u off (la plantilla se omite). daemon solo se ofrece para las plantillas que el daemon puede ejecutar. El daemon nunca ejecuta final_gate.",
+  "settings_daemon_task_modes_help": "Indica quién ejecuta cada plantilla de tarea de descomposición: llm (una sesión de LLM), daemon (el propio daemon, cuando la plantilla lo permite) u off (la plantilla se omite). daemon solo se ofrece para las plantillas que el daemon puede ejecutar. final_gate solo admite llm u off, y cuando está activo la ejecuta la puerta de guiones del daemon, no una sesión de modelo.",
   "settings_daemon_task_mode_llm": "llm",
   "settings_daemon_task_mode_daemon": "daemon",
   "settings_daemon_task_mode_off": "off",
