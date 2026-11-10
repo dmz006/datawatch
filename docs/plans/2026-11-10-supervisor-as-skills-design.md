@@ -98,6 +98,15 @@ questions below are answered, one at a time.
   names the finding and file, never prints a matched secret value, and raises a question to the operator; an
   exception is an explicit allowlist entry the operator accepts, recorded with who accepted it and when).
 
+- 2026-11-09, on sequencing: "With your recommendation, that's fine." (draft the supervisor-units Automaton after the
+  packs Automaton is decomposed and reviewed.)
+- 2026-11-09, a new packs question (open): "with these packs that come in, I assume there's configurations for
+  them. Where are the configurations stored? They're not in the normal part of DataWatch Configure. Is there a
+  separate config for the plugins and packs that come in? Or how do we keep track of the different mappings
+  and things that actually take the pack details and then map them into how they're used within the local
+  DataWatch? Where does that mapping happen?" The packs spec does not yet say where per-pack input values live
+  or where the mapping happens; it is raised as a pack design question below.
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
@@ -212,3 +221,15 @@ Targets stay open until the operator sets them; the supervisor lists, recommends
 | Secrets and identity | Blocked in full; secret scanner plus exact-value scan of this installation's identities |
 | Local-only rules (agent and context files, repository-derived rules) | Never published |
 | Run points | Authoring gate, publish gate, scheduled re-check; fail closed; allowlist exceptions accepted and recorded |
+
+## Open pack question: where pack configuration lives and where the mapping happens
+
+The packs spec decides one setting that names the active packs and their order, and says no second registry,
+config tree or sync mechanism is added. It does not say where a pack's own input values are kept (for example a
+version file path, a lane cap, a node name) or where a pack's declared inputs are mapped onto this installation.
+Proposed answer, for the operator to confirm or change: the manifest declares each input (name, type, default,
+whether required, and whether it is a secret); values live in the normal datawatch configuration under a packs
+section, with the same override order as pack selection (Automaton, then project, then global), settable on
+every surface that configures the daemon; secret inputs hold a vault reference, never the value; one resolver in
+the daemon fills the inputs when a task from a pack is created and records the resolved values on the task, so a
+later config change does not alter running work.
