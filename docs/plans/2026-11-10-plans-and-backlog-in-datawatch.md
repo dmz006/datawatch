@@ -120,3 +120,22 @@ attaches to it, how cross-project relations are expressed, and how the Projects 
 Operator answer on migration question 2 (2026-11-10): "A" (the plans, backlog and status records live in the existing
 per-record JSON files, which stay the source of truth, like Automata today; the derived SQLite reporting index decided
 on 2026-11-10 is rebuildable from them; no new store and no database as source of truth yet).
+
+## Encryption at rest (operator question, 2026-11-10)
+
+Operator: "Are we also making sure if we have security enabled for encryption all these json files are data in sqllite
+is encrypted?" (read as: when secure mode is on, are all these JSON files and the SQLite data encrypted?)
+
+What I found (docs/encryption.md and the code, 2026-11-10):
+- Secure mode (`--secure`, XChaCha20-Poly1305 with Argon2id) encrypts config, sessions, alerts, commands, filters,
+  schedules, federation peers, skills index, ComputeNode and LLM registries, channel routing, discussion files,
+  session output and the application log. The memory database encrypts only the `content` and `summary` fields;
+  embeddings and metadata stay plaintext. `secrets.db` has its own key.
+- The documented list does NOT include the Automata record files (`autonomous/prds/*.json`, about 640 MB), the trace
+  files, decisions or change records, or the other SQLite databases (web search, council, docs index vectors).
+- This installation is not running in secure mode (a sample of alerts, trace index and Automaton files starts with
+  plain JSON), so I cannot say what a secure installation does with the Automata files beyond reading the docs and
+  code. I did not test a secure start.
+
+Consequence: moving plans, backlog and status into datawatch records puts planning content into files that secure mode
+does not cover today. Encryption coverage becomes a requirement of the migration, not a nice-to-have.
