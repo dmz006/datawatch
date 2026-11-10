@@ -20,6 +20,9 @@ questions below are answered, one at a time.
   session started for it, chosen by a setting per unit; a session runs it until the scheduler exists). The
   setting is configurable on every surface that configures the daemon, like the packs settings.
 
+- 2026-11-09, on question 4 (tier to model mapping): "A is the right one" (option A: reuse the existing LLM entries
+  and the planning routing setting; each tier names an existing LLM entry; no new supervisor-specific setting).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
