@@ -7,6 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **A verifier run-cap end frees the verifier's capacity slot and records a decision.** When `autonomous.verifier_max_run_seconds` ends a verifier session, the lease held for that verification is released once, before the retry on the next backend is decided. A `verifier_run_cap` decision is written on the Automaton, and an `autonomous.verifier_run_cap` audit record with it. The note names the task id, the elapsed seconds and the cap in seconds, for example `task=<id> elapsed_seconds=2711 cap_seconds=2700 end_reason=verifier_max_run`. The attempt that the cut verification ends is recorded with the end reason `verifier_max_run`.
+  - **How it shows up:** the Automaton's decision log gains a `verifier_run_cap` entry for each cap end, and the task's last attempt shows `verifier_max_run` instead of `session_died`. The kill request that ends the session carries no reason field, so the reason is kept on the attempt.
+  - **Migration:** none.
 - **A verifier session that hits the run cap is retried once on the next backend.** When `autonomous.verifier_max_run_seconds` ends a verifier session, the verification runs once more on the next backend in the verifier policy order. A second cap end is not retried; the result is the normal verifier infra result, never a content failure. A single-backend list gets no retry and is recorded as infra.
   - **How it shows up:** a cap end appears in the daemon log as a retry line naming both backends; the verdict of a cut run is never a content block.
   - **Migration:** none.

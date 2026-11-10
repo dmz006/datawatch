@@ -20,7 +20,8 @@ func TestB124_AutonomousVerify_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		{"branches on useSession", "if useSession {"},
 		{"enforces the pi-family pinned-model guard (v9.10.19)", "guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)"},
 		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, backend, model,"},
-		{"retries a run-cap end once through the retry helper", "runVerifierSessionWithRunCapRetry("},
+		{"retries a run-cap end once through the retry helper", "runVerifierSessionWithRunCapHook("},
+		{"releases the lease and records the decision on a run-cap end", "verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)"},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, taskDir, outputFile)"},
 	}
 	for _, c := range checks {
