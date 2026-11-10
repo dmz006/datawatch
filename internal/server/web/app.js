@@ -26842,7 +26842,7 @@ function renderAutomataEventsPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
-    <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</h3>
+    <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
     ${automataEventsFilterHtml()}
     <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
     <div id="automataEventsMoreWrap" style="margin-top:8px;">
@@ -26874,6 +26874,13 @@ function renderAutomataEventsPanel() {
   automataEventsReload();
 }
 
+// automataEventsHelpLink renders the '?' help anchor used by the Events tab,
+// its filters and each moved card. It follows the session_tag_help_tip pattern
+// and opens the Automata events howto; the title comes from the locale key.
+function automataEventsHelpLink(key) {
+  return `<a href="/diagrams.html#docs/howto/automata-events.md" target="_blank" rel="noopener" title="${escHtml(_automataEventsText(key, ''))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>`;
+}
+
 // automataEventsFilterHtml renders the kind chips, the project dropdown and the
 // search box from the current filter state.
 function automataEventsFilterHtml() {
@@ -26889,6 +26896,7 @@ function automataEventsFilterHtml() {
     + `<div class="automata-events-kinds" role="group" aria-label="${escHtml(kindLabel)}" style="display:flex;flex-wrap:wrap;gap:4px;">${chips}</div>`
     + `<select id="automataEventsProject" aria-label="${escHtml(projectLabel)}" style="font-size:12px;">${automataEventsProjectOptions()}</select>`
     + `<input id="automataEventsSearch" type="search" value="${escHtml(st.q)}" placeholder="${escHtml(searchLabel)}" aria-label="${escHtml(searchLabel)}" style="font-size:12px;min-width:160px;">`
+    + automataEventsHelpLink('automata_events_help_filters')
     + `</div>`;
 }
 
