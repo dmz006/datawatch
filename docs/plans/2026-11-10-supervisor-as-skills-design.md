@@ -23,6 +23,13 @@ questions below are answered, one at a time.
 - 2026-11-09, on question 4 (tier to model mapping): "A is the right one" (option A: reuse the existing LLM entries
   and the planning routing setting; each tier names an existing LLM entry; no new supervisor-specific setting).
 
+- 2026-11-09, on question 5 (a small model is unsure): "The option to try a more mature tier or to stop and raise it as
+  an issue should be configurable. I personally would have it turned on and have it try the next model and then
+  if that was unsure to have it then raise the issue. But that should be configurable." Decision: a setting
+  chooses, per unit with a global default, between escalating one tier and raising a question straight away;
+  the recommended default is on (escalate once, then raise a question with what was tried), configurable on
+  every surface that configures the daemon.
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
