@@ -9,6 +9,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Skill registry entries carry a `type` field: `skill` or `pack`.** `AvailableSkill` and `Synced` (`internal/skills/store.go`) gain `type` (JSON). A folder holding a `pack.yaml` is classified as a `pack` (`ClassifySkillDir` in `internal/skills/manifest.go`); every other folder is a `skill`. `Manager.Browse` and `Manager.Sync` set the type from the folder. Store files written before the field load with an empty type, which reads as `skill`. Pinned by `internal/skills/pack_type_test.go`.
 
+### Changed
+
+- **The built-in standard-task list is built by the pack resolver.** `packs.ResolveTaskList` (`internal/packs/resolve.go`) builds the ordered list for an Automaton kind from the active packs, refuses two tasks with the same title (the error names both packs), and records each task's source pack and version. The built-in pack is embedded from `internal/packs/builtinpacks/builtin/` and resolved for the `feature` kind in `internal/autonomous/task_templates_defaults.go`. The resolved list is the same as before. Operators: the apply step does not filter by Automaton kind, so every kind still receives the built-in list (noted for review in `docs/howto/automata-standard-tasks.md`).
+- **Test fixtures:** `internal/packs/testdata/fixture-one-kind/` adds one task for the `feature` kind only, to check the resolver's kind filter. It is test data, not embedded or installed.
+
 ## v9.123.0 — Standard tasks: the built-in task pack is renamed and listed under Automata, Templates
 
 ### Added

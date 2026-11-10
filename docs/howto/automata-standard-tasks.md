@@ -37,7 +37,8 @@ see [Decompose lint, standard tasks and guidance](automaton-decompose-lint.md).
 When a story is decomposed:
 
 1. The planner writes the story's tasks.
-2. The decomposer checks the story against the standard-task pack.
+2. The decomposer checks the story against the standard-task list. That list is built from the
+   active packs by the pack resolver (see [How the list is resolved](#how-the-list-is-resolved)).
 3. Each standard task the planner did not already produce is appended to the story as a
    new task, in the `model session` mode. A model session does the work like any other task.
 4. Applying is **idempotent**. A task an earlier apply already added is detected and never
@@ -60,6 +61,27 @@ decompose-lint findings and to have no side effects on the hosting CLI.
 | `bounded_load_step` | The bounded load-step rule for a load step the plan names. The rule itself is in [Orphan reaping and host load](automata-orphan-reaping.md) | `note` |
 | `final_gate` | A **read-only** closing task: the build is clean, tests pass and the files hang together. It writes the gate report to `.datawatch/reports/` | `final_gate` |
 | `version_bump_left_to_merge` | A plain note that the version is the next patch above main, resolved at merge. It never edits a file | `note` |
+
+## How the list is resolved
+
+The standard-task list is produced by the pack resolver (`packs.ResolveTaskList`, in
+`internal/packs/resolve.go`). The resolver takes an Automaton kind and the ordered list of
+active packs, and it returns the tasks of every pack whose `kinds` include that kind:
+
+- **Order.** Packs are walked in the order they are given. Each pack's tasks are appended
+  after the tasks already collected, so the list keeps manifest order within a pack.
+- **Kind filter.** A pack that does not list the kind contributes nothing to that list.
+- **Duplicate titles are refused.** Two tasks with the same title are an error, and the
+  error names both packs that contributed them. A list is never built with a silent
+  duplicate.
+- **Provenance.** Each resolved task records the pack name and pack version it came from,
+  so any row on any surface can be traced to its source pack.
+
+Today the built-in list is resolved **for the `feature` kind only**, from the built-in pack
+alone. The built-in pack declares all four kinds (`feature`, `bug`, `other`, `maintenance`),
+but the resolved list is not filtered by kind again when it is applied, so the same six
+standard tasks are appended to a story whatever its Automaton kind. An operator who wants a
+different list per kind should review this; see [Open items to check](#open-items-to-check).
 
 Each standard task has an `id`, a `title`, a `kind`, a `summary`, an `offered_when`
 condition and an effective `enabled` flag. Standard tasks take slots: `{{feature}}`,
@@ -171,16 +193,26 @@ A **pack** is a named, versioned folder that ships standard tasks and Automaton
 templates together: the task prompts, their verification scripts and the template
 definitions. The folder holds a `pack.yaml` manifest at its root. The built-in
 standard tasks are the first pack, named `builtin`. Its task and template definitions
-are compiled into the binary (the built-in task-template defaults in
-`internal/autonomous`), so `builtin` is not a folder on disk and needs no install.
-Packs from the community registry use the same path.
+are embedded in the binary from the pack folder `internal/packs/builtinpacks/builtin/`
+(`go:embed`, as data files, not Go literals). On first use (the result is then cached) `packs.LoadBuiltin` writes that
+folder out and loads it through the same path an installed pack takes, and
+`internal/autonomous/task_templates_defaults.go` resolves it with the pack resolver. So
+`builtin` is not a folder the operator installs or edits, and it needs no install. Packs
+from the community registry use the same path.
 
-**The repository's pack folder is a test fixture.** `internal/packs/testdata/standard-tasks-pack/`
-holds a loadable copy of the standard tasks in the pack folder format: a `pack.yaml`,
-six prompts, five verification scripts and a `templates/README.md` that lists the
-Automaton templates. It is used only by the tests and is not embedded in the binary.
+**The repository's pack folders are test fixtures.** Two folders under
+`internal/packs/testdata/` are used only by the tests and are not embedded in the binary:
+
+- `internal/packs/testdata/standard-tasks-pack/` holds a loadable copy of the standard
+  tasks in the pack folder format: a `pack.yaml`, six prompts, five verification scripts
+  and a `templates/README.md` that lists the Automaton templates.
+- `internal/packs/testdata/fixture-one-kind/` is a one-task fixture. Its `pack.yaml` names
+  only the `feature` kind and adds one extra task, "Extra check". The tests use it to
+  confirm that the resolver adds a task for the kind a pack names and leaves the other
+  kinds unchanged.
+
 The real standard-tasks pack is published in the community registry repository
-(operator decision, 2026-11-09); the fixture does not replace it, and installing the
+(operator decision, 2026-11-09); the fixtures do not replace it, and installing either
 fixture is not a way to get the standard tasks on a daemon.
 
 **Status: the rules below exist in the `internal/packs` package, and the config keys
@@ -259,6 +291,14 @@ yet:
   per-project resolved read (the `?project=` parameter) is on REST, MCP, CLI and the
   comm channel. If you rely on a project override, read the list with `--project`
   to see the resolved state.
+- **The built-in list ignores the Automaton kind when applied.** The built-in list is
+  resolved for the `feature` kind only, and the apply step does not filter by kind, so
+  bug, other and maintenance Automata receive the same standard tasks. Operator review
+  needed: decide whether the list should be resolved and applied per kind.
+- **Mode wording to review.** The **Mode setting** bullet above says every standard task
+  runs as a model session. The glossary's **Standard task** entries describe per-template
+  modes (`llm`, `daemon`, `off`) with notes and changelog defaulting to `daemon`. Confirm
+  which describes the running daemon before relying on either.
 - **Packs are not wired.** The install, trust, auto-accept and enable-check rules are in
   the `internal/packs` package only. Nothing calls them from the daemon, so the
   `packs.enabled` switch is not enforced, `packs.active` is not validated, and no surface
