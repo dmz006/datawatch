@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.124.1 — Release push tests set their own git identity
+
+### Fixed
+
+- **The release push tests no longer depend on a git identity from the machine they run on.** The CI release run for v9.124.0 failed five tests in `internal/autonomous` (the direct push tests, the push audit test and the two host-backed CI fall-back tests) because `git tag -a` ran with no committer identity configured. The shared test helpers in `internal/autonomous/release_fake_host_test.go` now set the author and committer name and email for the duration of each test, and the temporary clones get a local `user.name` and `user.email`. No production code changed.
+
 ## v9.124.0 — Release push and tag settings and machinery for Automata (not yet called by the daemon's ship path)
 
 ### Added

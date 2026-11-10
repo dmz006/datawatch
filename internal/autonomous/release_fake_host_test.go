@@ -23,11 +23,30 @@ func fakeCredentialSource() string {
 	return "fake-host:test-credential"
 }
 
+// testGitIdentity is the author and committer identity every release test
+// git command runs under. CI has no global git identity, so the tests set
+// one themselves rather than relying on the runner's configuration.
+const testGitIdentity = "test"
+const testGitEmail = "test@example.invalid"
+
+// setTestGitIdentity sets the four GIT_*_NAME/EMAIL variables for the
+// duration of the test. Production code that runs git (for example
+// `git tag -a`) inherits the process environment, so it picks these up
+// too. It must not be used from parallel tests.
+func setTestGitIdentity(t *testing.T) {
+	t.Helper()
+	t.Setenv("GIT_AUTHOR_NAME", testGitIdentity)
+	t.Setenv("GIT_AUTHOR_EMAIL", testGitEmail)
+	t.Setenv("GIT_COMMITTER_NAME", testGitIdentity)
+	t.Setenv("GIT_COMMITTER_EMAIL", testGitEmail)
+}
+
 // newBareRemote creates a bare repository under t.TempDir() whose HEAD
 // points at main, and returns its path. It stands in for the remote that
 // a direct push goes to.
 func newBareRemote(t *testing.T) string {
 	t.Helper()
+	setTestGitIdentity(t)
 	remote := filepath.Join(t.TempDir(), "remote.git")
 	runLocalGit(t, "", "init", "--bare", remote)
 	runLocalGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
@@ -39,8 +58,13 @@ func newBareRemote(t *testing.T) string {
 // not pushed; callers push it when they need to.
 func newCloneWithInitialCommit(t *testing.T, remote string) string {
 	t.Helper()
+	setTestGitIdentity(t)
 	clone := filepath.Join(t.TempDir(), "clone")
 	runLocalGit(t, "", "clone", remote, clone)
+	// A local identity too, so git commands run inside the clone by
+	// production code (which may not pass the test env) can commit and tag.
+	runLocalGit(t, clone, "config", "user.name", testGitIdentity)
+	runLocalGit(t, clone, "config", "user.email", testGitEmail)
 	runLocalGit(t, clone, "checkout", "-B", "main")
 	readme := filepath.Join(clone, "README.md")
 	if err := os.WriteFile(readme, []byte("initial\n"), 0o644); err != nil {
@@ -60,8 +84,8 @@ func runLocalGit(t *testing.T, dir string, args ...string) string {
 		cmd.Dir = dir
 	}
 	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.invalid",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.invalid",
+		"GIT_AUTHOR_NAME="+testGitIdentity, "GIT_AUTHOR_EMAIL="+testGitEmail,
+		"GIT_COMMITTER_NAME="+testGitIdentity, "GIT_COMMITTER_EMAIL="+testGitEmail,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
