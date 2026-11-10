@@ -18399,6 +18399,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'classifier.calibration.rotation_bias_threshold', label: "Classifier calibration rotation bias threshold", labelKey: 'settings_classifier_calibration_rotation_bias_threshold', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
     { key: 'classifier.calibration.rotation_flip_threshold', label: "Classifier calibration rotation flip threshold", labelKey: 'settings_classifier_calibration_rotation_flip_threshold', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
   ]},
+  // Daemon-level project defaults (projects_defaults.*): what a project inherits
+  // when it sets none of its own. Each field has a ? help entry that opens the
+  // project defaults section of the project automation policy howto.
+  { id: 'projects_defaults', sectionKey: 'settings_projects_defaults', section: 'Project defaults', docs: 'howto/project-automation-policy.md#daemon-level-project-defaults', fields: [
+    { key: 'projects_defaults.branch_retention_days', label: '', labelKey: 'settings_projects_defaults_branch_retention_days', helpKey: 'settings_projects_defaults_branch_retention_days_help', helpDocs: 'howto/project-automation-policy.md#daemon-level-project-defaults', type: 'number', placeholder: '0', min: 0, step: 1 },
+    { key: 'projects_defaults.weekly_share_percent', label: '', labelKey: 'settings_projects_defaults_weekly_share_percent', helpKey: 'settings_projects_defaults_weekly_share_percent_help', helpDocs: 'howto/project-automation-policy.md#daemon-level-project-defaults', type: 'number', placeholder: '0', min: 0, max: 100, step: 1 },
+    { key: 'projects_defaults.major_trigger', label: '', labelKey: 'settings_projects_defaults_major_trigger', helpKey: 'settings_projects_defaults_major_trigger_help', helpDocs: 'howto/project-automation-policy.md#daemon-level-project-defaults', type: 'select', options: ['manual', 'milestone', 'never'], default: 'manual' },
+  ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.planning_routing.enabled', label: 'Route Automata planning by rules', labelKey: 'planning_routing_field_enabled', type: 'toggle' },
