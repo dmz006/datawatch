@@ -257,6 +257,6 @@ A remote AI agent (e.g. running in a cloud function) can:
 This enables fully autonomous AI workflows that delegate coding tasks to
 datawatch-managed AI sessions on your development machines.
 
-- `worker_profile_status` — read-only: built-in worker profile names, the defaults per role and task kind, and the latest start-up averages per profile and role. Profiles are set with `config_set` on `autonomous.worker_profile*`; an Automaton's profile with `autonomous_prd_set_worker_profile`.
+- `worker_profile_status` — read-only: built-in worker profile names, the defaults per role and task kind, the latest start-up averages per profile and role, and `in_force`, the profile each role and task kind starts with now. Profiles are set with `config_set` on `autonomous.worker_profile*`; an Automaton's profile with `autonomous_prd_set_worker_profile`.
 - `secret_scan_config_get` / `secret_scan_config_set` — read and change the push-time secret scan (`git.secret_scan`); the setter validates the mode, detector names and fingerprints.
 - `secret_scan_stats` — read the daemon's pre-push secret-scan counters (`runs`, `findings`, `shadow_reports`, `refusals`, `last_run_at`, `last_refusal_at`) plus the effective `git.secret_scan` mode; proxies `GET /api/git/secret-scan/stats`. Counters are in-memory since daemon start and reset on restart.

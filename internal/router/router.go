@@ -62,6 +62,7 @@ type Router struct {
 	statsFn              func() string                          // optional func returning system stats summary
 	capacityFn           func() string                          // optional func returning the capacity ledger summary
 	configureFn          func(key, value string) error          // optional func to set a config value
+	workerProfileInForce WorkerProfileInForceFunc               // optional func reading the worker profile in force
 	attemptCostStateFn   func() AttemptCostState                // optional func returning the stored attempt-cost settings
 	chanTracker          *stats.ChannelCounters                 // per-channel message counters
 	transcriber          transcribe.Transcriber                 // optional voice-to-text transcriber
@@ -202,6 +203,12 @@ func (r *Router) handleReload(cmd Command) {
 func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
 func (r *Router) SetCapacityFunc(fn func() string)                  { r.capacityFn = fn }
 func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
+
+// SetWorkerProfileInForceFunc wires the read behind a bare worker-profile key
+// (configure autonomous.worker_profile etc.), which adds the profile in force.
+func (r *Router) SetWorkerProfileInForceFunc(fn WorkerProfileInForceFunc) {
+	r.workerProfileInForce = fn
+}
 
 // AttemptCostState is the attempt-cost block of the autonomous config as the
 // daemon has it stored right now. The configure verb reads it before a
@@ -978,7 +985,7 @@ func (r *Router) handleConfigure(cmd Command) {
 	// A bare worker-profile key (no "=") reads back its help text, so the
 	// operator can see what the key takes without opening the howto.
 	if help, ok := WorkerProfileConfigureKeyHelp(text); ok {
-		r.send(fmt.Sprintf("[%s] %s: %s", r.hostname, text, help))
+		r.send(fmt.Sprintf("[%s] %s: %s%s", r.hostname, text, help, workerProfileInForceReply(r.workerProfileInForce)))
 		return
 	}
 	eqIdx := strings.Index(text, "=")

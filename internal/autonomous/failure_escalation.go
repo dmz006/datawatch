@@ -132,6 +132,11 @@ type TaskAttempt struct {
 	WorkerProfile string `json:"worker_profile"`
 	// WorkerRole names the role of the attempt's worker session.
 	WorkerRole string `json:"worker_role"`
+	// ProfileFallbackReason is the apply error text when the worker profile
+	// could not be applied and the worker started with no profile, so
+	// WorkerProfile is empty. Empty when the profile applied, or when no
+	// profile was requested.
+	ProfileFallbackReason string `json:"profile_fallback_reason,omitempty"`
 	// StartupTokenSource says how StartupTokens was obtained:
 	// "estimated" when it is the estimate from the generated starting
 	// context (see EstimateTokens in startup_tokens.go), or "reported" when

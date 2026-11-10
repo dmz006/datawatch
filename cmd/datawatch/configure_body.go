@@ -33,6 +33,8 @@ func configureRequestBody(key, value string) string {
 			val = m
 		}
 	} else if key == "autonomous.worker_profiles" || key == "autonomous.worker_profile_defaults" {
+		// Reading these keys (a bare key with no "=") is not sent here: the
+		// router answers it with the help text and the profile in force.
 		// The worker profile tables are JSON objects. Text that is one goes
 		// out as an object; anything else goes out as a string, which the
 		// daemon refuses with its own message (the same validation as PUT

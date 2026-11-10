@@ -183,7 +183,7 @@ func claudeMdIn(dir string) (string, bool) {
 // the claudeMdExcludes list (ancestor-exclusion launch) and, when a
 // worker profile is applied with skills turned off, "skills": false.
 // Returns "" when nothing applies.
-func (b *Backend) settingsFlag(projectDir string) string {
+func (b *Backend) settingsFlag(projectDir string, w WorkerProfileLaunch) string {
 	var vals map[string]any
 	if b.excludeAncestorClaudeMd {
 		paths := ancestorClaudeMds(projectDir)
@@ -195,7 +195,7 @@ func (b *Backend) settingsFlag(projectDir string) string {
 	// (WorkerProfile.Skills); it rides the same --settings JSON as
 	// claudeMdExcludes and is emitted only when a profile is applied
 	// with skills turned off.
-	if b.WorkerProfileName() != "" && !b.workerProfile.Profile.Skills {
+	if w.Profile.Name != "" && !w.Profile.Skills {
 		if vals == nil {
 			vals = map[string]any{}
 		}
@@ -233,22 +233,22 @@ func (b *Backend) settingsFlag(projectDir string) string {
 // The mapping is one-way: the profile's tools allow-list becomes
 // --allowedTools. Profiles carry no deny-list, and the launcher never
 // emits a flag that disallows tools for a worker profile.
-func (b *Backend) profileFlags(projectDir string) (string, error) {
-	p := b.workerProfile.Profile
+func (b *Backend) profileFlags(projectDir string, w WorkerProfileLaunch) (string, error) {
+	p := w.Profile
 	if p.Name == "" {
 		return "", nil
 	}
 	if projectDir == "" {
-		return "", fmt.Errorf("apply worker profile %q: projectDir is required", p.Name)
+		return "", newProfileApplyError(p.Name, fmt.Errorf("projectDir is required"))
 	}
 	if err := workerprofile.Validate(p); err != nil {
-		return "", err
+		return "", newProfileApplyError(p.Name, err)
 	}
 
 	// MCP selection: pin the session to exactly the allowed servers.
-	mcpPath, err := channel.WriteWorkerMCPConfig(projectDir, p.MCP, b.workerProfile.MCPServers)
+	mcpPath, err := channel.WriteWorkerMCPConfig(projectDir, p.MCP, w.MCPServers)
 	if err != nil {
-		return "", fmt.Errorf("apply worker profile %q: %v", p.Name, err)
+		return "", newProfileApplyError(p.Name, err)
 	}
 	flags := " --strict-mcp-config --mcp-config " + shellQuote(mcpPath)
 
@@ -262,11 +262,11 @@ func (b *Backend) profileFlags(projectDir string) (string, error) {
 	// Starting context: build it deterministically from the profile plus
 	// the caller's starting pieces, write it to the session working
 	// directory, and pass its full text to Claude Code.
-	ctxInput := b.workerProfile.Starting
+	ctxInput := w.Starting
 	ctxInput.Profile = p
 	ctxPath := filepath.Join(projectDir, WorkerStartingContextFileName)
 	if ctxErr := os.WriteFile(ctxPath, []byte(autonomous.BuildWorkerStartingContext(ctxInput)), 0o600); ctxErr != nil {
-		return "", fmt.Errorf("apply worker profile %q: write starting context: %v", p.Name, ctxErr)
+		return "", newProfileApplyError(p.Name, fmt.Errorf("write starting context: %w", ctxErr))
 	}
 	flags += " --append-system-prompt \"$(cat " + shellQuote(ctxPath) + ")\""
 
@@ -377,13 +377,30 @@ func sessionChannelName(tmuxSession string) string {
 }
 
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	return b.LaunchWithProfile(ctx, b.workerProfile, task, tmuxSession, projectDir, logFile)
+}
+
+// LaunchWithProfile is Launch with the worker profile passed for this one
+// launch only. The backend is a shared instance, so nothing is stored on it:
+// concurrent launches each carry their own profile. A zero WorkerProfileLaunch
+// builds exactly the command line Launch builds without a profile.
+func (b *Backend) LaunchWithProfile(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile string) error {
+	_, err := b.LaunchWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile)
+	return err
+}
+
+// LaunchWithProfileFallback is LaunchWithProfile, except that a profile which
+// cannot be applied does not fail the launch: the session starts with no
+// profile and the apply error text is returned as fallbackReason (empty when
+// the profile applied, or when there was no profile). See launchFlags.
+func (b *Backend) LaunchWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile string) (fallbackReason string, err error) {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	profileFlags, err := b.profileFlags(projectDir)
+	profileFlags, fallbackReason, err := b.launchFlags(projectDir, w)
 	if err != nil {
-		return err
+		return "", err
 	}
-	post := b.postFlagsStr() + b.settingsFlag(projectDir) + profileFlags
+	post := b.postFlagsStr() + profileFlags
 
 	// Derive a deterministic session ID from the tmux session name so that
 	// LaunchResume can later --resume the same conversation by deriving the
@@ -408,9 +425,9 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	}
 
 	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
-		return fmt.Errorf("launch claude-code in %s: %w", tmuxSession, err)
+		return fallbackReason, fmt.Errorf("launch claude-code in %s: %w", tmuxSession, err)
 	}
-	return nil
+	return fallbackReason, nil
 }
 
 // ResumeKeepsTask implements llm.ResumeKeepsTask: a resumed claude-code
@@ -424,13 +441,26 @@ func (b *Backend) ResumeKeepsTask() bool { return true }
 // If --resume fails (e.g. conversation not found for pre-fix sessions), falls back
 // to a fresh launch with --session-id so future restarts will work.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
+	return b.LaunchResumeWithProfile(ctx, b.workerProfile, task, tmuxSession, projectDir, logFile, resumeID)
+}
+
+// LaunchResumeWithProfile is LaunchResume with the worker profile passed for
+// this one launch only (see LaunchWithProfile).
+func (b *Backend) LaunchResumeWithProfile(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile, resumeID string) error {
+	_, err := b.LaunchResumeWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile, resumeID)
+	return err
+}
+
+// LaunchResumeWithProfileFallback is LaunchResumeWithProfile with the profile
+// fallback of LaunchWithProfileFallback.
+func (b *Backend) LaunchResumeWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile, resumeID string) (fallbackReason string, err error) {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	profileFlags, err := b.profileFlags(projectDir)
+	profileFlags, fallbackReason, err := b.launchFlags(projectDir, w)
 	if err != nil {
-		return err
+		return "", err
 	}
-	post := b.postFlagsStr() + b.settingsFlag(projectDir) + profileFlags
+	post := b.postFlagsStr() + profileFlags
 
 	// If resumeID is not a UUID, derive the deterministic UUID from the name
 	actualResumeID := resumeID
@@ -458,9 +488,9 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 
 	cmd := fmt.Sprintf("%s || %s; %secho 'DATAWATCH_COMPLETE: claude done'", resumeCmd, fallbackCmd, cleanup)
 	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
-		return fmt.Errorf("resume claude-code in %s: %w", tmuxSession, err)
+		return fallbackReason, fmt.Errorf("resume claude-code in %s: %w", tmuxSession, err)
 	}
-	return nil
+	return fallbackReason, nil
 }
 
 // writeTaskFile writes task text to a scratch file instead of embedding it

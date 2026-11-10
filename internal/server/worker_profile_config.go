@@ -128,3 +128,36 @@ func validateWorkerProfileName(cfg *config.Config, name string) error {
 	}
 	return fmt.Errorf("worker profile %q is neither a built-in nor a user-defined profile", name)
 }
+
+// workerProfileInForceForDisplay renders the in_force read for GET /api/config:
+// one entry per worker role and task kind, built from workerprofile.InForce
+// over the live daemon values (the role and kind defaults, the global profile
+// name, and the built-in plus user-defined profile lookup used at launch). Each
+// entry carries the scope, key, applied profile (empty when none), tier and
+// reason. The list is always present, never null.
+func workerProfileInForceForDisplay(a config.AutonomousConfig) []map[string]interface{} {
+	users := a.WorkerProfiles
+	entries := workerprofile.InForce(workerprofile.InForceInput{
+		RoleDefaults:  a.WorkerProfileDefaults.Role,
+		KindDefaults:  a.WorkerProfileDefaults.Kind,
+		GlobalProfile: a.WorkerProfile,
+		Lookup: func(name string) (workerprofile.WorkerProfile, bool) {
+			if p, ok := workerprofile.Builtin(name); ok {
+				return p, true
+			}
+			p, ok := users[name]
+			return p, ok
+		},
+	})
+	out := make([]map[string]interface{}, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, map[string]interface{}{
+			"scope":   e.Scope,
+			"key":     e.Key,
+			"profile": e.Profile,
+			"tier":    e.Tier,
+			"reason":  e.Reason,
+		})
+	}
+	return out
+}

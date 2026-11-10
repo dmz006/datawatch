@@ -9,7 +9,11 @@
 // a bare `configure <key>` returns.
 package router
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/dmz006/datawatch/internal/workerprofile"
+)
 
 // workerProfileHowtoPath is the how-to every worker-profile help line points at.
 const workerProfileHowtoPath = "docs/howto/worker-session-profiles.md"
@@ -47,6 +51,29 @@ func WorkerProfileConfigureHelpLines() []string {
 		lines = append(lines, "  "+e.Key+" ("+e.Help+")")
 	}
 	return lines
+}
+
+// WorkerProfileInForceFunc returns the profile in force for each role and task
+// kind, built from the live daemon config.
+type WorkerProfileInForceFunc func() ([]workerprofile.InForceEntry, error)
+
+// workerProfileInForceReply is the text a bare worker-profile key read adds
+// after its help line: a header, then one indented line per role and kind.
+// A read that fails names the failure instead of the lines.
+func workerProfileInForceReply(fn WorkerProfileInForceFunc) string {
+	if fn == nil {
+		return "\n  profile in force: not available"
+	}
+	entries, err := fn()
+	if err != nil {
+		return "\n  profile in force: unavailable (" + err.Error() + ")"
+	}
+	var b strings.Builder
+	b.WriteString("\n  profile in force:")
+	for _, l := range workerprofile.FormatInForce(entries) {
+		b.WriteString("\n    " + l)
+	}
+	return b.String()
 }
 
 // WorkerProfileConfigureKeyHelp reports the help text for one worker-profile

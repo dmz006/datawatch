@@ -87,6 +87,20 @@ type attemptRun struct {
 	// starting context. The attempt record estimates its token size from it
 	// and records the estimated source.
 	LaunchContext string
+	// ProfileFallbackReason is the apply error text when the worker profile
+	// could not be applied and the worker started with no profile. Set by
+	// noteProfileFallback, which also clears WorkerProfile and LaunchContext.
+	ProfileFallbackReason string
+}
+
+// noteProfileFallback records that the worker profile for this attempt could
+// not be applied and the worker started with no profile. The attempt then
+// carries no profile name and no starting context, as a launch with nothing
+// configured would, and the reason is kept on the attempt record.
+func (m *Manager) noteProfileFallback(run *attemptRun, reason string) {
+	run.ProfileFallbackReason = reason
+	run.WorkerProfile = ""
+	run.LaunchContext = ""
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -190,31 +204,32 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 	}
 
 	rec := TaskAttempt{
-		Backend:         backend,
-		Model:           model,
-		Effort:          effort,
-		StartedAt:       started,
-		EndedAt:         ended,
-		DurationSeconds: int(ended.Sub(started) / time.Second),
-		Outcome:         f.Outcome,
-		FailureCategory: f.Category,
-		FailureSummary:  f.Summary,
-		NoRetryReason:   f.NoRetryReason,
-		VerifierSummary: f.Verification.Summary,
-		VerifierIssues:  append([]string(nil), f.Verification.Issues...),
-		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
-		SnapshotRef:     ref,
-		Escalated:       run.Escalated,
-		BackendReason:   backendReason,
-		Resumed:         run.Resumed,
-		ResumeReason:    run.ResumeReason,
-		WorkerProfile:   run.WorkerProfile,
-		WorkerRole:      run.WorkerRole,
-		StartupTokens:   EstimateTokens(run.LaunchContext),
-		SessionID:       sessionID,
-		TmuxSession:     tmux,
-		EndReason:       deriveAttemptEndReason(f, adopted),
-		EndDetail:       f.EndDetail,
+		Backend:               backend,
+		Model:                 model,
+		Effort:                effort,
+		StartedAt:             started,
+		EndedAt:               ended,
+		DurationSeconds:       int(ended.Sub(started) / time.Second),
+		Outcome:               f.Outcome,
+		FailureCategory:       f.Category,
+		FailureSummary:        f.Summary,
+		NoRetryReason:         f.NoRetryReason,
+		VerifierSummary:       f.Verification.Summary,
+		VerifierIssues:        append([]string(nil), f.Verification.Issues...),
+		ChangedFiles:          attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
+		SnapshotRef:           ref,
+		Escalated:             run.Escalated,
+		BackendReason:         backendReason,
+		Resumed:               run.Resumed,
+		ResumeReason:          run.ResumeReason,
+		WorkerProfile:         run.WorkerProfile,
+		WorkerRole:            run.WorkerRole,
+		ProfileFallbackReason: run.ProfileFallbackReason,
+		StartupTokens:         EstimateTokens(run.LaunchContext),
+		SessionID:             sessionID,
+		TmuxSession:           tmux,
+		EndReason:             deriveAttemptEndReason(f, adopted),
+		EndDetail:             f.EndDetail,
 	}
 	if run.LaunchContext != "" {
 		rec.StartupTokenSource = StartupTokenSourceEstimated

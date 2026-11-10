@@ -1276,8 +1276,14 @@ type Manager struct {
 	mu sync.Mutex
 	// Memory ceiling for verification script runs (verification_scope.go).
 	// Guarded by mu; nil limits = uncapped.
-	resourceLimits    *config.ResourceLimitsConfig
-	resourceLimitsFn  func() config.ResourceLimitsConfig
+	resourceLimits   *config.ResourceLimitsConfig
+	resourceLimitsFn func() config.ResourceLimitsConfig
+
+	// workerProfileFn returns the live worker-profile settings (daemon-wide
+	// name, role/kind defaults, user profiles). Read at every launch by
+	// workerLaunchInput, so a settings change applies without a restart.
+	// Guarded by mu; nil means nothing is configured.
+	workerProfileFn   func() WorkerProfileSettings
 	ceilingOverrideFn func(prd *PRD, t *Task) resources.Override
 	// capacityWaitSpent is the queue time each task's current admission has
 	// used against the capacity wait bound (capacity.go).

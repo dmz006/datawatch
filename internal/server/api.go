@@ -69,6 +69,7 @@ import (
 	"github.com/dmz006/datawatch/internal/usagecalc"
 	"github.com/dmz006/datawatch/internal/vision"
 	"github.com/dmz006/datawatch/internal/websearch"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // PipelineAPI is the interface for pipeline operations from the HTTP server.
@@ -4952,6 +4953,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// resolved per-task → per-story → per-PRD chain. Empty = the
 		// session manager's own pi.thinking_level config applies.
 		ThinkingLevel string `json:"thinking_level,omitempty"`
+		// WorkerProfile — the resolved worker session profile to apply to
+		// this one launch (claude-code only; ignored by other backends).
+		// Absent = the plain, non-profile launch.
+		WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -5389,7 +5394,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		gitFlag = s.cfg.Session.GitDefault
 	}
 
+	var profileFallbackReason string
+	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend, &profileFallbackReason)
+
 	opts := &session.StartOptions{
+		LaunchFn:              workerProfileLaunchFn,
 		Name:                  req.Name,
 		Backend:               req.Backend,
 		ResumeID:              req.ResumeID,
@@ -5530,6 +5539,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	// The launch ran inside Start, so the fallback reason (if any) is already set.
+	sess.ProfileFallbackReason = profileFallbackReason
 	if capacityHolder != "" && s.capacityBind != nil {
 		s.capacityBind(capacityHolder, sess.FullID)
 	}
@@ -6532,6 +6543,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
 			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
 			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
+			// in_force: the profile each worker role and task kind starts with,
+			// from the live values (read-only; see workerProfileInForceForDisplay).
+			"in_force": workerProfileInForceForDisplay(s.cfg.Autonomous),
 			// Host load check: effective mode, multiple and minutes.
 			"host_load_alert": hostLoadAlertForDisplay(s.cfg.Autonomous.HostLoadAlert),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the

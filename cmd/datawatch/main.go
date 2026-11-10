@@ -3166,6 +3166,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// without shelling into the host. Same parity rule as `reload`.
 		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
+		r.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
@@ -5161,11 +5162,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return autonomouspkg.SpawnResult{}, fmt.Errorf("session start: %s — %s", resp.Status, string(rb))
 			}
 			var out struct {
-				ID             string `json:"id"`
-				ComputeNodeRef string `json:"compute_node_ref"`
+				ID                    string `json:"id"`
+				ComputeNodeRef        string `json:"compute_node_ref"`
+				ProfileFallbackReason string `json:"profile_fallback_reason"`
 			}
 			_ = json.Unmarshal(rb, &out)
-			return autonomouspkg.SpawnResult{SessionID: out.ID, ComputeNode: out.ComputeNodeRef, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles}, nil
+			return autonomouspkg.SpawnResult{SessionID: out.ID, ComputeNode: out.ComputeNodeRef, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles, ProfileFallbackReason: out.ProfileFallbackReason}, nil
 		}
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =
@@ -6419,7 +6421,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode,
-					launchTagsForVerify(prd.ID, task.StoryID))
+					withSessionProfile(autonomousMgrRef, launchTagsForVerify(prd.ID, task.StoryID), "verifier", prd, task))
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -6593,10 +6595,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 							deliverPrompt := autonomouspkg.JudgePromptForDelivery(req.ProjectDir, req.UnitID+"-"+req.Guardrail, gbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
 							sessionTask := sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)
+							var judgePRD *autonomouspkg.PRD
+							var judgeTask *autonomouspkg.Task
+							if autonomousMgrRef != nil {
+								judgePRD, _ = autonomousMgrRef.Store().GetPRD(req.PRDID)
+								if req.Level == "task" {
+									judgeTask, _ = autonomousMgrRef.Store().GetTask(req.UnitID)
+								}
+							}
 							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
-								launchTagsForJudge(req.PRDID, req.Rejudge))
+								withSessionProfile(autonomousMgrRef, launchTagsForJudge(req.PRDID, req.Rejudge), "judge", judgePRD, judgeTask))
 							if serr != nil {
 								att.TimedOut = isOneShotTimeout(serr)
 								// BL410 Phase 0 — the SESSION itself failed (timeout,
@@ -6777,6 +6787,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				func(ctx context.Context, text string) autonomouspkg.ScopeBreadthResult {
 					return runScopeBreadth(ctx, text)
 				})
+			// Worker profiles: the daemon-wide name, role/kind defaults and user
+			// profiles are read from the live config at every launch, so a
+			// settings change applies to the next launch without a restart.
+			amgr.SetWorkerProfileSettings(func() autonomouspkg.WorkerProfileSettings {
+				return autonomouspkg.WorkerProfileSettings{
+					GlobalName:   cfg.Autonomous.WorkerProfile,
+					RoleDefaults: cfg.Autonomous.WorkerProfileDefaults.Role,
+					KindDefaults: cfg.Autonomous.WorkerProfileDefaults.Kind,
+					UserProfiles: cfg.Autonomous.WorkerProfiles,
+				}
+			})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.
@@ -8532,6 +8553,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// /api/test/message surface would return "Channel info not wired".
 		testRouter.SetChannelInfoFn(channelInfoSummary)
 		testRouter.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
+		testRouter.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
 			body := configureRequestBody(key, value)
@@ -12099,6 +12121,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
+	inForceKey := isWorkerProfileInForceKey(key)
 	key = workerProfileGetKey(key)
 	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
@@ -12123,6 +12146,15 @@ func runConfigGet(cfg *config.Config, key string) error {
 		return fmt.Errorf("config key %q not found", key)
 	}
 	fmt.Println(formatConfigGetOutput(full, key, v))
+	if inForceKey {
+		lines, err := workerProfileInForceLines(raw)
+		if err != nil {
+			return err
+		}
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+	}
 	return nil
 }
 

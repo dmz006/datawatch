@@ -18961,6 +18961,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.worker_profile', label: 'Daemon-wide worker profile', labelKey: 'settings_worker_profile_label', helpKey: 'settings_worker_profile_help', helpDocs: 'howto/worker-session-profiles.md', type: 'select', optionsFrom: 'worker_profiles' },
     { key: 'autonomous.worker_profile_defaults', label: 'Default profile per role and task kind', labelKey: 'settings_worker_profile_defaults_label', helpKey: 'settings_worker_profile_defaults_help', helpDocs: 'howto/worker-session-profiles.md', type: 'worker_profile_defaults' },
     { key: 'autonomous.worker_profiles', label: 'Worker profiles (JSON object keyed by name)', labelKey: 'settings_worker_profiles_label', helpKey: 'settings_worker_profiles_help', helpDocs: 'howto/worker-session-profiles.md', type: 'worker_profiles_json', placeholder: '{"my-profile": {}}' },
+    // Read-only list under the selects: the profile each role and task kind
+    // starts with, from the in_force block of GET /api/config. No key, so it
+    // stores nothing.
+    { label: 'Profile in force', labelKey: 'settings_worker_profile_in_force_label', helpKey: 'settings_worker_profile_in_force_help', type: 'worker_profile_in_force' },
     // Automatic tags — the tags datawatch gives every Automaton for its
     // Automation, stage and kind. The templates may use {automation},
     // {stage} and {kind}; kind_labels is a "kind:label" comma list.
@@ -19932,6 +19936,11 @@ function loadGeneralConfig() {
               </div>
               ${_settingsHelpTextHTML(f)}
             </div>`;
+          } else if (f.type === 'worker_profile_in_force') {
+            // Read-only: one line per worker role and task kind (see
+            // workerProfileInForceHTML). Renders nothing when the daemon
+            // reports no in_force block.
+            html += workerProfileInForceHTML(cfg, f, fLabel);
           } else if (f.type === 'worker_profiles_json') {
             // autonomous.worker_profiles: the user profiles as one JSON object.
             // Saved on change; the PUT is refused with the daemon's message on
@@ -21464,6 +21473,36 @@ function workerProfileNames(cfg, withBlank) {
   const names = WORKER_PROFILE_BUILTINS.slice();
   Object.keys(user).forEach(n => { if (!names.includes(n)) names.push(n); });
   return withBlank ? [''].concat(names) : names;
+}
+
+// workerProfileInForceHTML renders the read-only "Profile in force" list that
+// sits below the Worker session profiles selects: one line per worker role and
+// task kind, read from cfg.autonomous.in_force (GET /api/config serves the
+// in_force block inside the autonomous block). Each line shows the key, the
+// profile applied (or none) and the tier that set it. The tier names are the
+// ones workerprofile reports; an unknown tier shows raw.
+function workerProfileInForceHTML(cfg, f, fLabel) {
+  const rows = Array.isArray(cfg && cfg.autonomous && cfg.autonomous.in_force) ? cfg.autonomous.in_force : [];
+  if (!rows.length) return '';
+  const tierKeys = {
+    'built-in': 'settings_worker_profile_in_force_tier_built_in',
+    daemon: 'settings_worker_profile_in_force_tier_daemon',
+    role: 'settings_worker_profile_in_force_tier_role',
+    kind: 'settings_worker_profile_in_force_tier_kind',
+    none: 'settings_worker_profile_in_force_tier_none',
+  };
+  const tierText = (tier) => (tierKeys[tier] ? t(tierKeys[tier]) : String(tier || ''));
+  const items = rows.map(e => {
+    const applied = !!e.profile;
+    const profile = applied ? e.profile : t('settings_worker_profile_in_force_none');
+    const tier = applied ? tierText(e.tier) : tierText('none');
+    return `<li>${escHtml(t('settings_worker_profile_in_force_row', [e.key || '', profile, tier]))}</li>`;
+  }).join('');
+  return `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+    <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}</div>
+    <ul class="wpif-list" style="margin:4px 0 0;padding:8px 10px 8px 26px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text2);">${items}</ul>
+    ${_settingsHelpTextHTML(f)}
+  </div>`;
 }
 
 // saveWorkerProfileDefaults reads every role and kind select in the grid and

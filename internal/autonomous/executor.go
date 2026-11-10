@@ -73,6 +73,11 @@ type SpawnRequest struct {
 	// 1's EnsureWorktree or this phase's cluster-mode counterpart
 	// (e.g. AutoPR-less PRDs with an explicit ProjectDir).
 	Branch string
+	// WorkerProfile is the profile applied to this launch; it is meaningful
+	// only when WorkerProfileApplied is true. A launch with no applied
+	// profile leaves both unset.
+	WorkerProfile        workerprofile.WorkerProfile
+	WorkerProfileApplied bool
 	// Git — true when the PRD has git settings (prd.Git populated — a
 	// worktree-set PRD has Branch — or a project profile, i.e. it runs
 	// against a project repo). The local-session SpawnFn passes this to
@@ -169,7 +174,11 @@ type SpawnResult struct {
 	// which differs from SpawnRequest.ComputeNode when the handler re-placed
 	// the session. Empty when the spawn path does not report one.
 	ComputeNode string
-	Err         error
+	// ProfileFallbackReason is set when the worker profile the launch was
+	// asked to apply could not be applied and the worker started with no
+	// profile instead (see noteProfileFallback). Empty when it applied.
+	ProfileFallbackReason string
+	Err                   error
 }
 
 // SpawnFn is the indirection used by the executor to start a worker.
@@ -1736,19 +1745,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// attempt record estimates the worker's startup token size from it
 			// (the estimated source); a launch without a named profile carries
 			// both empty and records zero tokens.
-			profileName := t.WorkerProfile
-			if profileName == "" {
-				profileName = prd.WorkerProfile
-			}
-			run.WorkerProfile = profileName
-			run.WorkerRole = "worker"
-			if p, ok := workerprofile.Builtin(run.WorkerProfile); ok {
-				run.LaunchContext = BuildWorkerStartingContext(StartingContextInput{
-					Role:     run.WorkerRole,
-					Profile:  p,
-					TaskSpec: t.Spec,
-				})
-			}
+			spawnProfile, profileApplied := m.applyWorkerProfileToRun(prd, t, &run)
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
@@ -1875,30 +1872,32 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			})
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
-				TaskID:           t.ID,
-				StoryID:          t.StoryID,
-				PRDID:            t.PRDID,
-				Title:            t.Title,
-				Spec:             m.withRulesContextBlock(TaskScopeBlock(prd, t)+"\n"+t.Spec, taskDir, backend),
-				ProjectDir:       taskDir,
-				Backend:          backend,
-				Effort:           effort,
-				Model:            model,
-				PermissionMode:   permMode,
-				ThinkingLevel:    thinkingLevel,
-				RetryHint:        retryHint,
-				ProjectProfile:   snapProjectProfile,           // v5.26.19
-				ClusterProfile:   prd.ClusterProfile,           // v5.26.19
-				Branch:           snapGit.Branch,               // BL407 Phase 4
-				Git:              snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,               // BL244
-				LSPLanguage:      lspLang,
-				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
-				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
-				WriteScope:       readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
-				AttemptRefs:      t.AttemptRefs,                                                // preserved attempt work to restore
-				CleanRestart:     t.CleanRestart,                                               // operator clean restart: skip the restore once
-				ComputeNode:      heldNode,                                                     // capacity lease's node: where the worker runs
+				TaskID:               t.ID,
+				StoryID:              t.StoryID,
+				PRDID:                t.PRDID,
+				Title:                t.Title,
+				Spec:                 m.withRulesContextBlock(TaskScopeBlock(prd, t)+"\n"+t.Spec, taskDir, backend),
+				ProjectDir:           taskDir,
+				Backend:              backend,
+				Effort:               effort,
+				Model:                model,
+				PermissionMode:       permMode,
+				ThinkingLevel:        thinkingLevel,
+				RetryHint:            retryHint,
+				ProjectProfile:       snapProjectProfile,           // v5.26.19
+				ClusterProfile:       prd.ClusterProfile,           // v5.26.19
+				Branch:               snapGit.Branch,               // BL407 Phase 4
+				Git:                  snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:       contextPrepend,               // BL244
+				LSPLanguage:          lspLang,
+				WorkerProfile:        spawnProfile,
+				WorkerProfileApplied: profileApplied,
+				MemorySeed:           prd.MemorySeed,                                               // BL386 Phase 1
+				SkipDirtyCapture:     snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
+				WriteScope:           readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
+				AttemptRefs:          t.AttemptRefs,                                                // preserved attempt work to restore
+				CleanRestart:         t.CleanRestart,                                               // operator clean restart: skip the restore once
+				ComputeNode:          heldNode,                                                     // capacity lease's node: where the worker runs
 			})
 			if err != nil && errors.Is(err, errCancelledWhileWaiting) {
 				return nil
@@ -1933,6 +1932,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			run.SessionID = sr.SessionID
 			run.Adopted = false
+			if sr.ProfileFallbackReason != "" {
+				m.noteProfileFallback(&run, sr.ProfileFallbackReason)
+			}
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
@@ -3688,4 +3690,37 @@ func (m *Manager) holdRulesReviewForOperator(prd *PRD, v GuardrailVerdict) {
 		prd.RulesReviewOutcome = heldOutcome
 	})
 	_ = m.savePRDOwn(prd)
+}
+
+// applyWorkerProfileToRun resolves the worker profile for a launch and fills
+// the attempt run's profile name, role and starting context. It returns the
+// applied profile and true for the spawn request; with no applied profile it
+// leaves the run's profile and context empty and returns false. An unknown
+// requested name is recorded on the task and in the decision list. Nothing
+// is stored on a shared object.
+func (m *Manager) applyWorkerProfileToRun(prd *PRD, t *Task, run *attemptRun) (workerprofile.WorkerProfile, bool) {
+	in := m.workerLaunchInput()
+	in.Role = "worker"
+	in.Kind = t.Kind
+	in.TaskName = t.WorkerProfile
+	in.AutomatonName = prd.WorkerProfile
+	p, applied, d := workerprofile.ResolveForLaunch(in)
+	run.WorkerRole = "worker"
+	run.WorkerProfile, run.LaunchContext = "", ""
+	var out workerprofile.WorkerProfile
+	if applied {
+		out = p
+		run.WorkerProfile = p.Name
+		run.LaunchContext = BuildWorkerStartingContext(StartingContextInput{
+			Role:     run.WorkerRole,
+			Profile:  p,
+			TaskSpec: t.Spec,
+		})
+	}
+	// A requested-but-unfound name falls back to the role default: record it
+	// (the task field is overwritten by each attempt).
+	if d.Requested != "" {
+		m.recordWorkerProfileDecisionFrom(prd, t, d)
+	}
+	return out, applied
 }

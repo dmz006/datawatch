@@ -18,6 +18,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -52,6 +54,60 @@ func workerProfileGetKey(key string) string {
 		return "autonomous." + key
 	}
 	return key
+}
+
+// isWorkerProfileInForceKey reports whether a config get key is one of the
+// worker profile keys whose read also prints the profile in force. Only the
+// accepted keys qualify; an unknown worker_profile key reads as not found.
+func isWorkerProfileInForceKey(key string) bool {
+	switch key {
+	case workerProfileKey, workerProfilesKey, workerProfileRoleKey, workerProfileKindKey:
+		return true
+	}
+	return false
+}
+
+// workerProfileInForceLines returns the profile-in-force block printed after a
+// worker profile key read: a header, then one indented line per role and task
+// kind, built by workerprofile.InForce from the live GET /api/config body raw.
+func workerProfileInForceLines(raw []byte) ([]string, error) {
+	entries, err := workerprofile.InForceFromConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	lines := []string{"profile in force:"}
+	for _, l := range workerprofile.FormatInForce(entries) {
+		lines = append(lines, "  "+l)
+	}
+	return lines, nil
+}
+
+// workerProfileInForceReader returns the read the comm channel uses for a bare
+// worker-profile key: it fetches GET /api/config from the loopback daemon and
+// builds the profile in force from the live values.
+func workerProfileInForceReader(cfg *config.Config) func() ([]workerprofile.InForceEntry, error) {
+	return func() ([]workerprofile.InForceEntry, error) {
+		req, err := http.NewRequest(http.MethodGet, loopbackBaseURL(cfg)+"/api/config", nil)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.Server.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("daemon not reachable: %w", err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("config read: HTTP %d", resp.StatusCode)
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return workerprofile.InForceFromConfig(body)
+	}
 }
 
 // workerProfileSetBody validates one worker profile key and value against a

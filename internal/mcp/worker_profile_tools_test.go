@@ -23,17 +23,29 @@ import (
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
-// workerProfileStatsDaemon serves GET /api/stats with a worker_startup block.
+// workerProfileStatsDaemon serves GET /api/stats with a worker_startup block
+// and GET /api/config with a worker profile block: a role default for the
+// worker role, a kind default for the note kind and a user profile.
 func workerProfileStatsDaemon(t *testing.T) *Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/stats" {
+		if r.Method != http.MethodGet {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		_, _ = w.Write([]byte(`{"worker_startup":{
-			"average_startup_tokens_by_profile":{"digest":120.5,"full":900},
-			"average_startup_tokens_by_role":{"worker":120.5}}}`))
+		switch r.URL.Path {
+		case "/api/stats":
+			_, _ = w.Write([]byte(`{"worker_startup":{
+				"average_startup_tokens_by_profile":{"digest":120.5,"full":900},
+				"average_startup_tokens_by_role":{"worker":120.5}}}`))
+		case "/api/config":
+			_, _ = w.Write([]byte(`{"autonomous":{
+				"worker_profiles":{"mine":{"name":"mine","model":"x"}},
+				"worker_profile_defaults":{"role":{"worker":"full"},"kind":{"note":"digest"}},
+				"worker_profile":""}}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return &Server{webPort: bl427Port(t, srv)}
@@ -86,6 +98,83 @@ func TestWorkerProfileStatus_NamesDefaultsAndStartup(t *testing.T) {
 	}
 	if out.Startup.ByProfile["digest"] != 120.5 || out.Startup.ByProfile["full"] != 900 || out.Startup.ByRole["worker"] != 120.5 {
 		t.Errorf("startup averages = %+v, want digest 120.5, full 900, worker 120.5", out.Startup)
+	}
+}
+
+// TestWorkerProfileStatus_InForce: the status tool's in_force field lists each
+// worker role and each task kind, roles first, with the profile in force from
+// the live config. The entries match workerprofile.InForce over the same values.
+func TestWorkerProfileStatus_InForce(t *testing.T) {
+	s := workerProfileStatsDaemon(t)
+	res, err := s.handleWorkerProfileStatus(context.Background(), subUpdateReq("worker_profile_status", nil))
+	if err != nil || res.IsError {
+		t.Fatalf("worker_profile_status: err=%v res=%+v", err, res)
+	}
+	var out struct {
+		InForce []struct {
+			Scope   string `json:"scope"`
+			Key     string `json:"key"`
+			Profile string `json:"profile"`
+			Tier    string `json:"tier"`
+			Reason  string `json:"reason"`
+		} `json:"in_force"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].(mcpsdk.TextContent).Text), &out); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	wantKeys := []string{"worker", "verifier", "judge", "implementation", "docs", "note", "final_gate"}
+	if len(out.InForce) != len(wantKeys) {
+		t.Fatalf("in_force has %d entries, want %d: %+v", len(out.InForce), len(wantKeys), out.InForce)
+	}
+	for i, k := range wantKeys {
+		if out.InForce[i].Key != k {
+			t.Errorf("in_force[%d].key = %q, want %q", i, out.InForce[i].Key, k)
+		}
+	}
+	if out.InForce[0].Scope != workerprofile.ScopeRole || out.InForce[3].Scope != workerprofile.ScopeKind {
+		t.Errorf("scopes out of order: %+v", out.InForce)
+	}
+	if out.InForce[0].Profile != "full" || out.InForce[0].Tier != string(workerprofile.LayerRole) {
+		t.Errorf("worker entry = %+v, want the configured role default full", out.InForce[0])
+	}
+	if out.InForce[5].Profile != "digest" || out.InForce[5].Tier != string(workerprofile.LayerKind) {
+		t.Errorf("note entry = %+v, want the configured kind default digest", out.InForce[5])
+	}
+	want := workerprofile.InForce(workerprofile.InForceInput{
+		RoleDefaults:  map[string]string{"worker": "full"},
+		KindDefaults:  map[string]string{"note": "digest"},
+		GlobalProfile: "",
+		Lookup: func(name string) (workerprofile.WorkerProfile, bool) {
+			if p, ok := workerprofile.Builtin(name); ok {
+				return p, true
+			}
+			p, ok := map[string]workerprofile.WorkerProfile{"mine": {Name: "mine", Model: "x"}}[name]
+			return p, ok
+		},
+	})
+	for i, e := range want {
+		if out.InForce[i].Profile != e.Profile || out.InForce[i].Tier != e.Tier || out.InForce[i].Reason != e.Reason {
+			t.Errorf("in_force[%d] = %+v, want workerprofile.InForce entry %+v", i, out.InForce[i], e)
+		}
+	}
+}
+
+// TestWorkerProfileStatus_InForceConfigUnavailable: when the config cannot be
+// read the tool returns an error result rather than an in_force list it cannot
+// vouch for.
+func TestWorkerProfileStatus_InForceConfigUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/config" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"worker_startup":{}}`))
+	}))
+	t.Cleanup(srv.Close)
+	s := &Server{webPort: bl427Port(t, srv)}
+	res, _ := s.handleWorkerProfileStatus(context.Background(), subUpdateReq("worker_profile_status", nil))
+	if !res.IsError {
+		t.Fatalf("want an error result when /api/config fails")
 	}
 }
 

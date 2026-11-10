@@ -158,6 +158,10 @@ type Session struct {
 	// (such as Claude Code) that apply the profile in their own launch path.
 	AppliedFields []workerprofile.FieldOutcome `json:"applied_fields,omitempty"`
 	FallbackOf    string                       `json:"fallback_of,omitempty"` // session ID this is a fallback for
+	// ProfileFallbackReason is set when the launch's worker profile could not
+	// be applied and the session started with no profile instead: the apply
+	// error text. Empty when the profile applied or no profile was requested.
+	ProfileFallbackReason string `json:"profile_fallback_reason,omitempty"`
 	// LastResponse holds the short LLM summary (or raw tmux capture when no
 	// summarizer is configured), captured on running→waiting_input transitions.
 	// Used for /copy, push alerts, mobile notifications, and Android Auto.
