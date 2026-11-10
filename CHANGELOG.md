@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.128.0 — Rebuild Automata Inbox triage cards
+
+- Inbox triage cards rebuilt: the needs-attention card is now titled Triage and holds one card per Automaton that failed, is blocked, or has finished work ready to merge. Each card shows a headline, the recorded reason, Automaton and Automation chips and how long it has waited, with Open details, Retry, Resolve review and Cancel buttons.
+- Open questions and held questions now sit above Triage on Inbox, and an open question can be answered in place on its own card without opening the Automaton.
+- New Triage detail panel (reason, history, Automation), opened by the Open details button or a click on the card.
+- Repo CI watch polls that are overdue are now caught up on the next pass (`repo_ci_watch_poll_overdue.go`).
+- 23 new locale keys in all five bundles (the `triage_*` headline, action and detail keys, and two help-link labels); the required-key list in `internal/server/v5280_locales_test.go` now covers the triage headline and action keys.
+- Docs: the Automation tab how-to documents the Triage card, its buttons, the held-questions card and the Inbox order.
+
 ## v9.127.0 — Projects tab
 
 ### Added

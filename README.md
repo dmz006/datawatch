@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.127.0 (2026-11-10).** The Projects tab adds a project picker and project page with arcs, roll-up progress, history Gantt, policy and merge pipeline links, plus project record fields across REST, MCP, CLI and chat. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.128.0 (2026-11-10).** The Automata Inbox Triage card is rebuilt: one card per stuck Automaton with Open details, Retry, Resolve review and Cancel, and open questions answered in place. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
