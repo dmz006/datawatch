@@ -4539,7 +4539,7 @@
   "review_attempt_resume_reason": "再開の理由",
   "review_attempt_no_retry": "再試行なし",
   "settings_daemon_task_modes": "タスクテンプレートのモード（テンプレートごとに llm・daemon・off）",
-  "settings_daemon_task_modes_help": "分解タスクのテンプレートごとに実行主体を選びます。llm（LLM セッション）、daemon（テンプレートが許す場合はデーモン自身）、off（テンプレートを省略）。daemon はデーモンが実行できるテンプレートにのみ表示されます。final_gate をデーモンが実行することはありません。",
+  "settings_daemon_task_modes_help": "分解タスクのテンプレートごとに実行主体を選びます。llm（LLM セッション）、daemon（テンプレートが許す場合はデーモン自身）、off（テンプレートを省略）。daemon はデーモンが実行できるテンプレートにのみ表示されます。final_gate は llm または off のみ指定でき、有効なときはモデルセッションではなくデーモンのスクリプトゲートが実行します。",
   "settings_daemon_task_mode_llm": "llm",
   "settings_daemon_task_mode_daemon": "daemon",
   "settings_daemon_task_mode_off": "off",
@@ -4578,5 +4578,5 @@
   "automata_std_off": "オフ",
   "automata_std_load_failed": "読み込み失敗:",
   "automata_std_howto": "標準タスクのハウツー",
-  "automata_std_mode_note": "現在、モードはモデルセッションに固定されています。変更は、この設定ができた時点で、設定の標準タスク設定から行えるようになります。設定キーは"
+  "automata_std_mode_note": "各標準タスクは3つのモードのいずれかで実行されます：llm（モデルセッション）、daemon（デーモンが実行し、セッションなし）、off（ストーリーに追加されない）。最終ゲートはスクリプトゲートを通じて実行されます。タスクごとの設定は設定から変更します；設定キーは"
 }

@@ -29,7 +29,7 @@ const daemonTaskModeArg = "task_templates_mode"
 func daemonTaskKeysSetOptions() []mcpsdk.ToolOption {
 	return []mcpsdk.ToolOption{
 		mcpsdk.WithString(daemonTaskModeArg, mcpsdk.Description(
-			"autonomous.task_templates.mode — how each decomposition task template is handled, per template id. "+
+			"autonomous.task_templates.mode — how each decomposition standard task is handled, per template id. "+
 				"Each mode is llm, daemon or off; daemon is allowed only for the daemon-capable template ids and never for final_gate. "+
 				"Give a JSON object ({\"changelog\":\"daemon\"}) or id=mode pairs (\"changelog=daemon,final_gate=llm\"). "+
 				"The entries are merged onto the stored map; an id that is not given keeps its stored mode.")),

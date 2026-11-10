@@ -24,6 +24,7 @@ func TestStandardTaskCLIOutput(t *testing.T) {
 			Kind    string `json:"kind"`
 			Enabled bool   `json:"enabled"`
 			Mode    string `json:"mode"`
+			Runner  string `json:"runner"`
 		} `json:"tasks"`
 	}
 	if err := json.Unmarshal(body, &want); err != nil {
@@ -38,13 +39,13 @@ func TestStandardTaskCLIOutput(t *testing.T) {
 	if len(lines) != len(want.Tasks)+1 {
 		t.Fatalf("want header + %d rows, got %d lines:\n%s", len(want.Tasks), len(lines), buf.String())
 	}
-	if got := strings.Fields(lines[0]); strings.Join(got, " ") != "ID TITLE KIND ENABLED MODE" {
+	if got := strings.Fields(lines[0]); strings.Join(got, " ") != "ID TITLE KIND ENABLED MODE RUNNER" {
 		t.Errorf("header = %q", lines[0])
 	}
-	// The table prints id, title, kind, enabled and mode; each row must carry them all.
+	// The table prints id, title, kind, enabled, mode and runner; each row must carry them all.
 	for i, w := range want.Tasks {
 		line := lines[i+1]
-		for _, field := range []string{w.ID, w.Title, w.Kind, fmt.Sprintf("%t", w.Enabled), w.Mode} {
+		for _, field := range []string{w.ID, w.Title, w.Kind, fmt.Sprintf("%t", w.Enabled), w.Mode, w.Runner} {
 			if !strings.Contains(line, field) {
 				t.Errorf("row %d = %q, missing %q", i, line, field)
 			}
@@ -63,7 +64,7 @@ func TestStandardTaskCLIOutput(t *testing.T) {
 	if err := json.Unmarshal(obj["tasks"], &rows); err != nil || len(rows) == 0 {
 		t.Fatalf("tasks: %v", err)
 	}
-	for _, k := range []string{"id", "title", "kind", "enabled", "mode"} {
+	for _, k := range []string{"id", "title", "kind", "enabled", "mode", "runner"} {
 		if _, ok := rows[0][k]; !ok {
 			t.Errorf("row missing field %q", k)
 		}

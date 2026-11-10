@@ -4539,7 +4539,7 @@
   "review_attempt_resume_reason": "resume reason",
   "review_attempt_no_retry": "No retry",
   "settings_daemon_task_modes": "Standard task modes (llm, daemon or off, per standard task)",
-  "settings_daemon_task_modes_help": "Chooses who carries out each decomposition standard task: llm (an LLM session), daemon (the daemon itself, where the template allows it) or off (the template is skipped). daemon is offered only for the templates the daemon can run. final_gate is never run by the daemon.",
+  "settings_daemon_task_modes_help": "Chooses who carries out each decomposition standard task: llm (an LLM session), daemon (the daemon itself, where the template allows it) or off (the template is skipped). daemon is offered only for the templates the daemon can run. final_gate takes only llm or off, and when on it is carried out by the daemon's script gate, not by a model session.",
   "settings_daemon_task_mode_llm": "llm",
   "settings_daemon_task_mode_daemon": "daemon",
   "settings_daemon_task_mode_off": "off",
@@ -4578,5 +4578,5 @@
   "automata_std_off": "Off",
   "automata_std_load_failed": "Load failed:",
   "automata_std_howto": "Standard tasks how-to",
-  "automata_std_mode_note": "The mode is fixed to model session for now. Changing it will be done in Settings under the standard task settings once that setting exists; the setting key is"
+  "automata_std_mode_note": "Each standard task runs in one of three modes: llm (a model session), daemon (the daemon performs it, no session) or off (not added to the story). The final gate runs through the script gate. The per-task setting is changed in Settings; the setting key is"
 }

@@ -243,8 +243,9 @@ task's) is detected, and nothing is added twice. Slots `{{feature}}`,
 `{{files}}` and `{{files_list}}` are filled from the feature name and the
 union of the story's task files; a task's `depends_on` lists *standard-task* ids
 it must run after, and the resulting task also depends on the story's
-other tasks. Each standard task runs in the `model session` mode — a model
-session does the work like any other task.
+other tasks. Each standard task runs in its own mode (`llm`, `daemon` or `off`,
+see [Template mode](#template-mode-who-runs-the-task) below); `llm` is a model
+session, like any other task, and `daemon` is performed by the daemon with no session.
 
 > **Naming.** These are called **standard tasks** (previously "task templates").
 > The PWA's Automata page shows them under the Templates tab, whose first
@@ -390,17 +391,19 @@ task? Put them in a script under `scripts/` and name that file.
 ### Reading the standard-task list
 
 The list is read on every surface (fields: `id`, `title`, `kind`,
-`summary`, `offered_when`, the effective `enabled`, `project_override`
-and `mode` — `model session` for each):
+`summary`, `offered_when`, the effective `enabled`, `project_override`,
+`mode` — the template's effective mode, `llm`, `daemon` or `off` — and
+`runner`, which names what carries the task out: `session`, `script gate`,
+`daemon` or `none`):
 
 - **REST** — `GET /api/autonomous/standard-tasks`; optional
   `?project=<dir-or-alias>` resolves that project's overrides; the body
   is `{enabled, tasks[]}`. Any other method is 405.
 - **MCP** — the `autonomous_standard_tasks` tool (optional `project`
   argument).
-- **CLI** — `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`: a table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw body.
+- **CLI** — `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`: a table of `ID TITLE KIND ENABLED MODE RUNNER`; `--json` prints the raw body.
 - **Chat** — `standard tasks` (or `autonomous standard-tasks`): one line
-  per task — `id | title | on|off | mode`; an empty list replies "no
+  per task — `id | title | on|off | mode | runner`; an empty list replies "no
   standard tasks are defined."
 
 All four render the same `autonomous.ListStandardTasks` listing, so they
@@ -577,9 +580,12 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
   Standard tasks sub-tab** — the built-in pack by its operator-facing name
   (previously "task templates"); the same list the reads below return. The sub-tab
   is read-only: a per-task table (title, kind, summary, when offered, on/off, mode)
-  with a note that the mode is fixed at `model session` for now, an explanatory
-  empty state when there is nothing to list, and stacked labelled rows at phone
-  width; an empty list on the comm channel replies "no standard tasks are defined."
+  with a note that explains the three modes (`llm`, `daemon`, `off`) and points at
+  `autonomous.task_templates.mode` (the per-task selects live in Settings under
+  **Standard task modes**; see [Template mode](#template-mode-who-runs-the-task)), an
+  explanatory empty state when there is nothing to list, and stacked labelled rows at
+  phone width; an empty list on the comm channel replies "no standard tasks are defined."
+  The sub-tab has no runner column yet.
 - **Automaton detail → “Decompose lint” panel** — the last recorded pass
   (mode, attempts, findings with severity chips), with a **dry-run
   button** that lints the current stored plan read-only and says
@@ -618,7 +624,7 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 
 The standard-task list is one verb up the `autonomous` group:
 `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`
-— a table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw
+— a table of `ID TITLE KIND ENABLED MODE RUNNER`; `--json` prints the raw
 `GET /api/autonomous/standard-tasks` body.
 
 ### Comm channel — `autonomous lint`
@@ -628,7 +634,7 @@ the comm channel share the finding-line renderer): `autonomous lint
 config`, `lint config-set mode=enforce max_retries=2 disabled_rules=a,b`,
 `lint dry-run <id>`, `lint findings <id>`. The standard-task list is the
 word `standard tasks` (or `autonomous standard-tasks`): one line per
-standard task — `id | title | on|off | mode`; an empty list replies "no
+standard task — `id | title | on|off | mode | runner`; an empty list replies "no
 standard tasks are defined."
 
 ## 8. What it will never do

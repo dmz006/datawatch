@@ -4637,7 +4637,8 @@ paths:
         `autonomous.task_templates.enabled` (default true); each row's
         `enabled` is the effective switch for the requested project and
         `project_override` is nil when the project has no override. Every
-        row's `mode` is `model session`. `405` for any other method. A
+        row's `mode` is the effective mode (`llm`, `daemon` or `off`) and its
+        `runner` names what carries the task out. `405` for any other method. A
         federated peer needs the autonomous read capability.
       operationId: autonomousStandardTasksList
       tags: [Autonomous]
@@ -10146,7 +10147,7 @@ components:
         disabled_rules: {type: array, items: {type: string}, description: "Built-in (or operator) rule ids to drop from the effective pack"}
     TaskTemplateDef:
       type: object
-      description: One task template. A same-`id` operator template replaces the built-in template at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
+      description: One standard task definition (the config key is still `task_templates`; the operator-facing name is "standard task"). A same-`id` operator entry replaces the built-in one at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
       required: [id]
       properties:
         id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, bounded_load_step, final_gate, version_bump_left_to_merge"}
@@ -10177,7 +10178,9 @@ components:
         `autonomous.task_templates.enabled` (default true). `tasks` holds one
         row per effective task template (the operator-facing name for the
         task-template pack: "standard tasks"), in the same order the
-        decomposer applies them; every row's `mode` is `model session`.
+        decomposer applies them. Each row's `mode` is the template's effective
+        mode (`llm`, `daemon` or `off`) and its `runner` names what carries the
+        task out.
       required: [enabled, tasks]
       properties:
         enabled: {type: boolean, description: "Global apply switch (`autonomous.task_templates.enabled`)"}
@@ -10194,7 +10197,8 @@ components:
               offered_when: {type: string, description: "Definition's applies-when condition"}
               enabled: {type: boolean, description: "Effective apply switch for the requested project"}
               project_override: {type: boolean, nullable: true, description: "The project's own override, or null when the project has no override"}
-              mode: {type: string, enum: [model session], description: "How the task runs; every standard task runs in the model session mode"}
+              mode: {type: string, enum: [llm, daemon, off], description: "Effective mode from autonomous.task_templates.mode: llm (a model session), daemon (the daemon performs it) or off (not appended)"}
+              runner: {type: string, enum: ["session", "script gate", "daemon", "none"], description: "What carries the task out: session (mode llm), script gate (final_gate on llm), daemon (mode daemon) or none (mode off)"}
     LintFinding:
       type: object
       required: [rule_id, severity, message, story, task]

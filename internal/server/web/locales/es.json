@@ -4539,7 +4539,7 @@
   "review_attempt_resume_reason": "motivo de la retoma",
   "review_attempt_no_retry": "Sin reintento",
   "settings_daemon_task_modes": "Modos de las plantillas de tarea (llm, daemon u off, por plantilla)",
-  "settings_daemon_task_modes_help": "Indica quién ejecuta cada plantilla de tarea de descomposición: llm (una sesión de LLM), daemon (el propio daemon, cuando la plantilla lo permite) u off (la plantilla se omite). daemon solo se ofrece para las plantillas que el daemon puede ejecutar. El daemon nunca ejecuta final_gate.",
+  "settings_daemon_task_modes_help": "Indica quién ejecuta cada plantilla de tarea de descomposición: llm (una sesión de LLM), daemon (el propio daemon, cuando la plantilla lo permite) u off (la plantilla se omite). daemon solo se ofrece para las plantillas que el daemon puede ejecutar. final_gate solo admite llm u off, y cuando está activo la ejecuta la puerta de guiones del daemon, no una sesión de modelo.",
   "settings_daemon_task_mode_llm": "llm",
   "settings_daemon_task_mode_daemon": "daemon",
   "settings_daemon_task_mode_off": "off",
@@ -4578,5 +4578,5 @@
   "automata_std_off": "Desactivada",
   "automata_std_load_failed": "Error de carga:",
   "automata_std_howto": "Guía de tareas estándar",
-  "automata_std_mode_note": "Por ahora el modo está fijado en sesión de modelo. Se podrá cambiar en Ajustes, en los ajustes de tareas estándar, cuando exista ese ajuste; la clave del ajuste es"
+  "automata_std_mode_note": "Cada tarea estándar se ejecuta en uno de tres modos: llm (una sesión de modelo), daemon (el daemon la ejecuta, sin sesión) o off (no se añade a la historia). El gate final se ejecuta a través del gate de script. La configuración por tarea se cambia en Ajustes; la clave de la configuración es"
 }

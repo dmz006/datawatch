@@ -2,8 +2,9 @@ package server
 
 // TestStandardTaskNaming guards the operator-facing name of the built-in task
 // definitions. They are called "standard tasks"; the old name "template task"
-// (and "task template") must not reappear in locale strings, how-to docs or the
-// definitions glossary unless the same line says what the old name was.
+// (and "task template") must not reappear in locale strings, MCP tool strings,
+// how-to docs, the definitions glossary or the headings of the operations doc
+// unless the same line says what the old name was.
 // It also keeps the internal term "PRD" out of locale strings.
 
 import (
@@ -66,6 +67,61 @@ func standardTaskCheckLine(line string) bool {
 	return standardTaskOldNameRe.MatchString(line) && !standardTaskOldNameMarkerRe.MatchString(line)
 }
 
+// standardTaskStringLiterals returns the contents of the Go string literals
+// (double-quoted or backquoted) appearing on one line of source code.
+func standardTaskStringLiterals(line string) []string {
+	var out []string
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '"':
+			i++
+			var b strings.Builder
+			for i < len(line) && line[i] != '"' {
+				if line[i] == '\\' && i+1 < len(line) {
+					i++
+				}
+				b.WriteByte(line[i])
+				i++
+			}
+			i++ // past the closing quote
+			out = append(out, b.String())
+		case '`':
+			i++
+			var b strings.Builder
+			for i < len(line) && line[i] != '`' {
+				b.WriteByte(line[i])
+				i++
+			}
+			i++ // past the closing backtick
+			out = append(out, b.String())
+		}
+	}
+	return out
+}
+
+// standardTaskScanGoFile checks the string literals of one Go source file,
+// line by line, and returns an old-name violation per offending line.
+func standardTaskScanGoFile(t *testing.T, root, path string) []string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	rel, _ := filepath.Rel(root, path)
+	var failures []string
+	for i, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue // comments are exempt
+		}
+		for _, lit := range standardTaskStringLiterals(line) {
+			if standardTaskOldNameRe.MatchString(lit) && !standardTaskOldNameMarkerRe.MatchString(lit) {
+				failures = append(failures, rel+":"+strconv.Itoa(i+1)+": old task name in string literal without a historical marker: "+lit)
+			}
+		}
+	}
+	return failures
+}
+
 func TestStandardTaskNaming(t *testing.T) {
 	root := standardTaskRepoRoot(t)
 
@@ -126,6 +182,36 @@ func TestStandardTaskNaming(t *testing.T) {
 			if standardTaskCheckLine(line) {
 				failures = append(failures, rel+":"+strconv.Itoa(i+1)+": old task name without a historical marker: "+strings.TrimSpace(line))
 			}
+		}
+	}
+
+	// 3. MCP tool strings: every non-test Go file directly under internal/mcp.
+	mcpDir := filepath.Join(root, "internal/mcp")
+	mcpEntries, err := os.ReadDir(mcpDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", mcpDir, err)
+	}
+	for _, e := range mcpEntries {
+		name := e.Name()
+		if !e.Type().IsRegular() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		failures = append(failures, standardTaskScanGoFile(t, root, filepath.Join(mcpDir, name))...)
+	}
+
+	// 4. Operations doc headings (lines starting with a hash sign).
+	opsPath := filepath.Join(root, "docs/operations.md")
+	opsRaw, err := os.ReadFile(opsPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", opsPath, err)
+	}
+	rel, _ := filepath.Rel(root, opsPath)
+	for i, line := range strings.Split(string(opsRaw), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if standardTaskCheckLine(line) {
+			failures = append(failures, rel+":"+strconv.Itoa(i+1)+": old task name without a historical marker: "+strings.TrimSpace(line))
 		}
 	}
 
