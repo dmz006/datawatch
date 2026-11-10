@@ -86,26 +86,39 @@ func TestAutomataEventsLocale_AppJSKeysAreCovered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.js missing from embed: %v", err)
 	}
+	js := string(raw)
+	// Every automata_events_ token app.js references, whatever the quoting.
 	used := map[string]bool{}
-	for _, m := range automataEventsKeyRef.FindAllString(string(raw), -1) {
+	for _, m := range automataEventsKeyRef.FindAllString(js, -1) {
 		used[m] = true
 	}
-	var missing []string
+	listed := map[string]bool{}
+	for _, k := range automataEventsLocaleKeys {
+		listed[k] = true
+	}
+	// Every key app.js uses must be listed here, so a new key added in app.js
+	// fails the test until it is listed and translated.
+	var unlisted []string
 	for k := range used {
-		found := false
-		for _, want := range automataEventsLocaleKeys {
-			if want == k {
-				found = true
-				break
-			}
-		}
-		if !found {
-			missing = append(missing, k)
+		if !listed[k] {
+			unlisted = append(unlisted, k)
 		}
 	}
-	sort.Strings(missing)
-	if len(missing) > 0 {
-		t.Errorf("app.js uses automata_events keys not in the locale key list: %v", missing)
+	sort.Strings(unlisted)
+	if len(unlisted) > 0 {
+		t.Errorf("app.js uses automata_events keys not in the locale key list: %v", unlisted)
+	}
+	// ...and every key listed here must be used by app.js, so a key that is
+	// never rendered (dead string) fails the test instead of passing unnoticed.
+	var unused []string
+	for _, k := range automataEventsLocaleKeys {
+		if !used[k] {
+			unused = append(unused, k)
+		}
+	}
+	sort.Strings(unused)
+	if len(unused) > 0 {
+		t.Errorf("locale key list names automata_events keys app.js never uses: %v", unused)
 	}
 }
 

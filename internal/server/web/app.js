@@ -26749,10 +26749,15 @@ function automataEventRowHtml(ev, expanded) {
       + (ev.next_action ? `<div><strong>${escHtml(_automataEventsText('automata_events_next_action', 'Next action'))}:</strong> ${escHtml(ev.next_action)}</div>` : '')
       + `</div>`;
   }
+  // Each moved card (supervisor watch, recent decisions, infrastructure
+  // retries, Automata checks, safe-to-delete, cleanup status) appears in the
+  // stream as its kind, so its row carries the '?' help anchor of that card.
+  const cardHelp = automataEventsCardHelpKey(ev);
   return `<div class="automata-event-row" data-event-id="${id}" role="button" tabindex="0" aria-expanded="${expanded ? 'true' : 'false'}" style="padding:8px 4px;border-bottom:1px solid var(--border);cursor:pointer;">`
     + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--text2);">`
     + `<span>${escHtml(when)}</span>`
     + `<span class="automata-event-kind automata-event-kind-${kind}" style="border:1px solid var(--border);border-radius:10px;padding:0 6px;">${kind}</span>`
+    + (cardHelp ? automataEventsHelpLink(cardHelp) : '')
     + (ev.project ? `<span class="automata-event-project">${escHtml(_automataEventsText('automata_events_project', 'Project'))}: <strong>${escHtml(ev.project)}</strong></span>` : '')
     + `</div>`
     + `<div style="margin-top:4px;">${owners}</div>`
@@ -26880,6 +26885,28 @@ function renderAutomataEventsPanel() {
 function automataEventsHelpLink(key) {
   return `<a href="/diagrams.html#docs/howto/automata-events.md" target="_blank" rel="noopener" title="${escHtml(_automataEventsText(key, ''))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>`;
 }
+
+// automataEventsCardHelpKey returns the locale key of the '?' help anchor for
+// the moved card an event row stands in for, or '' when the row is not one of
+// the six moved cards. Alerts and error entries keep their help in the tab
+// heading and the filter row. Safe-to-delete and cleanup status are both kind
+// cleanup, so the event id prefix distinguishes them.
+function automataEventsCardHelpKey(ev) {
+  const kind = (ev && ev.kind) || '';
+  if (kind === 'watch') return 'automata_events_help_card_supervisor_watch';
+  if (kind === 'decision') return 'automata_events_help_card_recent_decisions';
+  if (kind === 'retry') return 'automata_events_help_card_infra_retries';
+  if (kind === 'check') return 'automata_events_help_card_automata_checks';
+  if (kind === 'cleanup') {
+    const id = String((ev && ev.id) || '');
+    if (id.indexOf('cleanup:safe:') === 0 || id.indexOf('cleanup:held:') === 0) {
+      return 'automata_events_help_card_safe_to_delete';
+    }
+    return 'automata_events_help_card_cleanup_status';
+  }
+  return '';
+}
+window.automataEventsCardHelpKey = automataEventsCardHelpKey;
 
 // automataEventsFilterHtml renders the kind chips, the project dropdown and the
 // search box from the current filter state.
