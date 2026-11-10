@@ -2044,6 +2044,8 @@
   "settings_verifier_infra_escalation_threshold": "Seuil d'escalade des échecs infra du vérificateur (0=2)",
   "settings_fallback_verification_backend": "Backend de vérification de secours (vide=claude-code)",
   "settings_verifier_no_progress_timeout": "Délai du vérificateur sans progression (sec, 0=10min)",
+  "settings_verifier_max_run_seconds": "Plafond de durée du vérificateur d'automate (sec, 0=désactivé, défaut 2700)",
+  "settings_verifier_max_run_seconds_help": "Limite de durée totale d'une session de vérification, comptée depuis son démarrage. Elle est distincte du délai sans progression ci-dessus, qui ne met fin qu'à une session sans activité. 0 désactive le plafond. Valeur par défaut : 2700 secondes (45 minutes).",
   "settings_worker_idle_nudge": "Relance du worker inactif (sec, 0=3min)",
   "settings_worker_idle_nudge_stall": "Blocage du worker après relance (sec, 0=10min)",
   "settings_session_start_confirm": "Confirmation de démarrage de session (secondes)",
