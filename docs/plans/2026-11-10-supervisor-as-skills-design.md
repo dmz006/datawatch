@@ -92,6 +92,12 @@ questions below are answered, one at a time.
   user@example.invalid; the check runs a general secret scanner plus an exact-value scan against this
   installation's configured identities, so a value in real use fails even if it looks generic).
 
+- 2026-11-09, on leak pattern question 6 (when the check runs and how it fails): "A" (runs at authoring as an
+  Automaton gate, at publish where nothing reaches the registry unless it passes, and as a scheduled re-check of
+  published units that alerts when a later pattern matches an old unit; every point fails closed; a failure
+  names the finding and file, never prints a matched secret value, and raises a question to the operator; an
+  exception is an explicit allowlist entry the operator accepts, recorded with who accepted it and when).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
@@ -194,3 +200,15 @@ Targets stay open until the operator sets them; the supervisor lists, recommends
    verify folder like any other gate. Its exact patterns are an open question for the operator.
 4. **Same trust path.** A published supervisor unit is a pack: accepted by the operator per version, with the
    community source accepted once, as decided for packs.
+
+## Leak check summary (all six pattern questions answered 2026-11-09)
+
+| Pattern | Rule |
+|---|---|
+| Product name | Allowed with an explicit allowlist of product terms (command, tool and REST names); repository, organization and project names blocked; unknown terms fail closed |
+| Hosts and deployment identifiers | Blocked; reached only through configuration inputs; placeholders such as example.invalid |
+| Tracker and Automaton ids, version numbers | Blocked; X.Y.Z placeholders only; version read through a configurable file path and pattern |
+| Lane, capacity, backend and model names | Blocked; tiers and configurable limits only |
+| Secrets and identity | Blocked in full; secret scanner plus exact-value scan of this installation's identities |
+| Local-only rules (agent and context files, repository-derived rules) | Never published |
+| Run points | Authoring gate, publish gate, scheduled re-check; fail closed; allowlist exceptions accepted and recorded |
