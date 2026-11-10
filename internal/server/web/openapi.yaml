@@ -9667,6 +9667,74 @@ paths:
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
 
+  /api/dashboard/work-map:
+    get:
+      summary: Work map
+      description: |
+        A graph of the install's active work: nodes for projects, Automations, Automata,
+        Automaton tasks and live sessions, the edges tying them together, and the sessions
+        that are running right now. Node placement axes (`node`, `lane`, `role`) come from
+        each session's placement tags; Automaton and task events and error counts come from
+        the trace roll-up. Task nodes are capped per Automaton (newest first, overflow
+        reported in the Automaton's `tasks_omitted`). When the trace store is absent the
+        graph degrades to placement only (`trace: false`); with neither a session store nor
+        a trace store there is nothing to map and the endpoint reports 503.
+      operationId: dashboardWorkMap
+      tags: [Dashboard]
+      responses:
+        "200":
+          description: The work map
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  trace: {type: boolean, description: Whether the trace store contributed (false degrades the graph to placement only)}
+                  counts:
+                    type: object
+                    description: Node counts keyed by node kind
+                    additionalProperties: {type: integer}
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        kind: {type: string, enum: [project, automation, automaton, task, session]}
+                        label: {type: string}
+                        status: {type: string, enum: [ok, running, waiting, done, error, unknown]}
+                        node: {type: string, description: Compute node placement axis}
+                        lane: {type: string, description: Lane placement axis}
+                        role: {type: string, description: Role placement axis}
+                        parent: {type: string, description: Primary container node id}
+                        events: {type: integer, description: Recorded trace events (Automaton and task nodes)}
+                        errors: {type: integer, description: Recorded failing trace events (Automaton and task nodes)}
+                        tasks_omitted: {type: integer, description: Task count beyond the per-Automaton cap (Automaton nodes)}
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        from: {type: string}
+                        to: {type: string}
+                  running:
+                    type: array
+                    description: Sessions running right now, newest first
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        label: {type: string}
+                        state: {type: string}
+                        node: {type: string}
+                        lane: {type: string}
+                        role: {type: string}
+                        updated_at: {type: string, format: date-time}
+        "403": {description: Missing the dashboard read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: No session store and no trace store to build the map, content: {"text/plain": {schema: {type: string}}}}
+
 components:
   securitySchemes:
     BearerToken:

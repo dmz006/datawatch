@@ -44709,6 +44709,7 @@ function _dashLoop(ts) {
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
+    _dashRenderWorkMap();
     _dashRenderConsole();
     _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
@@ -44741,6 +44742,12 @@ function _dashLoop(ts) {
   // all five console cards render from the cached _dash._console payload.
   if (_dashConsoleEnabled() && _dash._frameCount % 900 === 0 && !_dash._consoleFetching) {
     _dashFetchConsole();
+  }
+
+  // Work map: one shared GET /api/dashboard/work-map per ~30s tick; the card
+  // renders from the cached _dash._workMap payload and fetches on mount too.
+  if ((_dash._frameCount === 1 || _dash._frameCount % 900 === 0) && !_dash._workMapFetching) {
+    _dashFetchWorkMap();
   }
 
   // Fetch heatmap data every ~60s
@@ -45319,6 +45326,11 @@ const DASH_CARD_DEFS = [
   // BL391 — multi-provider web search usage tile.
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // Work map — the install's active work as a graph (project → Automation →
+  // Automaton → task → session), its edges, and the sessions running now.
+  // Data: GET /api/dashboard/work-map (trace roll-up + session placement tags).
+  { id: 'work-map', label: 'Work map', labelKey: 'dash_work_map', icon: '🗺', defaultCs: 6,
+    body: () => '<div id="dashWorkMapCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
@@ -45448,6 +45460,17 @@ const DASH_CARD_FEATURES = {
       return !!(d && d.enabled && (((d.summary || {}).providers) || []).length > 0);
     },
   },
+  'work-map': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_work_map_reason',
+    reasonDefault: 'No live sessions or Automaton tasks yet — the map fills as work runs.',
+    linkKey: 'dash_card_off_work_map_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const d = _dash._workMap;
+      return !!(d && Array.isArray(d.nodes) && d.nodes.length > 0);
+    },
+  },
 };
 
 function _dashCardFeature(id) {
@@ -45507,6 +45530,7 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
   kick(_dashCardFeature('heatmap'), _dashFetchHeatmap);
+  kick(_dashCardFeature('work-map'), _dashFetchWorkMap);
   kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
@@ -46273,6 +46297,113 @@ function _dashRenderWebSearchUsage() {
     }
   }
   el.innerHTML = html;
+}
+
+// ── Work map card (dashboard wiring) ────────────────────────────────────────
+// Card id 'work-map' — the GET /api/dashboard/work-map graph: a node for each
+// project, Automation, Automaton, Automaton task and live session, the edges
+// tying them together, and the sessions running right now. Same cached-card
+// discipline as the other dashboard tiles: last good payload kept on _dash,
+// one shared fetch per dashboard tick, the card renders from the cache. A
+// fresh card fetches on mount so the first paint is not 15s away.
+if (!_dash._workMap) _dash._workMap = null;
+
+function _dashFetchWorkMap() {
+  if (_dash._workMapFetching) return Promise.resolve(_dash._workMap || null);
+  _dash._workMapFetching = true;
+  return apiFetch('/api/dashboard/work-map')
+    .then(d => { _dash._workMap = d && Array.isArray(d.nodes) ? d : null; _dashRenderWorkMap(); return _dash._workMap; })
+    .catch(() => _dash._workMap)
+    .finally(() => { _dash._workMapFetching = false; });
+}
+
+// _dashWorkMapStatusColor: a node status to a swatch/outline color.
+function _dashWorkMapStatusColor(status) {
+  switch (status) {
+    case 'running': return '#3b82f6';
+    case 'waiting': return '#f59e0b';
+    case 'done':    return '#6b7280';
+    case 'error':   return '#ef4444';
+    case 'ok':      return '#22c55e';
+    default:        return '#64748b';
+  }
+}
+
+function _dashRenderWorkMap() {
+  const el = document.getElementById('dashWorkMapCard');
+  if (!el) return;
+  const d = _dash._workMap;
+  if (!d) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('dash_work_map_unavailable') || 'Work map unavailable')}</div>`;
+    _dashFetchWorkMap();
+    return;
+  }
+  const nodes = Array.isArray(d.nodes) ? d.nodes : [];
+  const edges = Array.isArray(d.edges) ? d.edges : [];
+  const running = Array.isArray(d.running) ? d.running : [];
+  if (!nodes.length) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('dash_work_map_empty') || 'No work mapped yet — sessions and Automaton tasks appear here as they run.')}</div>`;
+    return;
+  }
+  // One column per node kind, left to right (project → Automation → Automaton
+  // → task → session); rows within a column. Edges are cubic curves so a
+  // container→child line never cuts across the intermediate columns.
+  const kindOrder = ['project', 'automation', 'automaton', 'task', 'session'];
+  const colW = 156, rowH = 30, padL = 8, padT = 8, nodeW = 140, nodeH = 22;
+  const byKind = {};
+  for (const k of kindOrder) byKind[k] = [];
+  for (const n of nodes) (byKind[n.kind] || (byKind[n.kind] = [])).push(n);
+  const kinds = kindOrder.filter(k => byKind[k].length)
+    .concat(Object.keys(byKind).filter(k => kindOrder.indexOf(k) === -1).sort());
+  const maxRows = Math.max.apply(null, [1].concat(kinds.map(k => byKind[k].length)));
+  const W = padL * 2 + kinds.length * colW;
+  const H = padT * 2 + maxRows * rowH;
+  const pos = {};
+  kinds.forEach((k, ci) => {
+    byKind[k].forEach((n, ri) => {
+      pos[n.id] = { x: padL + ci * colW + nodeW / 2, y: padT + ri * rowH + nodeH / 2 };
+    });
+  });
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" style="display:block;" preserveAspectRatio="xMidYMid meet">`;
+  for (const e of edges) {
+    const a = pos[e.from], b = pos[e.to];
+    if (!a || !b) continue;
+    const mx = (a.x + b.x) / 2;
+    svg += `<path d="M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}" fill="none" stroke="var(--border,#333)" stroke-width="1"/>`;
+  }
+  for (const k of kinds) {
+    for (const n of byKind[k]) {
+      const p = pos[n.id];
+      const color = _dashWorkMapStatusColor(n.status);
+      const label = String(n.label || n.id || '').slice(0, 15);
+      svg += `<g>
+        <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="5" fill="var(--bg2,#111)" stroke="${color}" stroke-width="1.2"/>
+        <circle cx="${p.x - nodeW / 2 + 9}" cy="${p.y}" r="3" fill="${color}"/>
+        <text x="${p.x - nodeW / 2 + 17}" y="${p.y + 3.5}" font-size="10" fill="var(--text,#ccc)">${escHtml(label)}</text>
+      </g>`;
+    }
+  }
+  svg += `</svg>`;
+  // Running strip: the sessions live right now, newest first (server order).
+  let strip = '';
+  if (running.length) {
+    const items = running.slice(0, 8).map(r => {
+      const tag = [r.node, r.lane, r.role].filter(Boolean).join(' · ');
+      return `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px 4px 0;padding:2px 7px;border:1px solid var(--border);border-radius:10px;font-size:9px;white-space:nowrap;">
+        <span style="width:6px;height:6px;border-radius:50%;background:#3b82f6;"></span>
+        ${escHtml(r.label || r.id)}${tag ? ` <span style="color:var(--text2);">${escHtml(tag)}</span>` : ''}
+      </span>`;
+    }).join('');
+    strip = `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px;">
+      <div style="font-size:9px;color:var(--text2);margin-bottom:4px;">${escHtml(t('dash_work_map_running') || 'Running now')} · ${running.length}</div>
+      <div>${items}</div>
+    </div>`;
+  }
+  const traceNote = d.trace === false
+    ? ` · ${escHtml(t('dash_work_map_no_trace') || 'placement only (no trace store)')}`
+    : '';
+  el.innerHTML = `<div style="height:70%;min-height:120px;">${svg}</div>${strip}
+    <div style="font-size:9px;color:var(--text2);margin-top:5px;">${escHtml(t('dash_work_map_counts') || 'nodes')}: ${nodes.length}${traceNote}</div>`;
 }
 
 // ── Cost report card (dashboard wiring) ──────────────────────────────────────
