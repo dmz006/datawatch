@@ -198,3 +198,12 @@ a requirement: conflicts will arise, so large changes over time need a defined h
 Situations that will create conflicts: the one-time import of the registry rows, a bulk rename, moving records between
 projects, merging two projects, and importing records from another installation or repository of a product. Open: how
 each is handled (next question).
+
+Operator answer on title conflicts in large changes (2026-11-10): "A" (an operation never fails silently or half-done: it
+shows a preview listing every conflict; each is resolved by adding a short disambiguating suffix, renaming, or skipping;
+a default policy is set per operation so a large import can run unattended with a suffix and flag each one for review;
+when a title changes the old title stays as an alias that still resolves, so references keep working).
+
+All six migration questions and the id, title and conflict questions are answered. Remaining open design areas: the product
+record (what it holds, repository attachment, cross-project relations, how the Projects tab and the export show it), the
+leak filter on the operator's own export, and the build plan (record types, import, encryption coverage, export, cut-over).
