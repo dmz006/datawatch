@@ -28,7 +28,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Migration:** none. The 45-minute default applies on upgrade and no config change is needed.
 
 - **The verifier stats show the run cap and how many verifier runs it ended.** The verifier stats now report the cap in effect (`run_cap_seconds`, taken from the loaded `autonomous.verifier_max_run_seconds`; `0` means no cap) and a count of runs ended by the cap (`run_cap_ends`, category `run_cap`). A run the cap ends is counted under `run_cap`, not under timeout or infra.
-  - **How it shows up:** the verifier stats view shows the run cap in seconds and the cap-ended count, and the count goes up by one for each verifier run the cap ends.
+  - **How it shows up:** the verifier stats line shows `run_cap N` once at least one verifier run has been ended by the cap, and `N` goes up by one for each such run. The cap value in seconds (`run_cap_seconds`) is reported in the stats JSON only; the text view does not print it.
   - **Migration:** none. No config change is needed; the stats read the existing setting.
 
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
