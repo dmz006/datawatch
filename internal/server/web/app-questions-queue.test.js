@@ -231,9 +231,10 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     assert.ok(body.includes('id="automationQuestionsSearch"'), 'search input present');
     const iTriage = body.indexOf('id="automationTriageCard"');
     const iQ = body.indexOf('id="automationQuestionsCard"');
+    const iHeld = body.indexOf('id="automationHeldQuestionsCard"');
     const iSecurity = body.indexOf('id="automationSecurityFailureCard"');
-    assert.ok(iTriage !== -1 && iQ !== -1 && iSecurity !== -1, 'all anchors present');
-    assert.ok(iTriage < iQ && iQ < iSecurity, 'card sits after the triage card and before the security failure card');
+    assert.ok(iTriage !== -1 && iQ !== -1 && iHeld !== -1 && iSecurity !== -1, 'all anchors present');
+    assert.ok(iQ < iHeld && iHeld < iTriage && iTriage < iSecurity, 'order is open questions, held questions, triage, then security failure');
     assert.ok(!body.includes('id="automationPanel"'), 'the list panel is not on Inbox');
     for (const other of ['automations', 'resources', 'progress', 'setup', 'housekeeping']) {
       vmmod.runInContext(`_automationState.subtab = '${other}'`, s9);
