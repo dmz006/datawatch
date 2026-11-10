@@ -174,6 +174,31 @@ Leave it unset to use the built-in default name; set it to an empty string for
 no model. The setting never adds, edits or removes a registry entry, so make
 sure the name you give exists. If you run a model of your own, name that one.
 
+## Conflict mode
+
+`autonomous.merge_pipeline.conflict_mode` says what a model proposal that passes
+the test step does:
+
+| Mode | What happens |
+|---|---|
+| `shadow` (the default) | The proposal is recorded and the project is left alone. |
+| `on` | A passing proposal is committed and the project fast-forwards to it. |
+
+A mode of `on` with confirmation switched off applies every passing proposal.
+The PWA card and `GET /api/autonomous/merge-pipeline` show the mode in effect.
+
+## Confirm the first N model conflicts
+
+`autonomous.merge_pipeline.conflict_confirm_first_n` is how many of a project's
+first model-resolved conflicts wait for you to confirm them. The default is 5;
+0 turns confirmation off. Confirmation is active only when the mode is `on` and
+N is above 0.
+
+The card shows `Conflict confirmations: <count> conflicts confirmed · <remaining>
+confirmations remaining` while confirmation is active. If the counter cannot be
+read, the count is not shown, and the block of the JSON response carries the
+error instead.
+
 ## Release approval modes
 
 Release approval decides what happens to a prepared release before it leaves the
