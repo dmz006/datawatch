@@ -71,6 +71,11 @@ questions below are answered, one at a time.
   names and anything that identifies our deployment; the check holds an explicit allowlist of product terms,
   so a new term fails closed until added).
 
+- 2026-11-09, on leak pattern question 2 (hosts and deployment identifiers): "A" (block every concrete deployment
+  identifier: host names, IP addresses, node and peer names, deployment-tied ports and URLs; a unit refers to a
+  node only through a configuration input whose value each repository supplies; documentation examples use
+  reserved placeholder values such as example.invalid, and the check recognizes only those).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
