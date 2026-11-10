@@ -233,3 +233,10 @@ section, with the same override order as pack selection (Automaton, then project
 every surface that configures the daemon; secret inputs hold a vault reference, never the value; one resolver in
 the daemon fills the inputs when a task from a pack is created and records the resolved values on the task, so a
 later config change does not alter running work.
+
+Operator answer (2026-11-09): "A" (the manifest declares each input; values live in the normal datawatch
+configuration under a packs section with the override order Automaton, project, global, settable on every
+surface that configures the daemon; secret inputs hold a vault reference; one daemon resolver fills the inputs
+when a pack task is created and records the resolved values on the task). This must be added to the packs
+Automaton before it is approved: the packs spec needs a requirement and a task for the input declaration, the
+resolver and the settings on every surface.
