@@ -259,7 +259,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	} else if created {
 		log.Printf("[autonomous] prd=%s worktree created at %s (branch=%s)", prdID, prd.ProjectDir, prd.Git.Branch)
 	}
-	// BL407 Phase 4 — cluster-dispatched counterpart to the worktree
+	// carried through the snapshot — cluster-dispatched counterpart to the worktree
 	// branch above. No local worktree to create here (the worker's
 	// own container does the real clone — Phase 3), but the PRD still
 	// needs its own dedicated branch name decided up front, by the
@@ -1827,7 +1827,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				RetryHint:        retryHint,
 				ProjectProfile:   snapProjectProfile,           // v5.26.19
 				ClusterProfile:   prd.ClusterProfile,           // v5.26.19
-				Branch:           snapGit.Branch,               // BL407 Phase 4
+				Branch:           snapGit.Branch,               // carried through the snapshot
 				Git:              snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
 				ContextPrepend:   contextPrepend,               // BL244
 				LSPLanguage:      lspLang,
