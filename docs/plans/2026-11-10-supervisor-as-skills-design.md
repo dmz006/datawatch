@@ -76,6 +76,11 @@ questions below are answered, one at a time.
   node only through a configuration input whose value each repository supplies; documentation examples use
   reserved placeholder values such as example.invalid, and the check recognizes only those).
 
+- 2026-11-09, on leak pattern question 3 (tracker ids and version numbers): "A" (block both, as in task text:
+  tracker ids and Automaton ids never appear; literal release and version numbers never appear except in
+  placeholder examples written as X.Y.Z; a unit that needs the current version reads it through a configuration
+  input such as a version-file path and pattern, which is the version-detection skill).
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
