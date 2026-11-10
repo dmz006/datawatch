@@ -98,6 +98,9 @@ type attemptFailure struct {
 // not name one.
 func deriveAttemptEndReason(f attemptFailure, adopted bool) string {
 	switch {
+	case f.Verification.EndReason == attemptEndVerifierMaxRun:
+		// A run-cap end keeps its own name on an adopted session too.
+		return attemptEndVerifierMaxRun
 	case f.EndReason != "":
 		// A failure on an adopted session is labelled as such; the reasons that
 		// say the attempt was cut short or never started keep their own name.

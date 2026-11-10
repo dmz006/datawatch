@@ -1684,6 +1684,10 @@ type VerificationResult struct {
 	// Category (BL410 Phase 0) — see GuardrailVerdict.Category's doc
 	// comment; same taxonomy, same empty-means-"content" default.
 	Category string `json:"category,omitempty"`
+	// EndReason names why the verification ended when the verifier session
+	// was cut short (VerifierMaxRunEndReason for the run cap). It is empty for
+	// every other result, and the attempt record reads it.
+	EndReason string `json:"end_reason,omitempty"`
 	// UnmodifiedRetry (v9.2.1) — true when this verification passed via the
 	// unmodified-retry escape hatch: the retry itself produced no diff or
 	// new files (taskProducedNoOutput), but the task is a retry and its own

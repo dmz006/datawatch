@@ -6386,7 +6386,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// next backend in the verifier policy order; the retry backend
 				// runs on its registry default model (or the pi-family guard).
 				// Only the first backend keeps the lease's node.
-				content, serr := runVerifierSessionWithRunCapRetry(
+				content, serr := runVerifierSessionWithRunCapHook(
 					effectiveVerifierPolicy(liveCfg).EffectiveBackends(vpool, vglobalBackend), vbackend, verifyModel,
 					func(backend, model string) (string, error) {
 						node := vnode
@@ -6414,6 +6414,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							return m, true
 						}
 						return model, true
+					},
+					// Before the retry decision: free the verifier's lease and
+					// record the run-cap decision.
+					func(capEnd *autonomouspkg.OneShotNoOutputError) {
+						verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)
 					})
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the

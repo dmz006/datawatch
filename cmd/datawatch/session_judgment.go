@@ -618,7 +618,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 					return "", sessionID, &autonomouspkg.OneShotNoOutputError{
 						Msg: fmt.Sprintf("verifier session %s ended at its run cap: ran %v, cap %ds (autonomous.verifier_max_run_seconds)",
 							startOut.ID, ran.Round(time.Second), capSeconds),
-						RunCap: true,
+						RunCap:        true,
+						RunCapElapsed: ran,
+						RunCapSeconds: capSeconds,
 					}
 				}
 			}

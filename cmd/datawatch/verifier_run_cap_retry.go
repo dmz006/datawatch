@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"time"
 
@@ -16,11 +17,28 @@ import (
 func runVerifierSessionWithRunCapRetry(order []string, backend, model string,
 	run func(backend, model string) (string, error),
 	modelFor func(backend string) (string, bool)) (string, error) {
+	return runVerifierSessionWithRunCapHook(order, backend, model, run, modelFor, nil)
+}
+
+// runVerifierSessionWithRunCapHook is runVerifierSessionWithRunCapRetry plus
+// onCap, which runs on every run-cap end before the retry decision. The caller
+// uses it to release the verifier's capacity lease and record the decision.
+// onCap may be nil.
+func runVerifierSessionWithRunCapHook(order []string, backend, model string,
+	run func(backend, model string) (string, error),
+	modelFor func(backend string) (string, bool),
+	onCap func(capEnd *autonomouspkg.OneShotNoOutputError)) (string, error) {
 	retried := false
 	for {
 		content, err := run(backend, model)
 		if !autonomouspkg.IsVerifierRunCapEnd(err) {
 			return content, err
+		}
+		if onCap != nil {
+			var capEnd *autonomouspkg.OneShotNoOutputError
+			if errors.As(err, &capEnd) {
+				onCap(capEnd)
+			}
 		}
 		next, ok := autonomouspkg.NextVerifierRunCapBackend(order, backend, retried)
 		if !ok {
@@ -36,15 +54,31 @@ func runVerifierSessionWithRunCapRetry(order []string, backend, model string,
 	}
 }
 
+// verifierRunCapDecision is the onCap hook body: it releases the lease held
+// under the task's verify holder, then writes the decision and audit record.
+// A failure to record is logged and never changes the verification outcome.
+func verifierRunCapDecision(mgr *autonomouspkg.Manager, prdID, taskID string, capEnd *autonomouspkg.OneShotNoOutputError) {
+	if mgr == nil {
+		return
+	}
+	if _, err := mgr.HandleVerifierRunCap(prdID, taskID, capEnd.RunCapElapsed, capEnd.RunCapSeconds); err != nil {
+		log.Printf("[autonomous] verifier: HandleVerifierRunCap(%s/%s): %v", prdID, taskID, err)
+	}
+}
+
 // verifierSessionInfraResult is the verdict for a verifier session that failed
 // to produce output. It is infra, never a content failure, so the caller's
 // infra accounting and retry path apply.
 func verifierSessionInfraResult(err error) autonomouspkg.VerificationResult {
-	return autonomouspkg.VerificationResult{
+	res := autonomouspkg.VerificationResult{
 		OK:         false,
 		Severity:   "medium",
 		Summary:    "verifier(session): " + err.Error(),
 		VerifiedAt: time.Now(),
 		Category:   "infra",
 	}
+	if autonomouspkg.IsVerifierRunCapEnd(err) {
+		res.EndReason = autonomouspkg.VerifierMaxRunEndReason
+	}
+	return res
 }

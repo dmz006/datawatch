@@ -58,3 +58,12 @@ same state; check it before relying on the cap to stop a run.
 
 - [Verifier throughput in operations](../operations.md#verifier-throughput)
 - [Judge routing and time limit](judge-policy.md)
+
+## What a cap end records
+
+When the cap ends a verifier session, datawatch frees the verifier's capacity slot
+at once, so queued work can take it before the retry starts. It then writes a
+`verifier_run_cap` entry in the Automaton's decision log, with the task id, the
+elapsed seconds and the cap in seconds, and a matching audit record. The task's
+attempt ends with the reason `verifier_max_run`, so you can tell a cap end from a
+crashed session.
