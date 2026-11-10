@@ -717,6 +717,8 @@ than `margin_points`, applies a ladder of responses (`lower_inflight`,
 `route_pi_prompt`, `hold_claude`) and steps back when the projection is under
 the line. Keys live under `usage.burn_guard.`: `enabled` (default true),
 `interval_minutes` (60), `margin_points` (2), `ladder`, `step_back` (true),
+`max_projection_gap_points` (25; 0 never compares the guard and advice
+projections, 0 to 100),
 `ask_on_change` (false: the guard alerts once per change and raises no question;
 true: it also keeps at most one open question),
 `cache_write_points_per_million` (0.373), `cache_read_points_per_million`

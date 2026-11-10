@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The burn guard now follows the readings.** Its projection starts from the newest usage reading and carries the tokens used since then forward, scaled to the readings, and blends the burn between the last two readings with the token burn. A new `usage.burn_guard.max_projection_gap_points` setting (default 25, 0 to 100; 0 never compares) sets the largest gap allowed between the guard projection and the readings-only advice before the guard decides on the lower of the two. Each decision records both projections and the gap. The guard still never skips a rung when over the pace line.
+
 ## v9.118.0 — Merge lock, release validator and idempotent merge steps
 
 ### Added
