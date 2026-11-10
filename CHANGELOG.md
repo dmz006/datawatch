@@ -11,9 +11,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **How it shows up:** a config file with a negative value fails to load with an error naming `autonomous.verifier_max_run_seconds`; any other value loads as written. This entry covers only the setting and its validation; enforcement, the settings surfaces and the stats arrive in later entries of the same change.
   - **Migration:** none. The default applies on upgrade and no config change is needed.
 
-- **Every verifier run now has a hard maximum run time (`autonomous.verifier_max_run_seconds`, default 2700 seconds / 45 minutes).** A verifier that reaches the cap is stopped, so one verifier can no longer hold a worker slot for hours (found 2026-11-08). The cap is settable from the web Settings page, REST, the comm channel, the CLI (`datawatch autonomous config-set autonomous.verifier_max_run_seconds <seconds>`) and MCP (`autonomous_config_set`, argument `verifier_max_run_seconds`), in whole seconds; `0` means no cap, and a negative or non-whole value is refused.
-  - **How it shows up:** a verifier that runs past the cap ends instead of running on; the Settings page shows the field with its default in English, French, Japanese, German and Spanish.
-  - **Migration:** none. The 45-minute default applies on upgrade; set `0` to keep the old uncapped behaviour.
+- **The verifier maximum run time (`autonomous.verifier_max_run_seconds`, default 2700 seconds / 45 minutes) can now be set from every settings surface.** It is the cap meant to stop one verifier from holding a worker slot for hours (found 2026-11-08). The value is settable from the web Settings page, REST, the comm channel, the CLI (`datawatch config set autonomous.verifier_max_run_seconds <seconds>`) and MCP (`autonomous_config_set`, argument `verifier_max_run_seconds`), in whole seconds; `0` means no cap, and a negative or non-whole value is refused.
+  - **How it shows up:** the Settings page shows the field with its default in English, French, Japanese, German and Spanish, and the value you set is stored and read back on each surface. The cap is not yet applied to running verifiers, so a verifier that runs past it is not stopped by this change; enforcement arrives in a later entry of the same change.
+  - **Migration:** none. The 45-minute default applies on upgrade and no config change is needed.
 
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
 
