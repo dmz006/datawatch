@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A verifier run now has a configurable hard maximum run time.** A new key, `autonomous.verifier_max_run_seconds`, sets the wall-clock cap on one verifier session, counted from its start. The default is 2700 seconds (45 minutes). Set `0` for no cap. A negative value is refused when the config is loaded, with an error that names the key.
+  - **How it shows up:** the value is read from the config file like the other `autonomous.verifier_*` keys, and an omitted key takes the 2700-second default. An explicit `0` stays `0` and is never replaced by the default.
+  - **Migration:** none for most operators, because the default applies on upgrade. If a verifier legitimately needs longer than 45 minutes, set `autonomous.verifier_max_run_seconds` to a larger value, or `0` for no cap, before the upgrade's first verification.
+
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
 
 ### Fixed
