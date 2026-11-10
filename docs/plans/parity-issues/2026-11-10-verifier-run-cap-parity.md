@@ -5,6 +5,13 @@ the operator files it. Filing the issue does not change a line of this repo.
 This draft is a file write only: it never runs any hosting CLI and creates
 nothing on any host.
 
+**Source check (2026-11-10):** every code, test, locale and doc path named below
+was confirmed to exist in this worktree, and the companion drafts it links to
+are present. The draft was re-checked against the story files for this work
+(`docs/config-reference.yaml`, `docs/implementation.md`, `docs/operations.md`,
+`docs/mcp.md`, `docs/datawatch-definitions.md`, `docs/README.md` and
+`docs/howto/automaton-verifier-run-cap.md`); no wording change was needed.
+
 **Defect this work addresses** (found 2026-11-08): a verifier run could hold a
 worker slot for hours — one stuck verifier blocks the task's verification and,
 with it, the worker lane that task needs to make progress, for as long as the
