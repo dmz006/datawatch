@@ -65,6 +65,13 @@ func (r *recordingProvider) OpenPR(_ context.Context, opts git.PROptions) (strin
 	r.openPRCalls = append(r.openPRCalls, opts)
 	return r.openPRURL, r.openPRErr
 }
+func (r *recordingProvider) OpenPullRequest(_ context.Context, _, _, _, _, _ string) (string, error) {
+	return "", nil
+}
+func (r *recordingProvider) PullRequestChecks(_ context.Context, _, _ string) (string, error) {
+	return "success", nil
+}
+func (r *recordingProvider) MergePullRequest(_ context.Context, _, _ string) error { return nil }
 func (r *recordingProvider) CreateIssue(_ context.Context, _ git.IssueOptions) (string, error) {
 	return "", nil
 }
