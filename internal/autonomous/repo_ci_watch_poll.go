@@ -206,12 +206,21 @@ func (c *Coordinator) runRepoCIWatchPoll(now time.Time, cfg RepoCIWatchConfig) {
 		supersededThisPass: map[string]struct{}{},
 	}
 	repos := cfg.EffectiveRepos()
+	allOK := true
 	for _, repoDir := range repos {
 		repoDir = strings.TrimSpace(repoDir)
 		if repoDir == "" {
 			continue // defensive; validated on every write path
 		}
-		p.pollRepo(m.repoCIWatchDeps(), repoDir)
+		if !p.pollRepo(m.repoCIWatchDeps(), repoDir) {
+			allOK = false
+		}
+	}
+	// A pass that polled every configured repository to completion is a
+	// successful poll: it ends any overdue episode (see
+	// repo_ci_watch_poll_overdue.go).
+	if allOK && len(repos) > 0 {
+		c.markRepoCIWatchPollSucceeded(now)
 	}
 }
 
@@ -227,29 +236,34 @@ type repoCIWatchRef struct {
 // record). Every step's failure is logged and tolerated where the pass
 // can continue (a failed fetch → stale view; an unreadable tag → skip
 // the tag; a failed run list → skip the SHA); a repository whose head
-// cannot be resolved is skipped outright.
-func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
+// cannot be resolved is skipped outright. It reports whether the poll
+// succeeded: the fetch, origin, head and tag listing all worked and every
+// ref's run list was read. A skipped or partly failed repository is not a
+// successful poll.
+func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) bool {
+	ok := true
 	// 1. Refresh the local view of origin and its tags.
 	if err := d.fetch(p.ctx, repoDir); err != nil {
 		log.Printf("repo ci watch: %s: git fetch --tags origin failed (continuing with the local view): %v", repoDir, err)
+		ok = false
 	}
 	// owner/repo comes from the local origin URL (a repository with no
 	// recognisable github origin is not listable by gh and is skipped).
 	originURL, err := d.origin(p.ctx, repoDir)
 	if err != nil {
 		log.Printf("repo ci watch: %s: origin is not resolvable (%v); skipping this repository", repoDir, err)
-		return
+		return false
 	}
 	ownerRepo := githubOwnerRepo(originURL)
 	if ownerRepo == "" {
 		log.Printf("repo ci watch: %s: origin %q is not a github origin; skipping this repository", repoDir, originURL)
-		return
+		return false
 	}
 	// 2. Resolve the head (origin/main) and the newest tag_count tags.
 	headSHA, err := d.head(p.ctx, repoDir)
 	if err != nil {
 		log.Printf("repo ci watch: %s: %v; skipping this repository", repoDir, err)
-		return
+		return false
 	}
 	refs := []repoCIWatchRef{{kind: "main", name: "main", sha: headSHA}}
 	if tagCount := p.cfg.EffectiveTagCount(); tagCount > 0 {
@@ -257,6 +271,7 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 		if terr != nil {
 			// The tags are not required for the head to be covered.
 			log.Printf("repo ci watch: %s: listing release tags failed (main is still covered): %v", repoDir, terr)
+			ok = false
 		} else {
 			for i, tag := range tags {
 				if i >= tagCount {
@@ -274,8 +289,11 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 	}
 	// 3. One run list per SHA, then record every run.
 	for _, ref := range refs {
-		p.pollRef(ownerRepo, repoDir, ref)
+		if !p.pollRef(ownerRepo, repoDir, ref) {
+			ok = false
+		}
 	}
+	return ok
 }
 
 // pollRef lists the runs at one ref's SHA and records each; then it runs
@@ -283,12 +301,12 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 // the spec's two-step order: first the superseded naming (step 1) for
 // the ref's green runs, so every same-ref record is stored and visible,
 // and then per record the cancel/rerun/delete decision (step 2) and the
-// alert.
-func (p *repoCIWatchPollContext) pollRef(ownerRepo, repoDir string, ref repoCIWatchRef) {
+// alert. It reports false when the run list could not be read.
+func (p *repoCIWatchPollContext) pollRef(ownerRepo, repoDir string, ref repoCIWatchRef) bool {
 	runs, err := p.m.repoCIWatchDeps().runs(p.ctx, ownerRepo, ref.sha)
 	if err != nil {
 		log.Printf("repo ci watch: %s %s@%s: listing runs failed: %v", ownerRepo, ref.name, ref.sha[:8], err)
-		return
+		return false
 	}
 	var recorded []*RepoCIWatchRecord
 	for _, run := range runs {
@@ -310,6 +328,7 @@ func (p *repoCIWatchPollContext) pollRef(ownerRepo, repoDir string, ref repoCIWa
 	for i, rec := range recorded {
 		recorded[i] = p.applyRepoCIWatchActions(ownerRepo, rec)
 	}
+	return true
 }
 
 // recordRun classifies one run, looks up (or mints) its record, and

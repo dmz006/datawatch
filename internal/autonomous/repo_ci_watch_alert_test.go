@@ -172,3 +172,33 @@ func TestRepoCIWatchAlertNeverWhenZero(t *testing.T) {
 		t.Error("alert_minutes=0: the record's alert stamp must stay unset")
 	}
 }
+
+// TestRepoCIWatchAlertCoversPending verifies an in-flight run that has not
+// yet passed hung_after_minutes (a pending record) alerts once it has been
+// unresolved past alert_minutes, the same as a failing record.
+func TestRepoCIWatchAlertCoversPending(t *testing.T) {
+	dir := t.TempDir()
+	m, c, cap := newAlertHarness(t, dir, RepoCIWatchConfig{
+		Mode: "on", Repos: []string{dir}, PollSeconds: 60,
+		AlertMinutes: ptrInt(30), HungAfterMinutes: 60,
+	})
+	t0 := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	nc := &nowControl{now: t0}
+	c.now = func() time.Time { return nc.now }
+	m.repoCIRunsFn = func(ctx context.Context, ownerRepo, sha string) ([]RepoCIWatchRun, error) {
+		if sha != fakeHeadSHA {
+			return []RepoCIWatchRun{}, nil
+		}
+		return []RepoCIWatchRun{ongoing(fakeRun(400, "CI"), "in_progress", t0)}, nil
+	}
+
+	c.repoCIWatchPass()
+	if rec := findRecordByRun(t, m, "400"); rec == nil || rec.Status != "pending" {
+		t.Fatalf("in-flight run under hung_after_minutes: record = %+v, want status pending", rec)
+	}
+	nc.advance(31 * time.Minute)
+	c.repoCIWatchPass()
+	if got := len(cap.alerts); got != 1 {
+		t.Fatalf("pending past alert_minutes: alerts = %d, want 1", got)
+	}
+}
