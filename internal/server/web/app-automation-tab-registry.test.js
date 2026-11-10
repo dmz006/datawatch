@@ -41,7 +41,7 @@ const subtabOf = sb => vm.runInContext('_automationState.subtab', sb);
 // Fixed cards per tab, in body order, and the hidden placeholders per tab in
 // slot order. The union is the full set of card ids a body holds.
 const FIXED = {
-  inbox: ['automationTriageCard', 'automationQuestionsCard', 'automationHeldQuestionsCard', 'automationSecurityFailureCard', 'automationSupervisorWatchCard'],
+  inbox: ['automationQuestionsCard', 'automationHeldQuestionsCard', 'automationTriageCard', 'automationSecurityFailureCard', 'automationSupervisorWatchCard'],
   automations: ['automationFilterBar', 'automationPanel'],
   resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard', 'automationInfraRetryCard', 'automationChecksCard', 'automationShipCard'],
   progress: ['progressCard'],
@@ -133,7 +133,8 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
     });
   }
   assert.equal(seen.size, 5 + 2 + 6 + 1 + 3 + 4 + 13, 'total distinct card ids (fixed 21 + placeholders 13)');
-  assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationTriageCard', 'triage card is first on Inbox');
+  assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationQuestionsCard', 'open questions card is first on Inbox');
+  assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[2], 'automationTriageCard', 'triage card follows the question and held cards');
 });
 
 test('slots: a slot registered on resources appears only there, after the fixed cards, ordered; placeholders are hidden and empty', () => {

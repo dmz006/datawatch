@@ -34754,10 +34754,8 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_inbox',
     badge: () => _automationInboxBadgeCount(),
     bodyHTML: () => `
-      <!-- Needs-attention/triage card: judgment call — it lists the failed
-           and blocked records that need an operator, so it stays first on
-           the default Inbox view. -->
-      <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
+      <!-- Inbox order: the queue and hold cards first, then the triage card
+           (the failed and blocked records), then the rest. -->
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -34776,6 +34774,7 @@ const _AUTOMATION_SUBTABS = [
         </div>
         <div id="automationHeldQuestionsBody"></div>
       </div>
+      <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       ${_automationSlotsHTML('inbox')}`,
@@ -35993,6 +35992,15 @@ function _automationQuestionsRowHtml(q) {
         : '');
   }
   const idStyle = q.label ? 'font-size:11px;color:var(--text2);' : 'font-weight:600;font-size:12px;';
+  // Each option is a button that posts that answer in place
+  // (window.answerQuestionOption); the ids ride in data attributes, so the
+  // handler reads them with no inline JS string built from the id.
+  const opts = Array.isArray(q.options) ? q.options.filter(o => o && typeof o === 'object' && o.id) : [];
+  const optsHtml = opts.length
+    ? `<div class="questions-options" style="display:flex;flex-wrap:wrap;gap:6px;">` + opts.map(o =>
+      `<button type="button" class="btn-secondary questions-option-btn" data-question-id="${escHtml(id)}" data-option-id="${escHtml(String(o.id))}" title="${escHtml(String(o.tradeoffs || ''))}" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.answerQuestionOption === 'function') window.answerQuestionOption(this)">${escHtml(String(o.label || o.id))}</button>`
+    ).join('') + `</div>`
+    : '';
   return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
     `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
       (q.label ? `<span class="questions-label" style="font-weight:600;font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
@@ -36000,6 +36008,7 @@ function _automationQuestionsRowHtml(q) {
       high +
     `</div>` +
     textHtml +
+    optsHtml +
     `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
       `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
       `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(id)}')">${escHtml(t('automation_questions_open'))}</button>` +
@@ -36070,6 +36079,27 @@ window.onAutomationQuestionsSearchKeydown = onAutomationQuestionsSearchKeydown;
 window.refreshAutomationQuestions = function() {
   const ctl = window._listLoaders && window._listLoaders.automation_questions;
   if (ctl) ctl.load();
+};
+
+// window.answerQuestionOption posts one option of an open question in place:
+// POST /api/questions/{id}/answer with that option and no text, through the
+// same _questionAnswerSubmit the answer dialog uses. The row's option buttons
+// are disabled while the answer is in flight; on success the queue re-reads,
+// and on failure the server's message shows as a toast and the buttons return.
+window.answerQuestionOption = function(btn) {
+  if (!btn || !btn.dataset) return;
+  const qid = String(btn.dataset.questionId || '');
+  const optionId = String(btn.dataset.optionId || '');
+  if (!qid || !optionId) return;
+  const row = typeof btn.closest === 'function' ? btn.closest('.questions-queue-row') : null;
+  const buttons = row ? Array.from(row.querySelectorAll('.questions-option-btn')) : [btn];
+  buttons.forEach(b => { b.disabled = true; });
+  _questionAnswerSubmit(qid, '', optionId, '').then(() => {
+    window.refreshAutomationQuestions();
+  }).catch(err => {
+    buttons.forEach(b => { b.disabled = false; });
+    showToast(_questionAnswerErrorMessage(err), 'error');
+  });
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -36379,7 +36409,7 @@ window.heldQuestionDetailLinkHtml = function(entry) {
 // default-of-hold when the record carries them, and finally the
 // controls line — the detail link and the answer button (the guarded
 // hand-off to window.openQuestion, the existing answer control).
-window.heldQuestionRowHtml = function(entry) {
+window.heldQuestionRowHtml = function(entry, isShadow) {
   const e = (entry && typeof entry === 'object') ? entry : {};
   const question = String(e.question_id == null ? '' : e.question_id);
   const title = String(e.automaton_title == null ? '' : e.automaton_title);
@@ -36408,9 +36438,21 @@ window.heldQuestionRowHtml = function(entry) {
     ? `<button type="button" class="held-question-answer btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
     : '';
   const controls = [window.heldQuestionDetailLinkHtml(e), answerBtn].filter(Boolean).join('<span style="color:var(--border);">·</span>');
+  // A shadow entry is only a would-be hold, so it gets no change-the-hold
+  // line; an open entry is a real hold, and the line names where to change
+  // or view it (the Settings page under Automata, a navigation link only).
+  const changeLine = isShadow ? '' : `<div class="held-question-change" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_question_held_change'))} <a href="javascript:void(0)" class="held-question-settings-link" onclick="if (typeof window.openAutomataSettings === 'function') window.openAutomataSettings()" style="color:var(--accent,#2f6feb);text-decoration:none;">${escHtml(t('nav_settings'))}</a></div>`;
   return `<div class="held-question-row" style="padding:6px 0;border-top:1px solid var(--border);" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
-    + line1 + reasonLine + recLine + defLine
+    + line1 + reasonLine + recLine + defLine + changeLine
     + `<div style="margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${controls}</div></div>`;
+};
+
+// window.openAutomataSettings opens Settings on its Automata tab. It is a
+// navigation only: nothing here writes configuration.
+window.openAutomataSettings = function() {
+  _settingsTab = 'automata';
+  try { localStorage.setItem('cs_settings_tab', 'automata'); } catch (e) { /* the tab still opens */ }
+  navigate('settings');
 };
 
 // heldQuestionsCardHtml is the card body the listLoader polls into
@@ -36434,7 +36476,7 @@ window.heldQuestionsCardHtml = function(body) {
   if (mode === 'shadow' && shadow.length) {
     html += `<div class="held-question-shadow-section" style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
       <div class="held-question-shadow-title" style="font-weight:600;font-size:12px;">${escHtml(t('held_question_shadow_title'))}</div>
-      <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e)).join('')}</div></div>`;
+      <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
 };
