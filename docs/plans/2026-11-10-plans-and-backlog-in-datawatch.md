@@ -162,3 +162,39 @@ leave out; the operator does not want them in his own export, others may. Each r
 Carried over from option A and not contradicted: one-way push, never read back. The leak filter (no deployment names,
 tracker ids or secrets) stays on the export unless the operator says otherwise; it applies to the export of a
 repository that others read.
+
+Operator clarification on the export (2026-11-10): "Fyi on last questions, i personally want it on, but datawatch is of
+by default for other users." Decision: the export setting defaults to off in the product; the operator turns it on for
+his own installation. (The leak filter question for the operator's own repository export is still not answered; the
+filter stays on by default until he says otherwise.)
+
+Operator answer on migration question 5, the cut-over (2026-11-10): "Be question A, when it's ready we switch and clean
+up folder into history then run via datawatch" (option A: the cut-over is gated on conditions, not a date: the record
+types are shipped, the import of the registry rows is checked against the files, and encryption covers the Automaton,
+trace and decision files; the operator approves the switch). On the switch, the plans folder is cleaned up into history
+(the files leave the working tree and remain in the repository history) and the work runs through datawatch from then on.
+
+Operator answer on migration question 6, numbering (2026-11-10): "A, datawatch id, maybe uid?" (option A: new records get
+their own datawatch ids; each imported registry row keeps its old number as a legacy number field so existing
+references resolve; whether the id is also a globally unique uid is a follow-up question, below).
+
+Follow-up (open): ids today are short, readable ids (Automata look like four hex characters plus a counter). A short id
+is easy to say and type but can collide across installations or across the repositories of a product; a uid (a UUID) is
+unique everywhere but unreadable.
+
+Operator answer on the id question (2026-11-10): "A, but keep in mind people, humans, will refer to the title or name not
+the id so that should be also accessible and used so humans know what is what, this is actually something i was going to
+bring up, id means nothing to me" (option A: every record has a short id and a never-changing uid; plus a requirement:
+the title or name is the primary human handle, shown first everywhere, and usable to find and refer to a record; ids are
+secondary).
+Requirements that follow: every surface (web, messaging, CLI, MCP, REST, reports, the repository export, alerts, the
+supervisor's own reports) shows the title first and the id second or not at all; any command that takes an id also
+accepts an unambiguous title or title prefix; a title that matches more than one record asks which one; the export's
+file names and headings use titles. Open: whether titles must be unique within a project.
+
+Operator answer on title uniqueness (2026-11-10): "A yes, but we may run into conflicts so need a way to handle large
+changes over time" (option A: a title is unique within a project; the same title may exist in different projects; plus
+a requirement: conflicts will arise, so large changes over time need a defined handling path).
+Situations that will create conflicts: the one-time import of the registry rows, a bulk rename, moving records between
+projects, merging two projects, and importing records from another installation or repository of a product. Open: how
+each is handled (next question).
