@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Skill registry entries carry a `type` field: `skill` or `pack`.** `AvailableSkill` and `Synced` (`internal/skills/store.go`) gain `type` (JSON). A folder holding a `pack.yaml` is classified as a `pack` (`ClassifySkillDir` in `internal/skills/manifest.go`); every other folder is a `skill`. `Manager.Browse` and `Manager.Sync` set the type from the folder. Store files written before the field load with an empty type, which reads as `skill`. Pinned by `internal/skills/pack_type_test.go`.
+
 ## v9.123.0 — Standard tasks: the built-in task pack is renamed and listed under Automata, Templates
 
 ### Added
