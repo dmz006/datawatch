@@ -139,3 +139,7 @@ What I found (docs/encryption.md and the code, 2026-11-10):
 
 Consequence: moving plans, backlog and status into datawatch records puts planning content into files that secure mode
 does not cover today. Encryption coverage becomes a requirement of the migration, not a nice-to-have.
+
+Operator answer on migration question 3 (2026-11-10): "Q3, A" (both the supervisor and Automata write records through the
+same datawatch tools: REST, MCP and the CLI; the supervisor writes findings and decisions, Automata write their own
+shipped and status records at the end; every write lands in the audit log).
