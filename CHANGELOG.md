@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
-- **Vault outage alert replaces the Settings nav badge.** The PWA no longer shows a "Vault unreachable" badge on the Settings nav button. Instead, when `secrets.backend` is `vault` and the Vault stays unreachable for `secrets.vault.unreachable_alert_after_seconds` (default 120 seconds; `0` turns it off; negative values are rejected), datawatch raises one **Vault unreachable** error alert per outage. The alert shows in Alerts and goes to your messaging channels. It carries the Vault address and the last error, with secrets scrubbed. When the Vault answers again, a **Vault recovered** info alert is raised; the original error alert stays until you mark it read. The Vault status row in Settings now also shows **Last error** (or "none") and **Last success** (or "never"), translated in English, German, Spanish, French and Japanese. No migration step.
+- **The "Vault unreachable" badge is gone from the Settings nav button.** Nothing else on the nav shows Vault health, and no alert is raised when the Vault is unreachable — that replacement alert was not added (alerting is still deferred; see `internal/config` Vault notes, BL285). The only Vault-health signal is the Settings status row, which now also shows **Last success** (or "never") and **Last error** (or "none"), translated in English, German, Spanish, French and Japanese. No migration step.
 
 ## v9.96.3 — Template tasks no longer fail decompose
 
