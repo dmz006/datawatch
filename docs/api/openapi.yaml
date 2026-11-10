@@ -9969,7 +9969,7 @@ components:
         disabled_rules: {type: array, items: {type: string}, description: "Built-in (or operator) rule ids to drop from the effective pack"}
     TaskTemplateDef:
       type: object
-      description: One task template. A same-`id` operator template replaces the built-in template at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
+      description: One standard task definition (the config key is still `task_templates`; the operator-facing name is "standard task"). A same-`id` operator entry replaces the built-in one at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
       required: [id]
       properties:
         id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, bounded_load_step, final_gate, version_bump_left_to_merge"}

@@ -167,9 +167,10 @@ script gate's checks and time cap), see
 
 ## Reading the standard-task list
 
-The list reads the same resolved pack on every surface. Passing a project shows that
-project's override applied, so what you read is what the decomposer sees for that
-project.
+The list reads the same pack on every surface. Passing a project shows that project's
+override applied, so what you read is what the decomposer sees for that project. The
+one exception is the comm channel, which always shows the global setting: it takes no
+project argument.
 
 | Method | How |
 |---|---|
@@ -178,7 +179,7 @@ project.
 | **Web UI** | Automata page → the **Templates** tab (labelled **Automaton templates** in the current UI) → **Standard tasks** sub-tab. A read-only table; your sub-tab choice is remembered |
 | **REST API** | `GET /api/autonomous/standard-tasks` with an optional `?project=<dir-or-alias>`. The body is `{enabled, tasks[]}`, and each row carries `mode` and `runner`. Any other method returns 405. The config itself is read and written through `GET` and `PUT /api/config` |
 | **MCP** | The `autonomous_standard_tasks` tool, with an optional `project` argument. Each row carries `mode` and `runner`. The switches are read and written with `autonomous_config_get` and `autonomous_config_set` |
-| **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode \| runner`. An empty list replies "no standard tasks are defined." |
+| **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode \| runner`, for the global setting only (no project argument). An empty list replies "no standard tasks are defined." |
 
 All of these render the same listing, so they always agree. The fixture that pins
 them is `testdata/standard-tasks/expected.json`.
@@ -271,9 +272,9 @@ yet:
   `final_gate` on `llm` looks like a session task there. Read `runner` on the CLI, REST,
   MCP or comm channel.
 - **No per-project selection in the web tab.** The sub-tab reads the global list; the
-  per-project resolved read (the `?project=` parameter) is on REST, MCP, CLI and the
-  comm channel. If you rely on a project override, read the list with `--project`
-  to see the resolved state.
+  per-project resolved read (the `?project=` parameter) is on REST, MCP and CLI. The
+  comm channel reads the global setting only. If you rely on a project override, read
+  the list with `--project` (CLI) or `project` (MCP or REST) to see the resolved state.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).

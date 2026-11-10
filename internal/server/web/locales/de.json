@@ -4408,7 +4408,7 @@
   "review_attempt_resume_reason": "Grund für die Fortsetzung",
   "review_attempt_no_retry": "Keine Wiederholung",
   "settings_daemon_task_modes": "Modi der Aufgabenvorlagen (llm, daemon oder off, je Vorlage)",
-  "settings_daemon_task_modes_help": "Legt fest, wer jede Zerlegungs-Aufgabenvorlage ausführt: llm (eine LLM-Sitzung), daemon (der Daemon selbst, sofern die Vorlage das erlaubt) oder off (die Vorlage wird übersprungen). daemon wird nur für Vorlagen angeboten, die der Daemon ausführen kann. final_gate führt der Daemon nie aus.",
+  "settings_daemon_task_modes_help": "Legt fest, wer jede Zerlegungs-Aufgabenvorlage ausführt: llm (eine LLM-Sitzung), daemon (der Daemon selbst, sofern die Vorlage das erlaubt) oder off (die Vorlage wird übersprungen). daemon wird nur für Vorlagen angeboten, die der Daemon ausführen kann. final_gate akzeptiert nur llm oder off und wird, wenn aktiv, vom Skript-Gate des Daemons statt von einer Modell-Sitzung ausgeführt.",
   "settings_daemon_task_mode_llm": "llm",
   "settings_daemon_task_mode_daemon": "daemon",
   "settings_daemon_task_mode_off": "aus",
