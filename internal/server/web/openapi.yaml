@@ -1940,6 +1940,33 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/event-log:
+    get:
+      summary: Automata event log
+      description: |
+        One newest-first list of Automata events merged from the watch, lane fill
+        decisions, infrastructure retries, checks, safe-to-delete, cleanup, repo CI
+        watch and error sources. Filters: `kind` (comma list of event kinds),
+        `project` (exact match), `q` (case-insensitive text over summary, detail,
+        project, automaton and automation). Paging: `limit` (default 50, max 200)
+        and `before` (the opaque `next_cursor` from the previous page). `next_cursor`
+        is empty on the last page; `total` counts every event that matches the
+        filters. A bad limit, cursor or kind is a 400. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousEventLog
+      tags: [Autonomous]
+      parameters:
+        - {name: kind, in: query, required: false, schema: {type: string}, description: Comma list of watch, decision, retry, check, cleanup, alert or error}
+        - {name: project, in: query, required: false, schema: {type: string}}
+        - {name: q, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+        - {name: before, in: query, required: false, schema: {type: string}}
+      responses:
+        "200": {description: Events page}
+        "400": {description: Bad limit, cursor or kind}
+        "405": {description: Only GET is allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/checks:
     get:
       summary: Checks policy and findings

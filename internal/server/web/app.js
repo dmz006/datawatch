@@ -26243,6 +26243,9 @@ setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 // The sub-tab a first visit to the Automata tab opens on: Automation is the
 // high-level view, and the operator digs deeper from there.
 const _AUTOMATA_DEFAULT_TAB = 'automation';
+// Sub-tabs of the Automata view, in button order. 'events' sits between
+// 'automata' and 'templates'.
+const _AUTOMATA_TABS = ['automation', 'automata', 'events', 'templates'];
 // Remembering the last chosen sub-tab is an undecided operator design
 // question: this switch stays off, so every visit starts on the default.
 const _AUTOMATA_REMEMBER_TAB = false;
@@ -26251,12 +26254,12 @@ function _automataInitialTab() {
   if (!_AUTOMATA_REMEMBER_TAB) return _AUTOMATA_DEFAULT_TAB;
   try {
     const v = localStorage.getItem(_AUTOMATA_TAB_STORE_KEY);
-    if (v === 'automation' || v === 'automata' || v === 'templates') return v;
+    if (_AUTOMATA_TABS.indexOf(v) >= 0) return v;
   } catch (_) { /* storage blocked: use the default */ }
   return _AUTOMATA_DEFAULT_TAB;
 }
 const _automataState = {
-  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'templates'
+  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'events' | 'templates'
   historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
   filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
   selectMode: false,    // BL246 v6.6.0 — per-card checkboxes hidden until Select toggled
@@ -27600,10 +27603,404 @@ function switchAutomataTab(tab) {
   }
   // Entering the list sub-tabs drops any Automaton detail capacity timer.
   if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
-  if (tab === 'templates') { _templatesSubtabsSyncActive(); _automataMountTmplSubtab(); }
+  if (tab === 'events') renderAutomataEventsPanel();
+  else if (tab === 'templates') { _templatesSubtabsSyncActive(); _automataMountTmplSubtab(); }
   else _automataShowList();
 }
 window.switchAutomataTab = switchAutomataTab;
+
+// Automata Events sub-tab. Reads GET /api/autonomous/event-log (newest first).
+// One request is in flight at a time, and a failed request is retried once.
+// Automaton and Automation are different objects, so every owner name is
+// printed with its own label. Rows expand on click to show detail and reason.
+const _AUTOMATA_EVENTS_LIMIT = 50;
+// The kinds the event log emits, in chip order. A chip toggles one kind; the
+// selected kinds go out as one comma list (kind=watch,retry).
+const _AUTOMATA_EVENT_KINDS = ['watch', 'decision', 'retry', 'check', 'cleanup', 'alert', 'error'];
+const _AUTOMATA_EVENTS_SEARCH_MS = 300;
+// gen counts filter resets: a response from an older filter set is dropped.
+const _automataEventsState = {
+  inFlight: null, expanded: new Set(), kinds: new Set(), project: '', q: '',
+  nextCursor: '', events: [], projects: new Set(), gen: 0, searchTimer: null,
+};
+
+// _automataEventsText returns the translation, or the English fallback when no
+// bundle defines the key (t() returns the key itself on a miss).
+function _automataEventsText(key, fallback) {
+  const s = t(key);
+  return (s && s !== key) ? s : fallback;
+}
+
+// automataEventOwners lists the labelled owners of one event: an Automation
+// (the parent) and/or an Automaton (the child). Each carries its own label.
+function automataEventOwners(ev) {
+  const owners = [];
+  if (ev.automation) owners.push({ label: _automataEventsText('automata_events_label_automation', 'Automation'), name: ev.automation });
+  if (ev.automaton) owners.push({ label: _automataEventsText('automata_events_label_automaton', 'Automaton'), name: ev.automaton });
+  return owners;
+}
+
+// automataEventFixTab picks the Automata sub-tab where the operator fixes an
+// error event. The event log carries no link target, so the place is derived
+// from the owner: an Automaton's fix lives on the Automata list, an
+// Automation's on its own tab, and an event with no owner on the Automata list.
+function automataEventFixTab(ev) {
+  if (ev && ev.automaton) return 'automata';
+  if (ev && ev.automation) return 'automation';
+  return 'automata';
+}
+
+// automataEventQuietHtml renders a quiet entry (quiet=true) as one muted line
+// with its reason. It has no alert styling and no expand or action control.
+function automataEventQuietHtml(ev) {
+  const when = ev.time ? (isNaN(new Date(ev.time).getTime()) ? String(ev.time) : new Date(ev.time).toLocaleString()) : '';
+  const reason = ev.reason ? ` — ${ev.reason}` : '';
+  return `<div class="automata-event-quiet" style="padding:4px;font-size:11px;color:var(--text2);opacity:0.8;">`
+    + escHtml(when ? when + ' · ' : '') + escHtml(String(ev.summary || '')) + escHtml(reason)
+    + `</div>`;
+}
+
+// automataEventErrorHtml renders an error entry as an alert block with three
+// parts: what happened (summary), the reason, and the next action as a button
+// that opens the place that fixes it. The block carries no data-event-id, so
+// clicking it does not expand a row.
+function automataEventErrorHtml(ev) {
+  const red = 'var(--error,#ef4444)';
+  const reasonLabel = _automataEventsText('automata_events_reason', 'Reason');
+  const nextLabel = _automataEventsText('automata_events_next_action', 'Next action');
+  const happened = _automataEventsText('automata_events_error_happened', 'What happened');
+  const fixText = ev.next_action || _automataEventsText('automata_events_error_fix_default', 'Open and fix');
+  const tab = automataEventFixTab(ev);
+  return `<div class="automata-event-error" role="alert" style="margin:6px 0;padding:8px 10px;border:1px solid ${red};border-left:4px solid ${red};border-radius:6px;background:var(--bg2,transparent);">`
+    + `<div style="font-size:11px;color:${red};font-weight:600;">${escHtml(happened)}</div>`
+    + `<div class="automata-event-summary" style="font-size:13px;margin-top:2px;">${escHtml(ev.summary || '')}</div>`
+    + `<div class="automata-event-reason" style="font-size:12px;color:var(--text2);margin-top:4px;"><strong>${escHtml(reasonLabel)}:</strong> ${escHtml(ev.reason || '')}</div>`
+    + `<div style="margin-top:6px;font-size:12px;"><strong>${escHtml(nextLabel)}:</strong> `
+    + `<button type="button" class="automata-event-fix btn-secondary" data-events-goto="${escHtml(tab)}" style="font-size:12px;padding:2px 10px;margin-left:4px;">${escHtml(fixText)}</button>`
+    + `</div>`
+    + `</div>`;
+}
+
+// automataEventRowHtml renders one event row. A quiet entry gets the muted
+// single line and an error entry gets the alert block; any other entry is a
+// row. The detail block is in the markup only when the row is expanded, so a
+// collapsed row carries no detail text.
+function automataEventRowHtml(ev, expanded) {
+  if (ev && ev.quiet) return automataEventQuietHtml(ev);
+  if (ev && ev.severity === 'error') return automataEventErrorHtml(ev);
+  const id = escHtml(String(ev.id || ''));
+  let when = '';
+  if (ev.time) {
+    const d = new Date(ev.time);
+    when = isNaN(d.getTime()) ? String(ev.time) : d.toLocaleString();
+  }
+  const kind = escHtml(String(ev.kind || ''));
+  const owners = automataEventOwners(ev).map(o =>
+    `<span class="automata-event-owner" style="margin-right:8px;color:var(--text2);font-size:11px;">${escHtml(o.label)}: <strong>${escHtml(o.name)}</strong></span>`
+  ).join('');
+  let body = '';
+  if (expanded) {
+    body = `<div class="automata-event-detail" style="margin-top:6px;font-size:12px;white-space:pre-wrap;word-break:break-word;">`
+      + (ev.detail ? `<div><strong>${escHtml(_automataEventsText('automata_events_detail', 'Detail'))}:</strong> ${escHtml(ev.detail)}</div>` : '')
+      + `<div><strong>${escHtml(_automataEventsText('automata_events_reason', 'Reason'))}:</strong> ${escHtml(ev.reason || '')}</div>`
+      + (ev.next_action ? `<div><strong>${escHtml(_automataEventsText('automata_events_next_action', 'Next action'))}:</strong> ${escHtml(ev.next_action)}</div>` : '')
+      + `</div>`;
+  }
+  // Each moved card (supervisor watch, recent decisions, infrastructure
+  // retries, Automata checks, safe-to-delete, cleanup status) appears in the
+  // stream as its kind, so its row carries the '?' help anchor of that card.
+  const cardHelp = automataEventsCardHelpKey(ev);
+  return `<div class="automata-event-row" data-event-id="${id}" role="button" tabindex="0" aria-expanded="${expanded ? 'true' : 'false'}" style="padding:8px 4px;border-bottom:1px solid var(--border);cursor:pointer;">`
+    + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--text2);">`
+    + `<span>${escHtml(when)}</span>`
+    + `<span class="automata-event-kind automata-event-kind-${kind}" style="border:1px solid var(--border);border-radius:10px;padding:0 6px;">${kind}</span>`
+    + (cardHelp ? automataEventsHelpLink(cardHelp) : '')
+    + (ev.project ? `<span class="automata-event-project">${escHtml(_automataEventsText('automata_events_project', 'Project'))}: <strong>${escHtml(ev.project)}</strong></span>` : '')
+    + `</div>`
+    + `<div style="margin-top:4px;">${owners}</div>`
+    + `<div class="automata-event-summary" style="font-size:13px;">${escHtml(ev.summary || '')}</div>`
+    + body
+    + `</div>`;
+}
+
+// automataEventsQuery builds the event-log URL for the current filters. limit
+// always comes first; before is the next_cursor of the page being continued.
+function automataEventsQuery(before) {
+  const st = _automataEventsState;
+  const parts = ['limit=' + _AUTOMATA_EVENTS_LIMIT];
+  const kinds = _AUTOMATA_EVENT_KINDS.filter(k => st.kinds.has(k));
+  if (kinds.length) parts.push('kind=' + encodeURIComponent(kinds.join(',')));
+  if (st.project) parts.push('project=' + encodeURIComponent(st.project));
+  if (st.q) parts.push('q=' + encodeURIComponent(st.q));
+  if (before) parts.push('before=' + encodeURIComponent(before));
+  return '/api/autonomous/event-log?' + parts.join('&');
+}
+
+// automataEventsFetch loads one page of events for the current filters. A call
+// made while a request is in flight returns that same request, so only one is
+// ever outstanding. A failure is retried once; a second failure rejects. The
+// next_cursor of the page is kept in state for Load more.
+function automataEventsFetch(before) {
+  const st = _automataEventsState;
+  if (st.inFlight) return st.inFlight;
+  const url = automataEventsQuery(before || '');
+  const gen = st.gen;
+  const run = async () => {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const body = await apiFetch(url);
+        if (gen === st.gen) st.nextCursor = (body && body.next_cursor) || '';
+        return (body && Array.isArray(body.events)) ? body.events : [];
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr;
+  };
+  const p = run().finally(() => { if (st.inFlight === p) st.inFlight = null; });
+  st.inFlight = p;
+  return p;
+}
+
+// paintAutomataEvents writes the event list into the panel. A stale load that
+// finishes after the operator left the Events sub-tab paints nothing.
+function paintAutomataEvents(events, errorText) {
+  const list = document.getElementById('automataEventsList');
+  if (!list) return;
+  if (errorText) {
+    list.innerHTML = `<div style="color:var(--error,#ef4444);font-size:12px;">${escHtml(errorText)}</div>`;
+    return;
+  }
+  if (!events.length) {
+    list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_empty', 'No events yet.'))}</div>`;
+    return;
+  }
+  list.innerHTML = events.map(ev => automataEventRowHtml(ev, _automataEventsState.expanded.has(String(ev.id)))).join('');
+}
+
+// automataEventGoToFix opens the Automata sub-tab that fixes an error event.
+// Only the known tab names are accepted, so a bad attribute opens nothing.
+function automataEventGoToFix(tab) {
+  if (_AUTOMATA_TABS.indexOf(tab) < 0) return;
+  switchAutomataTab(tab);
+}
+window.automataEventGoToFix = automataEventGoToFix;
+
+// toggleAutomataEventRow expands or collapses one row and repaints the list
+// from the events already loaded.
+function toggleAutomataEventRow(id) {
+  const key = String(id || '');
+  if (!key) return;
+  if (_automataEventsState.expanded.has(key)) _automataEventsState.expanded.delete(key);
+  else _automataEventsState.expanded.add(key);
+  if (_automataEventsState.lastEvents) paintAutomataEvents(_automataEventsState.lastEvents);
+}
+window.toggleAutomataEventRow = toggleAutomataEventRow;
+
+// renderAutomataEventsPanel paints the Events sub-tab: a heading, a loading
+// line, then the rows. Row clicks are delegated to the panel, not bound per row.
+function renderAutomataEventsPanel() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
+    <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
+    ${automataEventsFilterHtml()}
+    <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
+    <div id="automataEventsMoreWrap" style="margin-top:8px;">
+      <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
+      <span id="automataEventsMoreError" style="color:var(--error,#ef4444);font-size:12px;margin-left:8px;"></span>
+    </div>
+  </div>`;
+  const root = document.getElementById('automataEventsPanel');
+  if (root && !root._eventsClickBound) {
+    root._eventsClickBound = true;
+    root.addEventListener('click', e => {
+      const target = e.target || {};
+      const chip = target.closest ? target.closest('[data-events-kind]') : null;
+      if (chip) { toggleAutomataEventKind(chip.getAttribute('data-events-kind')); return; }
+      const more = target.closest ? target.closest('[data-events-more]') : null;
+      if (more) { automataEventsLoadMore(); return; }
+      const fix = target.closest ? target.closest('[data-events-goto]') : null;
+      if (fix) { automataEventGoToFix(fix.getAttribute('data-events-goto')); return; }
+      const row = target.closest ? target.closest('[data-event-id]') : null;
+      if (row) toggleAutomataEventRow(row.getAttribute('data-event-id'));
+    });
+    root.addEventListener('change', e => {
+      if (e.target && e.target.id === 'automataEventsProject') setAutomataEventsProject(e.target.value);
+    });
+    root.addEventListener('input', e => {
+      if (e.target && e.target.id === 'automataEventsSearch') scheduleAutomataEventsSearch(e.target.value);
+    });
+  }
+  automataEventsReload();
+}
+
+// automataEventsHelpLink renders the '?' help anchor used by the Events tab,
+// its filters and each moved card. It follows the session_tag_help_tip pattern
+// and opens the Automata events howto; the title comes from the locale key.
+function automataEventsHelpLink(key) {
+  return `<a href="/diagrams.html#docs/howto/automata-events.md" target="_blank" rel="noopener" title="${escHtml(_automataEventsText(key, ''))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>`;
+}
+
+// automataEventsCardHelpKey returns the locale key of the '?' help anchor for
+// the moved card an event row stands in for, or '' when the row is not one of
+// the six moved cards. Alerts and error entries keep their help in the tab
+// heading and the filter row. Safe-to-delete and cleanup status are both kind
+// cleanup, so the event id prefix distinguishes them.
+function automataEventsCardHelpKey(ev) {
+  const kind = (ev && ev.kind) || '';
+  if (kind === 'watch') return 'automata_events_help_card_supervisor_watch';
+  if (kind === 'decision') return 'automata_events_help_card_recent_decisions';
+  if (kind === 'retry') return 'automata_events_help_card_infra_retries';
+  if (kind === 'check') return 'automata_events_help_card_automata_checks';
+  if (kind === 'cleanup') {
+    const id = String((ev && ev.id) || '');
+    if (id.indexOf('cleanup:safe:') === 0 || id.indexOf('cleanup:held:') === 0) {
+      return 'automata_events_help_card_safe_to_delete';
+    }
+    return 'automata_events_help_card_cleanup_status';
+  }
+  return '';
+}
+window.automataEventsCardHelpKey = automataEventsCardHelpKey;
+
+// automataEventsFilterHtml renders the kind chips, the project dropdown and the
+// search box from the current filter state.
+function automataEventsFilterHtml() {
+  const st = _automataEventsState;
+  const chips = _AUTOMATA_EVENT_KINDS.map(k => {
+    const on = st.kinds.has(k);
+    return `<button type="button" class="automata-events-chip automata-event-kind-${k}${on ? ' active' : ''}" data-events-kind="${k}" aria-pressed="${on ? 'true' : 'false'}" style="border:1px solid var(--border);border-radius:10px;padding:0 8px;font-size:11px;background:${on ? 'var(--accent2,#60a5fa)' : 'transparent'};color:${on ? 'var(--bg)' : 'var(--text2)'};cursor:pointer;">${escHtml(k)}</button>`;
+  }).join('');
+  const kindLabel = _automataEventsText('automata_events_filter_kind', 'Kind');
+  const projectLabel = _automataEventsText('automata_events_filter_project', 'Project');
+  const searchLabel = _automataEventsText('automata_events_filter_search', 'Search events');
+  return `<div id="automataEventsFilters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0;">`
+    + `<div class="automata-events-kinds" role="group" aria-label="${escHtml(kindLabel)}" style="display:flex;flex-wrap:wrap;gap:4px;">${chips}</div>`
+    + `<select id="automataEventsProject" aria-label="${escHtml(projectLabel)}" style="font-size:12px;">${automataEventsProjectOptions()}</select>`
+    + `<input id="automataEventsSearch" type="search" value="${escHtml(st.q)}" placeholder="${escHtml(searchLabel)}" aria-label="${escHtml(searchLabel)}" style="font-size:12px;min-width:160px;">`
+    + automataEventsHelpLink('automata_events_help_filters')
+    + `</div>`;
+}
+
+// automataEventsProjectOptions lists "All projects" and every project seen in
+// the loaded events, plus the selected one, so the selection never vanishes.
+function automataEventsProjectOptions() {
+  const st = _automataEventsState;
+  const names = new Set(st.projects);
+  if (st.project) names.add(st.project);
+  const opts = [`<option value=""${st.project ? '' : ' selected'}>${escHtml(_automataEventsText('automata_events_filter_all_projects', 'All projects'))}</option>`];
+  Array.from(names).sort().forEach(p => {
+    opts.push(`<option value="${escHtml(p)}"${p === st.project ? ' selected' : ''}>${escHtml(p)}</option>`);
+  });
+  return opts.join('');
+}
+
+// automataEventsSyncControls refreshes the chip states, the project options and
+// the Load more button after a load settles.
+function automataEventsSyncControls() {
+  const st = _automataEventsState;
+  document.querySelectorAll('[data-events-kind]').forEach(b => {
+    const on = st.kinds.has(b.getAttribute('data-events-kind'));
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.classList.toggle('active', on);
+  });
+  const sel = document.getElementById('automataEventsProject');
+  if (sel) sel.innerHTML = automataEventsProjectOptions();
+  const more = document.getElementById('automataEventsMore');
+  if (more) {
+    more.style.display = st.nextCursor ? '' : 'none';
+    more.disabled = !!st.inFlight;
+  }
+}
+
+// automataEventsReload drops the loaded rows and fetches the first page for the
+// current filters. Responses to an older filter set are discarded.
+function automataEventsReload() {
+  const st = _automataEventsState;
+  st.gen++;
+  st.inFlight = null;
+  st.events = [];
+  st.nextCursor = '';
+  st.lastEvents = [];
+  const list = document.getElementById('automataEventsList');
+  if (list) list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>`;
+  const err = document.getElementById('automataEventsMoreError');
+  if (err) err.textContent = '';
+  automataEventsSyncControls();
+  automataEventsLoad(false);
+}
+
+// automataEventsLoad fetches a page and appends it (append) or replaces the
+// rows (first page). A failed Load more reports under the button; a failed first
+// page replaces the list with the error.
+function automataEventsLoad(append) {
+  const st = _automataEventsState;
+  const gen = st.gen;
+  const before = append ? st.nextCursor : '';
+  automataEventsSyncControls();
+  automataEventsFetch(before)
+    .then(events => {
+      if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
+      st.events = append ? st.events.concat(events) : events;
+      st.lastEvents = st.events;
+      st.events.forEach(ev => { if (ev && ev.project) st.projects.add(ev.project); });
+      paintAutomataEvents(st.events);
+      automataEventsSyncControls();
+    })
+    .catch(err => {
+      if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
+      const msg = (_automataEventsText('automata_events_failed', 'Could not load events')) + ': ' + ((err && err.message) || String(err));
+      if (append) {
+        const more = document.getElementById('automataEventsMoreError');
+        if (more) more.textContent = msg;
+        automataEventsSyncControls();
+      } else {
+        paintAutomataEvents([], msg);
+      }
+    });
+}
+
+// toggleAutomataEventKind adds or removes one kind chip and reloads page one.
+function toggleAutomataEventKind(kind) {
+  const st = _automataEventsState;
+  if (!_AUTOMATA_EVENT_KINDS.includes(kind)) return;
+  if (st.kinds.has(kind)) st.kinds.delete(kind);
+  else st.kinds.add(kind);
+  automataEventsReload();
+}
+
+// setAutomataEventsProject applies the project dropdown and reloads page one.
+function setAutomataEventsProject(name) {
+  const st = _automataEventsState;
+  const next = String(name || '');
+  if (next === st.project) return;
+  st.project = next;
+  automataEventsReload();
+}
+
+// scheduleAutomataEventsSearch debounces the search box: the query is applied
+// once typing pauses for _AUTOMATA_EVENTS_SEARCH_MS.
+function scheduleAutomataEventsSearch(text) {
+  const st = _automataEventsState;
+  if (st.searchTimer) clearTimeout(st.searchTimer);
+  st.searchTimer = setTimeout(() => {
+    st.searchTimer = null;
+    const q = String(text || '').trim();
+    if (q === st.q) return;
+    st.q = q;
+    automataEventsReload();
+  }, _AUTOMATA_EVENTS_SEARCH_MS);
+}
+
+// automataEventsLoadMore fetches the page after next_cursor and appends it.
+function automataEventsLoadMore() {
+  const st = _automataEventsState;
+  if (!st.nextCursor || st.inFlight) return;
+  automataEventsLoad(true);
+}
+window.renderAutomataEventsPanel = renderAutomataEventsPanel;
 
 function toggleAutomataFilter() {
   _automataState.filterOpen = !_automataState.filterOpen;
@@ -30449,24 +30846,10 @@ window.projectPolicyApply = function (key) {
 // decisions and the recent idle-lane alerts. A missing status renders the
 // placeholder; the loader owns the failed state. Every value is escaped.
 // The key maps hold literal locale keys, so the key-coverage guard can see them.
-const LANE_FILL_DECISION_ROWS = 10;
 const LANE_FILL_ALERT_ROWS = 5;
 const LANE_FILL_MODE_KEYS = { off: 'lane_fill_mode_off', shadow: 'lane_fill_mode_shadow', on: 'lane_fill_mode_on' };
 const LANE_FILL_TYPE_KEYS = { gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
 const LANE_FILL_PREF_KEYS = { any: 'lane_fill_pref_any', gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
-const LANE_FILL_ELIGIBILITY_KEYS = {
-  stale: 'lane_fill_eligibility_stale', held: 'lane_fill_eligibility_held',
-  sequenced_after_unshipped: 'lane_fill_eligibility_sequenced_after_unshipped',
-  proposal_not_confirmed: 'lane_fill_eligibility_proposal_not_confirmed',
-  proposal_missing: 'lane_fill_eligibility_proposal_missing',
-  main_carries_work: 'lane_fill_eligibility_main_carries_work',
-  worktree_invalid: 'lane_fill_eligibility_worktree_invalid',
-};
-const LANE_FILL_ACTION_KEYS = {
-  start_prd: 'lane_fill_action_start', decompose: 'lane_fill_action_decompose',
-  decompose_ahead: 'lane_fill_action_decompose_ahead', report_merge: 'lane_fill_action_report_merge',
-  blocked: 'lane_fill_action_blocked', idle: 'lane_fill_action_idle',
-};
 // _laneFillKey returns the locale key for an API value, or '' for anything that
 // is not one of ours (including inherited names such as "constructor").
 function _laneFillKey(map, v) {
@@ -30538,24 +30921,6 @@ function _laneFillLaneHtml(l) {
     `<span>${escHtml(stateLabel)}</span>${waiting}${waitReasonHtml}` +
     `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
 }
-function _laneFillDecisionHtml(d) {
-  const clock = _laneFillClock(d.at);
-  const actionKey = _laneFillKey(LANE_FILL_ACTION_KEYS, d.action);
-  const action = actionKey ? t(actionKey) : String(d.action || '');
-  // Only a start is worded as a start; other actions show their own name.
-  const wording = d.action === 'start_prd' ? (d.executed ? t('lane_fill_started') : t('lane_fill_would_start')) : '';
-  const reason = d.blocker || d.reason || '';
-  // A refusal carries a stable code; it shows as a small labelled chip in front
-  // of the refusal text. A decision with no code (or an unknown one) shows none.
-  const eligKey = _laneFillKey(LANE_FILL_ELIGIBILITY_KEYS, d.eligibility_reason);
-  const chip = eligKey
-    ? `<span class="lane-fill-eligibility lane-fill-eligibility-${escHtml(d.eligibility_reason)}" style="display:inline-block;padding:0 6px;margin-right:4px;border:1px solid var(--text2);border-radius:8px;font-size:11px;font-weight:600;">${escHtml(t(eligKey))}</span>` : '';
-  const err = d.error ? `<div style="color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(d.error)}</div>` : '';
-  return `<div class="lane-fill-decision" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
-    `<span style="color:var(--text2);">${escHtml(clock)}</span> ${escHtml(d.lane_id)} · ${escHtml(action)} · ${escHtml(d.title)}` +
-    (wording ? ` <span style="font-weight:600;">— ${escHtml(wording)}</span>` : '') +
-    ((chip || reason) ? `<div style="color:var(--text2);">${chip}${escHtml(reason)}</div>` : '') + err + `</div>`;
-}
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
@@ -30576,13 +30941,11 @@ window.laneFillCardHtml = function(status, cap) {
     ? t('lane_fill_evidence_error', [ev.error])
     : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
   const evidence = `<div style="margin-top:6px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(evidenceLine)}</div>`;
-  const decisions = (Array.isArray(status.decisions) ? status.decisions : []).slice(0, LANE_FILL_DECISION_ROWS);
-  const decisionsHtml = decisions.length ? decisions.map(_laneFillDecisionHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_decisions'))}</div>`;
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
   const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
   return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
     _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
-    _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
+    `<div class="lane-fill-gap" aria-hidden="true" style="height:14px;"></div>` +
     _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
 };
 
@@ -35471,6 +35834,7 @@ function renderAutonomousView() {
       <div class="output-tabs automata-tabs-bar">
         ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
+        <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</button>
         <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab!=='automata'?'display:none;':''}">&#9745;</button>
@@ -35499,7 +35863,8 @@ function renderAutonomousView() {
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
-    if (st.tab === 'templates') _automataMountTmplSubtab();
+    if (st.tab === 'events') renderAutomataEventsPanel();
+    else if (st.tab === 'templates') _automataMountTmplSubtab();
     else if (reuse) _automataShowList();
     else loadAutomataPanel();
     // The list body has no status card; drop any Automaton detail capacity
@@ -35507,6 +35872,9 @@ function renderAutonomousView() {
     if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
   }
   _automataReuseList = false;
+  // The repo CI watch state no longer has a line in this sub-tab bar; its
+  // failing/pending runs and never-polled state arrive as Events entries
+  // and alerts from the backend.
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
@@ -35737,7 +36105,6 @@ function _automationInboxBackgroundStart() {
     if (s.loading) return;
     if (s.stopped || !s.pollTimer) l.load();
   });
-  if (!window._supervisorWatchInterval) supervisorWatchStartPolling();
 }
 
 const _AUTOMATION_SUBTABS = [
@@ -35769,12 +36136,10 @@ const _AUTOMATION_SUBTABS = [
       </div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
       listLoaderAll(_automationInboxLoaders());
-      supervisorWatchStartPolling();
       _automationSlotsMount('inbox');
     },
     // The Inbox loaders keep polling behind the other sub-tabs so the badge
@@ -35811,16 +36176,14 @@ const _AUTOMATION_SUBTABS = [
     bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
-      <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationChecksCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('resources')}`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationUsageLoader(), _automationInfraRetryLoader(), _automationChecksLoader(), _automationShipLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationUsageLoader(), _automationShipLoader()]);
       _automationSlotsMount('resources');
     },
     stop() {
-      _automationStopLoaders(['automation_capacity', 'automation_lane_fill', 'automation_usage', 'automation_infra_retry', 'automation_checks', 'automation_ship']);
+      _automationStopLoaders(['automation_capacity', 'automation_lane_fill', 'automation_usage', 'automation_ship']);
       _automationSlotsStop('resources');
     },
   },
@@ -35861,17 +36224,15 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
-    bodyHTML: () => `<div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+    bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationProtectedPathsCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('housekeeping')}`,
     mount() {
-      listLoaderAll([_automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationProtectedPathsLoader()]);
+      listLoaderAll([_automationUncommittedWorkLoader(), _automationProtectedPathsLoader()]);
       _automationSlotsMount('housekeeping');
     },
     stop() {
-      _automationStopLoaders(['automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_protected_paths']);
+      _automationStopLoaders(['automation_uncommitted_work', 'automation_protected_paths']);
       _automationSlotsStop('housekeeping');
     },
   },

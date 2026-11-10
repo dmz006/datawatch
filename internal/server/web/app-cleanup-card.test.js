@@ -143,14 +143,10 @@ test('hostile text in every card field is escaped and never injectable', () => {
 
 // ── the loader ───────────────────────────────────────────────────────────────
 
-test('the Housekeeping sub-tab carries the cleanup card slot and its loader reads the cleanup route', () => {
+test('the cleanup card left the Housekeeping sub-tab; its loader still reads the cleanup route', () => {
   const sandbox = loadApp();
   const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'housekeeping').bodyHTML()", sandbox);
-  assert.ok(body.includes('id="automationCleanupCard"'), 'cleanup slot missing from the Housekeeping body');
-  for (const other of ['inbox', 'automations', 'resources', 'progress', 'setup']) {
-    const o = vm.runInContext(`_AUTOMATION_SUBTABS.find(s => s.id === '${other}').bodyHTML()`, sandbox);
-    assert.ok(!o.includes('id="automationCleanupCard"'), 'no cleanup slot on ' + other);
-  }
+  assert.ok(!body.includes('id="automationCleanupCard"'), 'cleanup card must be gone from Housekeeping (Events stream, kind cleanup)');
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/cleanup'"), 'loader must read GET /api/autonomous/cleanup');
   assert.ok(/'automation_safe_delete', 'automation_cleanup'[,\]]/.test(src), 'stop-all list must include the cleanup loader');

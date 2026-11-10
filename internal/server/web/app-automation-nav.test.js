@@ -55,7 +55,7 @@ test('a first visit opens the Automata tab on the Automation sub-tab, which is t
   assert.equal(tabState(sb), 'automation');
   sb.renderAutonomousView();
   const order = [...out.view.matchAll(/class="output-tab[^"]*" data-tab="([a-z]+)"/g)].map(m => m[1]);
-  assert.deepEqual(order, ['automation', 'automata', 'templates']);
+  assert.deepEqual(order, ['automation', 'automata', 'events', 'templates']);
   assert.match(out.view, /class="output-tab active" data-tab="automation"/);
   // The Automation sub-tab opens on its Inbox second-row sub-tab; the list is on Automations.
   assert.match(out.view, /data-subtab="inbox"/);

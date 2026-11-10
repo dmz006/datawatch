@@ -157,3 +157,7 @@ A session acting as PRD supervisor must read `docs/plans/2026-10-17-supervisor-r
 before its first action. It holds the full operator and supervisor rules and the lessons learned,
 including who decides what, how to validate a decompose, how to triage a failed task, and when a PRD
 is ready to advance.
+
+## 2026-11-09 05:35 — COMPLETED — write the Events plan document
+- Wrote `docs/plans/2026-11-09-automata-events-tab.md`: header (2026-11-09, v9.119.0, scope, link to `docs/plans/2026-11-06-automata-pages-redesign.md`), 11 numbered phases with Done/Planned statuses and per-phase checklists (Phases 1–10 Done: record+merge order, sources, classification, off-status alerts/feed, REST `GET /api/autonomous/event-log`, CLI `datawatch autonomous event-log`, comm verb, PWA sub-tab, moved cards + repo CI line removal, locale/help/openapi/docs; Phase 11 Planned: mobile parity tracking in datawatch-app), and a `## Parity surface` section with all 8 rows (REST/CLI/comm/PWA touched; MCP excluded; YAML/config excluded — no configuration setting; Android/iPhone excluded from this change, tracked in datawatch-app).
+- Scope verified against shipped commits 2b2b1963e..91f231055 and the actual files; no tracker IDs; design-record link resolves.

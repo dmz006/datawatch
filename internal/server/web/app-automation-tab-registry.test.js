@@ -41,12 +41,12 @@ const subtabOf = sb => vm.runInContext('_automationState.subtab', sb);
 // Fixed cards per tab, in body order, and the hidden placeholders per tab in
 // slot order. The union is the full set of card ids a body holds.
 const FIXED = {
-  inbox: ['automationQuestionsCard', 'automationHeldQuestionsCard', 'automationTriageCard', 'automationSecurityFailureCard', 'automationSupervisorWatchCard'],
+  inbox: ['automationQuestionsCard', 'automationHeldQuestionsCard', 'automationTriageCard', 'automationSecurityFailureCard'],
   automations: ['automationFilterBar', 'automationPanel'],
-  resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard', 'automationInfraRetryCard', 'automationChecksCard', 'automationShipCard'],
+  resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard', 'automationShipCard'],
   progress: ['progressCard'],
   setup: ['automationOnboardingReportCard', 'automationMergePipelineCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'],
-  housekeeping: ['automationSafeDeleteCard', 'automationCleanupCard', 'automationUncommittedWorkCard', 'automationProtectedPathsCard'],
+  housekeeping: ['automationUncommittedWorkCard', 'automationProtectedPathsCard'],
 };
 const PLACEHOLDERS = {
   inbox: [],
@@ -132,7 +132,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
       seen.set(c, id);
     });
   }
-  assert.equal(seen.size, 5 + 2 + 6 + 1 + 5 + 4 + 13, 'total distinct card ids (fixed 23 + placeholders 13)');
+  assert.equal(seen.size, 4 + 2 + 4 + 1 + 5 + 2 + 13, 'total distinct card ids (fixed 18 + placeholders 13)');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationQuestionsCard', 'open questions card is first on Inbox');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[2], 'automationTriageCard', 'triage card follows the question and held cards');
 });
@@ -150,7 +150,7 @@ test('slots: a slot registered on resources appears only there, after the fixed 
     if (id === 'resources') {
       const ids = [...body.matchAll(/<div id="([A-Za-z]+)"/g)].map(m => m[1]);
       const at = n => ids.indexOf(n);
-      assert.ok(at('testSlotEarly') > at('automationInfraRetryCard'), 'slot comes after the fixed cards');
+      assert.ok(at('testSlotEarly') > at('automationUsageCard'), 'slot comes after the fixed cards');
       assert.ok(at('testSlotEarly') < at('automationLaneUtilizationCard'), 'order 50 sorts before the order-100 placeholders');
       assert.ok(at('automationVerifierSlotsCard') < at('testSlotLate'), 'order 500 sorts last');
       assert.ok(at('automationLaneUtilizationCard') < at('automationVerifierSlotsCard'));

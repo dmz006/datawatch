@@ -60,6 +60,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Launch Automaton form](#launch-automaton-form)
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
   - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
+  - [Events](#events)
   - [Infrastructure retry](#infrastructure-retry)
   - [Change record](#change-record)
   - [Generated artefacts](#generated-artefacts)
@@ -698,6 +699,22 @@ Two subscription sinks send Automaton lifecycle events out of the daemon. **Both
 - **Hop cap and visited list** — the loop guard for forwarding. A forwarded event records the origin host, the number of hops and the hosts it has passed through. A receiving daemon refuses an event that started on its own host, that already visited it, or that has reached the hop cap.
 
 ---
+
+### Events
+
+**Events** is the third sub-tab of the Automata view (between Automata and Templates): one newest-first stream of what the daemon watches and does for you. A row is an **event**; the kinds are `watch`, `decision`, `retry`, `check`, `cleanup`, `alert` and `error`. Each row shows the time, the kind, the project, and the owner — an **Automation** (the parent) and/or an **Automaton** (the child); expand it for the detail, the reason and the next action.
+
+- **watch** — supervisor watch findings (open findings; a resolved one is a quiet row) and the repo CI watch state: off (a quiet row that says how to turn it on), not polled yet, or one warn row per failing or pending CI run with its run link.
+- **decision** — the recent lane fill planner decisions: start Automaton, decompose, report merge, blocked (warn), idle (quiet), or a decision that ran with an error.
+- **retry** — one row per task retried or held after an infrastructure failure; a held row says how many retries were spent and what to do.
+- **check** — the findings the Automata checks recorded; the reason names the check that wrote it.
+- **cleanup** — one row per branch in the safe-to-delete report (held-for-uncommitted-changes rows are warn) plus one cleanup status row for both passes and the disk readings (error when a pass failed, warn while a disk alert is on).
+- **alert** — part of the kind vocabulary, reserved for daemon alerts; today an alert surfaces as the **warn** severity of the feed's own row rather than a separate row.
+- **error** — the raw errors the daemon recorded, classified into what happened, why it matters and what to do next. A harmless permission error (the daemon touching a path it does not need) is a quiet info row; a real permission denial or any other failure is an error row with a **Next action** button that opens the tab that owns the event.
+
+A **quiet** row is background state that needs no action — resolved findings, an idle lane, the watch off, safe branches, harmless permission errors. The cards that used to sit on their own panels (supervisor watch, recent decisions, infrastructure retries, Automata checks, safe-to-delete, cleanup status) are rows here now; their reads over REST, MCP, CLI and chat are unchanged.
+
+Reads: PWA (kind chips, project, search, Load more); REST `GET /api/autonomous/event-log` (`kind=` comma list, `project=`, `q=`, `limit=` 1–200 default 50, `before=` the previous `next_cursor`; the body carries `total` and `next_cursor`); CLI `datawatch autonomous event-log`; comm `autonomous event-log`. See [howto/automata-events.md](howto/automata-events.md).
 
 ### Shipped
 

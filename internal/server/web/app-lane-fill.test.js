@@ -39,14 +39,6 @@ function lane(over) {
   return { id: 'gpu-1', type: 'gpu', state: 'idle', occupant: null, blocker: '', eligible_waiting: 0, ...over };
 }
 
-function decision(over) {
-  return {
-    at: '2026-10-24T10:00:00Z', mode: 'shadow', lane_id: 'gpu-1', lane_type: 'gpu', action: 'start_prd',
-    prd_id: 'p1', title: 'Cache column', reason: '', blocker: '', executed: false, error: '', repeat_count: 1,
-    ...over,
-  };
-}
-
 function status(over) {
   return {
     mode: 'shadow', last_poll_at: '2026-10-24T10:00:00Z', lanes: [], queued_eligible: { gpu: 0, claude: 0 },
@@ -165,32 +157,6 @@ test('an evidence error replaces the evidence line', () => {
   assert.ok(!html.includes('Active GPU sessions'), 'evidence counts must not show beside an error');
 });
 
-test('a would-start row says would start when not executed and started when executed', () => {
-  const pending = render(status({ decisions: [decision({ executed: false })] }));
-  assert.ok(pending.includes('Would start'), 'would-start wording missing: ' + pending);
-  assert.ok(!pending.includes('Started'), 'started must not show for an unexecuted start');
-  const done = render(status({ mode: 'on', decisions: [decision({ executed: true })] }));
-  assert.ok(done.includes('Started'), 'started wording missing');
-  assert.ok(!done.includes('Would start'), 'would-start must not show for an executed start');
-});
-
-test('a non-start decision shows its action name and reason, without start wording', () => {
-  const html = render(status({
-    decisions: [decision({ action: 'blocked', executed: false, blocker: 'no free GPU lane', title: '' })],
-  }));
-  assert.ok(html.includes('blocked'), 'action missing');
-  assert.ok(html.includes('no free GPU lane'), 'blocker missing from decision row');
-  assert.ok(!html.includes('Would start'), 'non-start decision must not say would start');
-});
-
-test('the decision list shows the newest ten rows only', () => {
-  const decisions = Array.from({ length: 12 }, (_, i) => decision({ title: 'work ' + i }));
-  const html = render(status({ decisions }));
-  assert.equal(countOccurrences(html, 'class="lane-fill-decision"'), 10, 'expected 10 decision rows');
-  assert.ok(html.includes('work 0'), 'newest decision missing');
-  assert.ok(!html.includes('work 10'), 'eleventh decision must not show');
-});
-
 test('recent alerts show the lane, the work and the message', () => {
   const html = render(status({
     alerts: [{ at: '2026-10-24T10:05:00Z', lane_id: 'claude-1', work: 'Cache column', message: 'idle with work waiting' }],
@@ -211,13 +177,7 @@ test('a missing status renders the placeholder card', () => {
 test('empty lists render their empty-state text', () => {
   const html = render(status());
   assert.ok(html.includes('No lanes configured'), 'no-lanes text missing');
-  assert.ok(html.includes('No decisions recorded yet'), 'no-decisions text missing');
   assert.ok(html.includes('No idle lane alerts'), 'no-alerts text missing');
-});
-
-test('a zero decision time renders no clock reading', () => {
-  const html = render(status({ decisions: [decision({ at: '0001-01-01T00:00:00Z' })] }));
-  assert.ok(!html.includes('0001'), 'zero time must not leak');
 });
 
 // ── escaping ──────────────────────────────────────────────────────────────
@@ -231,7 +191,6 @@ test('a hostile title, backend, blocker, reason, alert and lane id are escaped e
       occupant: { prd_id: 'p1', title: HOSTILE, backend: HOSTILE },
       blocker: HOSTILE, eligible_waiting: 1,
     })],
-    decisions: [decision({ title: HOSTILE, lane_id: HOSTILE, reason: HOSTILE, blocker: '', action: HOSTILE })],
     alerts: [{ at: '2026-10-24T10:05:00Z', lane_id: HOSTILE, work: HOSTILE, message: HOSTILE }],
   }));
   assert.ok(!html.includes('<img'), 'raw markup leaked: ' + html);
@@ -333,49 +292,6 @@ test('saving an unchanged lane preference sends no set_lane_preference call', as
   mounted.onSubmit();
   await new Promise(r => setImmediate(r));
   assert.equal(calls.filter(c => c.url.endsWith('/set_lane_preference')).length, 0, 'unchanged preference must not post');
-});
-
-// ── eligibility chips, lane counts and per-kind modes ────────────────────
-
-const ELIGIBILITY_CODES = {
-  stale: 'Stale',
-  held: 'Held',
-  sequenced_after_unshipped: 'Sequenced after unshipped work',
-  proposal_not_confirmed: 'Proposal not confirmed',
-  proposal_missing: 'Proposal missing',
-  main_carries_work: 'Main already carries the work',
-  worktree_invalid: 'Worktree invalid',
-};
-
-for (const [code, label] of Object.entries(ELIGIBILITY_CODES)) {
-  test('a decision refused with ' + code + ' shows the "' + label + '" chip beside the refusal text', () => {
-    const html = render(status({ decisions: [decision({
-      action: 'blocked', eligibility_reason: code, reason: 'refusal text for ' + code, blocker: 'refusal text for ' + code,
-    })] }));
-    assert.ok(html.includes('lane-fill-eligibility-' + code), 'chip element missing: ' + html);
-    assert.ok(html.includes('>' + label + '</span>'), 'chip label missing: ' + html);
-    assert.ok(html.includes('refusal text for ' + code), 'refusal text missing: ' + html);
-    assert.equal(countOccurrences(html, 'class="lane-fill-eligibility '), 1, 'exactly one chip expected');
-  });
-}
-
-test('a decision with no eligibility reason shows no chip', () => {
-  const html = render(status({ decisions: [decision({ reason: 'would start' })] }));
-  assert.equal(countOccurrences(html, 'lane-fill-eligibility'), 0, 'no chip expected: ' + html);
-  assert.ok(html.includes('would start'));
-});
-
-test('a decision with an unknown eligibility code shows no chip', () => {
-  const html = render(status({ decisions: [decision({ eligibility_reason: 'constructor', reason: 'x' })] }));
-  assert.equal(countOccurrences(html, 'lane-fill-eligibility'), 0, 'unknown code must not render a chip: ' + html);
-});
-
-test('a hostile refusal text and a hostile eligibility code are escaped', () => {
-  const html = render(status({ decisions: [decision({
-    action: 'blocked', eligibility_reason: 'stale', reason: HOSTILE, blocker: HOSTILE,
-  }), decision({ eligibility_reason: HOSTILE, reason: 'r' })] }));
-  assert.ok(!html.includes('<img'), 'raw markup leaked: ' + html);
-  assert.ok(html.includes('&lt;img'), 'escaped markup missing');
 });
 
 test('the lane counts line shows the effective count, the configured count and the source for both lane types', () => {
@@ -554,7 +470,7 @@ test('every literal lane key the app asks for by name exists in en.json, includi
   let m;
   while ((m = callPattern.exec(source)) !== null) used.add(m[2]);
   const mapped = JSON.parse(vm.runInContext(
-    'JSON.stringify([LANE_FILL_MODE_KEYS, LANE_FILL_TYPE_KEYS, LANE_FILL_PREF_KEYS, LANE_FILL_ACTION_KEYS])', sandbox));
+    'JSON.stringify([LANE_FILL_MODE_KEYS, LANE_FILL_TYPE_KEYS, LANE_FILL_PREF_KEYS])', sandbox));
   for (const map of mapped) for (const v of Object.values(map)) used.add(v);
   const missing = [...used].filter(k => !(k in en)).sort();
   assert.deepEqual(missing, [], 'lane keys used by app.js missing from en.json: ' + missing.join(', '));

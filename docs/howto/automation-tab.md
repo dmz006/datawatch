@@ -15,6 +15,12 @@ Automation sub-tab, a second row of six sub-tabs splits the view, in this
 order: **Inbox**, **Automations**, **Resources**, **Progress and cost**,
 **Setup and policy** and **Housekeeping**. Inbox is the one open by default.
 
+The first sub-tab row also holds an **Events** sub-tab (between **Automata**
+and **Templates**): the one stream of what the daemon watches and does for
+you — supervisor watch, lane fill decisions, infrastructure retries, checks,
+cleanup, the repo CI watch and the recorded errors. See
+[automata-events.md](automata-events.md).
+
 The second row works like the About and Settings strips: one row that scrolls
 sideways with momentum on touch, a hidden scrollbar, sticky at the top, the
 active tab scrolled into view, no wrapping, and it fits at phone width. Cards
@@ -24,12 +30,12 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions, the security failure report and the supervisor watch. A count badge on the tab totals what is waiting. |
+| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting. |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
-| **Resources** | Capacity, lane fill, usage against the plan, infrastructure retries, the Automata checks card and the Automata ship status card. Lane utilization and verifier slots appear here when they ship. |
+| **Resources** | Capacity, lane fill, usage against the plan, and the Automata ship status card. Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
 | **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
 | **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind and the supervisor loop appear here when they ship. The automatic grouping tags (the placement axes and the tag sweep) ship today, but they live on the Settings page under **Settings → General → Automata → Placement tags**, not as a card of this tab; see [automata-tags](automata-tags.md). |
-| **Housekeeping** | The safe-to-delete report, cleanup and uncommitted work. Stale worktrees appears here when it ships. |
+| **Housekeeping** | The uncommitted work card. The safe-to-delete report and the cleanup card now live in the Events tab. Stale worktrees appears here when it ships. |
 
 ## What an Automation is
 
@@ -147,20 +153,20 @@ error with a Retry button; a failed card never blanks the list, and a failed lis
 never blanks the cards.
 
 - **Inbox:** the needs-attention card above, the open questions (see
-  [Questions](#questions-rest-only-for-now)), the held-question card, the
-  security failure card and the supervisor watch card. The badge on the tab
+  [Questions](#questions-rest-only-for-now)), the held-question card and the
+  security failure card. The supervisor watch card is in the Events tab. The badge on the tab
   counts what is waiting on you.
 - **Resources:** the capacity and queue card (the pools and their usage, any
   usage back-off, budgets, and the Automata waiting for capacity), the lane fill
-  card, the usage card (usage against the plan), the infrastructure retries
-  card, the Automata checks card (the four report-only checks) and the Automata
-  ship status card (the push, tag and release steps).
+  card, the usage card (usage against the plan) and the Automata ship status
+  card (the push, tag and release steps). The infrastructure retries and the
+  Automata checks cards (the four report-only checks) are in the Events tab.
 - **Progress and cost:** the Progress card, with the kind table, work left and
   completion range.
 - **Setup and policy:** the onboarding and requirements report, the merge
   pipeline card and the model request watch card.
-- **Housekeeping:** the safe-to-delete report, the cleanup card and the
-  uncommitted work card.
+- **Housekeeping:** the uncommitted work card. The safe-to-delete report and
+  the cleanup card are in the Events tab.
 
 ### Reading the merge state and the safe-to-delete report
 
@@ -258,7 +264,9 @@ connectors, starting at the entry member and following each member's
   outcome, the edge it took, and start and finish times.
 
 Below the strip the page lists any **pending inserts** waiting for approval and
-the most recent **decisions** (what changed, who did it and when).
+the most recent **decisions** (what changed, who did it and when); the
+lane fill decisions that decide which Automaton runs next now appear in the
+Events tab as `decision` rows.
 
 ## Creating and editing
 
@@ -547,6 +555,25 @@ log as `autonomous_judge_outcome`.
 - **REST and MCP:** `PUT /api/config`, `PUT /api/autonomous/config` and the
   `autonomous_config_set` tool take the same two keys.
 
+## Where the moved cards went
+
+These cards now live in the **Events** tab of the Automata view, as rows of
+their event kind — each still has its own **?** link that opens the howto
+for it:
+
+| Card | Where it is now |
+|---|---|
+| Supervisor watch | `watch` rows in [Events](automata-events.md) |
+| Recent decisions (lane fill) | `decision` rows in [Events](automata-events.md) |
+| Infrastructure retries | `retry` rows in [Events](automata-events.md) |
+| Automata checks | `check` rows in [Events](automata-events.md) |
+| Safe-to-delete report | `cleanup` rows in [Events](automata-events.md) |
+| Cleanup status | the `cleanup` status row in [Events](automata-events.md) |
+
+Their reads over REST, MCP, CLI and chat are unchanged; the Events tab reads
+the same state as one stream. The repo CI watch's CI line is a `watch` row
+there too.
+
 ## Related
 
 - [projects-tab.md](projects-tab.md): the Projects tab, a separate top-level
@@ -568,5 +595,8 @@ log as `autonomous_judge_outcome`.
   for running Automata
 - [autonomous-planning.md](autonomous-planning.md): how single Automata are
   created and decomposed
+- [automata-events.md](automata-events.md): the Events tab — the one stream of
+  watch, decisions, retries, checks, cleanup and errors, with the cards that
+  moved there
 - [datawatch-definitions](../datawatch-definitions.md#automation): the Automation
   section of the manual
