@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The conflict mode setting's labels and hints name its real values.** The English label and hint of the merge conflict mode setting now name the values `shadow` (the default) and `on`, instead of placeholder wording. The German, Spanish, French and Japanese labels and hints match the English ones, so every shipped locale describes the same two values.
+
 ## v9.122.0 — Conflict resolution by file class, with the model gate and the confirm-first-N counter
 
 Merge conflicts are now resolved by file class, behind a model gate and a confirm-first-N counter.
