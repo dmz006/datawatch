@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.129.0 — Standard task list shows each task's real mode
+
+- **The daemon task-mode Settings help no longer says the daemon never runs `final_gate`.** In all five locales, `settings_daemon_task_modes_help` now says what actually happens: `final_gate` takes only `llm` or `off`, and when on it is carried out by the daemon's script gate, not by a model session. The **Standard task runner** glossary entry was re-checked against the PWA code at the same time — the Automata sub-tab still draws no runner column, so that entry stays as written. Copy change only.
+- **Standard-task docs: the comm channel is global-only.** The how-to said the per-project read was available on the comm channel; it is not. `standard tasks` always shows the global setting, and the how-to now says so in the surface table and the open items. Documentation only.
+- **The standard task list now reports each task's real mode and runner.** The list reports each task's actual mode (llm, daemon or off) and its runner, the final gate shows the script gate, and the PWA note describes the per-task modes. The surfaces are `GET /api/autonomous/standard-tasks`, the `autonomous_standard_tasks` MCP tool, the `datawatch autonomous standard-tasks` command, and the chat `standard tasks` word.
+
 ## v9.128.1 — Correct the merge conflict mode label and hint text
 
 ### Fixed

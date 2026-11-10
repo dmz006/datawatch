@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.128.1 (2026-11-10).** The merge conflict mode label and hint now name their real values in every shipped language. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.129.0 (2026-11-10).** The standard task list now shows each task's real mode (llm, daemon or off) and runner, and the standard task wording is corrected in the MCP descriptions, docs and locale files. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
