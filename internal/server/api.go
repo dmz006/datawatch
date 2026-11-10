@@ -6942,6 +6942,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"cross_session": map[string]interface{}{
 			"enabled": s.cfg.CrossSession.IsEnabled(),
 		},
+		"secrets": map[string]interface{}{
+			"vault": map[string]interface{}{
+				"unreachable_alert_after_seconds": s.cfg.Secrets.Vault.EffectiveUnreachableAlertAfterSeconds(),
+			},
+		},
 		"proxy": map[string]interface{}{
 			"enabled":                   s.cfg.Proxy.Enabled,
 			"health_interval":           s.cfg.Proxy.HealthInterval,
@@ -7217,6 +7222,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// non-integer value rejects the whole PUT rather than being skipped.
 	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
 		if verr := validateIdleAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Vault-unreachable alert threshold: whole seconds >= 0 (0 = off). A
+	// negative, fractional or non-numeric value rejects the whole PUT.
+	if v, ok := patch["secrets.vault.unreachable_alert_after_seconds"]; ok {
+		if verr := validateVaultUnreachableAlertAfterSeconds(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -9726,6 +9739,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.IdleAlertMinutes = n
 			}
+		case "secrets.vault.unreachable_alert_after_seconds":
+			// Validated above in handlePutConfig; an explicit 0 (alert off)
+			// is preserved.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Secrets.Vault.UnreachableAlertAfterSeconds = &n
+			}
 		case "autonomous.automation.triage_alert_minutes":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged. n >= 0 is re-checked for safety;
@@ -11266,6 +11285,20 @@ func validateIdleAlertMinutes(v interface{}) error {
 	}
 	if !ok || f != math.Trunc(f) || f < 0 {
 		return fmt.Errorf("autonomous.automation.idle_alert_minutes: must be a whole number >= 0 (0 = off)")
+	}
+	return nil
+}
+
+// validateVaultUnreachableAlertAfterSeconds checks
+// secrets.vault.unreachable_alert_after_seconds: a whole number >= 0
+// (unset reads the 120-second default; 0 turns the alert off).
+func validateVaultUnreachableAlertAfterSeconds(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("secrets.vault.unreachable_alert_after_seconds: must be a whole number >= 0 (0 = off, default %d)", config.DefaultVaultUnreachableAlertAfterSeconds)
 	}
 	return nil
 }

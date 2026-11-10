@@ -1878,6 +1878,10 @@
   "update_daemon_restarting": "Daemon startet neu — Verbindung wird automatisch wiederhergestellt.",
   "update_installed_restarting": "Installiert. Neustart…",
   "pwa_update_installing": "Neue Version geladen — wird neu geladen…",
+  "vault_last_error_label": "Letzter Fehler",
+  "vault_last_error_none": "keine",
+  "vault_last_success_label": "Letzter Erfolg",
+  "vault_last_success_never": "nie",
   "vault_meta_label": "Mount",
   "vault_path_layout": "Layout",
   "vault_path_prefix": "Präfix",
@@ -4603,5 +4607,8 @@
   "automata_events_help_card_infra_retries": "Infrastruktur-Wiederholungen — Wiederholungen durch Infrastrukturfehler, nicht durch die Arbeit selbst",
   "automata_events_help_card_automata_checks": "Prüfungen — Zustandsprüfungen für jeden Automaten",
   "automata_events_help_card_safe_to_delete": "Sicher zu löschen — Einträge, die ohne Verlust von Arbeit entfernt werden können",
-  "automata_events_help_card_cleanup_status": "Bereinigungsstatus — Fortschritt der automatischen Bereinigung nach Abschluss der Automaten"
+  "automata_events_help_card_cleanup_status": "Bereinigungsstatus — Fortschritt der automatischen Bereinigung nach Abschluss der Automaten",
+  "settings_secrets_vault": "Secrets-Vault",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Vault-Nichterreichbarkeitsalarm nach (Sekunden)",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Sekunden, die das Vault-Backend nicht erreichbar sein darf, bevor datawatch einen Alarm auslöst. Standard 120; 0 deaktiviert den Alarm."
 }

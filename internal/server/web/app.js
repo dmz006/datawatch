@@ -19008,6 +19008,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'audit.retention_days', label: 'Audit log retention (days, -1 = never prune)', labelKey: 'settings_audit_retention_days', type: 'number', placeholder: '30' },
     { key: 'audit.cef_mirror_enabled', label: 'Mirror audit logs in CEF format (for SIEM)', labelKey: 'settings_audit_cef_mirror_enabled', type: 'toggle' },
   ]},
+  // Vault health monitor: seconds the Vault backend may stay unreachable
+  // before an alert is raised (0 disables the alert).
+  { id: 'secrets_vault', sectionKey: 'settings_secrets_vault', section: 'Secrets Vault', docs: 'howto/secrets-manager.md', fields: [
+    { key: 'secrets.vault.unreachable_alert_after_seconds', label: 'Vault unreachable alert after (seconds)', labelKey: 'settings_secrets_vault_unreachable_alert_after_seconds', helpKey: 'settings_secrets_vault_unreachable_alert_after_seconds_help', type: 'number', min: 0, step: 1, placeholder: '120', onchange: "savePromptNumberSetting('secrets.vault.unreachable_alert_after_seconds', this.value, 0)" },
+  ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
   // lives in LLM_CONFIG_FIELDS at the same id='rtk'.
@@ -48114,7 +48119,7 @@ function docsTrustExport() {
 }
 window.docsTrustExport = docsTrustExport;
 
-// BL267 (v6.15.0) — Vault status row + nav badge updater. Renders into
+// BL267 (v6.15.0) — Vault status row updater. Renders into
 // the Secrets card whenever the active backend is Vault. Hidden when
 // /api/secrets/vault/status returns {backend_active:false}.
 function loadVaultStatusRow() {
@@ -48124,61 +48129,51 @@ function loadVaultStatusRow() {
     .then(d => {
       if (!d || !d.backend_active) {
         el.style.display = 'none';
-        _setVaultBadge(false, '');
         return;
       }
       const st = d.status || {};
       const reachable = !!st.reachable;
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${reachable ? 'var(--success)' : 'var(--error)'};margin-right:6px;"></span>`;
-      const last = st.last_success ? new Date(st.last_success).toLocaleTimeString() : '—';
-      const err = st.last_error ? `<div style="color:var(--error);font-size:11px;margin-top:2px;">${escHtml(st.last_error)}</div>` : '';
       const reqID = st.last_request_id ? ` <span style="opacity:0.6;">req=${escHtml(st.last_request_id)}</span>` : '';
+      // Last success: a labelled line. Render the backend's last successful
+      // read as an ISO timestamp (deterministic; the previous toLocaleTimeString
+      // call was locale-dependent and unlabelled). Fall back to the 'never'
+      // string when the backend has never reported a success. ISO keeps a
+      // malformed timestamp from silently turning into "Invalid Date": if the
+      // value cannot be parsed as a Date we show the raw string instead.
+      let successValue = null;
+      if (st.last_success) {
+        const dt = new Date(st.last_success);
+        successValue = isNaN(dt.getTime()) ? String(st.last_success) : dt.toISOString();
+      }
+      const successLabel = escHtml(t('vault_last_success_label') || 'Last success');
+      const successLine = `<div style="font-size:11px;">${successLabel}: ${successValue !== null ? escHtml(successValue) : escHtml(t('vault_last_success_never') || 'never')}</div>`;
+      // Last error: a labelled line. The message is escaped and shown in the
+      // error colour; when the backend has no error to report we show the
+      // 'none' string so the line is always present (a hidden line would hide
+      // the surface an operator is explicitly looking for).
+      const errorLabel = escHtml(t('vault_last_error_label') || 'Last error');
+      const errorValue = st.last_error
+        ? `<span style="color:var(--error);">${escHtml(st.last_error)}</span>`
+        : escHtml(t('vault_last_error_none') || 'none');
+      const errorLine = `<div style="font-size:11px;">${errorLabel}: ${errorValue}</div>`;
       el.innerHTML = `
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:2px;">
           <div style="display:flex;align-items:center;width:100%;">
             ${dot}<strong>${escHtml(t('vault_status_label')||'Vault')}</strong>
             <span style="opacity:0.7;margin-left:6px;font-size:11px;">${escHtml(st.address||'')}</span>
-            <span style="margin-left:auto;font-size:11px;color:var(--text2);">${reachable ? (t('vault_reachable')||'reachable') : (t('vault_unreachable')||'unreachable')} · last=${escHtml(last)}${reqID}</span>
+            <span style="margin-left:auto;font-size:11px;color:var(--text2);">${reachable ? (t('vault_reachable')||'reachable') : (t('vault_unreachable')||'unreachable')}${reqID}</span>
           </div>
           <div style="font-size:11px;color:var(--text2);">${escHtml(t('vault_meta_label')||'mount')}=${escHtml(st.kv_mount||'')} · ${escHtml(t('vault_path_prefix')||'prefix')}=${escHtml(st.path_prefix||'')} · ${escHtml(t('vault_path_layout')||'layout')}=${escHtml(st.path_layout||'')}${st.namespace?(' · ns='+escHtml(st.namespace)):''}
           </div>
-          ${err}
+          ${successLine}
+          ${errorLine}
         </div>`;
       el.style.display = '';
-      _setVaultBadge(!reachable, st.last_error || '');
     })
-    .catch(() => { el.style.display = 'none'; _setVaultBadge(false, ''); });
+    .catch(() => { el.style.display = 'none'; });
 }
 window.loadVaultStatusRow = loadVaultStatusRow;
-
-// Settings nav badge for Vault: shows a red dot when Vault is the
-// active backend AND unreachable. Re-uses the existing peerStaleBadge
-// element shape (red circle, top-right of the nav button).
-function _setVaultBadge(unreachable, errMsg) {
-  // Anchor at the settings nav BUTTON (not the .nav-icon span): an
-  // absolutely positioned badge inside the icon span inflates the span's
-  // scrollWidth (clipped-text finding), and the old 17x15 pill is below
-  // the 40px tap-target floor — same root cause as peerStaleBadge,
-  // fixed the same way by the mobile-fit gate 2026-10-22.
-  const settingsBtn = document.querySelector('.nav-btn[data-view="settings"]');
-  if (!settingsBtn) return;
-  let badge = document.getElementById('vaultUnreachableBadge');
-  if (unreachable) {
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.id = 'vaultUnreachableBadge';
-      badge.style.cssText = 'position:absolute;top:0;right:0;width:44px;height:44px;background:var(--error,#ef4444);color:#fff;font-size:14px;border-radius:50%;align-items:center;justify-content:center;line-height:1;cursor:pointer;';
-      badge.title = 'Vault unreachable';
-      badge.innerHTML = '!';
-      badge.onclick = (e) => { e.stopPropagation(); navigate('settings'); };
-      settingsBtn.appendChild(badge);
-    }
-    badge.style.display = 'flex';
-    if (errMsg) badge.title = 'Vault unreachable: ' + errMsg;
-  } else if (badge) {
-    badge.remove();
-  }
-}
 
 // BL242 — Secrets panel.
 function loadSecretsPanel() {

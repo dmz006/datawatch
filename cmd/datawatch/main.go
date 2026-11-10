@@ -4246,6 +4246,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
+			// Vault health monitor: alerts when Vault stays unreachable past
+			// secrets.vault.unreachable_alert_after_seconds.
+			if vaultHealth := httpServer.StartVaultHealth(ctx); vaultHealth != nil {
+				defer vaultHealth.Stop()
+			}
 			// Call-time ${secret:name} API-key resolution in the inference
 			// dispatcher: the dispatcher was created above, before the
 			// secrets store existed, with its creation block already closed,
@@ -12047,7 +12052,8 @@ func newConfigSetCmd() *cobra.Command {
 			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
 			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
-			"starts with worker_profile is refused as unknown.",
+			"starts with worker_profile is refused as unknown.\n\n" +
+			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()

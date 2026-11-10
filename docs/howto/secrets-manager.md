@@ -110,7 +110,7 @@ vault:
   token: ${secret:vault-token}
 ```
 
-**Limitations in v6.15:** Vault is the single active backend for all secrets —
+**Limitations:** Vault is the single active backend for all secrets —
 per-agent Vault isolation is a future enhancement. KV v1 and Vault
 AppRole/Kubernetes auth are also deferred.
 
@@ -263,7 +263,67 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 secrets vault status
 ```
 
-The Settings nav button shows a red `!` badge when Vault is the active backend but unreachable.
+The Settings nav button no longer shows a badge for an unreachable Vault. Check the status row in
+Settings → Secrets Store instead: it shows **Vault** reachable or unreachable, the mount and path
+layout, **Last success** (or `never`) and **Last error** (or `none`), each in your chosen language.
+
+### Vault-unreachable alert
+
+Instead of a nav badge, datawatch raises a real alert when the Vault stays unreachable.
+
+- **Trigger.** Only when `secrets.backend` is `vault`. datawatch checks the Vault every 15 seconds.
+  Once the Vault has been unreachable continuously for `secrets.vault.unreachable_alert_after_seconds`
+  (whole seconds, default 120), one **Vault unreachable** error alert is raised. It is raised once per
+  outage, not repeated.
+- **What the alert contains.** The Vault address and the last error only. Secret values are scrubbed.
+- **Where it shows.** It is a system alert: it appears in Alerts in the PWA and goes to your messaging
+  channels like other system alerts.
+- **Recovery.** When the Vault answers again, datawatch raises a separate **Vault recovered** info
+  alert. The original error alert stays; mark it read as usual.
+- **Threshold.** `0` turns the alert off; a negative value is rejected.
+
+Set the threshold any of these ways (the examples use 300 seconds):
+
+```yaml
+# YAML: ~/.datawatch/datawatch.yaml
+secrets:
+  vault:
+    unreachable_alert_after_seconds: 300
+```
+
+```sh
+# REST
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"secrets.vault.unreachable_alert_after_seconds": 300}' $BASE/api/config
+
+# CLI
+datawatch config set secrets.vault.unreachable_alert_after_seconds 300
+```
+
+```json
+// MCP
+{ "tool": "config_set", "args": { "key": "secrets.vault.unreachable_alert_after_seconds", "value": "300" } }
+```
+
+```text
+# Comm channel
+configure secrets.vault.unreachable_alert_after_seconds=300
+```
+
+In the PWA: Settings → General → the **Secrets Vault** section → **Vault unreachable alert after
+(seconds)** (`0` = off). The field is translated in en, de, es, fr and ja.
+
+**Checking the Settings nav button.** The sandbox story
+`scripts/test-stories/pwa/vault-nav-label-clear.mjs` forces the Vault unreachable at a 390 px
+viewport and confirms that nothing sits over the Settings nav label and that no Vault badge element
+exists. Run it against the sandbox daemon, never the production port.
+
+**For the operator to review.**
+
+- The companion mobile clients may still show a Vault-unreachable badge and lack the last-error and
+  last-success lines and the alert delay field. Parity issues are drafted under
+  `docs/plans/parity-issues/`; confirm where the new lines and field sit on the app before they are filed.
+- The default delay of 120 seconds is a supervisor choice. Change it if it does not suit your Vault.
 
 ### 5c. MCP
 

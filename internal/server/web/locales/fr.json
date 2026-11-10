@@ -1878,6 +1878,10 @@
   "update_daemon_restarting": "Le daemon redémarre — la reconnexion se fera automatiquement.",
   "update_installed_restarting": "Installé. Redémarrage…",
   "pwa_update_installing": "Nouvelle version téléchargée — rechargement…",
+  "vault_last_error_label": "Dernière erreur",
+  "vault_last_error_none": "aucune",
+  "vault_last_success_label": "Dernière réussite",
+  "vault_last_success_never": "jamais",
   "vault_meta_label": "mount",
   "vault_path_layout": "organisation",
   "vault_path_prefix": "préfixe",
@@ -4603,5 +4607,8 @@
   "automata_events_help_card_infra_retries": "Relances d’infrastructure — relances dues à des pannes d’infrastructure, pas au travail lui-même",
   "automata_events_help_card_automata_checks": "Contrôles — contrôles de santé de chaque unité de travail",
   "automata_events_help_card_safe_to_delete": "Suppression sans risque — éléments supprimables sans perte de travail",
-  "automata_events_help_card_cleanup_status": "État du nettoyage — progression du nettoyage automatique à la fin du travail"
+  "automata_events_help_card_cleanup_status": "État du nettoyage — progression du nettoyage automatique à la fin du travail",
+  "settings_secrets_vault": "Vault des secrets",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Alerte Vault injoignable après (secondes)",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Secondes pendant lesquelles le backend Vault peut rester injoignable avant que datawatch ne déclenche une alerte. Valeur par défaut 120 ; 0 désactive l'alerte."
 }

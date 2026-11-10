@@ -1878,6 +1878,10 @@
   "update_daemon_restarting": "El daemon está reiniciándose — la reconexión se hará automáticamente.",
   "update_installed_restarting": "Instalado. Reiniciando…",
   "pwa_update_installing": "Nueva versión descargada; recargando…",
+  "vault_last_error_label": "Último error",
+  "vault_last_error_none": "ninguno",
+  "vault_last_success_label": "Último éxito",
+  "vault_last_success_never": "nunca",
   "vault_meta_label": "mount",
   "vault_path_layout": "esquema",
   "vault_path_prefix": "prefijo",
@@ -4603,5 +4607,8 @@
   "automata_events_help_card_infra_retries": "Reintentos de infraestructura — reintentos causados por fallos de infraestructura, no por el trabajo",
   "automata_events_help_card_automata_checks": "Comprobaciones — chequeos de estado de cada unidad de trabajo",
   "automata_events_help_card_safe_to_delete": "Seguro de borrar — elementos que se pueden eliminar sin perder trabajo",
-  "automata_events_help_card_cleanup_status": "Estado de limpieza — progreso de la limpieza automática al terminar el trabajo"
+  "automata_events_help_card_cleanup_status": "Estado de limpieza — progreso de la limpieza automática al terminar el trabajo",
+  "settings_secrets_vault": "Vault de secretos",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Alerta de Vault inaccesible tras (segundos)",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Segundos que el backend de Vault puede permanecer inaccesible antes de que datawatch genere una alerta. Valor predeterminado 120; 0 desactiva la alerta."
 }

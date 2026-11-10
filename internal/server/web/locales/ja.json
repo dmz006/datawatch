@@ -1878,6 +1878,10 @@
   "update_daemon_restarting": "デーモンを再起動中 — 自動的に再接続します。",
   "update_installed_restarting": "インストール完了。再起動中…",
   "pwa_update_installing": "新しいバージョンをダウンロードしました — 再読み込み中…",
+  "vault_last_error_label": "最終エラー",
+  "vault_last_error_none": "なし",
+  "vault_last_success_label": "最終成功",
+  "vault_last_success_never": "まだありません",
   "vault_meta_label": "mount",
   "vault_path_layout": "構成",
   "vault_path_prefix": "プレフィックス",
@@ -4603,5 +4607,8 @@
   "automata_events_help_card_infra_retries": "インフラ再試行 — 作業自体ではなく、インフラの障害による再試行",
   "automata_events_help_card_automata_checks": "チェック — オートマトンごとのヘルスチェック",
   "automata_events_help_card_safe_to_delete": "削除しても安全 — 作業を失わずに削除できる項目",
-  "automata_events_help_card_cleanup_status": "クリーンアップ状況 — オートマトン完了後の自動クリーンアップの進捗"
+  "automata_events_help_card_cleanup_status": "クリーンアップ状況 — オートマトン完了後の自動クリーンアップの進捗",
+  "settings_secrets_vault": "シークレット Vault",
+  "settings_secrets_vault_unreachable_alert_after_seconds": "Vault 到達不能アラートまでの秒数",
+  "settings_secrets_vault_unreachable_alert_after_seconds_help": "Vault バックエンドに到達できない状態が続いてから datawatch がアラートを出すまでの秒数。デフォルトは 120、0 でアラートを無効にします。"
 }
