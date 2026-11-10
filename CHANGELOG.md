@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.121.0 — Release readiness evidence and recorded release approval mode changes
+
+- Release readiness evidence: a read of the stored shadow-merge comparisons that counts, for one release size (patch, minor or major), the records where the plan held up, the conflicts, the PWA changes and blocking defects against a bar, and says what is missing. It is available on REST, MCP, the CLI, chat and a PWA card.
+- Release approval mode changes are recorded: every change of a release approval mode on any surface writes a decision record stating the readiness counts at that moment and emits a `release_mode_changed` audit event. A write that leaves the mode in force unchanged is stored without a record.
+- Chat `configure` of a release approval key now goes through the same recorded path as the REST config write.
+- 13 new locale keys in all five bundles; the how-to explains moving from shadow to on.
+
 ## v9.120.0 — Burn guard projection follows the usage readings
 
 ### Changed

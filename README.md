@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.120.0 (2026-11-09).** Burn guard projection follows the usage readings, with a projection gap setting. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.121.0 (2026-11-09).** Release readiness evidence is readable on every surface, and each release approval mode change is recorded as a decision with the evidence at that moment. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
