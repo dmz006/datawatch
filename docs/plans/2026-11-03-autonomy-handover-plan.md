@@ -218,3 +218,5 @@ Pack question 6 (first acceptance of the pre-seeded community registry). Options
 ### Supervisor as skills (operator, 2026-11-09)
 
 Operator: "We need to modulator even the supervisor, skills and eventually other models seem essential" (read as: make the supervisor modular; skills, and eventually other models, are essential). Scope and shape are open; first question asked of the operator is whether to draft a design Automaton or fold it into the packs work.
+
+Operator, on how to take it forward: "A, but it should be designed to fit into the packs". Design proposal: docs/plans/2026-11-10-supervisor-as-skills-design.md (open questions listed there, asked one at a time).
