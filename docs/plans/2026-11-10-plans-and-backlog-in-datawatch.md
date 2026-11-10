@@ -207,3 +207,11 @@ when a title changes the old title stays as an alias that still resolves, so ref
 All six migration questions and the id, title and conflict questions are answered. Remaining open design areas: the product
 record (what it holds, repository attachment, cross-project relations, how the Projects tab and the export show it), the
 leak filter on the operator's own export, and the build plan (record types, import, encryption coverage, export, cut-over).
+
+Operator answer on the leak filter for the export (2026-11-10): "A, also remember other users may have different names ip,
+etc" (option A: the filter is on by default for every export, with a per-export setting to turn it off, intended for a
+private repository only one person reads). Requirement from the second part: the filter must not depend on any value
+specific to the operator's installation. It works from each installation's own configuration: its own host names,
+addresses, node and peer names, user and organization names, repository names and configured identities, plus generic
+patterns for secrets, tracker ids and version literals. Another user with different names and addresses gets the same
+protection without editing the filter. This is the same approach as the supervisor pack leak check.
