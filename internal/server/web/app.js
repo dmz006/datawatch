@@ -43784,7 +43784,7 @@ function docsTrustExport() {
 }
 window.docsTrustExport = docsTrustExport;
 
-// BL267 (v6.15.0) — Vault status row + nav badge updater. Renders into
+// BL267 (v6.15.0) — Vault status row updater. Renders into
 // the Secrets card whenever the active backend is Vault. Hidden when
 // /api/secrets/vault/status returns {backend_active:false}.
 function loadVaultStatusRow() {
@@ -43794,7 +43794,6 @@ function loadVaultStatusRow() {
     .then(d => {
       if (!d || !d.backend_active) {
         el.style.display = 'none';
-        _setVaultBadge(false, '');
         return;
       }
       const st = d.status || {};
@@ -43815,40 +43814,10 @@ function loadVaultStatusRow() {
           ${err}
         </div>`;
       el.style.display = '';
-      _setVaultBadge(!reachable, st.last_error || '');
     })
-    .catch(() => { el.style.display = 'none'; _setVaultBadge(false, ''); });
+    .catch(() => { el.style.display = 'none'; });
 }
 window.loadVaultStatusRow = loadVaultStatusRow;
-
-// Settings nav badge for Vault: shows a red dot when Vault is the
-// active backend AND unreachable. Re-uses the existing peerStaleBadge
-// element shape (red circle, top-right of the nav button).
-function _setVaultBadge(unreachable, errMsg) {
-  // Anchor at the settings nav BUTTON (not the .nav-icon span): an
-  // absolutely positioned badge inside the icon span inflates the span's
-  // scrollWidth (clipped-text finding), and the old 17x15 pill is below
-  // the 40px tap-target floor — same root cause as peerStaleBadge,
-  // fixed the same way by the mobile-fit gate 2026-10-22.
-  const settingsBtn = document.querySelector('.nav-btn[data-view="settings"]');
-  if (!settingsBtn) return;
-  let badge = document.getElementById('vaultUnreachableBadge');
-  if (unreachable) {
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.id = 'vaultUnreachableBadge';
-      badge.style.cssText = 'position:absolute;top:0;right:0;width:44px;height:44px;background:var(--error,#ef4444);color:#fff;font-size:14px;border-radius:50%;align-items:center;justify-content:center;line-height:1;cursor:pointer;';
-      badge.title = 'Vault unreachable';
-      badge.innerHTML = '!';
-      badge.onclick = (e) => { e.stopPropagation(); navigate('settings'); };
-      settingsBtn.appendChild(badge);
-    }
-    badge.style.display = 'flex';
-    if (errMsg) badge.title = 'Vault unreachable: ' + errMsg;
-  } else if (badge) {
-    badge.remove();
-  }
-}
 
 // BL242 — Secrets panel.
 function loadSecretsPanel() {
