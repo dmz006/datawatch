@@ -22,12 +22,15 @@ import (
 // chat exactly what the policy layer computes for the project.
 func (r *Router) handleProjectCmd(cmd Command) {
 	fields := strings.Fields(cmd.Text)
-	usage := "Usage: project policy <project-name> [automaton-id]"
+	usage := "Usage: project policy <project-name> [automaton-id] | project show|arcs|progress <project-name> | project set <project-name> <field> <value>"
 	if len(fields) == 0 {
 		r.send(fmt.Sprintf("[%s] %s", r.hostname, usage))
 		return
 	}
 	if fields[0] != "policy" {
+		if r.handleProjectRecordCmd(fields) {
+			return
+		}
 		r.send(fmt.Sprintf("[%s] Unknown project verb %q. %s", r.hostname, fields[0], usage))
 		return
 	}
