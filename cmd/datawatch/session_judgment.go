@@ -325,6 +325,17 @@ func sessionPaneMarker(cfg *config.Config, id string) string {
 // Tests set a fake; nil means "no adopt, spawn as before".
 var judgeLiveSession func(sessionName string) string
 
+// verifierLiveSession, when set, returns the id of a task-verifier one-shot
+// session ("autonomous:verify:<task id>") that is still running under exactly
+// sessionName, or "" when none is live (wireCapacity sets it from the session
+// manager's live-session listing). runOneShotJSONSessionWithSpawnHook consults
+// it for verifier names before it would POST /api/sessions/start and reuses
+// (adopts) the live session instead of spawning a second one — the same
+// daemon-restart double-spawn guard as judgeLiveSession: the manager's
+// in-memory waiter for the verifier does not survive a restart, while the
+// tmux session does. Tests set a fake; nil means "no adopt, spawn as before".
+var verifierLiveSession func(sessionName string) string
+
 // runOneShotJSONSessionWithReader is the spawn / poll / kill body shared by
 // runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
 // decides how the output file is read, and whether it is removed from the
@@ -365,6 +376,22 @@ func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, b
 	if judgeLiveSession != nil {
 		if unitID, ok := judgeUnitFromSessionName(sessionName); ok && unitID != "" {
 			if id := judgeLiveSession(sessionName); id != "" {
+				startOut.ID = id
+				adopted = true
+			}
+		}
+	}
+	// The verifier's adopt guard: a task-verifier session named exactly
+	// sessionName may still be running after a daemon restart (its waiter
+	// died with the daemon, the tmux session did not). Reuse that live
+	// session instead of starting a second verifier for the same task — a
+	// second verifier would double-spend the session cap and race on the
+	// same content-addressed output file. Only verifier session names
+	// (parseable by verifierTaskFromSessionName) consult this hook; every
+	// other caller keeps its spawn behavior.
+	if !adopted && verifierLiveSession != nil {
+		if taskID, ok := verifierTaskFromSessionName(sessionName); ok && taskID != "" {
+			if id := verifierLiveSession(sessionName); id != "" {
 				startOut.ID = id
 				adopted = true
 			}
@@ -465,7 +492,7 @@ func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, b
 		judgeSessionStarted(sessionName, sessionID)
 	}
 	if adopted {
-		fmt.Printf("[%s] adopting live session %s (a guardrail judge with this name is already running — not spawning a second)\n", sessionName, startOut.ID)
+		fmt.Printf("[%s] adopting live session %s (a verifier or judge with this name is already running — not spawning a second)\n", sessionName, startOut.ID)
 	} else {
 		fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
 	}

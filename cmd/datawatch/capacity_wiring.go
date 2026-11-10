@@ -1252,6 +1252,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 	amgr.SetVerifierHost(&verifierReconcileHost{mgr: mgr, led: led, reg: verifiers})
 
+	// Adopt, never double-spawn (daemon restart): a verifying task's
+	// verifier session may still be live while the in-memory waiter the
+	// pre-restart flow attached to it is gone. The one-shot runner
+	// consults this listing and reuses the already-running verifier named
+	// exactly "autonomous:verify:<task id>" instead of spawning a second
+	// one — the verifier twin of the judgeLiveSession guard above (it is
+	// consulted only for verifier session names).
+	verifierLiveSession = func(sessionName string) string {
+		var bestID string
+		var bestAt time.Time
+		for _, s := range mgr.ListSessions() {
+			if s.Name != sessionName || !sessionRunning(mgr, s.FullID) {
+				continue
+			}
+			if bestID == "" || s.CreatedAt.After(bestAt) {
+				bestID, bestAt = s.FullID, s.CreatedAt
+			}
+		}
+		return bestID
+	}
+
 	wireVerifierAdmission(amgr, func(id string) int { return sessionPriority(mgr, id) }, verifiers)
 
 	// councilCapacityAdmit (v8.38.0, BL390) — same shape and wait-duration

@@ -2158,7 +2158,9 @@ func (m *Manager) killOrphanDecomposeSessions(prdID string, keep ...string) int 
 	n := 0
 	why := fmt.Sprintf("orphan planning session for PRD %s: the decompose goroutine that reads it did not survive the daemon restart", prdID)
 	for _, id := range find(prdID) {
-		if sessionIn(keep, id) {
+		// keep carries the recorded (short) planner id; the list reports full
+		// host-prefixed ids, so match either form (see plannerSessionLive).
+		if plannerSessionLive(keep, id) {
 			continue
 		}
 		if err := kill(id, "autonomous.boot-resume.orphan-decompose", why); err != nil {

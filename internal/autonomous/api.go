@@ -174,7 +174,7 @@ func (a *API) bootResumePlanningWith(prd *PRD, h planningResumeHooks) {
 	in := PlanningResumeInput{
 		Policy:               a.M.Config().PlanningRestartPolicy,
 		HasPlannerRecord:     plannerID != "",
-		SessionAlive:         plannerID != "" && sessionIn(a.M.liveDecomposeSessions(prd.ID), plannerID),
+		SessionAlive:         plannerID != "" && plannerSessionLive(a.M.liveDecomposeSessions(prd.ID), plannerID),
 		AlreadyRestartedOnce: restartedOnce,
 	}
 	var raw []byte

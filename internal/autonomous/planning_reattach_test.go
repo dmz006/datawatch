@@ -71,6 +71,43 @@ func TestBootResume_PlanningReattachLiveSessionStaysPlanning(t *testing.T) {
 	}
 }
 
+func TestPlannerSessionLiveMatchesHostPrefixedIDs(t *testing.T) {
+	// The daemon records the short session id on the PRD (session store's
+	// GetByShortID form) but reports the host-prefixed full id in its live
+	// session list, so the recorded id must match either form.
+	if !plannerSessionLive([]string{"restart-matrix-9f2c"}, "9f2c") {
+		t.Fatal("a host-prefixed live entry must match the short recorded id")
+	}
+	if !plannerSessionLive([]string{"9f2c"}, "9f2c") {
+		t.Fatal("an exact-match live entry must still match")
+	}
+	if plannerSessionLive([]string{"restart-matrix-9f2"}, "9f2c") {
+		t.Fatal("a different live id must not match as a bare suffix")
+	}
+	if plannerSessionLive(nil, "9f2c") || plannerSessionLive(nil, "") || plannerSessionLive([]string{"a"}, "") {
+		t.Fatal("an empty live list or empty recorded id must not match")
+	}
+}
+
+func TestBootResume_PlanningReattachLiveHostPrefixedSessionStaysPlanning(t *testing.T) {
+	const outputFile = "/w/proj/.decompose-output-abc.json"
+	// Recorded planner id "9f2c"; the daemon's live list reports the full
+	// host-prefixed id, as sessionEndFromAutonomous/decomposeSessionsFn do.
+	f := newReattachFixture(t, "9f2c", outputFile, []string{"restart-matrix-9f2c"})
+
+	f.api.resumeRunningPRDs()
+
+	if got := f.status(t); got != PRDPlanning {
+		t.Fatalf("status = %s, want %s (a live planner must not be reset)", got, PRDPlanning)
+	}
+	if len(f.hookArgs) != 1 || f.hookArgs[0][1] != "9f2c" {
+		t.Fatalf("reader hook args = %v, want one call for 9f2c", f.hookArgs)
+	}
+	if len(f.killed) != 0 {
+		t.Fatalf("nothing should be killed, got %v", f.killed)
+	}
+}
+
 func TestBootResume_PlanningReattachKillsOnlyUnownedPlannerSessions(t *testing.T) {
 	f := newReattachFixture(t, "dec-owned", "/w/proj/.decompose-output-x.json", []string{"dec-owned", "dec-orphan"})
 

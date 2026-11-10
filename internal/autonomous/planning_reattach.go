@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // errReattachNoRetry is what the decompose-lint retry step returns on a
@@ -100,6 +101,34 @@ func readPlannerOutput(prd *PRD, outputFile string) []byte {
 func sessionIn(ids []string, id string) bool {
 	for _, s := range ids {
 		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+// plannerIDMatch reports whether two session ids name the same session. The
+// PRD records the short hex id (the session store's GetByShortID form) while
+// the daemon's live-session list reports host-prefixed full ids, so ids match
+// when equal or when the longer one ends in "-<short id>".
+func plannerIDMatch(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	if len(a) < len(b) {
+		a, b = b, a
+	}
+	return strings.HasSuffix(a, "-"+b)
+}
+
+// plannerSessionLive reports whether the recorded planner session id is in a
+// session list, matching the short-id/full-id forms of plannerIDMatch.
+func plannerSessionLive(ids []string, plannerID string) bool {
+	for _, id := range ids {
+		if plannerIDMatch(id, plannerID) {
 			return true
 		}
 	}

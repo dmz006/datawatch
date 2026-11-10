@@ -291,6 +291,18 @@ autonomous:
   execution_backend: shell
   poll_interval_seconds: 1
   refuse_dirty_tree_start: false
+  # A guardrail judge (e.g. the per-task rules-review the script-verification
+  # states opt into) refuses to launch when no tier resolves a judge model.
+  # The fake backend ignores the model entirely, so name any: this unblocks
+  # the judge tier and the fake guardrail role writes a pass verdict.
+  guardrail_model: matrix-fake
+  # The sandbox planner fake emits a fixed one-task plan and cannot answer the
+  # template-catalog prompt the daemon appends for an LLM planner; templates
+  # would add six canned tasks to every plan (the plan_has_its_task criterion
+  # asserts the plan round-trips unchanged, and the canned tasks trip the
+  # plan-coverage approval gate), so they are off in the fake sandbox.
+  task_templates:
+    enabled: false
 EOF
   # Opt-in only: states that do not set RM_PI_NODES keep the config above, byte for byte.
   [[ "${RM_PI_NODES:-0}" == 1 ]] && rm_write_config_pi
@@ -316,7 +328,11 @@ EOF
 # rm_init_project — a tiny git repo with the verification scripts the plans name.
 # The scripts take the control dir from the environment baked in at write time.
 rm_init_project() {
-  mkdir -p "$RM_PROJECT/verify"
+  # The daemon's gate scripts must live under .datawatch/verify (script_gate.go
+  # refuses any gate script outside that folder); verification scripts named in
+  # a non-gate plan resolve against the project root, so classic verify/ paths
+  # also keep working. Write both copies.
+  mkdir -p "$RM_PROJECT/verify" "$RM_PROJECT/.datawatch/verify"
   # quick: passes at once
   cat >"$RM_PROJECT/verify/quick.sh" <<EOF
 #!/usr/bin/env bash
@@ -335,9 +351,13 @@ while [[ ! -e "$RM_CTRL/script.gate" ]]; do sleep 0.5; done
 echo "\$(date +%s) pid=\$\$" >>"$RM_CTRL/script.starts"
 sleep "\$(cat "$RM_CTRL/script_sleep" 2>/dev/null || echo 4)"
 echo "\$(date +%s) done" >>"$RM_CTRL/script.finished"
-test -s worker-result.txt
+# The final-gate task runs the gate in place of a worker, so there is no
+# worker output to assert on; the project README (written when the sandbox is
+# initialised) is always there.
+test -f README.md
 EOF
   chmod +x "$RM_PROJECT/verify/"*.sh
+  cp "$RM_PROJECT/verify/"*.sh "$RM_PROJECT/.datawatch/verify/"
   (
     cd "$RM_PROJECT" || exit 1
     env -u TMUX git init -q -b main . &&
@@ -658,8 +678,12 @@ rm_prd_status() { rm_prd_json "$1" | jq -r '.status // .prd.status // empty'; }
 
 # rm_prd_git_enable PRD — gives the PRD git settings, so its task sessions run
 # git-enabled and a finished task's work is committed by the daemon.
+# The declared write dir is what turns auto-commits on (prdAutoCommits:
+# a git branch set or a non-empty write_dirs) and keeps the worker
+# session out of read-only mode.
 rm_prd_git_enable() {
   rm_api POST "/api/autonomous/prds/$1/set_git" '{"auto_pr":false,"base_branch":"main"}' >/dev/null
+  rm_api POST "/api/autonomous/prds/$1/set_dirs" "$(jq -nc --arg d "$RM_PROJECT" '{write_dirs:[$d]}')" >/dev/null
 }
 
 # rm_prd_script_guardrails PRD — a task's verification script runs in the
