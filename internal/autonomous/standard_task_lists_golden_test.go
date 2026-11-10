@@ -16,8 +16,8 @@ package autonomous
 
 import (
 	"bytes"
-	"flag"
 	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"

@@ -64,8 +64,8 @@ type Manifest struct {
 	// guardrail registry registers them as Type=="skill" entries when the
 	// skill is assigned to an Automaton. GuardrailProfile, if set, names
 	// a profile to activate automatically when the skill is applied.
-	Guardrails      []string `yaml:"guardrails,omitempty" json:"guardrails,omitempty"`
-	GuardrailProfile string  `yaml:"guardrail_profile,omitempty" json:"guardrail_profile,omitempty"`
+	Guardrails       []string `yaml:"guardrails,omitempty" json:"guardrails,omitempty"`
+	GuardrailProfile string   `yaml:"guardrail_profile,omitempty" json:"guardrail_profile,omitempty"`
 
 	// BL302 S3 — sampling_hook declares an optional MCP sampling trigger
 	// that fires after this skill executes, sending the skill output to
