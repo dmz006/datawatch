@@ -5931,6 +5931,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"topic":      s.cfg.Ntfy.Topic,
 			"token":      mask(s.cfg.Ntfy.Token),
 		},
+		"observer": map[string]interface{}{
+			"peers": map[string]interface{}{
+				"silent_alert_minutes": s.cfg.Observer.Peers.SilentAlertMinutes,
+			},
+		},
 		"imap_mcp": map[string]interface{}{
 			"enabled":        s.cfg.ImapMcp.Enabled,
 			"url":            s.cfg.ImapMcp.URL,
@@ -9663,6 +9668,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "observer.peers.push_interval_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Observer.Peers.PushIntervalSeconds = n
+			}
+		case "observer.peers.silent_alert_minutes":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Peers.SilentAlertMinutes = n
 			}
 		case "observer.peers.listen_addr":
 			cfg.Observer.Peers.ListenAddr = toString(v)
