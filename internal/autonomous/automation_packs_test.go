@@ -17,9 +17,9 @@ func TestNormalizePacks(t *testing.T) {
 		{"empty input", []string{}, nil},
 		{"only blanks", []string{"", "   ", "\t"}, nil},
 		{"trims whitespace", []string{"  alpha ", "beta"}, []string{"alpha", "beta"}},
-		{"sorts", []string{"zeta", "alpha", "mid"}, []string{"alpha", "mid", "zeta"}},
-		{"dedupes after trim", []string{"alpha", " alpha ", "beta", "alpha"}, []string{"alpha", "beta"}},
-		{"drops blanks among names", []string{"", "beta", " ", "alpha"}, []string{"alpha", "beta"}},
+		{"keeps order", []string{"zeta", "alpha", "mid"}, []string{"zeta", "alpha", "mid"}},
+		{"dedupes keeping first", []string{"beta", "alpha", " beta ", "alpha"}, []string{"beta", "alpha"}},
+		{"drops blanks among names", []string{"", "beta", " ", "alpha"}, []string{"beta", "alpha"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -46,15 +46,15 @@ func TestAutomationPacksPersistAsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(raw), `"packs":["alpha","zeta"]`) {
+	if !strings.Contains(string(raw), `"packs":["zeta","alpha"]`) {
 		t.Fatalf("packs not persisted in JSON: %s", raw)
 	}
 	var back Automation
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !reflect.DeepEqual(back.Packs, []string{"alpha", "zeta"}) {
-		t.Fatalf("round-trip Packs = %#v, want [alpha zeta]", back.Packs)
+	if !reflect.DeepEqual(back.Packs, []string{"zeta", "alpha"}) {
+		t.Fatalf("round-trip Packs = %#v, want [zeta alpha]", back.Packs)
 	}
 }
 
@@ -65,5 +65,55 @@ func TestAutomationPacksOmittedWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(string(raw), `"packs"`) {
 		t.Fatalf("empty packs should be omitted, got %s", raw)
+	}
+}
+
+func TestAutomationSetPacksNormalizes(t *testing.T) {
+	var a Automation
+	a.SetPacks([]string{" b ", "", "a", "b"})
+	if !reflect.DeepEqual(a.Packs, []string{"b", "a"}) {
+		t.Fatalf("Packs = %#v, want [b a]", a.Packs)
+	}
+	a.SetPacks([]string{" "})
+	if a.Packs != nil {
+		t.Fatalf("Packs = %#v, want nil", a.Packs)
+	}
+}
+
+func TestEffectivePacksResolutionOrder(t *testing.T) {
+	cases := []struct {
+		name                string
+		auto, project, glob []string
+		want                []string
+	}{
+		{"automaton wins", []string{"a1"}, []string{"p1"}, []string{"g1"}, []string{"a1"}},
+		{"project when automaton empty", nil, []string{"p1", "p2"}, []string{"g1"}, []string{"p1", "p2"}},
+		{"global when automaton and project empty", nil, nil, []string{"g1"}, []string{"g1"}},
+		{"blank-only automaton falls through", []string{" "}, []string{"p1"}, []string{"g1"}, []string{"p1"}},
+		{"builtin default when all empty", nil, nil, nil, []string{"builtin"}},
+		{"order kept", []string{"z", "a"}, nil, nil, []string{"z", "a"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := Automation{Packs: tc.auto}
+			got := a.EffectivePacks(tc.project, tc.glob)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("EffectivePacks = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEffectivePacksReturnsFreshSlice(t *testing.T) {
+	a := Automation{Packs: []string{"a"}}
+	got := a.EffectivePacks(nil, nil)
+	got[0] = "changed"
+	if a.Packs[0] != "a" {
+		t.Fatalf("Automation.Packs mutated through result: %#v", a.Packs)
+	}
+	d := Automation{}
+	d.EffectivePacks(nil, nil)[0] = "changed"
+	if got := d.EffectivePacks(nil, nil); got[0] != "builtin" {
+		t.Fatalf("default list mutated: %#v", got)
 	}
 }

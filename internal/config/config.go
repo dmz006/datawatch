@@ -6962,6 +6962,32 @@ type ProjectConfigEntry struct {
 	// Nil (key absent) = a plain project with no per-project overrides
 	// (see ProjectPolicy and ResolveProjectPolicy).
 	Policy *ProjectPolicy `yaml:"policy,omitempty" json:"policy,omitempty"`
+	// Packs names the template packs this project draws from, in priority
+	// order. An Automaton's own list wins over it and the global default sits
+	// below it. Empty = the project defines no list. Kept canonical by
+	// NormalizePacks.
+	Packs []string `yaml:"packs,omitempty" json:"packs,omitempty"`
+}
+
+// NormalizePacks returns a pack list in canonical form: each name trimmed,
+// empty names dropped and repeats removed, keeping the first occurrence so the
+// priority order survives. It returns nil when no name remains so omitempty
+// drops the field. The input is never modified.
+func NormalizePacks(in []string) []string {
+	var out []string
+	seen := make(map[string]struct{}, len(in))
+	for _, p := range in {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 // SessionTemplateEntry (BL5) — reusable bundle of session start params.
