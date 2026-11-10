@@ -57,7 +57,7 @@ func TestStandardTaskRESTRead(t *testing.T) {
 	if raw.Tasks == nil {
 		t.Fatalf("tasks is null, want an array")
 	}
-	wantFields := []string{"id", "title", "kind", "summary", "offered_when", "enabled", "project_override", "mode"}
+	wantFields := []string{"id", "title", "kind", "summary", "offered_when", "enabled", "project_override", "mode", "runner"}
 	for _, row := range raw.Tasks {
 		if len(row) != len(wantFields) {
 			t.Errorf("row has %d fields, want %d: %v", len(row), len(wantFields), row)
@@ -102,7 +102,8 @@ func TestStandardTaskRESTRead(t *testing.T) {
 		}
 	}
 
-	// A project query selects its override; the mode is the constant.
+	// A project query selects its override; the mode is resolved from
+	// the global task-template mode setting, unchanged by the project.
 	req = httptest.NewRequest(http.MethodGet, "/api/autonomous/standard-tasks?project=/work/none", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -116,8 +117,9 @@ func TestStandardTaskRESTRead(t *testing.T) {
 		t.Fatalf("decode project: %v", err)
 	}
 	for _, row := range rows.Tasks {
-		if row.Mode != autonomous.StandardTaskModeModelSession {
-			t.Errorf("row %q mode = %q", row.ID, row.Mode)
+		wantMode := string(cfg.Autonomous.EffectiveTaskTemplateMode(row.ID))
+		if row.Mode != wantMode {
+			t.Errorf("row %q mode = %q, want %q", row.ID, row.Mode, wantMode)
 		}
 		if row.ProjectOverride != nil {
 			t.Errorf("row %q override = %v, want nil with no project override", row.ID, *row.ProjectOverride)

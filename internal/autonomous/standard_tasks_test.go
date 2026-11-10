@@ -147,19 +147,63 @@ func TestStandardTaskEnabledMatchesApplyTaskTemplates(t *testing.T) {
 	}
 }
 
-func TestStandardTaskModeIsModelSessionOnEveryRow(t *testing.T) {
-	cfg := standardTaskTestConfig(config.TaskTemplatesConfig{
-		Enabled:   true,
-		Templates: []config.TaskTemplateDef{{ID: "custom_only", Title: "Custom"}},
-	})
+func TestStandardTaskModeAndRunnerMatchResolvedDefaults(t *testing.T) {
+	cfg := standardTaskTestConfig(config.TaskTemplatesConfig{Enabled: true})
 	rows := ListStandardTasks(cfg, "/work/proj")
 	if len(rows) == 0 {
 		t.Fatal("no rows")
 	}
+	wantMode := map[string]string{
+		TemplateChangelogEntry:         "daemon",
+		TemplateParityIssueDraft:       "daemon",
+		TemplateBoundedLoadStep:        "daemon",
+		TemplateVersionBumpLeftToMerge: "daemon",
+		TemplateDocsSet:                "llm",
+		TemplateFinalGate:              "llm",
+	}
+	wantRunner := map[string]string{
+		TemplateChangelogEntry:         "daemon",
+		TemplateParityIssueDraft:       "daemon",
+		TemplateBoundedLoadStep:        "daemon",
+		TemplateVersionBumpLeftToMerge: "daemon",
+		TemplateDocsSet:                "session",
+		TemplateFinalGate:              "script gate",
+	}
 	for _, row := range rows {
-		if row.Mode != "model session" {
-			t.Errorf("row %q mode = %q, want %q", row.ID, row.Mode, "model session")
+		if wantMode[row.ID] == "" {
+			continue
 		}
+		if row.Mode != wantMode[row.ID] {
+			t.Errorf("row %q mode = %q, want %q", row.ID, row.Mode, wantMode[row.ID])
+		}
+		if row.Runner != wantRunner[row.ID] {
+			t.Errorf("row %q runner = %q, want %q", row.ID, row.Runner, wantRunner[row.ID])
+		}
+	}
+}
+
+func TestStandardTaskModeOffYieldsRunnerNone(t *testing.T) {
+	cfg := standardTaskTestConfig(config.TaskTemplatesConfig{
+		Enabled: true,
+		Mode:    map[string]string{TemplateDocsSet: "off"},
+	})
+	rows := ListStandardTasks(cfg, "/work/proj")
+	var got StandardTask
+	found := false
+	for _, row := range rows {
+		if row.ID == TemplateDocsSet {
+			got = row
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("docs_set row not found")
+	}
+	if got.Mode != "off" {
+		t.Errorf("docs_set mode = %q, want off", got.Mode)
+	}
+	if got.Runner != "none" {
+		t.Errorf("docs_set runner = %q, want none", got.Runner)
 	}
 }
 
