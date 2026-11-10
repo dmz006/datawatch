@@ -558,6 +558,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))                   // BL27
 	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete))         // BL27
 	mcpSrv.AddTool(s.toolProjectPolicyEffective(), tracked(s.handleProjectPolicyEffective)) // project policy tier
+	mcpSrv.AddTool(s.toolProjectRollup(), tracked(s.handleProjectRollup))                   // project roll-up: arcs, progress, points, throughput
+	mcpSrv.AddTool(s.toolProjectHistory(), tracked(s.handleProjectHistory))                 // project history: finished Automata, daily progress
+	mcpSrv.AddTool(s.toolProjectSetArcs(), tracked(s.handleProjectSetArcs))                 // replace the project's ordered arc list
 	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))               // BL29
 	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))                 // BL30
 	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))                       // BL30
