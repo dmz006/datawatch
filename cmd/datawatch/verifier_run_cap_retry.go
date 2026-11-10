@@ -66,6 +66,18 @@ func verifierRunCapDecision(mgr *autonomouspkg.Manager, prdID, taskID string, ca
 	}
 }
 
+// verifierStatsCategory is the stats category for one verifier run. runCapEnded
+// is true when the run cap ended a session on any attempt of the run. A run
+// that failed with a session error and is not a cap end or a content verdict
+// is counted as infra.
+func verifierStatsCategory(ok bool, resultCategory, summary string, escalated bool, verr error, runCapEnded bool) string {
+	cat := autonomouspkg.VerifierCategoryForRunCap(ok, resultCategory, summary, escalated, runCapEnded)
+	if verr != nil && cat == autonomouspkg.VerifierCatContent {
+		cat = autonomouspkg.VerifierCatInfra
+	}
+	return cat
+}
+
 // verifierSessionInfraResult is the verdict for a verifier session that failed
 // to produce output. It is infra, never a content failure, so the caller's
 // infra accounting and retry path apply.
