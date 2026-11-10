@@ -19,6 +19,7 @@ import (
 // log uses. Every other AutonomousAPI method is nil, so a call to one panics.
 type eventLogFake struct {
 	AutonomousAPI
+	rawErrs   []automataRawError
 	repoCI    autonomous.RepoCIWatchStatus
 	cleanup   autonomous.CleanupStatus
 	safeErr   error
@@ -45,6 +46,7 @@ func (f *eventLogFake) MergeSafeToDelete(context.Context) (autonomous.SafeDelete
 }
 func (f *eventLogFake) CleanupStatus() autonomous.CleanupStatus         { return f.cleanup }
 func (f *eventLogFake) RepoCIWatchStatus() autonomous.RepoCIWatchStatus { return f.repoCI }
+func (f *eventLogFake) AutomataRawErrors() []automataRawError           { return f.rawErrs }
 
 // eventLogServer returns a server whose manager is fake.
 func eventLogServer(fake AutonomousAPI) *Server {
@@ -361,5 +363,38 @@ func TestAutomataEventLogHandlerRawErrors(t *testing.T) {
 	}
 	if evs[1].Automaton != "auto-3" || evs[0].Project != "datawatch" {
 		t.Fatalf("project/automaton not carried: %+v %+v", evs[0], evs[1])
+	}
+}
+
+// TestAutomataEventLogHandlerErrorFeedWired checks that a manager with a raw
+// error feed contributes classified error events to the merged log.
+func TestAutomataEventLogHandlerErrorFeedWired(t *testing.T) {
+	now := time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC)
+	fake := &eventLogFake{rawErrs: []automataRawError{
+		{Time: now, Source: "merge", Raw: "open /root/secret: permission denied", Automaton: "auto-3"},
+	}}
+	s := eventLogServer(fake)
+	evs, err := s.collectAutomataEvents(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	found := false
+	for _, e := range evs {
+		if e.Kind == AutomataEventError && strings.HasPrefix(e.ID, "error:merge:") && e.Automaton == "auto-3" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("raw error feed not merged into event log: %+v", evs)
+	}
+	// A manager without the feed must still produce a log, without error events.
+	evs, err = eventLogServer(&eventLogFake{}).collectAutomataEvents(context.Background())
+	if err != nil {
+		t.Fatalf("collect without feed: %v", err)
+	}
+	for _, e := range evs {
+		if e.Kind == AutomataEventError {
+			t.Fatalf("error event without a feed: %+v", e)
+		}
 	}
 }

@@ -52,6 +52,12 @@ type automataRawError struct {
 	Automation string
 }
 
+// automataRawErrorsReader is implemented by a manager that records raw errors.
+// A manager without it has no error feed, so the error adapter is skipped.
+type automataRawErrorsReader interface {
+	AutomataRawErrors() []automataRawError
+}
+
 // automataRawErrorsSource returns the raw errors recorded by the daemon,
 // newest first.
 type automataRawErrorsSource func() []automataRawError
@@ -134,6 +140,9 @@ func (s *Server) automataEventLogSourcesFor(ctx context.Context) automataEventLo
 	}
 	if rc, ok := mgr.(repoCIWatchReader); ok {
 		src.repoCI = rc.RepoCIWatchStatus
+	}
+	if re, ok := mgr.(automataRawErrorsReader); ok {
+		src.errors = re.AutomataRawErrors
 	}
 	return src
 }
