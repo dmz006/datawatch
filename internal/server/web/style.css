@@ -7422,3 +7422,65 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-row-nowrap > button { max-width: 100%; }
 }
 
+/* Templates tab sub-tab bar (Automaton templates | Standard tasks). It wraps
+   inside its own container, so a long sub-tab list never widens the page. */
+.automata-templates-subtabs {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Templates tab body. The 16px side gutter applies at phone width; the body
+   and its sub-tab bar never scroll the page sideways. */
+.automata-templates-body {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px), (pointer: coarse) {
+  .automata-templates-subtabs {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .automata-templates-subtabs .output-tab {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+  .automata-templates-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* Standard tasks table becomes stacked rows below a narrow breakpoint: the
+   header row is hidden and each cell shows its column name from data-label. */
+@media (max-width: 599px) {
+  .automata-standard-tasks,
+  .automata-standard-tasks tbody,
+  .automata-standard-tasks tr,
+  .automata-standard-tasks td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .automata-standard-tasks thead { display: none; }
+  .automata-standard-tasks tr {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 4px 0;
+  }
+  .automata-standard-tasks td {
+    padding: 2px 10px !important;
+  }
+  .automata-standard-tasks td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text2);
+  }
+}
+

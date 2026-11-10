@@ -105,3 +105,21 @@ test('a fake third registry entry renders as a third button after the existing t
   assert.equal(panel.innerHTML, 'third-entry-renderer', 'selecting the third entry runs its renderer');
   assert.equal(sb.localStorage.getItem('automata_templates_subtab'), 'third', 'the third choice persists like the others');
 });
+
+test('each sub-tab shows its empty text when its list is empty', async () => {
+  const { sb, panel } = freshSandbox();
+  vm.runInContext('_automataState.tab = "templates"', sb);
+
+  // Automaton templates: the default sub-tab, with an empty list from the stubbed fetch.
+  sb.switchTemplatesSubtab('automaton');
+  await flushAsync();
+  assert.match(panel.innerHTML, /No Automaton templates yet\. An Automaton template is a reusable Automaton definition you can instantiate/, 'the Automaton templates empty text says what a template is');
+  assert.match(panel.innerHTML, /save an Automaton as a template, or create one from the template store/, 'the Automaton templates empty text says how to add one');
+
+  // Standard tasks: an empty list shows the explanation instead of a bare table.
+  sb.switchTemplatesSubtab('standard');
+  await flushAsync();
+  assert.match(panel.innerHTML, /No standard tasks yet\. Standard tasks are the tasks the decomposer adds to every story/, 'the standard tasks empty text says what they are');
+  assert.match(panel.innerHTML, /When autonomous\.task_templates\.enabled is on, the decomposer adds each standard task to every story/, 'the standard tasks empty text names the enabling setting');
+  assert.ok(!panel.innerHTML.includes('class="automata-standard-tasks"'), 'no table is drawn over an empty list');
+});

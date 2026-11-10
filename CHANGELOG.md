@@ -9,6 +9,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **`GET /api/autonomous/standard-tasks` lists the standard tasks the decomposer can add to a story.** The read returns `{enabled, tasks}`: `enabled` is the global `autonomous.task_templates.enabled`, and `tasks` holds one row per effective task template with the fields `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override` and `mode`. An optional `project` query parameter (a project directory or alias) selects that project's override. Rows come from `autonomous.ListStandardTasks` (`internal/server/autonomous_standard_tasks.go`), pinned by `TestStandardTaskRESTRead`. Read-only; other methods answer 405.
 
+### Changed
+
+- **The Templates tab's sub-tabs have empty states, and they fit a phone.** The Automaton templates sub-tab says what an Automaton template is and how to add one (save an Automaton as a template, or create one from the template store). The Standard tasks sub-tab, when its list is empty, says what the standard tasks are and that the decomposer adds them to every story when `autonomous.task_templates.enabled` is on, instead of drawing an empty table. The sub-tab bar wraps inside its own container, the standard tasks table stacks into labelled rows below 600px, and the Templates body keeps a 16px side gutter at phone width with no sideways page scroll. Strings added in all five locales (`automata_empty_templates` reworded, `automata_empty_std_tasks` new); pinned by `internal/server/web/app-automation-templates-subtabs.test.js`.
+
+### Fixed
+
+- **The locale key-coverage test accepts the standard-task column keys.** `automata_std_col_` is a dynamic prefix (the column name is appended at runtime); it is now listed with the other dynamic prefixes in `internal/server/v8_73_25_locale_key_coverage_test.go`.
+
 ## v9.112.8 — Sessions tiles show every session's system tag chips on the first load
 
 ### Fixed
