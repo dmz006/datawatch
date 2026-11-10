@@ -580,8 +580,9 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
   Standard tasks sub-tab** — the built-in pack by its operator-facing name
   (previously "task templates"); the same list the reads below return. The sub-tab
   is read-only: a per-task table (title, kind, summary, when offered, on/off, mode)
-  with a note that still says the mode is fixed at `model session` (out of date; the
-  mode is set per template, see [Template mode](#template-mode-who-runs-the-task)), an
+  with a note that explains the three modes (`llm`, `daemon`, `off`) and points at
+  `autonomous.task_templates.mode` (the per-task selects live in Settings under
+  **Standard task modes**; see [Template mode](#template-mode-who-runs-the-task)), an
   explanatory empty state when there is nothing to list, and stacked labelled rows at
   phone width; an empty list on the comm channel replies "no standard tasks are defined."
   The sub-tab has no runner column yet.

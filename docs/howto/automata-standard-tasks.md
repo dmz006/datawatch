@@ -190,8 +190,10 @@ The **Standard tasks** sub-tab is read-only. It loads the same body as
 **kind**, **summary**, **when it is offered** (the `offered_when` text),
 **on or off**, and **mode** (the task's real mode: `llm`, `daemon` or `off`). The
 sub-tab has **no runner column** yet, so use the CLI, REST, MCP or comm channel to see
-the runner. A note under the table still says the mode is fixed to `model session`; that
-wording is out of date (see [Open items](#open-items-to-check)).
+the runner. A note under the table explains the three modes and points at the
+`autonomous.task_templates.mode` setting; the per-task selects for that setting live in
+**Settings → Daemon → Standard task modes** (one select per built-in task, each saving
+its own mode).
 
 - **Empty state.** When there are no tasks to show, the sub-tab says what standard
   tasks are — the tasks the decomposer adds to every story, added when
@@ -230,16 +232,41 @@ For Automaton templates, open the Automata tab's **Templates** tab and its
 **Automaton templates** sub-tab. The **Start from template** strip on the Automaton create form and the **Clone to Template**
 action both use it.
 
+## Worked example: turning one standard task off
+
+Say the project writes its changelog with its own release script, so the daemon's
+`changelog_entry` write is duplicate work. Turn off just that one standard task and
+leave the other five in place:
+
+1. Open **Settings → Daemon → Standard task modes** and set the **Changelog entry**
+   select to **off** — or, on the command line:
+
+   ```bash
+   datawatch config set autonomous.task_templates.mode.changelog_entry off
+   ```
+
+2. Confirm. The **Standard tasks** sub-tab now shows the task's mode as `off`, and the
+   CLI read agrees:
+
+   ```bash
+   datawatch autonomous standard-tasks --json
+   ```
+
+   where its `runner` reads `none` — nothing carries the task out.
+
+3. From the next decomposed story on, `changelog_entry` is not appended to the story at
+   all; the other standard tasks are untouched — the save writes only that id's mode onto
+   the stored mode map, so `enabled`, the custom templates and the per-project overrides
+   are left alone. The mode is global: it turns that one standard task off for every
+   project, and a project override only switches whether the pack is applied in that
+   project, not its modes. To bring it back, set the mode to `daemon` again — the
+   shipped default for that task.
+
 ## Open items to check
 
 Flagged here so an operator looking at the web tab knows what it does **not** have
 yet:
 
-- **Web note says the mode is fixed.** The web sub-tab's note still reads "The mode is
-  fixed to model session for now". That is out of date: the mode is set per template (see
-  [Mode: who runs each task](#mode-who-runs-each-task)). The note text is in
-  `internal/server/web/locales/en.json` (`automata_std_mode_note`), and its test
-  (`app-automation-standard-tasks.test.js`) asserts the old wording. Operator review needed.
 - **No runner column in the web tab.** The sub-tab shows `mode` but not `runner`, so a
   `final_gate` on `llm` looks like a session task there. Read `runner` on the CLI, REST,
   MCP or comm channel.
