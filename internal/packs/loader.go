@@ -71,6 +71,7 @@ func LoadPackFolder(dir string) (*Pack, error) {
 		return nil, fmt.Errorf("pack folder: %w", err)
 	}
 	p.Digest = digest
+	p.Dir = abs
 
 	return p, nil
 }

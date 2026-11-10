@@ -44,6 +44,10 @@ type Pack struct {
 	// folder's files in sorted order; it is set by the loader, never read
 	// from pack.yaml.
 	Digest string `yaml:"-"`
+	// Dir is the absolute pack folder LoadPackFolder read the pack from; it is
+	// set by the loader, never read from pack.yaml. Rule checks use it to find
+	// verification scripts.
+	Dir string `yaml:"-"`
 }
 
 // Task is one standard task a pack contributes.
