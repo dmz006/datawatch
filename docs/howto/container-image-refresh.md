@@ -70,19 +70,16 @@ PATH and exercises the success, the persistent-failure, and the
 missing-argument paths, asserting the error text, the exit code and the state
 left behind.
 
-**Still pending review:** at the time of writing, the "Install Trivy" steps
-in `release.yaml`, `containers.yaml` and `image-refresh.yaml` (8 lines
-across the three workflow files) still use the inline `curl … | sh` form,
-fetching the installer from `main`. Migrate each one to
-`bash scripts/ci-install-trivy.sh "v<the pinned version>" /usr/local/bin`
-(image-refresh pins it via the workflow's `TRIVY_VERSION`; the others name
-the tag inline in the step) so the guarantees above hold there as well.
-While migrating, also decide on a single Trivy pin: today the workflows
-disagree — `containers.yaml` pins `v0.70.0` while `release.yaml` and
-`image-refresh.yaml` pin `v0.73.0` — so a pin change that looks like it
-updates the scan tooling would silently leave `containers.yaml` behind.
-The migration is the operator's call — the script is safe to invoke as-is,
-but the scan pipeline is only as loud as its install step.
+**Migration status:** all eight "Install Trivy" steps now call the hardened
+installer, so the guarantees above hold in every workflow: two in
+`release.yaml` (`v0.73.0`), two in `containers.yaml` (`v0.70.0`) and four in
+`image-refresh.yaml` (the workflow's `TRIVY_VERSION`, `v0.73.0`). None of them
+fetches the installer from `main` any more.
+
+The pins were not changed by the migration. `containers.yaml` still pins
+`v0.70.0` while `release.yaml` and `image-refresh.yaml` pin `v0.73.0`, so a
+pin change that updates only one workflow would leave the others behind.
+Unifying the pin is a separate decision for the operator.
 
 ## Running it by hand
 

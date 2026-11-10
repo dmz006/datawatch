@@ -2532,16 +2532,13 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
-**Still pending review:** at the time of writing, the `release.yaml`,
-`containers.yaml` and `image-refresh.yaml` "Install Trivy" steps (8 steps
-across the three files) still use the inline form fetching the installer
-from `main`. Migrate each to
-`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin` — in
-`image-refresh.yaml` that is the workflow's `TRIVY_VERSION` pin (`v0.73.0`).
-Also decide on a single Trivy pin while migrating: `containers.yaml` pins
-`v0.70.0` while `release.yaml` and `image-refresh.yaml` pin `v0.73.0`, a
-disagreement the inline form hides but the script would make explicit. Full
-write-up in [howto/container-image-refresh.md](howto/container-image-refresh.md)
+**Migration status:** all eight "Install Trivy" steps in `release.yaml` (2),
+`containers.yaml` (2) and `image-refresh.yaml` (4) now run
+`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin`; none fetches
+the installer from `main` any more. The pins were left as they were:
+`containers.yaml` uses `v0.70.0`, while `release.yaml` and `image-refresh.yaml`
+use `v0.73.0`. Unifying them is an operator decision. Full write-up in
+[howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
 ---
