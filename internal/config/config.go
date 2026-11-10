@@ -1789,6 +1789,25 @@ type VaultConfig struct {
 
 	// RequestTimeout caps every Vault HTTP call. Default 10s.
 	RequestTimeout time.Duration `yaml:"request_timeout,omitempty" json:"request_timeout,omitempty"`
+
+	// UnreachableAlertAfterSeconds is how long (whole seconds) the Vault must
+	// stay unreachable before the Vault-unreachable alert is raised. Unset
+	// (nil) reads DefaultVaultUnreachableAlertAfterSeconds (120); an explicit
+	// 0 turns the alert off. Negative values are refused.
+	UnreachableAlertAfterSeconds *int `yaml:"unreachable_alert_after_seconds,omitempty" json:"unreachable_alert_after_seconds,omitempty"`
+}
+
+// DefaultVaultUnreachableAlertAfterSeconds is the default for
+// secrets.vault.unreachable_alert_after_seconds.
+const DefaultVaultUnreachableAlertAfterSeconds = 120
+
+// EffectiveUnreachableAlertAfterSeconds returns the threshold in effect: unset
+// reads the 120-second default, an explicit 0 disables the alert.
+func (c VaultConfig) EffectiveUnreachableAlertAfterSeconds() int {
+	if c.UnreachableAlertAfterSeconds == nil {
+		return DefaultVaultUnreachableAlertAfterSeconds
+	}
+	return *c.UnreachableAlertAfterSeconds
 }
 
 // TailscaleConfig (BL243) — Tailscale k8s sidecar configuration.
@@ -6196,6 +6215,7 @@ func DefaultConfig() *Config {
 	loopDetectTurnsDefault := DefaultLoopDetectTurns
 	return &Config{
 		Hostname:        hostname,
+		Secrets:         SecretsConfig{Vault: VaultConfig{UnreachableAlertAfterSeconds: intPtr(DefaultVaultUnreachableAlertAfterSeconds)}},
 		DataDir:         filepath.Join(home, ".datawatch"),
 		PinCheckSeconds: 300,
 		Signal: SignalConfig{
@@ -6831,6 +6851,9 @@ const (
 // validateLoaded rejects misconfigured values that applyDefaults left in
 // place. Run after applyDefaults in Load and LoadSecure.
 func validateLoaded(cfg *Config) error {
+	if n := cfg.Secrets.Vault.UnreachableAlertAfterSeconds; n != nil && *n < 0 {
+		return fmt.Errorf("secrets.vault.unreachable_alert_after_seconds: %d must be >= 0 (0 = off, default %d)", *n, DefaultVaultUnreachableAlertAfterSeconds)
+	}
 	for k, v := range map[string]int{
 		"capacity_rate_requests":       cfg.Autonomous.CapacityRateRequests,
 		"capacity_rate_tokens":         cfg.Autonomous.CapacityRateTokens,
