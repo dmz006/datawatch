@@ -463,3 +463,72 @@ func TestAutomataEventLogHandlerErrorFeedNewestFirstCapped(t *testing.T) {
 		t.Fatalf("want newest two (c, b), got %+v", got)
 	}
 }
+
+// TestAutomataEventLogHandlerRealManagerErrorEntry drives the endpoint with a
+// real Automata manager (not a fake). A failed task whose failure reason the
+// manager stored must come back from GET /api/autonomous/event-log as a
+// classified error entry, and a content judgment on the same Automaton must
+// not.
+func TestAutomataEventLogHandlerRealManagerErrorEntry(t *testing.T) {
+	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("autonomous.NewManager: %v", err)
+	}
+	projectDir := t.TempDir()
+	prd, err := mgr.CreatePRD("spec", projectDir, "", "", autonomous.EffortNormal)
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	failedAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	if err := mgr.Store().SetStories(prd.ID, []autonomous.Story{{
+		ID: "s1", Title: "Story",
+		Tasks: []autonomous.Task{
+			{ID: "t-infra", Title: "infra fail", Status: autonomous.TaskFailed, FailureReason: &autonomous.FailureReason{
+				Category: "infra", Detail: "verifier session timed out after 30m0s", Source: "verifier", OccurredAt: failedAt,
+			}},
+			{ID: "t-content", Title: "content fail", Status: autonomous.TaskFailed, FailureReason: &autonomous.FailureReason{
+				Category: "content", Detail: "judged deficient", Source: "judge", OccurredAt: failedAt,
+			}},
+		},
+	}}); err != nil {
+		t.Fatalf("SetStories: %v", err)
+	}
+	s := &Server{autonomousMgr: newTestAPI(mgr)}
+
+	code, body := getEventLog(t, s, "kind=error")
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	events, _ := body["events"].([]any)
+	if len(events) != 1 || body["total"] != float64(1) {
+		t.Fatalf("want exactly 1 error event from the real manager, got total=%v events=%v", body["total"], events)
+	}
+	ev := events[0].(map[string]any)
+	if ev["kind"] != string(AutomataEventError) {
+		t.Fatalf("kind = %v, want error", ev["kind"])
+	}
+	if ev["project"] != projectDir {
+		t.Fatalf("project = %v, want %q", ev["project"], projectDir)
+	}
+	if id, _ := ev["id"].(string); !strings.HasPrefix(id, "error:verifier:") {
+		t.Fatalf("id = %q, want an error:verifier: id", id)
+	}
+	if ts, _ := ev["time"].(string); ts != failedAt.Format(time.RFC3339) {
+		t.Fatalf("time = %q, want %q", ts, failedAt.Format(time.RFC3339))
+	}
+	if r, _ := ev["reason"].(string); !strings.Contains(r, "timed out") {
+		t.Fatalf("reason should carry the raw detail: %q", r)
+	}
+	if ev["summary"] == "" || ev["next_action"] == "" {
+		t.Fatalf("classified entry needs a summary and next action: %v", ev)
+	}
+
+	// The same entry is reachable through the project and text filters.
+	code, body = getEventLog(t, s, "project="+url.QueryEscape(projectDir)+"&q=TIMED+OUT")
+	if code != http.StatusOK {
+		t.Fatalf("filtered status = %d", code)
+	}
+	if n, _ := body["events"].([]any); len(n) != 1 {
+		t.Fatalf("project+text filter should return the one error entry, got %d: %v", len(n), body["events"])
+	}
+}
