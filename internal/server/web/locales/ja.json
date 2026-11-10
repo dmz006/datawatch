@@ -3664,5 +3664,7 @@
   "prd_dl_dryrun": "ドライラン",
   "prd_dl_dryrun_done": "ドライラン（未記録）",
   "prd_dl_running": "Decompose Lint を実行中...",
-  "prd_dl_dryrun_error": "Decompose Lint のドライランに失敗しました："
+  "prd_dl_dryrun_error": "Decompose Lint のドライランに失敗しました：",
+  "observer_peer_stale": "古い",
+  "observer_peer_never_pushed": "未送信"
 }

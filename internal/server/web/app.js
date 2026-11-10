@@ -37201,7 +37201,16 @@ function loadObserverPeers() {
       const attachTag = bound.length > 0
         ? `<span title="${escHtml(t('observer_attached_to')||'attached to ComputeNode')}" style="margin-left:6px;font-size:11px;color:var(--accent2);border:1px solid var(--accent2);border-radius:3px;padding:0 4px;">⇄ ${escHtml(bound.join(', '))}</span>`
         : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
-      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+      let staleTag = '';
+      if (!p.is_self) {
+        const staleStyle = 'margin-left:6px;font-size:11px;color:var(--warning,#f59e0b);';
+        if (!lastPush) {
+          staleTag = `<span class="obs-peer-stale" style="${staleStyle}">${escHtml(t('observer_peer_never_pushed'))}</span>`;
+        } else if (ageMs > 60000) {
+          staleTag = `<span class="obs-peer-stale" style="${staleStyle}">${escHtml(t('observer_peer_stale'))} (${escHtml(observerPeerAgo(ageMs))})</span>`;
+        }
+      }
+      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${staleTag}${actions}</div>`;
     }).join('');
     if (groupByNode) {
       // alpha.24 — render per-CN buckets, fetched from the meta-peers

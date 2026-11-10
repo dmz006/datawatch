@@ -3664,5 +3664,7 @@
   "prd_dl_dryrun": "Dry run",
   "prd_dl_dryrun_done": "Dry run (not recorded)",
   "prd_dl_running": "Running decompose lint...",
-  "prd_dl_dryrun_error": "Decompose lint dry run failed:"
+  "prd_dl_dryrun_error": "Decompose lint dry run failed:",
+  "observer_peer_stale": "Stale",
+  "observer_peer_never_pushed": "Never pushed"
 }
