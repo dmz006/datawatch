@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Vault status moves off the Settings nav button.** The PWA no longer shows the "Vault unreachable" badge on the Settings nav button. The Vault status row in Settings now shows a **Last error** (or "none") and a **Last success** (or "never") line beside the reachable/unreachable state. The labels are translated in English, German, Spanish, French and Japanese. No migration step.
+- Known gap: this change removes the badge and adds the status lines only; it does not add a separate alert for an unreachable Vault.
+
 ## v9.96.3 — Template tasks no longer fail decompose
 
 New Automata can plan again when the task template pack is on.
