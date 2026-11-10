@@ -40,6 +40,12 @@ questions below are answered, one at a time.
   must stop datawatch-specific content leaking in, so the published unit is a blank module that works for
   anybody.)
 
+- 2026-11-09, on question 7 (where the lessons go): "Let's go with A and if you run into any issues, make sure it
+  stops and raises them." (option A: split by kind; generic lessons travel inside the unit they belong to as
+  part of the blank pack, datawatch-specific lessons stay in this repository and feed the injected
+  configuration; the leak check keeps the two apart. Any problem found while splitting stops the work and is
+  raised to the operator.)
+
 ## Goal
 
 Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
