@@ -7069,3 +7069,43 @@ Building a path into the discussion folder goes through one helper, `discussionF
 3. **Rename legacy folders if any.** Discussion folders created before the ID rule that use other characters remain on disk but are unreachable through the API; list existing IDs (`GET /api/memory/discussion`) and rename any that do not pass the rule.
 
 Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule; it only rejects an empty topic or one containing a slash.
+
+---
+
+## Standard-task packs: what is wired and what is not
+
+Packs are installable, versioned folders of standard tasks and Automaton templates. The
+rules are described in [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#installable-packs-backend-only-not-yet-wired);
+this section is the operator checklist for the state of the code today.
+
+**Config (`packs`).** `packs.enabled` (default `false`) and `packs.active` (default
+`["builtin"]`) are read from the config file. The daemon does not yet check the switch against a connected registry source, nor
+validate `packs.active` against the installed packs, so setting `enabled: true` changes
+nothing on its own.
+
+**Install root and trust file.** The install root has no default path in the daemon.
+Trust records live in `trust.json` inside that root, beside one folder per pack name and
+version. A missing file means no records. A corrupt file is an error, not an empty store,
+so it is never silently ignored. Include the install root in any backup you take of the
+data folder.
+
+**Registry flags.** Two flags on a skills registry source matter to packs, and both are
+in the registry store: `first_party` (set on the community registry by default) and
+`auto_accept_packs` (off by default). Auto-accept only ever records a version whose diff
+adds no tool, script or file scope; a widening version waits for an operator acceptance.
+
+**Not wired yet (flag before relying on packs):**
+
+1. No REST, MCP, CLI, comm-channel or PWA action installs, accepts, lists or activates a
+   pack. Add these before the feature is operator-usable.
+2. Nothing calls the install, trust-accept, first-party acceptance, version-diff or
+   auto-accept functions from the daemon. A first-party source is never accepted in
+   practice until a caller registers it.
+3. The enable check, the `packs.active` validation and the daemon's start-up read of the
+   pack block are not run.
+4. The datawatch app (Android and iPhone) does not show packs.
+
+**Review owed by the operator:** decide where the install and accept actions live and
+whether they need a parity issue, confirm the default install root, and confirm that a
+first-party source's acceptance is taken at enable time (the planned behaviour) before
+the surfaces are built.

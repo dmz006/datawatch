@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab]
+  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab, standard-task packs, pack, pack trust, auto-accept, first-party pack source]
 exec_params:
   - {name: project, required: false, description: "Project directory or alias: shows the standard-task list as that project sees it (its override applied)"}
 exec_steps:
@@ -165,6 +165,79 @@ For Automaton templates, open the Automata tab's **Templates** tab and its
 **Automaton templates** sub-tab. The **Start from template** strip on the Automaton create form and the **Clone to Template**
 action both use it.
 
+## Installable packs (backend only, not yet wired)
+
+A **pack** is a named, versioned folder that ships standard tasks and Automaton
+templates together: the task prompts, their verification scripts and the template
+definitions. The folder holds a `pack.yaml` manifest at its root. The built-in
+standard tasks are the first pack, named `builtin`; it ships in the binary and needs
+no install. Packs from the community registry use the same path.
+
+**Status: the rules below exist in the `internal/packs` package, and the config keys
+are read, but no daemon surface calls them yet.** There is no REST, MCP, CLI or PWA
+action to install, accept or enable a pack, no default install folder, and the
+`packs.*` settings are not checked at start-up. Treat this section as the contract the
+surfaces will follow, not as a feature you can use today. The open items are listed in
+[Open items to check](#open-items-to-check) and in
+[operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
+
+### Turning packs on
+
+The `packs` config block has two keys: `packs.enabled`, off by default, and
+`packs.active`, the ordered list of packs in use, which defaults to `["builtin"]`.
+An entry is `builtin` or the name of an installed pack. The packs library has a check
+that packs may be enabled only when at least one skills registry source is connected
+and enabled; the community registry is that source by default. The check is not yet
+run when you set `packs.enabled: true`.
+
+### What a pack needs to pass
+
+- **Install checks every task first.** Each task is checked against the same
+  standard-task rules as the built-in tasks. The first task that fails refuses the
+  whole install, names the rule, and nothing is copied.
+- **Names are single folder names.** An unsafe pack name is refused.
+- **A version is never overwritten.** Installing a name and version that already exists
+  is refused. Install a new version under a new `version` in `pack.yaml`.
+- **Links stay inside the pack.** A symbolic link is followed only when it resolves to a
+  regular file inside the pack folder. Any other link refuses the install.
+
+An installed pack is copied to `<install root>/<name>/<version>/`.
+
+### Trust: who accepted a pack, and what changed
+
+A pack from a **first-party source** runs without a per-pack record. A first-party source
+is a registry flagged `first_party`, and the community registry
+(`dmz006/datawatch-community`) is flagged so. Its packs are read from the registry's
+git clone; they are never copied into the binary.
+
+Every other pack runs only when the install root's `trust.json` holds a record of an
+operator's acceptance for that pack's **name, version and exact content digest**. A
+record names the pack, the version, the digest, who accepted it and when. If a single
+file in the pack changes, the digest changes and the old record no longer applies. A
+pack that has not been accepted is refused with `pack not accepted: accept it first`.
+
+For a first-party source, acceptance covers the versions that are current when the
+operator accepts the source. That call writes one record per current pack, and it
+refuses the whole source if any pack is missing its digest or belongs to another source.
+A later version has no record and goes through the version-diff rules below.
+
+### Version diff and auto-accept
+
+When a new version of a pack appears, the difference from the accepted version is
+listed as **new tasks, new tools, new scripts and new file scopes**. Only a new tool,
+script or file scope **widens access**. New tasks alone do not.
+
+A registry source can opt in to **auto-accept** with `auto_accept_packs`. It is off by
+default. When it is on, a new version is accepted automatically, recorded as accepted by
+`auto:<source name>`, **only** when the diff adds no tool, script or file scope. A version
+that widens access is never auto-accepted; the operator accepts it by hand.
+
+### Summary of a pack
+
+A pack summary lists the task titles in manifest order, the names of the verification
+script files (never their full paths), and the tools and file scopes the pack's tasks
+ask for. Use it to read what a pack would allow before you accept it.
+
 ## Open items to check
 
 Flagged here so an operator looking at the web tab knows what it does **not** have
@@ -176,6 +249,11 @@ yet:
   per-project resolved read (the `?project=` parameter) is on REST, MCP, CLI and the
   comm channel. If you rely on a project override, read the list with `--project`
   to see the resolved state.
+- **Packs are not wired.** The install, trust, auto-accept and enable-check rules are in
+  the `internal/packs` package only. Nothing calls them from the daemon, so the
+  `packs.enabled` switch is not enforced, `packs.active` is not validated, and no surface
+  installs or accepts a pack. See the [Installable packs](#installable-packs-backend-only-not-yet-wired)
+  section and [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
