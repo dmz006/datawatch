@@ -6228,3 +6228,17 @@ When the splash is shown for a new version, the version line now carries the **p
 ### Android / iPhone
 
 The mobile apps (datawatch-app) do not yet mirror these dwell settings. The parity issue asking them to adopt the two dwell timetables is filed at `docs/plans/parity-issues/splash-dwell-settings.md`.
+
+## Observer peer silence alert (`observer.peers.silent_alert_minutes`)
+
+The daemon checks every registered observer peer once a minute (its own row is skipped). A peer that has not pushed for longer than the threshold raises one warning system alert, "Observer peer silent: <name>", per outage; when it pushes again, one info alert, "Observer peer recovered: <name>", follows. A peer that never pushed is measured from its registration time. This replaces the old numeric badge on the PWA Settings nav button, which no longer exists; per-peer "Stale (age)" and "Never pushed" notes now sit on the peer rows in the Observer list.
+
+| Key | Default | What it does |
+|-----|---------|--------------|
+| `observer.peers.silent_alert_minutes` | `5` | Whole minutes of silence before the alert. `0` turns the watcher off. |
+
+Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set` tool, or the comm channel `configure observer.peers.silent_alert_minutes=<n>`. Read it back with `config get observer.peers.silent_alert_minutes`. See [howto/federated-observer](howto/federated-observer.md) for the operator walkthrough.
+
+### Android / iPhone
+
+The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/2026-11-10-pwa-peer-stale-badge-removal-parity.md`.

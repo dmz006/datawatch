@@ -206,9 +206,25 @@ datawatch observer peer-remove lab-east-peer
    only).
 9. Click into a peer row → drill-down modal: last snapshot, push
    history, per-envelope detail.
-10. Cog-nav badge: when any peer goes stale (no push in >60s), the
-    gear icon shows a numeric badge. Click → navigates to Federated
-    Peers + flashes the offending row.
+10. Peer connectivity: there is no badge on the Settings nav button. A
+    peer that last pushed more than a minute ago shows an inline
+    "Stale (age)" note on its row in the Observer peer list; a peer that
+    has never pushed shows "Never pushed". The daemon's own row is
+    skipped. For a longer outage the daemon raises one system alert
+    (see "Silent-peer alert" below).
+
+### Silent-peer alert
+
+The daemon watches every registered observer peer (never its own row).
+When a peer has not pushed for longer than
+`observer.peers.silent_alert_minutes` (default 5; `0` turns the watcher
+off) it raises one warning system alert, "Observer peer silent: <name>";
+when the peer pushes again it raises one info alert, "Observer peer
+recovered: <name>". A peer that never pushed is measured from its
+registration time. Set the threshold from PWA Settings (Observer),
+`datawatch config set observer.peers.silent_alert_minutes <n>`, the MCP
+`config_set` tool, or the comm channel `configure
+observer.peers.silent_alert_minutes=<n>`.
 
 ## Other channels
 
@@ -409,9 +425,13 @@ bash install/install-stats.sh \
 - **Memory summaries not flowing.** Opt-in: `push_memory_summaries:
   true` on the peer. Off by default to avoid leaking content across
   trust boundaries.
-- **Cog badge stuck on N stale.** A registered peer hasn't pushed in
-  >60s. Either bring it back or remove the peer record. Click the
-  badge in the PWA to navigate to it.
+- **Peer row shows "Stale" or "Never pushed".** A registered peer
+  hasn't pushed in over a minute (or ever). Either bring it back or
+  remove the peer record. The Settings nav button no longer carries a
+  badge; look at the peer row in the Observer peer list.
+- **"Observer peer silent" alert.** The peer was silent longer than
+  `observer.peers.silent_alert_minutes`. One alert per outage; an
+  "Observer peer recovered" alert follows when it pushes again.
 
 ## Linked references
 
@@ -426,7 +446,7 @@ bash install/install-stats.sh \
 - [ ] Mint peer token modal
 - [ ] Peer drill-down with last snapshot
 - [ ] Cross-host envelope view
-- [ ] Cog-icon stale badge with breadcrumb to flashing peer row
+- [ ] Peer row with the inline "Stale (age)" and "Never pushed" notes
 - [ ] CLI `datawatch observer peers` output
 
 ---
