@@ -2018,6 +2018,8 @@
   "settings_verifier_infra_escalation_threshold": "Verifier infra escalation threshold (0=2)",
   "settings_fallback_verification_backend": "Fallback verification backend (empty=claude-code)",
   "settings_verifier_no_progress_timeout": "Verifier no-progress timeout (sec, 0=10min)",
+  "settings_verifier_max_run_seconds": "Automaton verifier run cap (sec, 0=off, default 2700)",
+  "settings_verifier_max_run_seconds_help": "Total wall-clock limit for one verifier session, counted from when it starts. It is separate from the no-progress timeout above, which only ends a session that shows no activity. 0 turns the cap off. The default is 2700 seconds (45 minutes).",
   "settings_worker_idle_nudge": "Worker idle nudge (sec, 0=3min)",
   "settings_worker_idle_nudge_stall": "Worker stall after nudge (sec, 0=10min)",
   "settings_session_start_confirm": "Session start confirm (seconds)",

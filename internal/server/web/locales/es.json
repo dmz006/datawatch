@@ -2044,6 +2044,8 @@
   "settings_verifier_infra_escalation_threshold": "Umbral de escalada de fallos de infra del verificador (0=2)",
   "settings_fallback_verification_backend": "Backend de verificación de respaldo (vacío=claude-code)",
   "settings_verifier_no_progress_timeout": "Tiempo de espera del verificador sin progreso (seg, 0=10min)",
+  "settings_verifier_max_run_seconds": "Límite de duración del verificador del autómata (seg, 0=desactivado, predet. 2700)",
+  "settings_verifier_max_run_seconds_help": "Límite de tiempo total de una sesión del verificador, contado desde su inicio. Es independiente del tiempo de espera sin progreso de arriba, que solo termina sesiones sin actividad. 0 desactiva el límite. Predeterminado: 2700 segundos (45 minutos).",
   "settings_worker_idle_nudge": "Aviso por inactividad del worker (seg, 0=3min)",
   "settings_worker_idle_nudge_stall": "Bloqueo del worker tras el aviso (seg, 0=10min)",
   "settings_session_start_confirm": "Confirmación de inicio de sesión (segundos)",

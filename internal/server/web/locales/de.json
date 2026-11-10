@@ -2040,6 +2040,8 @@
   "settings_verifier_infra_escalation_threshold": "Schwelle für Verifier-Infra-Eskalation (0=2)",
   "settings_fallback_verification_backend": "Fallback-Verifikations-Backend (leer=claude-code)",
   "settings_verifier_no_progress_timeout": "Verifier-Timeout ohne Fortschritt (Sek., 0=10min)",
+  "settings_verifier_max_run_seconds": "Laufzeitgrenze der Automat-Verifier (Sek., 0=aus, Standard 2700)",
+  "settings_verifier_max_run_seconds_help": "Gesamte Laufzeitgrenze einer Verifier-Sitzung, gezählt ab ihrem Start. Sie ist getrennt vom Timeout ohne Fortschritt oben, der nur Sitzungen ohne Aktivität beendet. 0 schaltet die Grenze aus. Standard: 2700 Sekunden (45 Minuten).",
   "settings_worker_idle_nudge": "Worker-Leerlauf-Hinweis (Sek., 0=3min)",
   "settings_worker_idle_nudge_stall": "Worker-Stillstand nach Hinweis (Sek., 0=10min)",
   "settings_session_start_confirm": "Sitzungsstart-Bestätigung (Sekunden)",

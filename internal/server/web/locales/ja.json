@@ -2044,6 +2044,8 @@
   "settings_verifier_infra_escalation_threshold": "検証インフラ障害エスカレーションしきい値（0=2）",
   "settings_fallback_verification_backend": "フォールバック検証バックエンド（空=claude-code）",
   "settings_verifier_no_progress_timeout": "検証セッションの無進捗タイムアウト（秒、0=10分）",
+  "settings_verifier_max_run_seconds": "オートマトン検証の実行上限（秒、0=無効、既定2700）",
+  "settings_verifier_max_run_seconds_help": "1回の検証セッションの実時間の上限で、開始時点から数えます。上の無進捗タイムアウトとは別で、そちらは活動のないセッションだけを終了させます。0 で上限を無効にします。既定値は2700秒（45分）です。",
   "settings_worker_idle_nudge": "ワーカーのアイドル催促（秒、0=3分）",
   "settings_worker_idle_nudge_stall": "催促後のワーカー停止判定（秒、0=10分）",
   "settings_session_start_confirm": "セッション開始確認（秒）",
