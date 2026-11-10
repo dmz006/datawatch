@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.124.0 (2026-11-09).** Release push and tag settings, tool and machinery for Automata, off by default; the daemon's ship path does not call the push and tag code yet. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.125.0 (2026-11-09).** Automaton worker, verifier and judge sessions now start from their worker session profile when one resolves; with nothing configured, every launch is unchanged. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
