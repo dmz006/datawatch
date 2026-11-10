@@ -34721,10 +34721,6 @@ function renderAutonomousView() {
   view.innerHTML = `
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     <div class="view-content" style="position:relative;">
-      <!-- Repo CI watch — the read-only status line (mode, failing/
-           pending counts, last poll). Hidden until the endpoint answers;
-           stays hidden when it doesn't. -->
-      <div id="repoCIWatchStatusLine" role="status" style="font-size:12px;color:var(--text2);padding:0 0 8px;display:none;"></div>
       <!-- v6.12.4 — operator: "automata tab, automata and templates
            should be like tab headers, like tmux,channel,state are
            inside a session. not buttons". Reuse the output-tabs /
@@ -34778,10 +34774,9 @@ function renderAutonomousView() {
     if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
   }
   _automataReuseList = false;
-  // Repo CI watch status line — the immediate refresh plus a refresh on
-  // the Automaton view's own cadence; startPolling clears any existing
-  // window timer first so re-renders never stack (PWA poll-stacking rule).
-  repoCIWatchStartPolling();
+  // The repo CI watch state no longer has a line in this sub-tab bar; its
+  // failing/pending runs and never-polled state arrive as Events entries
+  // and alerts from the backend.
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
