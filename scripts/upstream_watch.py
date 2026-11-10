@@ -10,9 +10,12 @@ Checks:
      actually downloads the tool).
   2. Scanner pin: TRIVY_VERSION in .github/workflows/*.y*ml vs the latest
      aquasecurity/trivy release.
-  3. Scanner installer: workflows that fetch the Trivy installer from the
-     moving `main` branch (standing note), and a finding when the installer
-     text at `main` differs (sha256) from the one at the pinned tag.
+  3. Scanner installer: a standing note for any workflow that still fetches
+     the Trivy installer from the moving `main` branch (none do since the
+     workflows moved to scripts/ci-install-trivy.sh, which fetches the pinned
+     tag, so the note is not emitted), and a finding when the installer text
+     at `main` differs (sha256) from the one at the pinned tag. That drift
+     check is unchanged and no longer guards anything the workflows fetch.
      Monitoring only — the workflows are never edited by this script.
   4. Advisory-only: OSV (api.osv.dev/v1/query) for every pin whose package
      can be named; tools OSV cannot name go under "Not checked".

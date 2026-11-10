@@ -82,9 +82,7 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Refreshing images for release $v"
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$TRIVY_VERSION" /usr/local/bin
       - name: Decide whether to rebuild
         id: decide
         env:
@@ -160,9 +158,7 @@ jobs:
           tags: ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
           push: true
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$TRIVY_VERSION" /usr/local/bin
       - name: Scan ${{ matrix.name }} staging image (blocking)
         run: |
           trivy image \
@@ -231,9 +227,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$TRIVY_VERSION" /usr/local/bin
       - name: Build + scan every real shipped image fresh, without .trivyignore
         id: scan
         env:
@@ -616,9 +610,7 @@ jobs:
           tags: ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
           push: true
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$TRIVY_VERSION" /usr/local/bin
       - name: Scan ${{ matrix.name }} staging image (blocking)
         run: |
           trivy image \

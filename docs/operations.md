@@ -2558,6 +2558,43 @@ gh release upload <release-tag> report_pwa-baseline.html report_api-scan.html --
 or simply re-run the workflow later, once GitHub has lifted the throttling
 on the installation token — the attach step will then complete normally.
 
+### Trivy install in the CI workflows
+
+The "Install Trivy" step that feeds the container scans (release,
+containers, image-refresh) used to be an inline
+`curl -sfL …/trivy/main/contrib/install.sh | sh`. A bad fetch can finish
+the step without an error, leaving the worker with no Trivy: a blocking
+scan step then fails with `trivy: command not found`, and a non-blocking
+one (trailing `|| true`) silently skips the scan. That shape was found in
+a 2026-11-09 release run.
+
+The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
+
+- pulls the install script **for the pinned version tag**, off
+  `aquasecurity/trivy/<tag>/contrib/install.sh` — never off the moving
+  `main` branch;
+- downloads it into a temp file first and runs `sh` over that file — no
+  pipe-to-shell — then cleans the file up;
+- retries the download 5 times, 10 s apart, on any error, with a 20 s
+  connect and a 120 s total timeout;
+- on a persistent failure, exits non-zero with curl's status and names the
+  failing URL on stderr (for example `error: failed to download Trivy
+  install script (curl exit status 22): <url>`) and leaves the install
+  directory empty — the step fails loudly instead of the pipeline
+  discovering the gap at scan time, or never.
+
+Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
+persistent-failure and usage-error paths).
+
+**Migration status:** all eight "Install Trivy" steps in `release.yaml` (2),
+`containers.yaml` (2) and `image-refresh.yaml` (4) now run
+`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin`; none fetches
+the installer from `main` any more. The pins were left as they were:
+`containers.yaml` uses `v0.70.0`, while `release.yaml` and `image-refresh.yaml`
+use `v0.73.0`. Unifying them is an operator decision. Full write-up in
+[howto/container-image-refresh.md](howto/container-image-refresh.md)
+(§ "How CI installs Trivy").
+
 ---
 
 ## 8. Web UI Features

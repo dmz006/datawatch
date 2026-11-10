@@ -28,6 +28,59 @@ Every day at 05:30 UTC it:
 Staging tags older than three days are removed by the weekly `ghcr-cleanup`
 workflow (see below).
 
+## How CI installs Trivy
+
+Found in a 2026-11-09 release run: the inline
+`curl -sfL …/trivy/main/contrib/install.sh | sh` form of an "Install Trivy"
+step can **fail silently**. A flaky or partial download finishes the step
+without an error, and the worker ends up with no Trivy. A blocking scan step
+then dies with `trivy: command not found`, and a non-blocking one (a trailing
+`|| true`) skips the scan without saying so.
+
+`scripts/ci-install-trivy.sh` is the hardened installer; an install step
+invokes it as:
+
+```bash
+bash scripts/ci-install-trivy.sh "<trivy-version-tag>" <install-dir>
+```
+
+It guarantees, in order:
+
+- **Fails loudly.** `set -euo pipefail` throughout. A download that fails
+  exits non-zero with curl's status and the failing URL named on stderr
+  (for example `error: failed to download Trivy install script (curl exit
+  status 22): https://raw.githubusercontent.com/aquasecurity/trivy/v0.73.0/contrib/install.sh`) and the install
+  directory is left empty. Step fails, run red, nothing hides.
+- **Retries before giving up.** The download gets 5 attempts, 10 s apart, on
+  any error (`--retry-all-errors`), with a 20 s connect timeout and a 120 s
+  total cap. A transient blip is absorbed; an outage is not.
+- **Pinned, not moving.** The install script is fetched for the **pinned
+  version tag** (`aquasecurity/trivy/<tag>/contrib/install.sh`), not from
+  the moving `main` branch — the script that runs is the one that belongs to
+  the version being installed.
+- **No pipe-to-shell.** The script downloads first into a temp file
+  (created with `mktemp`), then feeds that file to
+  `sh -s -- -b <install-dir> <tag>` — `sh` never reads a pipe, so a
+  truncated download can never run as partial code, and the temp file is
+  removed on exit.
+
+Run its coverage with
+`bash scripts/tests/ci-install-trivy_test.sh` — the test fakes `curl` on the
+PATH and exercises the success, the persistent-failure, and the
+missing-argument paths, asserting the error text, the exit code and the state
+left behind.
+
+**Migration status:** all eight "Install Trivy" steps now call the hardened
+installer, so the guarantees above hold in every workflow: two in
+`release.yaml` (`v0.73.0`), two in `containers.yaml` (`v0.70.0`) and four in
+`image-refresh.yaml` (the workflow's `TRIVY_VERSION`, `v0.73.0`). None of them
+fetches the installer from `main` any more.
+
+The pins were not changed by the migration. `containers.yaml` still pins
+`v0.70.0` while `release.yaml` and `image-refresh.yaml` pin `v0.73.0`, so a
+pin change that updates only one workflow would leave the others behind.
+Unifying the pin is a separate decision for the operator.
+
 ## Running it by hand
 
 GitHub > Actions > `image-refresh` > Run workflow. Options:
