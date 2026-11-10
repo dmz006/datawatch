@@ -4447,5 +4447,5 @@
   "automata_std_off": "Off",
   "automata_std_load_failed": "Load failed:",
   "automata_std_howto": "Standard tasks how-to",
-  "automata_std_mode_note": "The mode is fixed to model session for now. Changing it will be done in Settings under the standard task settings once that setting exists; the setting key is"
+  "automata_std_mode_note": "Each standard task runs in one of three modes: llm (a model session), daemon (the daemon performs it, no session) or off (not added to the story). The final gate runs through the script gate. The per-task setting is changed in Settings; the setting key is"
 }

@@ -4447,5 +4447,5 @@
   "automata_std_off": "Desactivada",
   "automata_std_load_failed": "Error de carga:",
   "automata_std_howto": "Guía de tareas estándar",
-  "automata_std_mode_note": "Por ahora el modo está fijado en sesión de modelo. Se podrá cambiar en Ajustes, en los ajustes de tareas estándar, cuando exista ese ajuste; la clave del ajuste es"
+  "automata_std_mode_note": "Cada tarea estándar se ejecuta en uno de tres modos: llm (una sesión de modelo), daemon (el daemon la ejecuta, sin sesión) o off (no se añade a la historia). El gate final se ejecuta a través del gate de script. La configuración por tarea se cambia en Ajustes; la clave de la configuración es"
 }

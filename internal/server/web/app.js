@@ -26333,7 +26333,7 @@ function _automataStandardTasksRender() {
     const vals = [tk.title, tk.kind, tk.summary || tk.description, tk.when || tk.offered_when || tk.offered, on, tk.mode];
     return `<tr>${vals.map((v, i) => `<td data-label="${escHtml(t('automata_std_col_' + cols[i]))}" style="padding:4px 8px;vertical-align:top;">${escHtml(v == null ? '' : String(v))}</td>`).join('')}</tr>`;
   }).join('');
-  const note = `<div style="font-size:12px;color:var(--text2);margin:0 0 10px;">${escHtml(t('automata_std_mode_note'))} <code>autonomous.task_templates</code>${docsLink('howto/automata-standard-tasks.md', t('automata_std_howto'))}</div>`;
+  const note = `<div style="font-size:12px;color:var(--text2);margin:0 0 10px;">${escHtml(t('automata_std_mode_note'))} <code>autonomous.task_templates.mode</code>${docsLink('howto/automata-standard-tasks.md', t('automata_std_howto'))}</div>`;
   // An empty list shows the explanation in place of the table, so the
   // header row never sits over nothing.
   const body = st.tasks.length === 0

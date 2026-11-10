@@ -4447,5 +4447,5 @@
   "automata_std_off": "Désactivée",
   "automata_std_load_failed": "Échec du chargement :",
   "automata_std_howto": "Guide des tâches standard",
-  "automata_std_mode_note": "Le mode est fixé sur session de modèle pour le moment. Il sera modifiable dans les Paramètres, sous les réglages des tâches standard, dès que ce réglage existera ; la clé du réglage est"
+  "automata_std_mode_note": "Chaque tâche standard s'exécute dans l'un de trois modes : llm (une session de modèle), daemon (le daemon l'exécute, sans session) ou off (elle n'est pas ajoutée à l'histoire). Le gate final passe par le gate de script. Le réglage par tâche se modifie dans les Paramètres ; la clé du réglage est"
 }
