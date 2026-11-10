@@ -162,3 +162,14 @@ leave out; the operator does not want them in his own export, others may. Each r
 Carried over from option A and not contradicted: one-way push, never read back. The leak filter (no deployment names,
 tracker ids or secrets) stays on the export unless the operator says otherwise; it applies to the export of a
 repository that others read.
+
+Operator clarification on the export (2026-11-10): "Fyi on last questions, i personally want it on, but datawatch is of
+by default for other users." Decision: the export setting defaults to off in the product; the operator turns it on for
+his own installation. (The leak filter question for the operator's own repository export is still not answered; the
+filter stays on by default until he says otherwise.)
+
+Operator answer on migration question 5, the cut-over (2026-11-10): "Be question A, when it's ready we switch and clean
+up folder into history then run via datawatch" (option A: the cut-over is gated on conditions, not a date: the record
+types are shipped, the import of the registry rows is checked against the files, and encryption covers the Automaton,
+trace and decision files; the operator approves the switch). On the switch, the plans folder is cleaned up into history
+(the files leave the working tree and remain in the repository history) and the work runs through datawatch from then on.
