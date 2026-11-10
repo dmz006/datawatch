@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **The standard task list now reports each task's real mode and runner.** The list reports each task's actual mode (llm, daemon or off) and its runner, the final gate shows the script gate, and the PWA note describes the per-task modes. The surfaces are `GET /api/autonomous/standard-tasks`, the `autonomous_standard_tasks` MCP tool, the `datawatch autonomous standard-tasks` command, and the chat `standard tasks` word.
+
 ## v9.123.0 — Standard tasks: the built-in task pack is renamed and listed under Automata, Templates
 
 ### Added
