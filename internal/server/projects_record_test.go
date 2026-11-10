@@ -26,8 +26,6 @@ func recordDo(t *testing.T, s *Server, method, path, body string) *httptest.Resp
 	return rr
 }
 
-func recordInt(n int) *int { return &n }
-
 const recordFullBody = `{
   "name": "acme",
   "dir": "/srv/acme",

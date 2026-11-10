@@ -37,7 +37,7 @@ func projectsDefaultsBlock(t *testing.T, s *Server) map[string]interface{} {
 }
 
 func TestProjectsDefaults_SetThenReadBack(t *testing.T) {
-	cfg := &config.Config{}
+	cfg := config.DefaultConfig()
 	s := attemptCostAPIServer(t, cfg)
 
 	code, body := putConfigRaw(t, s, map[string]interface{}{
