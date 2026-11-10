@@ -2059,6 +2059,11 @@ autonomous:
   # conflict_model: a name in the LLM registry. Unset reads the built-in default
   #   name (claude-opus-5-5); an explicit empty string means no model. Never adds
   #   or changes a registry entry.
+  # conflict_mode: shadow | on. Default shadow. shadow runs the conflict model
+  #   without acting on its proposal; on acts on the proposal.
+  # conflict_confirm_first_n: a whole number. Default 5. How many of a project's
+  #   first conflict proposals need confirmation. 0 turns confirmation off; a
+  #   negative value is refused.
   # version_files: project files, relative to the project, that carry the
   #   `var Version = "X.Y.Z"` line the release-version step sets. Default none.
   # release_size_map: how much a merge steps the version, per Automaton kind.
@@ -2096,6 +2101,8 @@ autonomous:
   #   fallback_on_bad_file: record
   #   conflict_policy: mechanical_and_model
   #   conflict_model: claude-opus-5-5
+  #   conflict_mode: shadow
+  #   conflict_confirm_first_n: 5
   #   version_files: []
   #   release_size_map: {feature: minor, bug: patch}
   #   major_trigger: manual

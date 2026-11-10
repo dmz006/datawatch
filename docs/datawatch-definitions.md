@@ -73,6 +73,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Release validator](#release-validator)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
+  - [Merge conflict mode](#merge-conflict-mode)
+  - [Merge conflict confirm first N](#merge-conflict-confirm-first-n)
+  - [Merge conflict classes](#merge-conflict-classes)
   - [Release approval](#release-approval)
   - [Release gate](#release-gate)
   - [Onboarding report](#onboarding-report)
@@ -2220,6 +2223,18 @@ Where a project's pipeline comes from, and what happens when that source is bad.
 ### Merge conflict model
 
 **Merge conflict model** (`autonomous.merge_pipeline.conflict_model`, a built-in default model name) — the LLM registry entry that proposes a conflict resolution. An unset key uses the default name; an explicit empty string means no model. The setting never adds, edits or deletes a registry entry, so the name must already exist. The proposal is worked out in a scratch worktree and tested there; the project is touched only when the test step passes.
+
+### Merge conflict mode
+
+**Merge conflict mode** (`autonomous.merge_pipeline.conflict_mode`, `shadow` by default) — what a model proposal that passes the test step does. `shadow` records the proposal on the merge attempt and never changes the project. `on` commits a passing proposal and fast-forwards the project to it, after confirmation for the first N applied conflicts. See the [conflict mode](howto/merge-pipeline.md#conflict-mode) walkthrough.
+
+### Merge conflict confirm first N
+
+**Merge conflict confirm first N** (`autonomous.merge_pipeline.conflict_confirm_first_n`, 5 by default) — how many of a project's first applied model conflicts wait for your confirmation before they count as resolved. `0` turns confirmation off. It is active only when the mode is `on`, and the count is kept per project. See [confirm the first N model conflicts](howto/merge-pipeline.md#confirm-the-first-n-model-conflicts) and [read the counter](howto/merge-pipeline.md#read-the-counter).
+
+### Merge conflict classes
+
+**Merge conflict classes** — the kinds of file a conflict can be in: `code`, `document`, `changelog`, `version_line`, `readme_line`, `locale` and `generated`. Each class has its own mechanical rule, applied before any model is asked; a class with no rule, or a conflict no rule settles, goes to the conflict policy. `stop_and_ask` never applies a rule. See [conflict classes](howto/merge-pipeline.md#conflict-classes).
 
 ### Release approval
 

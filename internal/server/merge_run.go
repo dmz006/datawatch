@@ -113,12 +113,30 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 		Notifier: &mergeNotifier{sink: mr.AlertSink(), project: project},
 		ConflictSettings: func() mergepipeline.ConflictSettings {
 			s := mergepipeline.DefaultConflictSettings()
-			// The model is not wired here, so the model policy degrades to
-			// stop_and_ask exactly as ResolveConflictPolicy describes.
+			// The LLM registry is not passed here, so the model policy
+			// degrades to stop_and_ask exactly as ResolveConflictPolicy describes.
 			policy, _, _ := cfg.ResolveConflictPolicy(project, nil)
 			s.Policy = mergepipeline.ConflictPolicy(policy)
+			s.Mode = cfg.EffectiveConflictMode(project)
+			s.ConfirmFirstN = cfg.EffectiveConflictConfirmFirstN(project)
 			return s
 		},
+	}
+	if name := cfg.EffectiveConflictModel(project); name != "" {
+		runner.Model = newConflictModel(mr, name)
+	}
+	// The counter and the pending confirmations live under the daemon data
+	// directory. If either file cannot be read, it is left unwired: the count
+	// reads as zero and a proposal that needs confirmation is asked about.
+	if counter, err := mergepipeline.NewConflictCounter(dataDir); err != nil {
+		log.Printf("[merge-pipeline] conflict counter unavailable, confirmations will be asked: %v", err)
+	} else {
+		runner.Counter = counter
+	}
+	if pending, err := mergepipeline.NewConfirmStore(dataDir); err != nil {
+		log.Printf("[merge-pipeline] pending confirmations unavailable: %v", err)
+	} else {
+		runner.Pending = pending
 	}
 	if q := mr.MergeQuestionStore(); q != nil {
 		runner.Questions = q

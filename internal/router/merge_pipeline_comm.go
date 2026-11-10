@@ -14,6 +14,9 @@
 // {"steps":[{"name":"tests","kind":"test","command":"make test"}]}. The
 // settings of the block are changed with configure, for example
 // configure autonomous.merge_pipeline.conflict_policy=stop_and_ask.
+// The conflict settings are configure keys too: conflict_mode (shadow or on)
+// and conflict_confirm_first_n (whole number, 0 turns confirmation off), for
+// example configure autonomous.merge_pipeline.conflict_mode=on.
 
 package router
 
@@ -22,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -54,6 +58,8 @@ func MergePipelineConfigureKeys() []string {
 		"autonomous.merge_pipeline.fallback_on_bad_file",
 		"autonomous.merge_pipeline.conflict_policy",
 		"autonomous.merge_pipeline.conflict_model",
+		"autonomous.merge_pipeline.conflict_mode",
+		"autonomous.merge_pipeline.conflict_confirm_first_n",
 		"autonomous.merge_pipeline.version_files",
 		"autonomous.merge_pipeline.release_size_map",
 		"autonomous.merge_pipeline.major_trigger",
@@ -91,12 +97,47 @@ func isMergePipelineReleaseApprovalKey(key string) bool {
 	return ok && (size == "patch" || size == "minor" || size == "major")
 }
 
-// checkMergePipelineConfigure refuses a release approval value before the
-// configure verb sends it to the daemon. It reuses
-// config.ValidateReleaseApprovalModeKey, the check the daemon's config write
-// runs as well, so the refusal names the same key and the same valid values.
-// Any other key passes unchanged.
+// mergePipelineConflictSetting reports which conflict setting key names,
+// "conflict_mode" or "conflict_confirm_first_n", globally or for one project
+// (autonomous.merge_pipeline.projects.<project>.<setting>).
+func mergePipelineConflictSetting(key string) (string, bool) {
+	rest, ok := strings.CutPrefix(key, "autonomous.merge_pipeline.")
+	if !ok {
+		return "", false
+	}
+	if p, ok := strings.CutPrefix(rest, "projects."); ok {
+		i := strings.Index(p, ".")
+		if i <= 0 {
+			return "", false
+		}
+		rest = p[i+1:]
+	}
+	switch rest {
+	case "conflict_mode", "conflict_confirm_first_n":
+		return rest, true
+	}
+	return "", false
+}
+
+// checkMergePipelineConfigure refuses a value before the configure verb sends
+// it to the daemon. A release approval value is checked with
+// config.ValidateReleaseApprovalModeKey, and a conflict_mode or
+// conflict_confirm_first_n value with config.ValidateConflictModeKey and
+// config.ValidateConfirmFirstNKey: the same checks the daemon's config write
+// runs, so the refusal names the same key and the same valid values. Any other
+// key passes unchanged.
 func checkMergePipelineConfigure(key, value string) error {
+	if setting, ok := mergePipelineConflictSetting(key); ok {
+		v := strings.TrimSpace(value)
+		if setting == "conflict_mode" {
+			return config.ValidateConflictModeKey(key, v)
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("%s: %q is invalid; use a whole number", key, v)
+		}
+		return config.ValidateConfirmFirstNKey(key, n)
+	}
 	if !isMergePipelineReleaseApprovalKey(key) {
 		return nil
 	}

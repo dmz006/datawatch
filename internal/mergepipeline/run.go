@@ -87,6 +87,12 @@ type Runner struct {
 	ConflictSettings func() ConflictSettings
 	Model            ConflictModel
 	Questions        QuestionRaiser
+	// Counter counts applied model resolutions per project and Pending holds
+	// proposals awaiting the operator's confirmation; both are handed to the
+	// Merger of each run. Nil Counter means no count is kept, so a proposal
+	// that needs confirmation is always asked about.
+	Counter ConflictCounterStore
+	Pending *ConfirmStore
 	// Ship runs tag, push, deploy and hook steps. Nil means those steps fail
 	// rather than run.
 	Ship ShipRunner
@@ -287,7 +293,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			}
 		}()
 	}
-	st.m = &Merger{Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions}
+	st.m = &Merger{
+		Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions,
+		VersionFiles: r.VersionFiles, Project: r.Project, Counter: r.Counter, Pending: r.Pending,
+	}
 	if err := st.startTracking(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
 		return finish(autonomous.MergeRunFailed, err)

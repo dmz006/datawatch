@@ -4425,5 +4425,12 @@
   "settings_daemon_task_help_link_label": "Aide : modes de tâche du daemon",
   "settings_daemon_task_saved": "Enregistré",
   "settings_daemon_task_save_failed": "Échec de l’enregistrement",
-  "settings_daemon_task_number_invalid": "Saisissez un nombre entier de secondes (0 = sans limite)"
+  "settings_daemon_task_number_invalid": "Saisissez un nombre entier de secondes (0 = sans limite)",
+  "settings_merge_pipeline_conflict_mode": "Mode des conflits de fusion (stop_and_ask, mechanical ou mechanical_and_model)",
+  "settings_merge_pipeline_conflict_mode_hint": "La manière de traiter un conflit de fusion. Un mode qui nécessite un modèle s’arrête et demande quand aucun modèle n’est défini ou que le modèle n’est pas disponible.",
+  "settings_merge_pipeline_conflict_confirm_first_n": "Conflits de fusion à faire confirmer par l’opérateur (nombre entier ; 0 signifie aucun)",
+  "settings_merge_pipeline_conflict_confirm_first_n_hint": "Les N premières résolutions de conflit attendent la confirmation de l’opérateur. Les suivantes s’appliquent sans attendre.",
+  "merge_pipeline_conflict_confirmation_label": "Confirmations de conflits",
+  "merge_pipeline_conflict_confirmation_counted": "{count} conflits confirmés",
+  "merge_pipeline_conflict_confirmation_remaining": "{remaining} confirmations restantes"
 }

@@ -154,15 +154,26 @@ func (m *Merger) callModel(ctx context.Context, set ConflictSettings, prompt str
 	}
 }
 
-// proposeWithModel settles a conflict with the model. The project's tree is
-// never touched until a proposal has passed the test step: the merge is redone
-// in a scratch worktree, additive hunks are resolved mechanically, the model's
-// proposal is applied to the rest, the pipeline's test step is run there, and
-// only then is the merge committed and the project fast-forwarded to it. On any
-// failure the scratch worktree is thrown away and the project is unchanged.
-func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req MergeRequest, files []string) ModelAttempt {
-	fail := func(result, detail string, hunks int) ModelAttempt {
-		return ModelAttempt{Result: result, Detail: detail, Hunks: hunks}
+// modelProposal is a resolution that passed the conflict gate in a scratch
+// tree. Commit is the scratch merge commit; it is an object in the project's
+// repository, so it outlives the scratch worktree that made it.
+type modelProposal struct {
+	Texts  map[string]string
+	Commit string
+	Hunks  int
+}
+
+// proposeWithModel settles a conflict with the model without moving the
+// project. The merge is redone in a scratch worktree, additive hunks are
+// resolved mechanically, the model's proposal is applied to the rest, and the
+// conflict gate (build, lint and test) runs there. A proposal that passes is
+// committed in the scratch tree and returned with its per-file texts; the
+// project's HEAD is untouched. The caller decides whether to fast-forward the
+// project onto it (fastForwardTo). On any failure the scratch worktree is
+// thrown away, the attempt says why, and the returned proposal is nil.
+func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req MergeRequest, files []string) (ModelAttempt, *modelProposal) {
+	fail := func(result, detail string, hunks int) (ModelAttempt, *modelProposal) {
+		return ModelAttempt{Result: result, Detail: detail, Hunks: hunks}, nil
 	}
 	scratchRoot, err := filePath(m.Dir, set.ScratchDir)
 	if err != nil {
@@ -250,18 +261,14 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 		return fail(AttemptApplyFailed, serr.Error(), len(want))
 	}
 
-	passed, noStep, output := m.runTestSteps(ctx, scratch, set)
+	passed, output := m.runConflictGate(ctx, scratch, set)
 	if !passed {
-		res := AttemptTestsFailed
-		if noStep {
-			res = AttemptNoTestStep
-		}
-		a := fail(res, "the proposal was not committed", len(want))
+		a, _ := fail(AttemptTestsFailed, "the proposal was not committed", len(want))
 		a.TestOutput = output
-		return a
+		return a, nil
 	}
 
-	// Tested. Commit in the scratch tree, then move the project onto it.
+	// Tested. Commit in the scratch tree; the project is not moved here.
 	if _, err := m.gitOK(ctx, scratch, "commit", "--no-edit", "-m", msg); err != nil {
 		return fail(AttemptCommitFailed, err.Error(), len(want))
 	}
@@ -269,10 +276,17 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 	if err != nil {
 		return fail(AttemptCommitFailed, err.Error(), len(want))
 	}
-	if _, err := m.gitOK(ctx, m.Dir, "merge", "--ff-only", sha); err != nil {
-		return fail(AttemptFastForwardFail, err.Error(), len(want))
+	return ModelAttempt{Result: AttemptAccepted, Hunks: len(want)},
+		&modelProposal{Texts: texts, Commit: sha, Hunks: len(want)}
+}
+
+// fastForwardTo moves the project's checked-out branch onto a tested proposal.
+// The project must be at the pre-merge HEAD, which the proposal was built on.
+func (m *Merger) fastForwardTo(ctx context.Context, prop *modelProposal) ModelAttempt {
+	if _, err := m.gitOK(ctx, m.Dir, "merge", "--ff-only", prop.Commit); err != nil {
+		return ModelAttempt{Result: AttemptFastForwardFail, Detail: err.Error(), Hunks: prop.Hunks}
 	}
-	return ModelAttempt{Result: AttemptAccepted, Hunks: len(want)}
+	return ModelAttempt{Result: AttemptAccepted, Hunks: prop.Hunks}
 }
 
 // stageTexts writes the files and stages them, without committing.

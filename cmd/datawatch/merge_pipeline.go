@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -124,6 +125,25 @@ func mergePipelineProjectRequired(err error) (body string, ok bool) {
 // project_required refusal: the daemon's JSON body followed by one plain line.
 func mergePipelineProjectRequiredError(body string) error {
 	return fmt.Errorf("%s\n%s", body, mergePipelineProjectRequiredLine)
+}
+
+// mergePipelineConflictConfirmLine is the confirmation line of the show text:
+// the mode, how many of the project's first model-resolved conflicts need the
+// operator's confirmation, and how many are counted and remaining. It is empty
+// unless confirmation is enabled, so a confirmation that is off prints nothing.
+func mergePipelineConflictConfirmLine(c mergepipeline.ConflictConfirmationView) string {
+	if !c.Enabled {
+		return ""
+	}
+	counted, remaining := "unknown", "unknown"
+	if c.Counted != nil {
+		counted = strconv.Itoa(*c.Counted)
+	}
+	if c.Remaining != nil {
+		remaining = strconv.Itoa(*c.Remaining)
+	}
+	return fmt.Sprintf("Conflict confirmation: mode %s, the first %d model-resolved conflicts need confirmation, counted %s, remaining %s\n",
+		c.Mode, c.ConfirmFirstN, counted, remaining)
 }
 
 func newAutonomousMergePipelineCmd() *cobra.Command {
@@ -242,7 +262,8 @@ func newMergePipelineShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprint(cmd.OutOrStdout(), mergepipeline.RenderViewText(v))
+			text := mergepipeline.RenderViewText(v) + mergePipelineConflictConfirmLine(v.ConflictConfirmation)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), text)
 			return err
 		},
 	}

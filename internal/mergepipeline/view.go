@@ -3,6 +3,7 @@ package mergepipeline
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -39,6 +40,65 @@ type View struct {
 	// size, resolved for the project: its override, else the global value,
 	// else the built-in default. There is always a mode for each size.
 	ReleaseApprovalInEffect ReleaseApprovalInEffect `json:"release_approval_in_effect"`
+	// ConflictConfirmation says how many of the project's first model-resolved
+	// conflicts still need the operator's confirmation.
+	ConflictConfirmation ConflictConfirmationView `json:"conflict_confirmation"`
+}
+
+// ConflictConfirmationView is the conflict_confirmation block of the merge
+// pipeline view. Mode and ConfirmFirstN are the values in effect for the
+// project. Counted and Remaining are pointers so that a counter that could not
+// be read is null, never a zero count; Error then says why.
+type ConflictConfirmationView struct {
+	// Mode is "shadow" or "on": what a model proposal that passes the gate does.
+	Mode string `json:"mode"`
+	// ConfirmFirstN is how many of the project's first proposals need
+	// confirmation; 0 means confirmation is off.
+	ConfirmFirstN int `json:"confirm_first_n"`
+	// Counted is the number of model-resolved conflicts applied for the project.
+	Counted *int `json:"counted"`
+	// Remaining is ConfirmFirstN minus Counted, never below zero, zero when
+	// ConfirmFirstN is 0.
+	Remaining *int `json:"remaining"`
+	// Enabled is true only when Mode is "on" and ConfirmFirstN is above 0.
+	Enabled bool `json:"enabled"`
+	// Error is the problem reading the counter, when there is one.
+	Error string `json:"error,omitempty"`
+}
+
+// BuildConflictConfirmation fills the conflict_confirmation block for project.
+// counter is the project's conflict counter; openErr is the error that
+// opening it gave, if any. Either one being unusable leaves Counted and
+// Remaining null and reports the problem in Error.
+func BuildConflictConfirmation(project, mode string, confirmFirstN int, counter ConflictCounterStore, openErr error) ConflictConfirmationView {
+	v := ConflictConfirmationView{
+		Mode:          mode,
+		ConfirmFirstN: confirmFirstN,
+		Enabled:       mode == ConflictModeOn && confirmFirstN > 0,
+	}
+	var err error
+	switch {
+	case openErr != nil:
+		err = openErr
+	case counter == nil:
+		err = errors.New("conflict counter is not available")
+	default:
+		var n int
+		n, err = counter.Count(project)
+		if err == nil {
+			counted := n
+			v.Counted = &counted
+			remaining := 0
+			if confirmFirstN > 0 && confirmFirstN > n {
+				remaining = confirmFirstN - n
+			}
+			v.Remaining = &remaining
+		}
+	}
+	if err != nil {
+		v.Error = "conflict counter unreadable: " + err.Error()
+	}
+	return v
 }
 
 // ReleaseApprovalInEffect is the approval mode in effect for each release

@@ -77,3 +77,14 @@ func scriptMergeVerify(ctx context.Context, prd *PRD, t *Task, dir string) error
 	}
 	return nil
 }
+
+// ProposeMergeConflict sends a conflict prompt to the planning model named by
+// model (an LLM registry name) and returns the raw reply. It is the same
+// invocation planningModelMergeResolve uses, exported so the merge pipeline's
+// conflict model can reuse it without a client of its own.
+func (m *Manager) ProposeMergeConflict(prompt, model string) (string, error) {
+	if m.decompose == nil {
+		return "", fmt.Errorf("no planning model is configured")
+	}
+	return m.decompose(DecomposeRequest{Spec: prompt, Model: model})
+}

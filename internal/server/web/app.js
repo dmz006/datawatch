@@ -9757,6 +9757,12 @@ const DOCS_MERGE_PIPELINE_LINKS = [
     DOCS_DEFINITIONS + '#merge-conflict-policy'],
   [['autonomous.merge_pipeline.conflict_model', 'settings_merge_pipeline_conflict_model', 'merge_pipeline_conflict_model'],
     DOCS_DEFINITIONS + '#merge-conflict-model'],
+  // The conflict mode and the confirm-the-first-N setting link to their own
+  // sections of the merge pipeline how-to, not to the glossary.
+  [['autonomous.merge_pipeline.conflict_mode', 'settings_merge_pipeline_conflict_mode'],
+    'howto/merge-pipeline.md#conflict-mode'],
+  [['autonomous.merge_pipeline.conflict_confirm_first_n', 'settings_merge_pipeline_conflict_confirm_first_n'],
+    'howto/merge-pipeline.md#confirm-the-first-n-model-conflicts'],
   [['merge_lock_'], DOCS_DEFINITIONS + '#merge-lock'],
   [['merge_validator_'], DOCS_DEFINITIONS + '#release-bump-validator'],
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
@@ -18814,6 +18820,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.fallback_on_bad_file', label: 'Merge pipeline when the project file is bad (record, default or none; default record)', labelKey: 'settings_merge_pipeline_fallback_on_bad_file', hintKey: 'settings_merge_pipeline_fallback_on_bad_file_hint', docsKey: 'autonomous.merge_pipeline.fallback_on_bad_file', type: 'select', options: ['record', 'default', 'none'], optionLabelKeys: { record: 'settings_merge_pipeline_fallback_record', default: 'settings_merge_pipeline_fallback_default', none: 'settings_merge_pipeline_fallback_none' }, default: 'record' },
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
+    { key: 'autonomous.merge_pipeline.conflict_mode', label: 'Merge conflict mode (shadow or on; default shadow)', labelKey: 'settings_merge_pipeline_conflict_mode', helpKey: 'settings_merge_pipeline_conflict_mode_hint', helpDocs: 'howto/merge-pipeline.md#conflict-mode', type: 'select', options: ['shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.merge_pipeline.conflict_confirm_first_n', label: 'Merge conflicts to confirm with the operator (whole number; 0 = none; default 5)', labelKey: 'settings_merge_pipeline_conflict_confirm_first_n', helpKey: 'settings_merge_pipeline_conflict_confirm_first_n_hint', helpDocs: 'howto/merge-pipeline.md#confirm-the-first-n-model-conflicts', type: 'number', min: 0, placeholder: '5' },
     { key: 'autonomous.merge_pipeline.release_approval.patch', label: 'Release approval for patch releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_patch', hintKey: 'settings_merge_pipeline_release_approval_patch_hint', docsKey: 'autonomous.merge_pipeline.release_approval.patch', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
     { key: 'autonomous.merge_pipeline.release_approval.minor', label: 'Release approval for minor releases (auto, ask or manual; default auto)', labelKey: 'settings_merge_pipeline_release_approval_minor', hintKey: 'settings_merge_pipeline_release_approval_minor_hint', docsKey: 'autonomous.merge_pipeline.release_approval.minor', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'auto' },
     { key: 'autonomous.merge_pipeline.release_approval.major', label: 'Release approval for major releases (auto, ask or manual; default ask)', labelKey: 'settings_merge_pipeline_release_approval_major', hintKey: 'settings_merge_pipeline_release_approval_major_hint', docsKey: 'autonomous.merge_pipeline.release_approval.major', type: 'select', options: ['auto', 'ask', 'manual'], optionLabelKeys: { auto: 'merge_pipeline_release_approval_mode_auto', ask: 'merge_pipeline_release_approval_mode_ask', manual: 'merge_pipeline_release_approval_mode_manual' }, default: 'ask' },
@@ -29898,6 +29906,19 @@ window.mergePipelineCardHtml = function(view, opts) {
   const model = `<div class="merge-pipeline-model" style="margin-top:8px;min-width:0;">` +
     `<label for="mergePipelineConflictModel" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_conflict_model_label'))}${defsLink('merge_pipeline_conflict_model_label')}</label> ` +
     _mergePipelineSelect('mergePipelineConflictModel', 'window.mergePipelineSetModel', modelOptions, current) + `</div>`;
+  // The confirmation line shows only while confirmation is on and the counter
+  // could be read. A null count (the counter failed) or a switched-off mode
+  // renders nothing. t() fills %1$s only, so {count} and {remaining} are
+  // replaced here.
+  const cc = view.conflict_confirmation && typeof view.conflict_confirmation === 'object' ? view.conflict_confirmation : null;
+  let confirmation = '';
+  if (cc && cc.enabled === true && typeof cc.counted === 'number') {
+    const counted = t('merge_pipeline_conflict_confirmation_counted').replace('{count}', String(cc.counted));
+    const remaining = typeof cc.remaining === 'number'
+      ? ' · ' + t('merge_pipeline_conflict_confirmation_remaining').replace('{remaining}', String(cc.remaining)) : '';
+    confirmation = `<div class="merge-pipeline-confirmation" style="margin-top:8px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">` +
+      `${escHtml(t('merge_pipeline_conflict_confirmation_label'))}: ${escHtml(counted)}${escHtml(remaining)}</div>`;
+  }
   // The mode in effect per size. The daemon always sends all three, so every
   // row has a mode to show.
   const inEffect = view.release_approval_in_effect && typeof view.release_approval_in_effect === 'object' ? view.release_approval_in_effect : {};
@@ -29921,7 +29942,7 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<button type="button" class="btn-primary merge-pipeline-save" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineSaveRecord()">${escHtml(t('merge_pipeline_save_record'))}</button>` +
     `<button type="button" class="btn-secondary merge-pipeline-clear" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineClearRecord()">${escHtml(t('merge_pipeline_clear_record'))}</button></div>` +
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
-  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${releaseApproval}${statusBlock}${editor}</div>`;
+  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${confirmation}${releaseApproval}${statusBlock}${editor}</div>`;
 };
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the

@@ -62,7 +62,23 @@ type ConflictSettings struct {
 	// ScratchDir is where the scratch worktree for a proposal is made,
 	// relative to the project directory.
 	ScratchDir string
+	// Mode says what a model proposal that passes the gate does. Empty or
+	// ConflictModeShadow records it and leaves the project alone; ConflictModeOn
+	// applies it. Any other value fails Validate.
+	Mode string
+	// ConfirmFirstN is how many of a project's first model proposals need
+	// the operator's confirmation. Zero turns confirmation off.
+	ConfirmFirstN int
 }
+
+// Modes of a model proposal.
+const (
+	// ConflictModeShadow computes and records a passing proposal without
+	// committing it; the project's HEAD does not move.
+	ConflictModeShadow = "shadow"
+	// ConflictModeOn commits a passing proposal and fast-forwards the project.
+	ConflictModeOn = "on"
+)
 
 // DefaultConflictSettings returns the operator's answers: stop and ask, a five
 // minute model call, a 64 KiB prompt, a ten minute test step.
@@ -73,6 +89,7 @@ func DefaultConflictSettings() ConflictSettings {
 		MaxPromptBytes: DefaultConflictPromptBytes,
 		TestTimeout:    DefaultConflictTestTimeout,
 		ScratchDir:     DefaultConflictScratchDir,
+		Mode:           ConflictModeShadow,
 	}
 }
 
@@ -94,6 +111,9 @@ func (s ConflictSettings) withDefaults() ConflictSettings {
 	if s.ScratchDir == "" {
 		s.ScratchDir = d.ScratchDir
 	}
+	if s.Mode == "" {
+		s.Mode = d.Mode
+	}
 	return s
 }
 
@@ -108,6 +128,9 @@ func (s ConflictSettings) Validate() error {
 	}
 	if !ok {
 		return fmt.Errorf("unknown conflict policy %q", s.Policy)
+	}
+	if s.Mode != ConflictModeShadow && s.Mode != ConflictModeOn {
+		return fmt.Errorf("unknown conflict mode %q", s.Mode)
 	}
 	return checkDir(s.ScratchDir)
 }
@@ -161,6 +184,13 @@ const (
 	AttemptInfrastructure  = "scratch_failed"
 	AttemptCommitFailed    = "commit_failed"
 	AttemptFastForwardFail = "fast_forward_failed"
+	// AttemptShadowComputed means a proposal passed the gate in shadow mode and
+	// was recorded; nothing was committed.
+	AttemptShadowComputed = "shadow_computed"
+	// AttemptAwaitingConfirmation means a proposal passed the gate in on mode
+	// but the project's first N code or document conflicts still need the
+	// operator's confirmation; it is held, not applied.
+	AttemptAwaitingConfirmation = "awaiting_confirmation"
 )
 
 // ModelAttempt summarises what the model step did.
@@ -169,6 +199,11 @@ type ModelAttempt struct {
 	Detail     string `json:"detail,omitempty"`
 	TestOutput string `json:"test_output,omitempty"`
 	Hunks      int    `json:"hunks"`
+	// Mode is the conflict mode the attempt ran under.
+	Mode string `json:"mode,omitempty"`
+	// Proposal maps each conflicted file to its resolved text. It is set only
+	// for a shadow_computed attempt.
+	Proposal map[string]string `json:"proposal,omitempty"`
 }
 
 // Outcome is the result of one merge attempt.
@@ -210,6 +245,19 @@ type Merger struct {
 	Model ConflictModel
 	// Questions raises the operator question; nil means none can be asked.
 	Questions QuestionRaiser
+	// VersionFiles are the repository-relative files that carry the release
+	// version line; a conflict in one of them is classed ClassVersionLine.
+	VersionFiles []string
+	// Project names the project in the conflict counter and the pending
+	// confirmations. Empty means the base name of Dir.
+	Project string
+	// Counter counts the model-resolved code or document conflicts applied per
+	// project in on mode. Nil counts nothing, and a proposal that needs
+	// confirmation is then always asked about.
+	Counter ConflictCounterStore
+	// Pending holds model proposals waiting for the operator's confirmation.
+	// Nil keeps them in memory for the life of this Merger.
+	Pending *ConfirmStore
 }
 
 func (m *Merger) settings() ConflictSettings {
@@ -363,6 +411,14 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 		msg = "Merge branch '" + req.Branch + "'"
 	}
 
+	if set.Policy == PolicyMechanicalAndModel && set.Mode == ConflictModeOn {
+		// A proposal the operator confirmed for this exact HEAD and branch is
+		// applied instead of asking the model again.
+		if o, handled, cerr := m.applyConfirmedProposal(ctx, set, req, headSHA, branchSHA, msg); handled || cerr != nil {
+			return o, cerr
+		}
+	}
+
 	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "-m", msg, req.Branch)
 	if err != nil {
 		m.abortQuietly(m.Dir)
@@ -411,13 +467,37 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	}
 
 	if set.Policy == PolicyMechanicalAndModel {
-		att := m.proposeWithModel(ctx, set, req, out.Files)
+		att, prop := m.proposeWithModel(ctx, set, req, out.Files)
+		att.Mode = set.Mode
+		var held *modelProposal
+		if prop != nil {
+			switch {
+			case set.Mode == ConflictModeShadow:
+				// Recorded only: the project keeps its pre-merge HEAD.
+				att.Result = AttemptShadowComputed
+				att.Proposal = prop.Texts
+			case m.confirmationNeeded(set, out.Files):
+				// Held: the project keeps its pre-merge HEAD until the operator confirms.
+				held = prop
+				att.Result = AttemptAwaitingConfirmation
+				att.Detail = "the proposal passed the test step and waits for the operator's confirmation"
+			default:
+				att = m.fastForwardTo(ctx, prop)
+				att.Mode = set.Mode
+				if att.Result == AttemptAccepted {
+					m.recordApplied(out.Files)
+				}
+			}
+		}
 		out.Attempt = &att
 		if att.Result == AttemptAccepted {
 			out.Status = StatusResolvedByModel
 			out.Summary = fmt.Sprintf("merged %s; the conflict model's proposal for %d hunk(s) passed the project's test step and was committed",
 				req.Branch, att.Hunks)
 			return out, nil
+		}
+		if held != nil {
+			return m.holdForConfirmation(req, out, held, headSHA, branchSHA)
 		}
 	}
 
@@ -455,14 +535,19 @@ func (m *Merger) abortQuietly(dir string) {
 	_, _ = m.git(ctx, dir, "merge", "--abort")
 }
 
-// mechanical runs the additive resolver over every conflicted file in dir. It
-// returns the new text of each file it fully settled, the hunks it settled and
-// the hunks (or whole files) it could not. A file with any unsettled hunk, or
-// with no readable markers, is not written.
+// mechanical settles every conflicted file in dir by its class. Code and
+// document files keep the additive-only rule: a hunk is settled only when both
+// sides add lines to the same place. The other classes go through
+// ResolveMechanicalFile, which applies each class's own rule; a locale or
+// generated file gets its ours and theirs sides from the index stages. It
+// returns the new text of each file it fully settled, the additive hunks it
+// settled and the hunks (or whole files) it could not. A file with anything
+// unsettled, or with no readable markers, is not written.
 func (m *Merger) mechanical(ctx context.Context, dir string, files []string) (map[string]string, []ResolvedHunk, []string, error) {
 	texts := map[string]string{}
 	var resolved []ResolvedHunk
 	var remaining []string
+	var regen []string
 	for _, f := range files {
 		p, err := filePath(dir, f)
 		if err != nil {
@@ -477,23 +562,102 @@ func (m *Merger) mechanical(ctx context.Context, dir string, files []string) (ma
 			remaining = append(remaining, f+" (binary)")
 			continue
 		}
-		text, res, rest, perr := ResolveAdditive(f, string(data))
-		if perr != nil {
-			remaining = append(remaining, f+" (no usable conflict markers)")
+		class := ClassifyConflictFile(f, m.VersionFiles)
+		if class == ClassCode || class == ClassDocument {
+			text, res, rest, perr := ResolveAdditive(f, string(data))
+			if perr != nil {
+				remaining = append(remaining, f+" (no usable conflict markers)")
+				continue
+			}
+			resolved = append(resolved, res...)
+			for _, h := range rest {
+				remaining = append(remaining, fmt.Sprintf("%s#%d", f, h.Index))
+			}
+			if len(rest) == 0 {
+				texts[f] = text
+			}
 			continue
 		}
-		resolved = append(resolved, res...)
-		for _, h := range rest {
-			remaining = append(remaining, fmt.Sprintf("%s#%d", f, h.Index))
+
+		var ours, theirs string
+		if class == ClassLocale || class == ClassGenerated {
+			if ours, err = m.stageOf(ctx, dir, f, "2"); err != nil {
+				remaining = append(remaining, f+" ("+string(class)+": ours side unreadable)")
+				continue
+			}
+			if theirs, err = m.stageOf(ctx, dir, f, "3"); err != nil {
+				remaining = append(remaining, f+" ("+string(class)+": theirs side unreadable)")
+				continue
+			}
 		}
-		if len(rest) == 0 {
-			texts[f] = text
+		text, settled, _, rerr := ResolveMechanicalFile(class, f, string(data), ours, theirs)
+		if rerr != nil || !settled {
+			remaining = append(remaining, fmt.Sprintf("%s (%s: not settled)", f, class))
+			continue
 		}
+		if class == ClassGenerated {
+			// The kept ours side is only a placeholder: the file is rebuilt
+			// by the project's docs-index target, and only when there is one.
+			if !MakefileHasDocsIndexTarget(projectMakefile(dir)) {
+				remaining = append(remaining, f+" (generated: no docs-index target to rebuild it)")
+				continue
+			}
+			regen = append(regen, f)
+		}
+		texts[f] = text
 	}
 	if len(remaining) > 0 {
 		return texts, resolved, remaining, nil
 	}
+	if len(regen) > 0 {
+		failed, err := m.regenerateDocsIndex(ctx, dir, texts, regen)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if len(failed) > 0 {
+			return texts, resolved, failed, nil
+		}
+	}
 	return texts, resolved, nil, nil
+}
+
+// stageOf returns the content of file at an index stage: "2" is ours, "3" is
+// theirs. A file that has no such stage is an error.
+func (m *Merger) stageOf(ctx context.Context, dir, file, stage string) (string, error) {
+	return m.gitOK(ctx, dir, "show", ":"+stage+":"+file)
+}
+
+// regenerateDocsIndex rebuilds the generated files in regen by running the
+// project's docs-index target, after the settled texts are staged, and reads
+// the rebuilt files back into texts. It returns one remaining entry per
+// generated file when the target fails; the caller then leaves the merge
+// unsettled.
+func (m *Merger) regenerateDocsIndex(ctx context.Context, dir string, texts map[string]string, regen []string) ([]string, error) {
+	if err := m.stageTexts(ctx, dir, texts); err != nil {
+		return nil, err
+	}
+	tctx, cancel := context.WithTimeout(ctx, DefaultStepTimeout)
+	defer cancel()
+	r, err := m.run(tctx, dir, "make", "docs-index")
+	if err != nil || r.Code != 0 {
+		var failed []string
+		for _, f := range regen {
+			failed = append(failed, f+" (generated: make docs-index failed)")
+		}
+		return failed, nil
+	}
+	for _, f := range regen {
+		p, err := filePath(dir, f)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(p) // #nosec G304 -- path checked to lie inside dir
+		if err != nil {
+			return nil, err
+		}
+		texts[f] = string(data)
+	}
+	return nil, nil
 }
 
 // commitResolved writes the settled files, stages them and commits the merge.
@@ -591,50 +755,12 @@ func makefileHasTarget(dir, target string) bool {
 	return false
 }
 
-// runTestSteps runs every test step of the pipeline in dir. It passes only if
-// at least one step ran and every step that ran succeeded; a step that is a
-// built-in action cannot be run here and counts as a failure, since it could
-// not be shown to pass. The returned text is the tail of the failing step's
-// output, or why nothing could be run.
-func (m *Merger) runTestSteps(ctx context.Context, dir string, set ConflictSettings) (passed bool, noStep bool, output string) {
-	ran := 0
-	for _, s := range m.Pipeline.Steps {
-		if s.Kind != KindTest {
-			continue
-		}
-		if s.RequiresMakeTarget != "" && !makefileHasTarget(dir, s.RequiresMakeTarget) {
-			continue
-		}
-		if strings.TrimSpace(s.Command) == "" {
-			return false, false, fmt.Sprintf("test step %q is a built-in action and cannot be run on a proposal", s.Name)
-		}
-		if CallsUnscopedTmuxKill(s.Command) {
-			return false, false, fmt.Sprintf("test step %q calls an unscoped tmux kill and was not run", s.Name)
-		}
-		wd := dir
-		if s.Dir != "" {
-			if checkDir(s.Dir) != nil {
-				return false, false, fmt.Sprintf("test step %q has an unusable dir", s.Name)
-			}
-			wd = filepath.Join(dir, filepath.FromSlash(s.Dir))
-		}
-		timeout := s.Timeout
-		if timeout <= 0 {
-			timeout = set.TestTimeout
-		}
-		tctx, cancel := context.WithTimeout(ctx, timeout)
-		r, err := m.run(tctx, wd, "sh", "-c", s.Command)
-		cancel()
-		ran++
-		if err != nil {
-			return false, false, fmt.Sprintf("test step %q did not finish: %v\n%s", s.Name, err, tail(r.Out, 2000))
-		}
-		if r.Code != 0 {
-			return false, false, fmt.Sprintf("test step %q failed (exit %d)\n%s", s.Name, r.Code, tail(r.Out, 2000))
+// projectMakefile returns the text of the first makefile dir holds, or "".
+func projectMakefile(dir string) string {
+	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
+		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil { // #nosec G304 -- fixed names under dir
+			return string(data)
 		}
 	}
-	if ran == 0 {
-		return false, true, "the pipeline has no test step that can run here"
-	}
-	return true, false, ""
+	return ""
 }

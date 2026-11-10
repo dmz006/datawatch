@@ -78,7 +78,7 @@ func (s *Server) handleAutonomousReleaseReadiness(_ context.Context, req mcpsdk.
 
 func (s *Server) toolAutonomousMergePipelineGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_pipeline_get",
-		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the release settings in effect (the release size by kind, the major release trigger, the release cadence and the version scheme), the release approval mode in effect for each release size (patch, minor, major), the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
+		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the release settings in effect (the release size by kind, the major release trigger, the release cadence and the version scheme), the release approval mode in effect for each release size (patch, minor, major), the conflict confirmation block (the conflict mode, how many of the project's first model-resolved conflicts need confirmation, how many are counted and how many remain), the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional — the project name; default is the merge base repository")),
 		mcpsdk.WithString("format", mcpsdk.Enum("text", "json"), mcpsdk.Description("Optional — text (default) or json")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
@@ -249,7 +249,36 @@ func (s *Server) handleAutonomousMergePipelineGet(_ context.Context, req mcpsdk.
 		}
 		return textOK(mergepipeline.RenderViewWithPostShip(v, d)), nil
 	}
-	return textOK(mergepipeline.RenderViewText(v)), nil
+	return textOK(mergepipeline.RenderViewText(v) + renderConflictConfirmationText(v.ConflictConfirmation)), nil
+}
+
+// renderConflictConfirmationText is the conflict_confirmation block of the
+// plain-language status read: the mode, how many first proposals need
+// confirmation, how many are counted and how many remain. A counter that could
+// not be read shows as unknown, with the reason.
+func renderConflictConfirmationText(c mergepipeline.ConflictConfirmationView) string {
+	count := func(p *int) string {
+		if p == nil {
+			return "unknown"
+		}
+		return fmt.Sprintf("%d", *p)
+	}
+	enabled := "no"
+	if c.Enabled {
+		enabled = "yes"
+	}
+	mode := c.Mode
+	if mode == "" {
+		mode = "-"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nConflict confirmation: mode %s, confirm first %d, counted %s, remaining %s, enabled %s",
+		mode, c.ConfirmFirstN, count(c.Counted), count(c.Remaining), enabled)
+	if c.Error != "" {
+		fmt.Fprintf(&b, " (%s)", c.Error)
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 // postShipDetail reads the post-ship hook block from the daemon's settings
@@ -357,7 +386,8 @@ func (s *Server) handleAutonomousMergePipelineValidate(_ context.Context, req mc
 // The release approval fields are dotted in the daemon (release_approval.<size>),
 // so mergePipelineConfigKey maps their underscore argument names to that form.
 var mergePipelineConfigFields = []string{
-	"file_name", "source_order", "fallback_on_bad_file", "conflict_policy", "conflict_model", "version_files",
+	"file_name", "source_order", "fallback_on_bad_file", "conflict_policy", "conflict_model",
+	"conflict_mode", "conflict_confirm_first_n", "version_files",
 	"release_size_map", "major_trigger", "release_cadence", "version_scheme",
 	"release_approval_patch", "release_approval_minor", "release_approval_major",
 }
@@ -385,6 +415,8 @@ func mergePipelineConfigOptions() []mcpsdk.ToolOption {
 		mcpsdk.WithString("merge_pipeline_fallback_on_bad_file", mcpsdk.Description("autonomous.merge_pipeline.fallback_on_bad_file — what happens when the repository file is unusable; the daemon names the valid values in its refusal")),
 		mcpsdk.WithString("merge_pipeline_conflict_policy", mcpsdk.Description("autonomous.merge_pipeline.conflict_policy — what a merge does on a conflict; the daemon names the valid policies in its refusal")),
 		mcpsdk.WithString("merge_pipeline_conflict_model", mcpsdk.Description("autonomous.merge_pipeline.conflict_model — the model that proposes conflict resolutions, a name from the LLM registry; empty means none")),
+		mcpsdk.WithString("merge_pipeline_conflict_mode", mcpsdk.Enum("shadow", "on"), mcpsdk.Description("autonomous.merge_pipeline.conflict_mode — what a model-resolved conflict proposal that passes the gate does: shadow (the default; recorded only, not applied) or on (applied to the merge). Empty clears the project back to the global value or shadow.")),
+		mcpsdk.WithNumber("merge_pipeline_conflict_confirm_first_n", mcpsdk.Description("autonomous.merge_pipeline.conflict_confirm_first_n — how many of a project's first model-resolved conflicts need operator confirmation before they count as resolved; a whole number, 0 or more (default 5; 0 turns confirmation off). Takes effect only when conflict_mode is on.")),
 		mcpsdk.WithArray("merge_pipeline_version_files", mcpsdk.Description("autonomous.merge_pipeline.version_files — files that hold the version, relative to the project. The value replaces the whole list."), mcpsdk.WithStringItems()),
 		mcpsdk.WithString("merge_pipeline_release_size_map", mcpsdk.Description("autonomous.merge_pipeline.release_size_map — the release size each Automaton kind adds, as kind=size pairs such as feature=minor,bug=patch, or a JSON object. Sizes are patch, minor, major or none; the pairs add to or override the built-in map (feature minor, bug patch). An empty value adds nothing.")),
 		mcpsdk.WithString("merge_pipeline_major_trigger", mcpsdk.Enum("manual", "milestone", "never"), mcpsdk.Description("autonomous.merge_pipeline.major_trigger — when a major release step is raised: manual (the default, only when the operator names it), milestone (when the Automation the Automaton belongs to is a completed milestone) or never")),

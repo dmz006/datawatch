@@ -161,7 +161,7 @@ func TestMergePipelineComm_VerbAndConfigureKeysListed(t *testing.T) {
 		t.Errorf("verbs: %v", v)
 	}
 	keys := MergePipelineConfigureKeys()
-	if len(keys) != 20 {
+	if len(keys) != 22 {
 		t.Errorf("keys: %v", keys)
 	}
 	for _, want := range []string{
