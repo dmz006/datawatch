@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.130.0 — Automata Events sub-tab
+
+### Added
+- Automata Events sub-tab: kind chips (watch, decision, retry, check, cleanup, alert, error) send `kind=`, a project dropdown sends `project=`, a debounced search box sends `q=`, and Load more follows `next_cursor` with `before=`.
+
 ## v9.129.0 — Standard task list shows each task's real mode
 
 - **The daemon task-mode Settings help no longer says the daemon never runs `final_gate`.** In all five locales, `settings_daemon_task_modes_help` now says what actually happens: `final_gate` takes only `llm` or `off`, and when on it is carried out by the daemon's script gate, not by a model session. The **Standard task runner** glossary entry was re-checked against the PWA code at the same time — the Automata sub-tab still draws no runner column, so that entry stays as written. Copy change only.
