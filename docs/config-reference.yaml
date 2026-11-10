@@ -4075,7 +4075,8 @@ autonomous:
   # (read-only) and version_bump_left_to_merge (a note, never an edit) —
   # written to hold two hard properties for every feature
   # name: no blocking decompose-lint finding, and no hosting-CLI side
-  # effects. Each standard task runs in the `model session` mode.
+  # effects. Each standard task runs in its own mode (llm, daemon or off),
+  # set per template in the `mode` map below; see the howto.
   # Your templates are the ceiling over it: same id replaces the
   # built-in at its position, new id appends. Template ids must be
   # well-shaped ([a-z0-9_.-]+) and unique — the daemon validates before

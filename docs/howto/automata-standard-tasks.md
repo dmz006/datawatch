@@ -6,7 +6,7 @@ exec_params:
   - {name: project, required: false, description: "Project directory or alias: shows the standard-task list as that project sees it (its override applied)"}
 exec_steps:
   - tool: autonomous_standard_tasks
-    description: List the standard tasks the decomposer appends to a story (id, title, kind, enabled, mode) — a read, writes nothing
+    description: List the standard tasks the decomposer appends to a story (id, title, kind, enabled, mode, runner) — a read, writes nothing
     args: {}
   - tool: autonomous_config_get
     description: Read the autonomous config, including the autonomous.task_templates block (enabled and the per-project overrides)
@@ -39,7 +39,9 @@ When a story is decomposed:
 1. The planner writes the story's tasks.
 2. The decomposer checks the story against the standard-task pack.
 3. Each standard task the planner did not already produce is appended to the story as a
-   new task, in the `model session` mode. A model session does the work like any other task.
+   new task. Its **mode** decides who carries it out: `llm` (a model session, like any
+   other task), `daemon` (the daemon completes it with no model session) or `off` (it is
+   not appended at all). See [Mode: who runs each task](#mode-who-runs-each-task).
 4. Applying is **idempotent**. A task an earlier apply already added is detected and never
    added twice. The detection uses the `template:<id>` marker in the task title or spec,
    and it also matches a planner task whose title closely resembles the standard task.
@@ -52,17 +54,17 @@ Standard tasks are applied in the `shadow` and `enforce` decompose-lint modes. W
 The built-in pack holds six standard tasks. Each one is written to avoid blocking
 decompose-lint findings and to have no side effects on the hosting CLI.
 
-| Standard-task id | What it adds | Kind |
-|---|---|---|
-| `changelog_entry` | A changelog entry for the feature in `CHANGELOG.md` | `docs` |
-| `parity_issue_draft` | A parity-gap draft file under `docs/plans/parity-issues/`. It is a file write only, never a tracker call | `docs` |
-| `docs_set` | The feature's docs brought into shape, over the story's own files | `docs` |
-| `bounded_load_step` | The bounded load-step rule for a load step the plan names. The rule itself is in [Orphan reaping and host load](automata-orphan-reaping.md) | `note` |
-| `final_gate` | A **read-only** closing task: the build is clean, tests pass and the files hang together. It writes the gate report to `.datawatch/reports/` | `final_gate` |
-| `version_bump_left_to_merge` | A plain note that the version is the next patch above main, resolved at merge. It never edits a file | `note` |
+| Standard-task id | What it adds | Kind | Default mode |
+|---|---|---|---|
+| `changelog_entry` | A changelog entry for the feature in `CHANGELOG.md` | `docs` | `daemon` |
+| `parity_issue_draft` | A parity-gap draft file under `docs/plans/parity-issues/`. It is a file write only, never a tracker call | `docs` | `daemon` |
+| `docs_set` | The feature's docs brought into shape, over the story's own files | `docs` | `llm` |
+| `bounded_load_step` | The bounded load-step rule for a load step the plan names. The rule itself is in [Orphan reaping and host load](automata-orphan-reaping.md) | `note` | `daemon` |
+| `final_gate` | A **read-only** closing task: the build is clean, tests pass and the files hang together. The daemon's script gate runs it and writes the gate report to `.datawatch/reports/` | `final_gate` | `llm` |
+| `version_bump_left_to_merge` | A plain note that the version is the next patch above main, resolved at merge. It never edits a file | `note` | `daemon` |
 
 Each standard task has an `id`, a `title`, a `kind`, a `summary`, an `offered_when`
-condition and an effective `enabled` flag. Standard tasks take slots: `{{feature}}`,
+condition, an effective `enabled` flag, a `mode` and a `runner`. Standard tasks take slots: `{{feature}}`,
 `{{files}}` and `{{files_list}}` are filled from the feature name and the union of the
 story's task files.
 
@@ -96,12 +98,72 @@ autonomous:
 Your own entries in `autonomous.task_templates.templates` overlay the built-in pack. A
 new id appends a standard task, and the same id replaces the built-in one.
 
-### Mode setting: not yet available
+## Mode: who runs each task
 
-Each standard task runs in the `model session` mode. A per-task or per-project **mode**
-setting, which would let you choose another mode, is **not yet available**. Every
-standard task reports `mode: model session` on every read, and there is no setting that
-changes it.
+Each standard task has a **mode**, set per template in `autonomous.task_templates.mode`
+(a map of template id → mode). The mode says who carries the task out:
+
+| Mode | Meaning |
+|---|---|
+| `llm` | A worker session runs the task as a normal task, verifier included. For `final_gate` the daemon's script gate performs it instead, so no session is spent |
+| `daemon` | The daemon performs the task itself and completes it with no model session, no verifier and no retry loop |
+| `off` | The task is not appended to the story at all. For `final_gate`, `off` means the story has no closing gate |
+
+```yaml
+autonomous:
+  task_templates:
+    mode:
+      docs_set: llm            # the default; a worker session writes the docs
+      changelog_entry: llm     # send the changelog entry through a session instead
+      final_gate: off          # no closing gate on any story
+```
+
+- **Defaults.** `changelog_entry`, `parity_issue_draft`, `bounded_load_step` and
+  `version_bump_left_to_merge` default to `daemon`. `docs_set` and `final_gate` default
+  to `llm`. An id you do not list keeps its default; an id outside the built-in pack
+  defaults to `llm`.
+- **Which modes each id accepts.** `daemon` is accepted only for `changelog_entry`,
+  `parity_issue_draft`, `bounded_load_step` and `version_bump_left_to_merge`. `final_gate`
+  takes `llm` or `off` only, because it is a read-only gate. Any other value, or `daemon`
+  on `final_gate` or `docs_set`, is a validation error and nothing is stored.
+- **Global only.** The mode map is not per project. The per-project `projects` map only
+  turns standard-task application on or off for a project.
+
+### How to set a mode
+
+| Method | How |
+|---|---|
+| **Web UI** | Settings → the autonomous card → the per-template **Standard task modes** select. It merges one mode onto the stored map |
+| **CLI** | `datawatch config set autonomous.task_templates.mode.<id> <mode>` |
+| **Comm channel** | `configure autonomous.task_templates.mode.<id>=<mode>` |
+| **REST** | `PUT /api/config` with the dotted key `autonomous.task_templates.mode.<id>` |
+| **MCP** | `autonomous_config_set` with the `task_templates_mode` argument, for example `changelog_entry=llm,final_gate=off` |
+| **YAML** | The `autonomous.task_templates.mode` block in `~/.datawatch/config.yaml` |
+
+The per-template keys **merge** one mode onto the stored map. The decompose-lint config
+surface (REST `PUT /api/autonomous/decompose-lint/config`, its MCP tool, and the
+decompose-lint card) **replaces the whole `task_templates` block** when it is sent. If you
+write through that surface, read the live config, change the `mode` map in the returned
+block, and write the whole block back. See
+[Decompose lint, standard tasks and guidance](automaton-decompose-lint.md).
+
+### The runner column
+
+The list reports two fields that describe how a task runs. `mode` is the setting above.
+`runner` names what actually carries the task out, as the daemon resolves it:
+
+| `mode` | `runner` | Who does it |
+|---|---|---|
+| `llm` | `session` | A model session |
+| `llm` on `final_gate` | `script gate` | The daemon's script gate, with no session |
+| `daemon` | `daemon` | The daemon, with no session |
+| `off` | `none` | Nothing. The task is not appended |
+
+So `final_gate` with `mode: llm` shows `runner: script gate`, not `session`.
+
+For the daemon-mode behaviour itself (what a changelog or parity draft writes, and the
+script gate's checks and time cap), see
+[daemon task modes and the script gate](automaton-daemon-task-modes.md).
 
 ## Reading the standard-task list
 
@@ -112,21 +174,24 @@ project.
 | Method | How |
 |---|---|
 | **YAML** | Edit `~/.datawatch/config.yaml` → `autonomous.task_templates` (the `enabled` switch and the `projects` overrides) |
-| **CLI** | `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`. A table of `ID TITLE KIND ENABLED MODE`; `--json` prints the raw body |
+| **CLI** | `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`. A table of `ID TITLE KIND ENABLED MODE RUNNER`; `--json` prints the raw body |
 | **Web UI** | Automata page → the **Templates** tab (labelled **Automaton templates** in the current UI) → **Standard tasks** sub-tab. A read-only table; your sub-tab choice is remembered |
-| **REST API** | `GET /api/autonomous/standard-tasks` with an optional `?project=<dir-or-alias>`. The body is `{enabled, tasks[]}`. Any other method returns 405. The config itself is read and written through `GET` and `PUT /api/config` |
-| **MCP** | The `autonomous_standard_tasks` tool, with an optional `project` argument. The switches are read and written with `autonomous_config_get` and `autonomous_config_set` |
-| **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode`. An empty list replies "no standard tasks are defined." |
+| **REST API** | `GET /api/autonomous/standard-tasks` with an optional `?project=<dir-or-alias>`. The body is `{enabled, tasks[]}`, and each row carries `mode` and `runner`. Any other method returns 405. The config itself is read and written through `GET` and `PUT /api/config` |
+| **MCP** | The `autonomous_standard_tasks` tool, with an optional `project` argument. Each row carries `mode` and `runner`. The switches are read and written with `autonomous_config_get` and `autonomous_config_set` |
+| **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode \| runner`. An empty list replies "no standard tasks are defined." |
 
-All of these render the same listing, so they always agree.
+All of these render the same listing, so they always agree. The fixture that pins
+them is `testdata/standard-tasks/expected.json`.
 
 ### What the web sub-tab shows
 
 The **Standard tasks** sub-tab is read-only. It loads the same body as
 `GET /api/autonomous/standard-tasks` and draws one row per task: **title**,
 **kind**, **summary**, **when it is offered** (the `offered_when` text),
-**on or off**, and **mode** (always `model session` — a note under the table says
-the mode is fixed for now and links back to this page).
+**on or off**, and **mode** (the task's real mode: `llm`, `daemon` or `off`). The
+sub-tab has **no runner column** yet, so use the CLI, REST, MCP or comm channel to see
+the runner. A note under the table still says the mode is fixed to `model session`; that
+wording is out of date (see [Open items](#open-items-to-check)).
 
 - **Empty state.** When there are no tasks to show, the sub-tab says what standard
   tasks are — the tasks the decomposer adds to every story, added when
@@ -170,8 +235,14 @@ action both use it.
 Flagged here so an operator looking at the web tab knows what it does **not** have
 yet:
 
-- **Mode setting.** The per-task/per-project mode choice is not available yet; every
-  standard task runs in the `model session` mode (see the section above).
+- **Web note says the mode is fixed.** The web sub-tab's note still reads "The mode is
+  fixed to model session for now". That is out of date: the mode is set per template (see
+  [Mode: who runs each task](#mode-who-runs-each-task)). The note text is in
+  `internal/server/web/locales/en.json` (`automata_std_mode_note`), and its test
+  (`app-automation-standard-tasks.test.js`) asserts the old wording. Operator review needed.
+- **No runner column in the web tab.** The sub-tab shows `mode` but not `runner`, so a
+  `final_gate` on `llm` looks like a session task there. Read `runner` on the CLI, REST,
+  MCP or comm channel.
 - **No per-project selection in the web tab.** The sub-tab reads the global list; the
   per-project resolved read (the `?project=` parameter) is on REST, MCP, CLI and the
   comm channel. If you rely on a project override, read the list with `--project`
@@ -189,5 +260,9 @@ yet:
   the resolved state. Check the decompose-lint mode too: with `off`, nothing is applied.
 - **You want a template to start a new Automaton.** That is an Automaton template. Open
   Automata → **Templates** → **Automaton templates**, not the **Standard tasks** sub-tab.
-- **You want to change how a standard task runs.** The mode is fixed at `model session`
-  for now. The mode setting is not yet available.
+- **You want to change how a standard task runs.** Set its mode with
+  `autonomous.task_templates.mode.<id>` (see [Mode: who runs each task](#mode-who-runs-each-task)).
+  Read `runner` afterwards to confirm what carries it out.
+- **A `daemon` or `off` value is refused.** `daemon` is accepted only for the four
+  daemon-capable ids, and `final_gate` takes `llm` or `off` only. The write fails with a
+  validation error and stores nothing.
