@@ -7,9 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- **Partial: config key `autonomous.verifier_max_run_seconds` added; the verifier run cap is not enforced yet.** The key is read from the config file and defaults to 2700 seconds (45 minutes). An explicit `0` is accepted and kept as written. A negative value is refused when the config loads, with an error that names the key.
-  - **How it shows up:** the key is validated at load, but no runtime code reads it. Verifier runs are not stopped at the configured value, so a verifier can still run for hours. The enforcement that ends a verifier at the cap is a follow-up and is not in this release.
-  - **Migration:** none. The default applies on upgrade and no config change is needed. Setting the key has no effect on verifier run time until the follow-up ships.
+- **New setting `autonomous.verifier_max_run_seconds`, validated when the config loads.** The key is read from the config file and defaults to 2700 seconds (45 minutes). An explicit `0` is accepted and kept as written (it is not replaced by the default). A negative value is refused when the config loads, with an error that names the key.
+  - **How it shows up:** a config file with a negative value fails to load with an error naming `autonomous.verifier_max_run_seconds`; any other value loads as written. This entry covers only the setting and its validation; enforcement, the settings surfaces and the stats arrive in later entries of the same change.
+  - **Migration:** none. The default applies on upgrade and no config change is needed.
 
 ## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
 
