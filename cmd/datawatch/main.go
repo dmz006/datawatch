@@ -11931,6 +11931,7 @@ func newConfigSetCmd() *cobra.Command {
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
+			"Verifier run cap key: autonomous.verifier_max_run_seconds (whole seconds >= 0; 0 = no cap; a negative or non-whole value is refused).\n\n" +
 			"Memory ceiling keys: resource_limits.memory_share_percent (1 to 100), " +
 			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).\n\n" +
 			"Platform context keys: platform_context.enabled (true|false; default true) turns the platform context " +
@@ -11971,8 +11972,37 @@ func newConfigGetCmd() *cobra.Command {
 	}
 }
 
+// verifierRunCapConfigKey is the dotted key that caps one verifier session's
+// wall-clock length. runConfigSet refuses bad values for it before any request.
+const verifierRunCapConfigKey = "autonomous.verifier_max_run_seconds"
+
+// parseVerifierRunCapValue accepts a whole, non-negative number of seconds
+// (0 = no cap). A negative value is refused by config.ValidateVerifierRunCapSeconds;
+// any other non-whole text is refused here. Both errors name the key.
+func parseVerifierRunCapValue(value string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a whole number of seconds (0 = no cap), got %q", verifierRunCapConfigKey, value)
+	}
+	if err := config.ValidateVerifierRunCapSeconds(n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func runConfigSet(cfg *config.Config, key, value string) error {
 	url := loopbackBaseURL(cfg) + "/api/config"
+	if key == verifierRunCapConfigKey {
+		n, err := parseVerifierRunCapValue(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		if err := putConfig(url, cfg.Server.Token, fmt.Sprintf(`{"%s": %d}`, key, n)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %d\n", key, n)
+		return nil
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and
