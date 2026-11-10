@@ -6382,19 +6382,44 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				outputFile := filepath.Join(taskDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
 				deliverPrompt := autonomouspkg.JudgePromptForDelivery(taskDir, task.ID+"-verify", vbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
 				sessionTask := sessionJudgmentTask(deliverPrompt, taskDir, outputFile)
-				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
-					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode,
-					launchTagsForVerify(prd.ID, task.StoryID))
+				// A session ended at the run cap is retried exactly once on the
+				// next backend in the verifier policy order; the retry backend
+				// runs on its registry default model (or the pi-family guard).
+				// Only the first backend keeps the lease's node.
+				content, serr := runVerifierSessionWithRunCapRetry(
+					effectiveVerifierPolicy(liveCfg).EffectiveBackends(vpool, vglobalBackend), vbackend, verifyModel,
+					func(backend, model string) (string, error) {
+						node := vnode
+						if backend != vbackend {
+							node = ""
+						}
+						return runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, backend, model,
+							mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
+							"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), node,
+							launchTagsForVerify(prd.ID, task.StoryID))
+					},
+					func(backend string) (string, bool) {
+						if resolveAskBackend == nil {
+							return "", true
+						}
+						kind, model, rerr := resolveAskBackend(backend)
+						if rerr != nil {
+							return "", false
+						}
+						if isPiFamilyKind(kind) && model == "" {
+							m, setup := guardPiFamilyVerifyModel(backend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)
+							if setup != nil || m == "" {
+								return "", false
+							}
+							return m, true
+						}
+						return model, true
+					})
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
-					return autonomouspkg.VerificationResult{
-						OK: false, Severity: "medium",
-						Summary:    "verifier(session): " + serr.Error(),
-						VerifiedAt: time.Now(),
-						Category:   "infra",
-					}, nil
+					// A run-cap end lands here too, as infra.
+					return verifierSessionInfraResult(serr), nil
 				}
 				var parsed autonomouspkg.VerificationResult
 				if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A verifier session that hits the run cap is retried once on the next backend.** When `autonomous.verifier_max_run_seconds` ends a verifier session, the verification runs once more on the next backend in the verifier policy order. A second cap end is not retried; the result is the normal verifier infra result, never a content failure. A single-backend list gets no retry and is recorded as infra.
+  - **How it shows up:** a cap end appears in the daemon log as a retry line naming both backends; the verdict of a cut run is never a content block.
+  - **Migration:** none.
+
 ### Added
 
 - **New setting `autonomous.verifier_max_run_seconds`, validated when the config loads.** The key is read from the config file and defaults to 2700 seconds (45 minutes). An explicit `0` is accepted and kept as written (it is not replaced by the default). A negative value is refused when the config loads, with an error that names the key.

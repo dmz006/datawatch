@@ -19,7 +19,8 @@ func TestB124_AutonomousVerify_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		{"passes session-kind check", "verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)"},
 		{"branches on useSession", "if useSession {"},
 		{"enforces the pi-family pinned-model guard (v9.10.19)", "guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)"},
-		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,"},
+		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, backend, model,"},
+		{"retries a run-cap end once through the retry helper", "runVerifierSessionWithRunCapRetry("},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, taskDir, outputFile)"},
 	}
 	for _, c := range checks {
