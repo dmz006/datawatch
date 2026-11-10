@@ -232,3 +232,8 @@ answered in the UI (missing context, a choice that needs a free-text value) says
 holds for every object kind added by the migration, including products.
 Practice from now on: the supervisor raises design questions in the questions interface, with a forced default and a
 recommendation, and reads the answers back from there. Plain-text answers in chat are still accepted.
+
+## Answers given in the questions interface (operator, 2026-11-10)
+
+Product record (option "Core set plus its own roadmap and release plan"): "The timeline and release plan is more of a higher level architecture plan that would feed into each project so say we have a timeline of a 11 netto release that would be a project within the the plant the product and then that would then have its own timeline which would then coordinate back to the 11 netto timeline that the product would see so there's a relationship For each of them, but they need to have those tracked at the high level. Does that make sense?"
+Reading: a product has its own roadmap and release plan, written at the architecture level. A release on that plan (for example the 11.0 release; "netto" is as heard, read as the version name) is itself a project inside the product. That project has its own timeline, and its timeline coordinates back to the product's release timeline, so the product sees each project's timeline against the release it feeds. Both levels are tracked, and the relation between them is explicit. Confirming question for the operator: yes, that is how it is read; asked in the questions interface.

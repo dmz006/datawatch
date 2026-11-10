@@ -247,3 +247,8 @@ Plan: the content was copied to the supervisor scratch folder (pack-seed) for se
 Operator, 2026-11-10, on the peer silence alert default (5 minutes): "A, but configurable" (keep 5 minutes; it is already a setting, observer.peers.silent_alert_minutes, on every surface; 0 disables).
 
 Operator answer on the Projects tab empty lines (2026-11-10): "It should default to none showing but have a flag they can check that would show them. That way we can make sure nothing is being missed and can go browse things as we need." (option A with a show-empty control, off by default.) Drafted as the Automaton "Hide the empty lines on the Projects tab by default and add a flag that shows them" (draft, not yet decomposed). The operator also asked whether design questions are available in the datawatch questions interface so they can be answered in the UI.
+
+Operator answers in the questions interface (2026-11-10):
+- Worker profile tiers: "Yes, in two steps" with: "I want to be staging this stuff out so we can test it and iterate and make it better so that when Tendido comes out we've actually tested these some." ("Tendido" as heard, read as 10.0.) Staged rollout before 10.0. Note: the built-in defaults already put the planner on full, workers, verifiers and docs on digest, and judge and note tasks on minimal; the howto's rollout steps start with the docs kind on minimal. The profile launch wiring (released after the running daemon was built) is not active until the daemon is redeployed, so step 1 cannot be set until the deploy.
+- Branch refresh: "Draft an Automaton for it" (no text). Drafted.
+- Watch interval, product record: recorded in the supervisor-as-skills design and the plans proposal.
