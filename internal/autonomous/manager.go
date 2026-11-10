@@ -19,10 +19,10 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
-	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -1329,9 +1329,9 @@ type Manager struct {
 	// /api/autonomous/status, returned verbatim by the autonomous_status
 	// MCP tool). Guarded by mu. Nil = the check is not wired.
 	hostLoadStatusFn func() HostLoadStatus
-	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose                  DecomposeFn
-	guardrail                  GuardrailFn
+	templates        *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose        DecomposeFn
+	guardrail        GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
 	guardrailClassify *guardrailClassify
 	// scopeBreadth is the scope-breadth classifier call site (nil = off).

@@ -1825,11 +1825,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
 				RetryHint:        retryHint,
-				ProjectProfile:   snapProjectProfile,               // v5.26.19
-				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
-				Branch:           snapGit.Branch,                   // BL407 Phase 4
-				Git:              snapAutoCommits && !readOnly,     // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,                   // BL244
+				ProjectProfile:   snapProjectProfile,           // v5.26.19
+				ClusterProfile:   prd.ClusterProfile,           // v5.26.19
+				Branch:           snapGit.Branch,               // BL407 Phase 4
+				Git:              snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:   contextPrepend,               // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
 				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
