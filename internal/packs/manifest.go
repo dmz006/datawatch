@@ -40,6 +40,10 @@ type Pack struct {
 	Tasks       []Task   `yaml:"tasks"`
 	Templates   []string `yaml:"templates"`
 	Inputs      []Input  `yaml:"inputs"`
+	// Digest is the content digest LoadPackFolder computes over the pack
+	// folder's files in sorted order; it is set by the loader, never read
+	// from pack.yaml.
+	Digest string `yaml:"-"`
 }
 
 // Task is one standard task a pack contributes.
