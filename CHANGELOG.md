@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.127.0 — Projects tab
+
+### Added
+
+- **Projects tab how-to and reference.** New `docs/howto/projects-tab.md` walks through picking a project, reading its page, and setting its record: arcs with priority and state, target and definition of done, lane defaults, weekly share and branch retention, with REST, MCP, CLI and comm-channel calls for each step. Adds the `projects_defaults` block (`branch_retention_days`, `weekly_share_percent`, `major_trigger`) to `docs/config-reference.yaml`, glossary entries, and the arc and record endpoints to the OpenAPI specs (`PUT /api/projects/{name}/arcs`, `GET`/`DELETE /api/projects/{name}`, the record fields on `POST /api/projects`). The served OpenAPI copy also had malformed description scalars that stopped it parsing; they are quoted. Documentation only. Weekly share, branch retention and the project's major trigger are stored and shown; no scheduler, cleanup or release decision reads them yet.
+
+- **Project links (PWA).** The project page adds read-only sections: the effective project policy (from `GET /api/projects/{name}/policy/effective`, each value with its source, linking to the Settings policy card), the merge pipeline in effect (from `GET /api/autonomous/merge-pipeline?project=`, linking to the merge pipeline Settings), and the project's event stream (from `GET /api/autonomous/events` with `project=`). Each arc shows its plan and design document links and its linked datawatch-app issues from the arc record; only http(s) values become links. Nothing in these sections has an edit control. The arc record does not yet carry plan, design or issue fields, so those lines read "none recorded" until the record gains them. The event stream reads the `pwa` pending-events queue, which no subscription in this tree creates yet, so it stays empty until one feeds that queue.
+
+- **Project Gantt (PWA).** The project page draws a Gantt from the history endpoint's rows: one bar per Automaton and one per task, coloured by state with the same colours as the dashboard Timeline. A window selector shows the last 7, 30 or 90 days; bars still running run to now. At most 40 rows are drawn, newest Automata first, and a note says how many were left out. Covered by `app-projects-gantt.test.js`.
+
+- **Project page (PWA).** Selecting a project shows its header (description, owner, repository, default branch, target and definition of done, lane and backend defaults, weekly share) and its arcs from the project roll-up, in priority order with each arc's state. Each arc expands to its Automata and their sessions; rows open the existing Automaton and session views. A header field, arc or section that is off or empty is left out, and its line appears under Events on the page instead. The roll-up is read only for the selected project.
+
+- **Projects tab (PWA).** A top-level Projects nav button opens a picker fed by `GET /api/projects`. The first entry, Overview, is the cross-project in-flight view; each other entry shows that project's directory, default backend and description. The last choice is remembered in the browser and mirrored in the `#projects` / `#projects/<name>` hash. With no projects the tab points at Settings. Covered by `app-projects-nav.test.js`.
+
+- **Project roll-up read.** `GET /api/projects/{name}/rollup` reports each arc of a project and the whole project: the Automata each arc's Automation holds (with their session ids), task progress as done/total, cost in usage points and throughput per day over a `window` (days, 1–365, default 7). Automata of the project that no arc holds are listed as `unassigned`. Points come from the cost report's billing-profile point calibration; API dollars are never shown. No new storage. Contract in `docs/api/openapi.yaml`.
+
 ## v9.126.0 — Merge shadow mode
 
 ### Added
