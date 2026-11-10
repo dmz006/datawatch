@@ -4613,6 +4613,13 @@
   "settings_secrets_vault_unreachable_alert_after_seconds_help": "Secondes pendant lesquelles le backend Vault peut rester injoignable avant que datawatch ne déclenche une alerte. Valeur par défaut 120 ; 0 désactive l'alerte.",
   "dash_card_off_events_reason": "Aucun événement de travail en arrière-plan ou de session pour l'instant — cette carte se remplit dès que du travail s'exécute.",
   "dash_card_off_events_link": "Référence des cartes du tableau de bord",
+  "dash_card_off_heatmap_reason": "Aucun Automates terminé ou livré au cours des 30 derniers jours — le mois se remplit au fil du travail.",
+  "dash_card_off_heatmap_link": "Référence des cartes du tableau de bord",
+  "dash_heatmap_tip_completed": "Automates terminés à cette date : %1$d",
+  "dash_heatmap_tip_shipped": "Livrés : %1$d",
+  "dash_heatmap_tip_release": "Release : %1$s",
+  "dash_heatmap_tip_none": "Aucune activité enregistrée",
+  "dash_heatmap_total": "%1$d livrés · %2$d releases · %3$d derniers jours",
   "dash_card_off_gantt_reason": "Aucune tâche d'automates n'a tourné au cours des 6 dernières heures : sa barre apparaîtra ici dès qu'une démarre.",
   "dash_card_off_gantt_link": "Référence des cartes du tableau de bord",
   "dash_card_events_purpose": "Événements les plus récents du travail en arrière-plan et des sessions."
