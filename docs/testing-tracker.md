@@ -9,6 +9,19 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Session summary and list rows — an empty system tag list is sent as an empty array — next patch above main
+
+The changed response contract: a Sessions summary row and a legacy session list row now always carry `system_tags`, and an empty system tag list is sent as an empty array (`"system_tags": []`) instead of leaving the field out. The web client already treats an absent `system_tags` as "keep the held placement chips" and an explicit empty array as "remove them", so the two cases are now distinguishable on the wire. Automata and Automaton rows are unchanged.
+
+Both validation levels are listed. Every row is Tested by Go and Node tests run on 2026-11-11 (Go, linux/amd64; Node 24.x), with `env -u TMUX -u TMUX_TMPDIR` set, using `httptest` and a sandboxed DOM only — no daemon was started, no operator configuration touched. **Validated is No on every row: a live check (a real daemon, with a session that has no system tags, and an open Sessions page) is still owed.**
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Handler: summary rows and legacy list rows send `system_tags` as an empty array | `TestSessionSummaryRowSendsEmptySystemTags`, `TestSessionListRecordSendsEmptySystemTags` | `env -u TMUX -u TMUX_TMPDIR go test ./internal/server/ -count=1 -run 'SendsEmptySystemTags'` | A session with no system tags yields a row whose JSON has the `system_tags` key set to `[]` (an empty, non-nil list), in both the summary row and the legacy list row; a row with system tags still lists them unchanged. | Unit (httptest) | **Yes** (`internal/server/session_summary_row_empty_system_tags_test.go`) | Pass | **No** — live check pending | |
+| PWA: an explicit empty `system_tags` removes the placement chip, an absent one keeps it | `a session_state push with system_tags set to an empty array removes the system chip`, `a later session_state push without system_tags keeps the system chip` | `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-session-tags-first-load.test.js`; sandboxed DOM, no network, no daemon | The Sessions page drops the system chip when a push carries `system_tags: []` and keeps the held chip when the field is absent, which is why the server must send the empty array. | Node | **Yes** (`internal/server/web/app-session-tags-first-load.test.js`) | Pass | **No** — live check pending | |
+
+---
+
 ## Per-plugin token usage listing — the secrets a plugin references and the service's minted token names — next patch above main
 
 The operator lists, per service plugin, the secrets its manifest references and the manifest fields that carry them, whether each exists in the store, and the names and creation times of the service tokens minted for that service. Operator token only; the response never carries a secret value or a token value.
