@@ -19425,6 +19425,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.repo_ci_watch.hung_after_minutes', label: 'Repo CI watch hung threshold (minutes pending before a run is hung, default 60)', labelKey: 'settings_repo_ci_watch_hung_after_minutes', type: 'number', placeholder: '60', min: 1, step: 5, default: '60' },
     { key: 'autonomous.automation.repo_ci_watch.security_workflows', label: 'Repo CI watch security workflows (comma-separated workflow names, empty list = none watched)', labelKey: 'settings_repo_ci_watch_security_workflows', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.repo_ci_watch.delete_superseded', label: 'Repo CI watch superseded runs (report | delete, default report)', labelKey: 'settings_repo_ci_watch_delete_superseded', type: 'select', options: ['report', 'delete'], default: 'report' },
+    // Dependency update (autonomous.automation.dependency_update.*) — the
+    // scheduled dependency update switch, its schedule and the cap on
+    // major-version updates per run.
+    { key: 'autonomous.automation.dependency_update.enabled', label: 'Dependency update enabled', labelKey: 'settings_dependency_update_enabled', helpKey: 'settings_dependency_update_enabled_help', helpDocs: 'howto/automation-dependency-update.md', type: 'toggle', default: true },
+    { key: 'autonomous.automation.dependency_update.schedule', label: 'Dependency update schedule', labelKey: 'settings_dependency_update_schedule', helpKey: 'settings_dependency_update_schedule_help', helpDocs: 'howto/automation-dependency-update.md', type: 'text', placeholder: 'monday 05:00' },
+    { key: 'autonomous.automation.dependency_update.max_majors', label: 'Dependency update major-version cap', labelKey: 'settings_dependency_update_max_majors', helpKey: 'settings_dependency_update_max_majors_help', helpDocs: 'howto/automation-dependency-update.md', type: 'number', placeholder: '5', min: 0, max: 20, step: 1, default: '5' },
     // Security failure (autonomous.automation.security_failure.mode) — the
     // security-failure handling switch (off, shadow, on); an unset or
     // empty value reads shadow (the first-release default: the feature is
