@@ -6200,7 +6200,7 @@ Set them with `datawatch config set autonomous.automation.merge_pending_mode sha
 | MCP | `autonomous_merge` | `autonomous_safe_to_delete` |
 | CLI | `datawatch autonomous merge [--json]` | `datawatch autonomous safe-to-delete [--json]` |
 | Comm channel | `autonomous merge` | `autonomous safe-to-delete` |
-| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card on the Automation Housekeeping sub-tab, refreshed every 60 seconds; shows the computed-at time and a stale badge when the daemon marks the result stale |
+| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card under the event stream on the Automata Events sub-tab, refreshed every 60 seconds; shows the computed-at time and a stale badge when the daemon marks the result stale |
 | Mobile/wear | The same REST contract, documented in `docs/api/mobile-surface.md` | Same |
 
 Both reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The merge state is served from the daemon's last comparison, so a read never runs git and an Automaton not compared yet reads `unknown`. The full field documentation and JSON shapes are in `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*), and the walk-through for reading them is in `docs/howto/automation-tab.md`.
@@ -6246,7 +6246,7 @@ Set them with `datawatch config set autonomous.automation.cleanup_mode on`, `PUT
 | MCP | `autonomous_cleanup_status` |
 | CLI | `datawatch autonomous cleanup [--json]` |
 | Comm channel | `autonomous cleanup` |
-| PWA | **Cleanup** card on the Automation Housekeeping sub-tab, refreshed every 30 seconds |
+| PWA | **Cleanup** card under the event stream on the Automata Events sub-tab, refreshed every 30 seconds |
 | Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
 The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It serves the daemon's in-memory status, so a read never runs git or scans a disk; the status is also saved to `cleanup_status.json` beside the other autonomous stores so the last run survives a restart. Each pass reports its `mode`, `last_run`, `removed`, `would_remove`, `skipped`, `failed`, `bytes_freed`, `last_error` and the owner-versus-net split; the status adds the two disk readings, `disk_alert_percent`, `disk_alert` and `last_disk_alert_at`. The full field documentation is in `docs/api/openapi.yaml`.
@@ -6256,6 +6256,8 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 **What the cleanup never does.** It never removes a branch with commits that are not on the base branch, a worktree with uncommitted changes, anything belonging to a running or unfinished Automaton, a branch outside `automaton/`, or a path outside the daemon's own scratch files. It never uses `--force` or `-D`, never follows a symbolic link, and never touches anything in `off` mode.
 
 ---
+
+**Skipped by reason, permission errors and unlanded branches.** The worktrees pass of the cleanup status adds `skipped_by_reason` (a count per reason, with `permission_denied` for removals the file system refused) and one `permission_issue` record for those refusals: `count`, `paths`, a plain `why` (a build or test left read-only files), `fixable` (an affected folder still exists) and `hidden` (every affected folder is already gone, so there is nothing to do). The safe fix restores owner write permission only, inside the worktree base, never following links; it removes nothing. Separately, a read-only **unlanded work** review lists archived Automata whose `automaton/<id>` branch has commits not on the default branch (`landed`, `superseded` or `needs_decision`, compared by commit content), with the actions **Keep** (recorded in `unlanded-keep.json` in the state directory), **Archive branch** (moves it to `refs/archive/<branch>`) and **Delete worktree** (explicit confirm, git bundle backup under `<worktree base>/backups` written and verified before anything is removed). The uncommitted-work **diff** and **commit** work on one worktree inside the worktree base and stage exactly the listed files. Their surfaces: the **Unlanded work** card, the **Commit** button on the Housekeeping sub-tab and the **Fix permissions** button inside the Cleanup card on the Events sub-tab (REST `/api/autonomous/unlanded-work[/keep|/archive-branch|/delete-worktree]`, `/api/autonomous/uncommitted-work/diff` and `/commit`, `/api/autonomous/cleanup/fix-permissions`); the unlanded list also has the CLI `datawatch autonomous unlanded-work`, the comm verb `autonomous unlanded-work` and the read-only MCP tool `autonomous_unlanded_work`; `scripts/branch-audit.py` flags an archived branch with work not on main as `UNLANDED`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) and [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
 
 ## Automaton uncommitted-work check (a task is complete only when its work is committed)
 

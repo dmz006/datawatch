@@ -10203,6 +10203,10 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  // Housekeeping tab cards and actions.
+  unlanded_work_card: 'howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch',
+  uncommitted_work_commit: 'howto/automaton-uncommitted-work.md',
+  cleanup_permission_fix: 'howto/automaton-worktree-cleanup.md#skipped-by-reason-permission-errors-and-the-fix',
   // Checks and ship status cards (Automation Overview) and their Settings groups.
   checks_findings_card: DOCS_DEFINITIONS + '#checks',
   ship_status_card: DOCS_DEFINITIONS + '#ship-steps',
@@ -27556,6 +27560,8 @@ function switchAutomataTab(tab) {
   }
   st.selected.clear();
   if (prev === 'events' && tab !== 'events') automataEventsStatusStop();
+  // Leaving the Events sub-tab ends the polling of its card slots.
+  if (prev === 'events' && tab !== 'events') _automationSlotsStop('events');
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
@@ -27792,6 +27798,9 @@ function renderAutomataEventsPanel() {
       <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
       <span id="automataEventsMoreError" style="color:var(--error,#ef4444);font-size:12px;margin-left:8px;"></span>
     </div>
+    <div id="automataEventsCards" class="automata-events-cards" style="margin-top:12px;">
+      ${_automationSlotsHTML('events')}
+    </div>
   </div>`;
   const root = document.getElementById('automataEventsPanel');
   if (root && !root._eventsClickBound) {
@@ -27816,6 +27825,10 @@ function renderAutomataEventsPanel() {
   }
   automataEventsReload();
   automataEventsStatusStart();
+  // The cards registered for the Events sub-tab (the safe-to-delete report and
+  // the cleanup status) start their loaders now and end them when the tab is
+  // left (switchAutomataTab).
+  _automationSlotsMount('events');
 }
 
 // The Events tab hosts the status the operator reads: supervisor loop runs and
@@ -32483,7 +32496,8 @@ window.safeDeleteCardHtml = function(report) {
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
-// bytes_freed, last_error, owner_removed, net_removed, ...}, disk_alert_percent,
+// skipped_by_reason: {reason: count}, bytes_freed, last_error, owner_removed,
+// net_removed, ...}, disk_alert_percent,
 // worktree_disk, temp_disk: {path, percent, alert}, disk_alert,
 // last_disk_alert_at }. It is read-only: the mode and limits are changed in the
 // Automata settings. A missing or malformed body reads as a status that has
@@ -32509,6 +32523,14 @@ function _cleanupPassHtml(title, pass) {
       _cleanupLine(t('cleanup_counts', [n('removed'), n('would_remove'), n('skipped'), n('failed')])),
       _cleanupLine(t('cleanup_bytes_freed', [_cleanupBytesT(p.bytes_freed)])),
     );
+    // The entries the pass left in place, grouped by skip reason (for example
+    // commits_not_on_base 3, held 2), most frequent first.
+    const byReason = (p.skipped_by_reason && typeof p.skipped_by_reason === 'object') ? p.skipped_by_reason : {};
+    const reasons = Object.keys(byReason).filter(k => Number(byReason[k]) > 0)
+      .sort((a, b) => (Number(byReason[b]) - Number(byReason[a])) || a.localeCompare(b));
+    if (reasons.length) {
+      lines.push(_cleanupLine(t('cleanup_skipped_by_reason', [reasons.map(k => _cleanupSkipReasonText(k) + ' ' + Number(byReason[k])).join(', ')])));
+    }
   }
   lines.push(_cleanupLine(t('cleanup_split', [n('owner_removed'), n('net_removed')])));
   lines.push(p.last_error
@@ -32541,7 +32563,8 @@ window.cleanupCardHtml = function(status) {
     _cleanupPassHtml(t('cleanup_pass_worktrees'), s.worktrees) +
     _cleanupPassHtml(t('cleanup_pass_temp'), s.temp) +
     `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;"><span style="font-weight:600;color:var(--text2);">${escHtml(t('cleanup_disk_heading'))}</span>${badge}</div>` +
-    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div></div>`;
+    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div>` +
+    window.cleanupPermissionHtml(s) + `</div>`;
 };
 
 // ── Automata protected-paths card ────────────────────────────────────────────
@@ -32801,12 +32824,14 @@ function _uncommittedWorkEntryHtml(e) {
   if (entry.reason) lines.push(_cleanupLine(t('uncommitted_work_reason', [String(entry.reason)])));
   if (held) lines.push(_cleanupLine(t('uncommitted_work_held_since', [held])));
   const open = _uncommittedWorkQuestionButton(entry.question_id);
+  const commit = entry.worktree
+    ? `<button type="button" class="btn-secondary uncommitted-work-commit" data-worktree="${escHtml(String(entry.worktree))}" style="font-size:11px;padding:3px 10px;" onclick="window.uncommittedWorkCommitOpen(this)">${escHtml(t('uncommitted_work_commit'))}</button>` : '';
   return `<div class="uncommitted-work-row" data-kind="${isTask ? 'task' : 'worktree'}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
     `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(heading)}</div>` +
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', outside, 'uncommitted-work-outside') +
     lines.join('') +
-    (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+    ((open || commit) ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${open}${commit}</div>` : '') + `</div>`;
 }
 
 window.uncommittedWorkCardHtml = function(status) {
@@ -32859,6 +32884,154 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', _uncommittedWorkStrings(h.outside_scope), 'uncommitted-work-outside') +
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+};
+
+// ── Housekeeping actions: commit, unlanded work, permission fix ─────────────
+// _housekeepingPost sends one action and reports a failure as one line.
+function _housekeepingPost(path, body) {
+  return apiFetch(path, { method: 'POST', body: JSON.stringify(body || {}) });
+}
+function _housekeepingRefresh(keys) {
+  keys.forEach(k => { const c = window._listLoaders && window._listLoaders[k]; if (c && c.load) c.load(); });
+}
+function _housekeepingErr(key, err) {
+  const msg = String((err && err.message) || err || '').trim();
+  if (typeof showToast === 'function') showToast(t(key, [msg]), 'error');
+}
+
+// uncommittedWorkCommitOpen shows what a commit would record and a message
+// field, and commits only when the operator confirms.
+window.uncommittedWorkCommitOpen = function(btn) {
+  const wt = btn && btn.getAttribute ? btn.getAttribute('data-worktree') : '';
+  if (!wt) return;
+  const existing = document.getElementById('uncommittedCommitModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'uncommittedCommitModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal" style="max-width:720px;width:92vw;min-width:0;">
+    <div style="font-weight:600;margin-bottom:6px;">${escHtml(t('uncommitted_work_commit_title'))}${_housekeepingHelpLink('uncommitted_work_commit', 'uncommitted_work_commit_help_link')}</div>
+    <div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-bottom:6px;"><code>${escHtml(wt)}</code></div>
+    <pre id="uncommittedCommitDiff" style="max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 8px;">${escHtml(t('uncommitted_work_commit_diff_loading'))}</pre>
+    <label for="uncommittedCommitMsg" style="font-size:12px;">${escHtml(t('uncommitted_work_commit_message'))}</label>
+    <textarea id="uncommittedCommitMsg" rows="3" style="width:100%;box-sizing:border-box;margin:4px 0 8px;"></textarea>
+    <div id="uncommittedCommitErr" style="color:var(--error,#c00);font-size:12px;overflow-wrap:anywhere;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" id="uncommittedCommitCancel" style="font-size:12px;padding:4px 16px;">${escHtml(t('uncommitted_work_commit_cancel'))}</button>
+      <button type="button" class="btn-stop" id="uncommittedCommitGo" disabled style="font-size:12px;padding:4px 16px;">${escHtml(t('uncommitted_work_commit_submit'))}</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.getElementById('uncommittedCommitCancel').onclick = close;
+  const go = document.getElementById('uncommittedCommitGo');
+  const err = document.getElementById('uncommittedCommitErr');
+  const pre = document.getElementById('uncommittedCommitDiff');
+  apiFetch('/api/autonomous/uncommitted-work/diff?worktree=' + encodeURIComponent(wt)).then(r => {
+    if (r && r.clean) { pre.textContent = t('uncommitted_work_commit_clean'); return; }
+    pre.textContent = String((r && r.diff) || '');
+    go.disabled = false;
+  }).catch(e => { pre.textContent = ''; err.textContent = t('uncommitted_work_commit_failed', [String((e && e.message) || e || '')]); });
+  go.onclick = () => {
+    go.disabled = true; err.textContent = '';
+    _housekeepingPost('/api/autonomous/uncommitted-work/commit', { worktree: wt, message: document.getElementById('uncommittedCommitMsg').value.trim() })
+      .then(() => { close(); _housekeepingRefresh(['automation_uncommitted_work', 'automation_unlanded_work']); })
+      .catch(e => { go.disabled = false; err.textContent = t('uncommitted_work_commit_failed', [String((e && e.message) || e || '')]); });
+  };
+};
+
+// _housekeepingHelpLink is the small '?' help link on a Housekeeping card or
+// action. It resolves through docsLinkForKey and follows the Settings
+// "show inline doc links" preference.
+function _housekeepingHelpLink(key, labelKey) {
+  const target = docsLinkForKey(key);
+  if (!target) return '';
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t(labelKey);
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" class="docs-link housekeeping-help" onclick="event.stopPropagation()" title="${escHtml(label)}">?</a>`;
+}
+
+// ── Unlanded work card ───────────────────────────────────────────────────────
+// unlandedWorkCardHtml(data) draws GET /api/autonomous/unlanded-work:
+// { branches: [{automaton_id, branch, title, commits, last_activity,
+// recommendation, reason}] }. An empty list reads as nothing to show.
+const UNLANDED_WORK_RECS = { needs_decision: 'unlanded_work_rec_decide', decide: 'unlanded_work_rec_decide', superseded: 'unlanded_work_rec_superseded', landed: 'unlanded_work_rec_landed' };
+function _unlandedWorkBranches(data) {
+  const b = data && typeof data === 'object' ? data.branches : null;
+  return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
+}
+window.unlandedWorkCardHtml = function(data) {
+  const list = _unlandedWorkBranches(data);
+  if (!list.length) return '';
+  const btn = (act, key) => `<button type="button" class="btn-secondary unlanded-work-${act}" style="font-size:11px;padding:3px 10px;" onclick="window.unlandedWorkAct(this,'${act}')">${escHtml(t(key))}</button>`;
+  const rows = list.map(e => {
+    const recKey = UNLANDED_WORK_RECS[String(e.recommendation || '')];
+    const rec = recKey ? t(recKey) : String(e.recommendation || '');
+    const when = _triageTime(e.last_activity);
+    return `<div class="unlanded-work-row" data-branch="${escHtml(String(e.branch))}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(e.title || e.branch))}</div>` +
+      _cleanupLine(t('unlanded_work_purpose', [String(e.title || e.branch)])) +
+      _cleanupLine(t('unlanded_work_commits', [Number(e.commits) || 0])) +
+      (when ? _cleanupLine(t('unlanded_work_last_activity', [when])) : '') +
+      _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
+      `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
+  }).join('');
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
+};
+
+window.unlandedWorkAct = function(btn, act) {
+  const row = btn && btn.closest ? btn.closest('.unlanded-work-row') : null;
+  const branch = row ? row.getAttribute('data-branch') : '';
+  if (!branch) return;
+  const paths = { keep: 'keep', archive: 'archive-branch', delete: 'delete-worktree' };
+  const run = () => {
+    btn.disabled = true;
+    _housekeepingPost('/api/autonomous/unlanded-work/' + paths[act], act === 'delete' ? { branch, confirm: true } : { branch })
+      .then(() => _housekeepingRefresh(['automation_unlanded_work']))
+      .catch(e => { btn.disabled = false; _housekeepingErr('unlanded_work_action_failed', e); });
+  };
+  if (act === 'delete') showConfirmModal(t('unlanded_work_delete_confirm', [branch]), run); else run();
+};
+
+function _automationUnlandedWorkLoader() {
+  return window._listLoaders.automation_unlanded_work || listLoader({
+    key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
+    failedText: msg => t('unlanded_work_failed', [msg]),
+    active: () => !!document.getElementById('automationStaleWorktreesCard'),
+    render: data => {
+      const h = window.unlandedWorkCardHtml(data);
+      const el = document.getElementById('automationStaleWorktreesCard');
+      if (el) el.style.display = h ? '' : 'none';
+      return h;
+    },
+  });
+}
+
+// _cleanupSkipReasonText names a skip reason in the operator's language and
+// falls back to the raw reason name when no label exists for it.
+function _cleanupSkipReasonText(reason) {
+  const key = 'cleanup_skip_reason_' + reason;
+  const text = t(key);
+  return (text && text !== key) ? text : String(reason);
+}
+// cleanupPermissionHtml shows one line of why and a Fix button for a
+// permission problem, and nothing for a harmless one.
+window.cleanupPermissionHtml = function(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const w = (s.worktrees && typeof s.worktrees === 'object') ? s.worktrees : {};
+  const iss = s.permission_issue || w.permission_issue;
+  if (!iss || typeof iss !== 'object' || iss.hidden || !(Number(iss.count) > 0)) return '';
+  const fix = iss.fixable
+    ? ` <button type="button" class="btn-secondary cleanup-permission-fix" style="font-size:11px;padding:3px 10px;" data-paths="${escHtml(JSON.stringify(Array.isArray(iss.paths) ? iss.paths : []))}" onclick="window.cleanupPermissionFix(this)">${escHtml(t('cleanup_permission_fix'))}</button>` : '';
+  return `<div class="cleanup-permission" style="margin-top:8px;min-width:0;overflow-wrap:anywhere;">${escHtml(String(iss.why || ''))}${fix}${_housekeepingHelpLink('cleanup_permission_fix', 'cleanup_permission_help_link')}</div>`;
+};
+window.cleanupPermissionFix = function(btn) {
+  let paths = [];
+  try { paths = JSON.parse(btn.getAttribute('data-paths') || '[]'); } catch (e) { paths = []; }
+  btn.disabled = true;
+  _housekeepingPost('/api/autonomous/cleanup/fix-permissions', { paths })
+    .then(() => _housekeepingRefresh(['automation_cleanup']))
+    .catch(e => { btn.disabled = false; _housekeepingErr('cleanup_permission_fix_failed', e); });
 };
 
 // ── Platform context settings card ──────────────────────────────────────────
@@ -36280,6 +36453,9 @@ const _AUTOMATION_DEFAULT_SUBTAB = 'inbox';
 // the same tab again replaces the earlier slot.
 const _AUTOMATION_CARD_SLOTS = {
   inbox: [], automations: [], resources: [], progress: [], setup: [], housekeeping: [],
+  // 'events' is the Automata Events sub-tab, which renders its slots under the
+  // event stream (renderAutomataEventsPanel) and stops them when the tab is left.
+  events: [],
 };
 
 function registerAutomationCardSlot(tabId, slot) {
@@ -36324,12 +36500,38 @@ function _automationPlaceholderHTML(id) {
   ['resources', 'automationLaneUtilizationCard', 100],
   ['resources', 'automationVerifierSlotsCard', 110],
   ['progress', 'automationAllProjectsGanttCard', 100],
-  ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
 // The three headline cards sit in one row on the Progress tab; the cost slot
 // starts and stops the shared loader. Each card hides itself when it has no value.
 registerAutomationCardSlot('progress', { id: 'automationProgressHeadline', order: 105, html: '<div id="metricCardRow" class="metric-cards"><div id="automationProgressHeadline" style="display:none;"></div><div id="automationCostBillingCard" style="display:none;"></div><div id="automationCompletionForecastCard" style="display:none;"></div></div>',
   mount: _metricCardsStart, stop: _metricCardsStop });
+// The Unlanded work card fills the Housekeeping slot: hidden until the list
+// has a row, and polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationStaleWorktreesCard',
+  order: 100,
+  html: _automationPlaceholderHTML('automationStaleWorktreesCard'),
+  mount: () => listLoaderAll([_automationUnlandedWorkLoader()]),
+  stop: () => _automationStopLoaders(['automation_unlanded_work']),
+});
+// The safe-to-delete report and the cleanup status render under the event
+// stream on the Automata Events sub-tab (the Housekeeping sub-tab keeps only
+// its action cards). Both keep their loaders and poll only while the Events
+// sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationSafeDeleteCard',
+  order: 100,
+  html: `<div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => listLoaderAll([_automationSafeDeleteLoader()]),
+  stop: () => _automationStopLoaders(['automation_safe_delete']),
+});
+registerAutomationCardSlot('events', {
+  id: 'automationCleanupCard',
+  order: 110,
+  html: `<div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => listLoaderAll([_automationCleanupLoader()]),
+  stop: () => _automationStopLoaders(['automation_cleanup']),
+});
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,
 // security failures and open supervisor-watch findings. The counts live here
@@ -37238,8 +37440,8 @@ function _automationMergePipelineLoader() {
   });
 }
 
-// _automationSafeDeleteLoader reads the safe-to-delete report on the Housekeeping
-// sub-tab. The read runs git, so it polls slowly; its failed state is the list
+// _automationSafeDeleteLoader reads the safe-to-delete report on the Automata
+// Events sub-tab (its card slot sits under the event stream). The read runs git, so it polls slowly; its failed state is the list
 // loader's banner. The card is a report only and offers no action.
 function _automationSafeDeleteLoader() {
   return window._listLoaders.automation_safe_delete || listLoader({
@@ -37253,8 +37455,8 @@ function _automationSafeDeleteLoader() {
   });
 }
 
-// _automationCleanupLoader reads the cleanup status on the Housekeeping sub-tab,
-// beside the safe-to-delete report. The status is in memory on the server, so
+// _automationCleanupLoader reads the cleanup status on the Automata Events
+// sub-tab, beside the safe-to-delete report. The status is in memory on the server, so
 // it polls at a modest rate; its failed state is the list loader's banner. The
 // card is read-only and offers no action.
 function _automationCleanupLoader() {
@@ -37267,7 +37469,7 @@ function _automationCleanupLoader() {
 }
 
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
-// Housekeeping sub-tab, beside the cleanup card. The read is built from the stored
+// Housekeeping sub-tab. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
 // state is the list loader's banner. The card is read-only.
 function _automationUncommittedWorkLoader() {
@@ -37275,7 +37477,13 @@ function _automationUncommittedWorkLoader() {
     key: 'automation_uncommitted_work', el: 'automationUncommittedWorkCard', url: '/api/autonomous/uncommitted-work', pollMs: 30000,
     failedText: msg => t('uncommitted_work_failed', [msg]),
     active: () => !!document.getElementById('automationUncommittedWorkCard'),
-    render: status => window.uncommittedWorkCardHtml(status),
+    render: status => {
+      const held = status && Array.isArray(status.held) ? status.held.length : 0;
+      const off = status && status.policy === 'off';
+      const el = document.getElementById('automationUncommittedWorkCard');
+      if (el) el.style.display = (held && !off) ? '' : 'none';
+      return (held && !off) ? window.uncommittedWorkCardHtml(status) : '';
+    },
   });
 }
 

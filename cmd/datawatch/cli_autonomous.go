@@ -91,6 +91,13 @@ Subcommands:
                                    Uncommitted-work status: the policy and scope in effect and the tasks and
                                    Automata held because work was left uncommitted (read only, nothing is
                                    committed or discarded)
+  unlanded-work [--json]           Archived Automaton branches with work not on the default branch and the
+                                   recommendation for each (read only)
+  unlanded-work keep <branch> [--note TEXT]
+  unlanded-work archive-branch <branch>
+  unlanded-work delete-worktree <branch> --confirm
+                                   Act on one listed branch: leave it, move it under the archive refs, or
+                                   back it up as a bundle and delete its worktree and branch
   request-watch [--session ID] [--automaton ID] [--json]
                                    The in-flight model request of each worker or verifier session whose model
                                    runs on a compute node: generating, idle or unreachable, and for how long
@@ -324,6 +331,7 @@ Subcommands:
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
 		newAutonomousUncommittedWorkCmd(),
+		newAutonomousUnlandedWorkCmd(),
 		newAutonomousPlanningRoutingCmd(),
 		newAutonomousRequestWatchCmd(),
 		newAutonomousProtectedPathsCmd(),

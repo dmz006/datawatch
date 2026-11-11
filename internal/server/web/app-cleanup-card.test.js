@@ -81,6 +81,18 @@ test('the card shows both passes with mode, counts, bytes freed and last error',
   assert.ok(html.includes('Last Automata cleanup run:'), 'last run line missing');
 });
 
+test('the worktrees pass lists the skipped worktrees by reason, most frequent first', () => {
+  const html = card(status({ worktrees: pass({ skipped: 5, skipped_by_reason: { held: 2, commits_not_on_base: 3, zero: 0 } }) }));
+  assert.ok(html.includes('Automaton worktrees skipped by reason: Has commits not on the base branch 3, Held by the safe-to-delete check 2'), 'skipped-by-reason line missing: ' + html);
+  assert.ok(!html.includes('zero 0'), 'a zero count is left out');
+  const none = card(status({ worktrees: pass({ skipped_by_reason: {} }) }));
+  assert.ok(!none.includes('skipped by reason'), 'no line when nothing was skipped by reason');
+  const missing = card(status({ worktrees: pass({ skipped_by_reason: 'junk' }) }));
+  assert.ok(!missing.includes('skipped by reason'), 'a malformed map renders no line');
+  const hostile = card(status({ worktrees: pass({ skipped_by_reason: { [HOSTILE]: 1 } }) }));
+  assert.ok(!hostile.includes(HOSTILE) && hostile.includes(ENTITY_IMG), 'reason names are escaped');
+});
+
 test('a pass that never ran says so and shows no counts', () => {
   const html = card(status({ worktrees: { mode: 'off' }, temp: { mode: 'report', last_run: '0001-01-01T00:00:00Z' } }));
   assert.equal(html.split('The Automata cleanup has not run yet.').length - 1, 2, 'both passes should read as not yet run: ' + html);
@@ -143,10 +155,12 @@ test('hostile text in every card field is escaped and never injectable', () => {
 
 // ── the loader ───────────────────────────────────────────────────────────────
 
-test('the cleanup card left the Housekeeping sub-tab; its loader still reads the cleanup route', () => {
+test('the cleanup card left the Housekeeping sub-tab for the Events sub-tab; its loader still reads the cleanup route', () => {
   const sandbox = loadApp();
   const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'housekeeping').bodyHTML()", sandbox);
-  assert.ok(!body.includes('id="automationCleanupCard"'), 'cleanup card must be gone from Housekeeping (Events stream, kind cleanup)');
+  assert.ok(!body.includes('id="automationCleanupCard"'), 'cleanup card must be gone from Housekeeping (it renders on the Events sub-tab)');
+  const events = vm.runInContext("_automationSlotsHTML('events')", sandbox);
+  assert.ok(events.includes('id="automationCleanupCard"'), 'cleanup card must be an Events card slot');
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/cleanup'"), 'loader must read GET /api/autonomous/cleanup');
   assert.ok(/'automation_safe_delete', 'automation_cleanup'[,\]]/.test(src), 'stop-all list must include the cleanup loader');
@@ -218,7 +232,7 @@ const KEYS = [
   'cleanup_bytes_freed', 'cleanup_split', 'cleanup_last_error', 'cleanup_error_none',
   'cleanup_disk_heading', 'cleanup_disk_worktrees', 'cleanup_disk_temp', 'cleanup_disk_unreadable',
   'cleanup_disk_none', 'cleanup_disk_threshold', 'cleanup_disk_alert_badge', 'cleanup_disk_ok_badge',
-  'cleanup_disk_alert_last', 'cleanup_failed',
+  'cleanup_disk_alert_last', 'cleanup_failed', 'cleanup_skipped_by_reason',
 ];
 
 test('every cleanup key exists in every locale bundle, says Automaton or Automata and has no tracker id', () => {
@@ -242,11 +256,45 @@ test('the non-English bundles carry the English text until translations arrive',
   }
 });
 
+// The permission-fix keys belong to the Fix button the cleanup card carries;
+// they are plain action text, so they are pinned here without the
+// Automaton wording check.
+const PERMISSION_KEYS = ['cleanup_permission_fix', 'cleanup_permission_fixed', 'cleanup_permission_fix_failed'];
+
+test('the permission-fix keys exist in every locale bundle', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of PERMISSION_KEYS) assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' missing or empty ' + k);
+  }
+});
+
 test('every t() key the card and loader use is in KEYS', () => {
   const src = fs.readFileSync(APP_JS, 'utf8');
   const start = src.indexOf('// ── Automata cleanup status card');
   const end = src.indexOf('// ── Automata progress card');
   const used = new Set((src.slice(start, end) + src.slice(src.indexOf('function _automationCleanupLoader'), src.indexOf('function _automationCleanupLoader') + 500))
     .match(/'cleanup_[a-z_]+'/g).map(s => s.slice(1, -1)));
-  for (const k of used) assert.ok(KEYS.includes(k), 'key used by the card but not pinned: ' + k);
+  for (const k of used) assert.ok(KEYS.includes(k) || PERMISSION_KEYS.includes(k) || k === 'cleanup_skip_reason_', 'key used by the card but not pinned: ' + k);
+});
+
+// Each skip reason the cleanup pass can report has a label key in every locale;
+// the label is plain text, so it is pinned here without the Automaton wording check.
+const SKIP_REASONS = ['not_finished', 'live_session', 'live_lease', 'retained', 'primary', 'dirty', 'commits_not_on_base', 'no_base_branch', 'held', 'over_limit', 'permission_denied'];
+
+test('every skip reason has a label in every locale bundle, translated outside English', () => {
+  const en = bundle('en');
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const r of SKIP_REASONS) {
+      const k = 'cleanup_skip_reason_' + r;
+      assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' missing or empty ' + k);
+      assert.ok(!/\bPRDs?\b/.test(b[k]), lang + ' ' + k + ' must not say PRD');
+      if (lang !== 'en') assert.notEqual(b[k], en[k], lang + ' ' + k + ' is still the English text');
+    }
+  }
+});
+
+test('an unknown skip reason falls back to its raw name', () => {
+  const html = card(status({ worktrees: pass({ skipped: 1, skipped_by_reason: { some_new_reason: 1 } }) }));
+  assert.ok(html.includes('some_new_reason 1'), html);
 });

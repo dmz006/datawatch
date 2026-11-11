@@ -105,8 +105,11 @@ Automation tab:
 - **Recent decisions** (lane fill) → `decision` rows
 - **Infrastructure retries** → `retry` rows
 - **Automata checks** → `check` rows
-- **Safe to delete** → `cleanup` rows
-- **Cleanup status** → the one `cleanup` status row
+- **Safe to delete** → `cleanup` rows, and the **Automaton safe-to-delete
+  report** card under the stream
+- **Cleanup status** → the one `cleanup` status row, and the **Automata
+  cleanup status** card under the stream (it lists the worktrees the last
+  pass skipped, by reason)
 
 The repo CI watch's CI line is a `watch` row now too. Each moved card's
 **?** link opens this page.
