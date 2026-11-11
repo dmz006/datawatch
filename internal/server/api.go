@@ -4860,6 +4860,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID   string `json:"prd_id,omitempty"`
 		TaskID  string `json:"task_id,omitempty"`
 		StoryID string `json:"story_id,omitempty"`
+		// AutomatonID and SpendRole attribute the session's spend; stored at start.
+		AutomatonID string `json:"automaton_id,omitempty"`
+		SpendRole   string `json:"spend_role,omitempty"`
 		// TaskTitle is the bare autonomous task title (no "autonomous:" prefix).
 		TaskTitle string `json:"task_title,omitempty"`
 		// WriteScope (auto-commit leak fix) — the session's effective write
@@ -5270,6 +5273,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID:                 req.PRDID,
 		TaskID:                req.TaskID,
 		StoryID:               req.StoryID,
+		AutomatonID:           req.AutomatonID,
+		SpendRole:             req.SpendRole,
 		TaskTitle:             req.TaskTitle,
 		WriteScope:            req.WriteScope,
 		ValidateCommands:      req.ValidateCommands,
