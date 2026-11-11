@@ -865,3 +865,24 @@ func TestCostReportPartialAndUnknownTogether(t *testing.T) {
 		t.Fatalf("both notes expected: %+v / %+v", r, rep)
 	}
 }
+
+func TestCostReportUnknownOnlyForRowsBeforeHorizon(t *testing.T) {
+	since := fixedNow.Add(-45 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		notesRecord("old", since.Add(day), since.Add(2*day)),
+		notesRecord("new", fixedNow.Add(-3*day), fixedNow.Add(-day)),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Since: since, Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.UnknownBefore == nil || len(rep.Rows) != 2 {
+		t.Fatalf("unexpected report: %+v", rep)
+	}
+	for _, r := range rep.Rows {
+		want := r.Key == "old"
+		if r.SpendUnknown != want || (r.SpendUnknownNote != "") != want {
+			t.Fatalf("row %s SpendUnknown=%v want %v", r.Key, r.SpendUnknown, want)
+		}
+	}
+}

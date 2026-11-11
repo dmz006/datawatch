@@ -641,8 +641,14 @@ func Build(
 		rep.UnknownSpendNote = unknownSpendNote(horizon)
 		rep.UnknownBefore = &horizon
 		for i := range rep.Rows {
-			rep.Rows[i].SpendUnknown = true
-			rep.Rows[i].SpendUnknownNote = rep.UnknownSpendNote
+			// Only rows with activity before the horizon (or with
+			// unknown activity times) carry unknown spend; rows wholly
+			// inside the ledger are known.
+			fa := rep.Rows[i].FirstActivity
+			if fa == nil || fa.Before(horizon) {
+				rep.Rows[i].SpendUnknown = true
+				rep.Rows[i].SpendUnknownNote = rep.UnknownSpendNote
+			}
 		}
 	}
 	return rep, nil
