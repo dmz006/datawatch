@@ -35,7 +35,7 @@ to its tab without changing the other tabs.
 | **Resources** | Capacity, lane fill, usage against the plan, and the Automata ship status card. Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
 | **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
 | **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind and the supervisor loop appear here when they ship. The automatic grouping tags (the placement axes and the tag sweep) ship today, but they live on the Settings page under **Settings → General → Automata → Placement tags**, not as a card of this tab; see [automata-tags](automata-tags.md). |
-| **Housekeeping** | The uncommitted work card. The safe-to-delete report and the cleanup card now live in the Events tab. Stale worktrees appears here when it ships. |
+| **Housekeeping** | An action list: the **Unlanded work** card (archived Automaton branches whose work is not on the default branch, each with a recommendation and Keep, Archive branch and Delete worktree buttons; Delete worktree writes a backup bundle first), the uncommitted work card with a **Commit** button that shows the diff and takes a message, and a **Fix permissions** button for removals the file system refused. The safe-to-delete report, the cleanup history and the skipped-by-reason counts moved to the Events tab. |
 
 ## What an Automation is
 
@@ -165,8 +165,16 @@ never blanks the cards.
   completion range.
 - **Setup and policy:** the onboarding and requirements report, the merge
   pipeline card and the model request watch card.
-- **Housekeeping:** the uncommitted work card. The safe-to-delete report and
-  the cleanup card are cards under the stream on the Events tab.
+- **Housekeeping:** the action list. The **Unlanded work** card lists archived
+  Automaton branches with work not on the default branch, with a
+  recommendation (landed, superseded or needs a decision) and Keep, Archive
+  branch and Delete worktree buttons; Delete worktree first writes a git
+  bundle backup and removes nothing if the backup fails. The uncommitted work
+  card has a **Commit** button that shows the diff and asks for a message, and
+  a permission problem shows its plain reason and a **Fix permissions** button.
+  The safe-to-delete report, the cleanup history and the skipped-by-reason
+  counts are on the Events tab. Details and every surface:
+  [automaton-worktree-cleanup.md](automaton-worktree-cleanup.md).
 
 ### Reading the merge state and the safe-to-delete report
 
