@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Lane pulse data endpoint.** `GET /api/dashboard/lane-pulse?window=6h` returns one series per lane and node: busy, waiting and idle time with the stretches behind them, from the capacity ledger's lease and wait history (the same ledger behind `GET /api/capacity`). Idle counts only from when the ledger began keeping history. The usage burn block gives the level in points against the pace line from the usage advice, with no dollar values; when the usage calculator is not available the block says why. The endpoint is documented in the OpenAPI spec. No setting is added. The dashboard card that draws it is not built yet.
+
 ### Changed
 - **CI & release card shows the real release and ship state.** The card was empty because it only read repo CI watch records, and the watch is off by default. It now shows the current and latest release, the release state, and the ship policy with its last note, from the ship status. When the repo CI watch is on it also lists the failing runs. When the watch is off the card says "repo CI watch off" and links to the setting, and still shows the release and ship state. The card is hidden while neither release nor ship state is reported. Strings are in English, German, Spanish, French and Japanese.
 - **Dashboard Timeline card draws from task timestamps.** The Timeline · 6h card (`gantt`) was empty because it was drawn from hook-event timings. It now draws one bar per task that is running or finished inside the last 6 hours, using the task start and end times from the Automata list. Bars are grouped under their Automaton and coloured by task status. The chart is capped at 960px wide so it does not stretch on wide screens.

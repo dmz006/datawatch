@@ -9,6 +9,22 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Lane pulse data — busy, idle and waiting per lane and node, usage burn in points — next minor above main
+
+`GET /api/dashboard/lane-pulse` answers one series per lane and node over a window (default 6 hours, at most 168). Busy and waiting come from the capacity ledger: the ledger now keeps closed lease and wait intervals in a bounded history, and the endpoint adds the leases and waits still open. The burn block is the usage level in points against the pace line, read from the usage advice, and carries no dollar values. All rows are Tested by Go tests run on 2026-11-10 (Go, linux/amd64). **Validated is No on every row — the live check (a daemon with real lease traffic and usage readings) is still owed.**
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Window parsing and method | `TestLanePulse_RejectsBadWindowAndMethod` | `go test ./internal/server/ -count=1 -run 'LanePulse'` — passed | `window` that is not a duration from 1m to 168h is a 400; POST is a 405. | Unit (httptest) | **Yes** (`internal/server/api_dashboard_lane_pulse_test.go`) | Pass | **No** — live check pending | |
+| No ledger: empty series, burn says why | `TestLanePulse_NoLedgerIsEmptyNotError` | same harness, bare `Server` | 200 with `series` empty and the 6-hour default window; `burn.available` false with a reason. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| Released lease becomes busy time | `TestLanePulse_BusyFromReleasedLease` | same harness, real ledger, one acquire and release | One `claude-code` series on node `n1` with busy time of at least 50 ms; burn not claimed available with no calculator. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| Open lease runs busy to now | `TestLanePulse_OpenLeaseRunsToNow` | same harness, lease still held | Busy time counts up to the call. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| Withdrawn request becomes waiting time | `TestLanePulse_WithdrawnWaitIsWaitingTime` | same harness, one-slot pool, request withdrawn by context | The queued time before withdrawal is waiting time on the lane. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+| Segments and totals | `TestLanePulse_SegmentsPartitionWindow`, `TestLanePulse_IdleStartsAtRecording`, `TestLanePulse_MergeAndSubtractSpans` | pure functions, fixed times | Waiting may overlap busy; idle is the window minus busy and waiting, and starts when recording began. | Unit | **Yes** (same file) | Pass | **No** — live check pending | |
+| No dollar values | `TestLanePulse_NoDollarValues` | same harness | The response carries no usd, dollar, spend or cost field. | Unit (httptest) | **Yes** (same file) | Pass | **No** — live check pending | |
+
+---
+
 ## Release readiness read — one size against the stored shadow-merge comparisons — next patch above main
 
 The operator asks, for one size, whether the release is ready, from the stored shadow-merge comparisons: how many of the plans held up against the landed state, how many of those merges would have had conflicts, how many of them touched the PWA, and whether any comparison found a defect that blocks the release. A size with no comparisons is not hidden: the same full shape, zero counts, a sentence for each short condition. All rows are Tested by Go tests run on 2026-11-08 (Go, linux/amd64) against a temp data dir seeded in the shadow-merge stores' layout; **Validated is No on every row — the live check (a daemon with real stored comparisons) is still owed.**

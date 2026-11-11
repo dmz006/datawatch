@@ -343,6 +343,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/dashboard/cards/", api.handleDashboardCards)                       // #57 card CRUD (get/update/delete by id)
 	apiMux.HandleFunc("/api/dashboard/console", api.handleDashboardConsole)                    // operator console one-glance summary
 	apiMux.HandleFunc("/api/dashboard/work-map", api.handleWorkMap)                            // work map graph data (nodes + edges + running)
+	apiMux.HandleFunc("/api/dashboard/lane-pulse", api.handleDashboardLanePulse)               // lane pulse: busy, idle and waiting per lane and node, usage burn in points
 	apiMux.HandleFunc("/api/smoke/progress", api.handleSmokeProgress)                          // BL303 smoke progress (list)
 	apiMux.HandleFunc("/api/smoke/progress/", api.handleSmokeProgress)                         // BL303 (detail + delete with sub-paths)
 	apiMux.HandleFunc("/api/smoke/forward-url", api.handleSmokeForwardURL)                     // #54 cross-instance forward config
