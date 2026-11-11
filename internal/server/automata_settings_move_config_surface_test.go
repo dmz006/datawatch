@@ -75,3 +75,38 @@ func TestAutomataSettingsMoveMergePipelineSurfaces(t *testing.T) {
 		})
 	}
 }
+
+// TestAutomataSettingsMoveDecisionSurfaces writes each decision record key
+// with PUT /api/config and reads it back with GET /api/config.
+func TestAutomataSettingsMoveDecisionSurfaces(t *testing.T) {
+	cases := []struct {
+		key  string
+		put  any
+		path string
+		want any
+	}{
+		{"autonomous.decisions.enabled", false, "enabled", false},
+		{"autonomous.decisions.folder", "docs/decisions", "folder", "docs/decisions"},
+		{"autonomous.decisions.folder_glob", "*.md", "folder_glob", "*.md"},
+		{"autonomous.decisions.clarity_mode", "refuse", "clarity_mode", "refuse"},
+		{"autonomous.decisions.clarity_min_text_chars", 80, "clarity_min_text_chars", float64(80)},
+		{"autonomous.decisions.doc_status_mode", "on", "doc_status_mode", "on"},
+	}
+	for _, c := range cases {
+		t.Run(c.key, func(t *testing.T) {
+			s, _, _ := newMaxConcurrentTasksServer(t)
+			putJSON(t, s.handlePutConfig, "/api/config", map[string]any{c.key: c.put})
+			raw, ok := getAutonomousConfigMap(t, s)["decisions"]
+			if !ok {
+				t.Fatal("GET /api/config autonomous map lacks decisions")
+			}
+			var m map[string]any
+			if err := json.Unmarshal(raw, &m); err != nil {
+				t.Fatalf("decode decisions: %v", err)
+			}
+			if !reflect.DeepEqual(m[c.path], c.want) {
+				t.Fatalf("GET after PUT %s = %#v, want %#v", c.key, m[c.path], c.want)
+			}
+		})
+	}
+}

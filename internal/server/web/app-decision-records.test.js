@@ -131,10 +131,8 @@ test('an applied document change reads as a change, not a warning', () => {
 
 // ── the three card states ────────────────────────────────────────────────────
 
-test('an empty decision_records array renders the empty line', () => {
-  const html = card({ decision_records: [] });
-  assert.ok(html.includes('decision-record-empty'), html);
-  assert.ok(!html.includes('decision-record-row'), html);
+test('an empty decision_records array renders nothing', () => {
+  assert.equal(card({ decision_records: [] }), '');
 });
 
 test('a null view (fetched not yet) renders the loading line, not the empty one', () => {
@@ -150,29 +148,26 @@ test('a failed fetch renders the unavailable line, and it is not the empty line'
   assert.ok(failed.includes('decision-record-error'), failed);
   assert.ok(failed.includes('not available'), failed);
   const empty = card({ decision_records: [] });
-  assert.ok(empty.includes('decision-record-empty'), empty);
+  assert.equal(empty, '');
   assert.notEqual(failed, empty);
 });
 
 // ── the folder watch status line ─────────────────────────────────────────────
 
 test('an enabled folder line names the directory and the file count', () => {
-  const html = card({ decision_records: [], folder: { enabled: true, path: '/srv/decisions', files_seen: 3 } });
+  const html = card({ decision_records: [record()], folder: { enabled: true, path: '/srv/decisions', files_seen: 3 } });
   assert.ok(html.includes('decision-record-folder'), html);
   assert.ok(html.includes('/srv/decisions'), html);
   assert.ok(html.includes('3 files read'), html);
 });
 
-test('a disabled folder line says the watch is off, with any per-file problems', () => {
+test('a disabled folder shows no folder line on the card', () => {
   const html = card({
-    decision_records: [],
+    decision_records: [record()],
     folder: { enabled: false, path: '/srv/decisions', notes: [{ file: 'one.md', message: HOSTILE }] },
   });
-  assert.ok(html.includes('decision-record-folder-off'), html);
-  assert.ok(html.includes('Folder watch is off'), html);
-  assert.ok(html.includes('one.md'), html);
-  assert.ok(html.includes(ENTITY_IMG), html);
-  assert.ok(!html.includes(HOSTILE), html);
+  assert.ok(!html.includes('decision-record-folder'), html);
+  assert.ok(!html.includes('Folder watch is off'), html);
 });
 
 // ── loading into the slot ─────────────────────────────────────────────────────
@@ -204,9 +199,9 @@ test('a failed fetch fills the slot with the unavailable line, not the empty one
   assert.ok(!slotEl.innerHTML.includes('decision-record-empty'), slotEl.innerHTML);
 });
 
-test('a body that is not the expected shape still renders the empty card, never crashes', async () => {
+test('a body that is not the expected shape renders nothing, never crashes', async () => {
   const { slotEl } = await loadCard(null);
-  assert.ok(slotEl.innerHTML.includes('decision-record-empty'), slotEl.innerHTML);
+  assert.equal(slotEl.innerHTML, '');
 });
 
 // ── record id on the per-Automaton decision log line ─────────────────────────
@@ -234,15 +229,15 @@ test('a decision log row without record_id shows no record reference', () => {
 
 test('the card localizes in every supported language', () => {
   const want = {
-    en: ['Decision records', 'No decision records yet.', 'Folder watch is off', 'issue a.md: x'],
-    de: ['Entscheidungsprotokolle', 'Noch keine Entscheidungsprotokolle.', 'Ordnerbeobachtung ist aus', 'Problem a.md: x'],
-    es: ['Registros de decisiones', 'Aún no hay registros de decisiones.', 'La observación de la carpeta está desactivada', 'problema a.md: x'],
-    fr: ['Registres de décisions', 'Aucun registre de décisions', 'La surveillance du dossier est désactivée', 'problème a.md: x'],
-    ja: ['意思決定レコード', 'まだ意思決定レコードはありません', 'フォルダー監視は無効です', '問題 a.md: x'],
+    en: ['Decision records', 'issue a.md: x'],
+    de: ['Entscheidungsprotokolle', 'Problem a.md: x'],
+    es: ['Registros de decisiones', 'problema a.md: x'],
+    fr: ['Registres de décisions', 'problème a.md: x'],
+    ja: ['意思決定レコード', '問題 a.md: x'],
   };
   for (const lang of LANGS) {
     const html = vm.runInContext(
-      'window.decisionRecordCardHtml({ decision_records: [], folder: { enabled: false, path: "/srv/decisions", notes: [{ file: "a.md", message: "x" }] } })',
+      'window.decisionRecordCardHtml({ decision_records: [{ id: "d1", status: "open", question: "q" }], folder: { enabled: true, path: "/srv/decisions", notes: [{ file: "a.md", message: "x" }] } })',
       loadApp(lang),
     );
     for (const needle of want[lang]) assert.ok(html.includes(needle), lang + ': missing ' + needle + ' in ' + html);
@@ -262,7 +257,8 @@ test('every autonomous.decisions.* key is a settings_automata_decisions row with
   for (const k of keys) {
     assert.ok(src.includes("'autonomous.decisions." + k + "',"), 'row for autonomous.decisions.' + k + ' missing');
     assert.ok(src.includes('docsKey: \'settings_automata_decisions_' + k + '\''), 'docsKey for autonomous.decisions.' + k + ' missing');
-    assert.ok(src.includes('settings_automata_decisions_' + k + ':' + ' DOCS_DEFINITIONS'), 'DOCS_LINKS_BY_KEY entry for settings_automata_decisions_' + k + ' missing');
+    const link = k === 'folder' ? " 'howto/automaton-decision-records.md'" : ' DOCS_DEFINITIONS';
+    assert.ok(src.includes('settings_automata_decisions_' + k + ':' + link), 'DOCS_LINKS_BY_KEY entry for settings_automata_decisions_' + k + ' missing');
   }
   assert.ok(src.includes('decision_record_card_title: DOCS_DEFINITIONS'), 'DOCS_LINKS_BY_KEY entry for the card title missing');
 });
