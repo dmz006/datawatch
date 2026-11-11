@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -50,7 +52,9 @@ func (s *Server) handleAutonomousChecks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(autonomous.BuildChecksStatus(recs, prdID, dir))
+	st := autonomous.BuildChecksStatus(recs, prdID, dir)
+	st.Attribution = s.attributionStatus()
+	_ = json.NewEncoder(w).Encode(st)
 }
 
 // handleAutonomousShip serves GET /api/autonomous/ship: the resolved ship
@@ -196,4 +200,24 @@ func checksShipConfigDisplay(cfg *config.Config) map[string]interface{} {
 			"tag_format": tagFmt, "remote": remote, "ci_workflows": wf,
 		},
 	}
+}
+
+// attributionStatus runs the cost-report attribution check over the whole
+// spend ledger; nil when no ledger is wired.
+func (s *Server) attributionStatus() *autonomous.AttributionStatus {
+	if s.costReportLedger == nil {
+		return nil
+	}
+	return attributionStatusFrom(s.costReportLedger)
+}
+
+func attributionStatusFrom(l spendLedgerReader) *autonomous.AttributionStatus {
+	var recs []costreport.Record
+	for _, e := range l.Entries() {
+		recs = append(recs, costreport.Record{SessionID: e.SessionID, TaskID: e.TaskID,
+			Role: e.Role, FromLedger: true, LedgerAutomatonID: e.AutomatonID})
+	}
+	c := costreport.CheckAttribution(recs, time.Time{}, time.Time{}, true)
+	return &autonomous.AttributionStatus{AutomatonLaunched: c.AutomatonLaunched,
+		Unattributed: c.Unattributed, SessionIDs: c.SessionIDs, OK: c.OK, Note: c.Note}
 }

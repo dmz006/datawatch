@@ -76,6 +76,11 @@ type Record struct {
 	AutomationID string // owning automation, if any (blank is unattributed)
 	TaskID       string // task the spend belongs to, from the spend ledger
 	Role         string // spend role (worker, verification, ...), from the spend ledger
+	// FromLedger is true when the record is a spend-ledger entry;
+	// LedgerAutomatonID is that entry's own automaton id, before any
+	// session-owner fallback. The attribution check reads only these.
+	FromLedger        bool
+	LedgerAutomatonID string
 	// Release is the release the owning PRD / automation shipped in, for
 	// release groupings; blank means the work has not shipped (it falls
 	// under UnreleasedKey).
@@ -256,6 +261,9 @@ type Report struct {
 	// UnknownBefore is the ledger horizon: spend before it is unknown.
 	// Set only with UnknownSpendNote.
 	UnknownBefore *time.Time `json:"unknown_before,omitempty"`
+	// Attribution is the attribution check over the window's ledger
+	// records.
+	Attribution AttributionCheck `json:"attribution"`
 }
 
 // windowRowNote is the per-row text for a row that began before the window.
@@ -624,6 +632,8 @@ func Build(
 		LifetimeFallback: lifetimeFallback,
 		RetentionNote:    retentionNote(lifetimeFallback),
 	}
+
+	rep.Attribution = CheckAttribution(res.Records, since, until, peer)
 
 	defDays := cfg.EffectiveWindowDays()
 	partial := 0
