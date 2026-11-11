@@ -286,3 +286,5 @@ Operator, 2026-11-11, quoted: "You can handle it,  we will reset when we run out
 Operator, 2026-11-11, quoted: "We need to aim for 200%, with a full reset tomorrow, we should have more claude? I know fable will use more but we have room temporarily". Done: claude-code max in flight raised from 3 to 5 (host load 10 on 48 cores, 97 GB free); burn guard stays off; the reset is entered by the operator when the allowance runs out. Target: use this week's remaining allowance by tomorrow, then a full second allowance before the Sunday reset.
 
 Operator, 2026-11-11, quoted, on the docs-set task of the Code Scanning upload retry Automaton that rewrote release.yaml: "Reject it". Supervisor first rewrote the task spec so it documents the approved workflow change and edits no workflow file, then the rejection reverted the workflow edit and re-ran the task.
+
+Operator, 2026-11-11, quoted: "Yes" (approve the image-refresh workflow change that reads the Trivy version from scripts/trivy-version.txt).
