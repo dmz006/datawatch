@@ -166,6 +166,7 @@ func (s *Server) prdDetailCap(r *http.Request) int {
 // listing and the full record carry model_request on every task that has a
 // request-watch observation.
 func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) {
+	id := prdIDOf(prd)
 	switch detail {
 	case "summary", "tasks":
 		p, err := toPRD(prd)
@@ -174,15 +175,15 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		if detail == "summary" {
-			writeJSONOK(w, autonomous.BuildSummaryView(p))
+			writeJSONOK(w, s.withAutomatonCost(autonomous.BuildSummaryView(p), id))
 			return
 		}
 		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
 		s.attachTaskObservations(&view)
-		writeJSONOK(w, view)
+		writeJSONOK(w, s.withAutomatonCost(view, id))
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.prdWithObservations(prd, prdIDOf(prd)))
+			writeJSONOK(w, s.withAutomatonCost(s.prdWithObservations(prd, id), id))
 			return
 		}
 		p, err := toPRD(prd)
@@ -191,7 +192,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.prdWithObservations(capped, capped.ID))
+		writeJSONOK(w, s.withAutomatonCost(s.prdWithObservations(capped, capped.ID), capped.ID))
 	}
 }
 
