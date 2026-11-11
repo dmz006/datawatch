@@ -59,6 +59,18 @@ from build arguments (for example `golang:${GO_VERSION}-...` and
 Review its pull request like any other: a human merges first, and breaking
 changes in a major bump are fixed in the same Automaton's work.
 
+## Where a run is reported
+
+Each run is reported on the Automata Events tab (see
+[Automata Events](automata-events.md#the-weekly-dependency-update)):
+
+- A run that updated something, or needs attention, writes one `check` row with
+  a one-line summary such as "2 updated, 1 dropped, 0 skipped".
+- A run with nothing to update writes no row and raises no alert.
+- An alert is raised only when the run needs you, once per run: a dropped or
+  failed update, a major waiting on a protected paths decision, or a run that
+  could not start. An updated run alerts only while its Automaton waits for you.
+
 ## Settings
 
 Three keys under `autonomous.automation.dependency_update` control the weekly
@@ -102,7 +114,9 @@ These cannot be verified from the repository files:
 4. **Confirm the schedule, major limit and the model** the Automation runs with;
    all are operator choices. The settings above only have defaults; nothing
    verifies that they suit this repository.
-5. **Check the parity follow-up:** the mobile apps (datawatch-app) do not yet
+5. **Watch the Events tab and Alerts after the first run.** The row summary and
+   the alert rules above are new; confirm they tell you what you need.
+6. **Check the parity follow-up:** the mobile apps (datawatch-app) do not yet
    show these settings; that is tracked outside this repository.
 
 ## See also

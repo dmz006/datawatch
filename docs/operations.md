@@ -2618,7 +2618,11 @@ The Automation is tuned with `autonomous.automation.dependency_update.enabled`
 daemon's local time) and `.max_majors` (default 5, range 0-20). Set them in the
 PWA Settings, with `datawatch config set`, the chat `configure` verb, or MCP
 `config_set`; read status (settings, next run, last run and outcome) with the
-MCP tool `dependency_update_status`. See
+MCP tool `dependency_update_status`. Each run is reported on the Automata Events
+tab as one `check` row (none when nothing was updated); an alert is raised only
+when a run needs the operator (a dropped or failed update, a major waiting on a
+protected paths decision, a run that could not start, or an updated Automaton
+waiting for review). See
 [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
 
 ---
