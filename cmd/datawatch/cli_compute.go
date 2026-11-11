@@ -191,7 +191,9 @@ func newComputeNodeCmd() *cobra.Command {
 		Use:   "versions <name>",
 		Short: "The node's reported backend version and which capability minimums it meets",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0] + "/versions") },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/versions")
+		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "health <name>",
