@@ -325,3 +325,6 @@ func (c *PullCollector) Stop() {
 	c.stopMu.Unlock()
 	c.wg.Wait()
 }
+
+// Running reports whether the collector has not been stopped.
+func (c *PullCollector) Running() bool { return !c.stopped() }
