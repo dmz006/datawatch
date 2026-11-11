@@ -502,6 +502,7 @@ func (s *Server) toolAuditQuery() mcpsdk.Tool {
 		mcpsdk.WithString("action", mcpsdk.Description(audit.QueryActionHelp())),
 		mcpsdk.WithString("subject", mcpsdk.Description("Filter by subject, exact match (task id, backend or LLM name)")),
 		mcpsdk.WithString("session_id", mcpsdk.Description("Filter by session_id")),
+		mcpsdk.WithString("pack_name", mcpsdk.Description("Filter by the installable pack that produced the entry, exact match")),
 		mcpsdk.WithString("since", mcpsdk.Description("RFC3339 lower bound")),
 		mcpsdk.WithString("until", mcpsdk.Description("RFC3339 upper bound")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 100)")),

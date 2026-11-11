@@ -9,7 +9,7 @@ import (
 // QueryParamNames is the one filter set every audit query surface exposes:
 // REST query parameters, MCP audit_query arguments, CLI flags (with '_'
 // written as '-') and comm-channel key=value words.
-var QueryParamNames = []string{"actor", "action", "subject", "session_id", "since", "until", "limit"}
+var QueryParamNames = []string{"actor", "action", "subject", "session_id", "pack_name", "since", "until", "limit"}
 
 // DefaultQueryLimit is the entry cap applied when a query names no limit.
 const DefaultQueryLimit = 100
@@ -39,6 +39,7 @@ func ParseQuery(get func(name string) string) (QueryFilter, error) {
 		Action:    get("action"),
 		Subject:   get("subject"),
 		SessionID: get("session_id"),
+		PackName:  get(PackNameField),
 		Limit:     DefaultQueryLimit,
 	}
 	if v := get("limit"); v != "" {

@@ -200,6 +200,7 @@ type QueryFilter struct {
 	Action    string    // exact match, or a prefix match when it ends in '*' (empty = any)
 	Subject   string    // exact match on Entry.Subject (empty = any)
 	SessionID string    // exact match (empty = any)
+	PackName  string    // exact match on the pack_name detail (empty = any)
 	Limit     int       // most-recent first; 0 = unlimited
 }
 
@@ -242,6 +243,9 @@ func (l *Log) Read(filter QueryFilter) ([]Entry, error) {
 			continue
 		}
 		if filter.SessionID != "" && e.SessionID != filter.SessionID {
+			continue
+		}
+		if filter.PackName != "" && PackNameOf(e) != filter.PackName {
 			continue
 		}
 		matched = append(matched, e)
