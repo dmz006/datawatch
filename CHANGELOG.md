@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.138.1 — Fix three code scanning findings
+
+Three code scanning findings were fixed; no feature changed.
+
+- The self-config audit view no longer sizes its result list from the request's `limit` parameter. The limit is still clamped to the maximum of 1000, and a test now checks that a huge limit returns at most the maximum.
+- The config write audit recorder now sets `X-Content-Type-Options: nosniff` and a plain-text content type on any response that has none or an HTML one. The handlers it wraps only answer JSON or plain-text errors, so no real reflection existed; the recorder is now unambiguous about it.
+- The merge shadow plan and comparison stores check every Automaton id against a letters, digits, dash and underscore allowlist, and verify before every read, write and remove that the cleaned path stays inside the store directory. Tests cover separators, dots, spaces, NUL bytes and empty ids.
+
 ## v9.138.0 — Automata configuration moves into Settings and the usage page becomes small cards
 
 ### Changed
