@@ -275,18 +275,6 @@ func (r *testTickers) new(time.Duration) observer.Ticker {
 	return tk
 }
 
-func waitFor(t *testing.T, d time.Duration, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(d)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out after %s waiting for %s", d, what)
-}
-
 func TestObserverPullFetch_SyncTargetsOnPeerChange(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(statsOK))
 	defer srv.Close()

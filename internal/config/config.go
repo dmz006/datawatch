@@ -7376,6 +7376,7 @@ func DefaultConfig() *Config {
 		PinCheckSeconds: 300,
 		Observer: ObserverConfig{
 			Peers: ObserverPeersConfig{SilentAlertMinutes: 5},
+			Pull:  DefaultObserverPullConfig(),
 		},
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
@@ -7556,7 +7557,6 @@ func DefaultConfig() *Config {
 				},
 			},
 		},
-		Observer:      ObserverConfig{Pull: DefaultObserverPullConfig()},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},

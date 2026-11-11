@@ -6220,9 +6220,19 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"topic":      s.cfg.Ntfy.Topic,
 			"token":      mask(s.cfg.Ntfy.Token),
 		},
+		// Observer pull protocol (pull mode) — global knobs; each key reads
+		// its code default while absent (default off, 30s interval, 5s
+		// timeout). Per-peer opt-in (observer_pull, observer_pull_interval_s,
+		// observer_pull_timeout_s) lives on /api/federation/peers entries;
+		// live per-peer state is on /api/observer/pull.
 		"observer": map[string]interface{}{
 			"peers": map[string]interface{}{
 				"silent_alert_minutes": s.cfg.Observer.Peers.SilentAlertMinutes,
+			},
+			"pull": map[string]interface{}{
+				"enabled":            s.cfg.Observer.Pull.Enabled,
+				"default_interval_s": s.cfg.Observer.Pull.DefaultIntervalS,
+				"default_timeout_s":  s.cfg.Observer.Pull.DefaultTimeoutS,
 			},
 		},
 		"imap_mcp": map[string]interface{}{
@@ -7017,18 +7027,6 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// scheduled-jobs results: per-schedule result history store.
 		"results": map[string]interface{}{
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
-		},
-		// Observer pull protocol (pull mode) — global knobs; each key reads
-		// its code default while absent (default off, 30s interval, 5s
-		// timeout). Per-peer opt-in (observer_pull, observer_pull_interval_s,
-		// observer_pull_timeout_s) lives on /api/federation/peers entries;
-		// live per-peer state is on /api/observer/pull.
-		"observer": map[string]interface{}{
-			"pull": map[string]interface{}{
-				"enabled":            s.cfg.Observer.Pull.Enabled,
-				"default_interval_s": s.cfg.Observer.Pull.DefaultIntervalS,
-				"default_timeout_s":  s.cfg.Observer.Pull.DefaultTimeoutS,
-			},
 		},
 	}
 	// Model-to-node collisions: two different models configured on one
