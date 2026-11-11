@@ -13,6 +13,8 @@ An Automaton's cost now covers the tokens, time, sessions and tool calls of ever
 - **How it shows.** The per-Automaton cost totals include planning, verification and retry spend that was missing before, with the session and tool-call counts beside the tokens and time.
 - **Deleting sessions.** The ledger keeps the attribution after a session is deleted or cleaned up, so an Automaton's cost no longer drops when its sessions are removed.
 - **Cost report.** The cost report now reads the spend ledger, so its per-Automaton rows match the totals above.
+- **Web UI.** The Automaton detail view and the cost report view show the tokens, time, sessions and tool calls, with labels translated in English, German, Spanish, French and Japanese.
+- **Merge report.** The merge report now has a cost section with the same per-Automaton totals.
 - **Where to read it.** The per-Automaton cost (tokens, time, sessions and tool calls) is available over the REST API (documented in the OpenAPI spec), the MCP cost report tools, the `datawatch` CLI cost report and the comm-channel cost command, all from the same ledger.
 - **Attribution check.** A new check in the checks and ship status reports Automaton-launched sessions that have no attribution, so a launcher that misses the stamp shows up instead of silently under-counting.
 - **Migration.** None. Sessions that ran before this change have no attribution and stay uncounted; new sessions are counted from the first launch after the upgrade.
