@@ -340,10 +340,12 @@ link, and skips a path that is already gone. It reports how many entries it
 changed. It changes permissions only: it removes nothing, so the next cleanup
 pass still applies every check above before it deletes anything.
 
-**Review before relying on this.** The classification and the fix are in the
-daemon's engine and the status body. A button, REST route, CLI verb, MCP tool or
-comm verb that *runs* the fix is not part of this change; until one ships,
-restore the permissions by hand.
+**Run the fix.** On the **Events** sub-tab (Automata tab → Automation
+view), inside the **Cleanup** card, a permission problem that can be fixed shows its plain reason and a **Fix
+permissions** button. The button posts the affected paths to
+`POST /api/autonomous/cleanup/fix-permissions`. A problem that is `hidden` is not
+shown. The PWA button and that REST route are the surfaces; there is no CLI verb,
+MCP tool or comm verb for the fix.
 
 ## Unlanded branches (finished work that never reached the default branch)
 
@@ -382,13 +384,27 @@ worktree base are known, and the caller passed an explicit confirm. The bundle
 is written and verified **first**; if it cannot be, nothing is removed. A delete
 returns the branch, the bundle path and the worktree path it removed.
 
-**Review before relying on this.** Keep, Archive branch and Delete worktree are
-engine functions today. No REST route, CLI verb, MCP tool, comm verb or PWA
-button for the unlanded list or its actions is described here, because none was
-part of this change. Whether a kept branch also suppresses the safe-to-delete
-report is not decided in this change. The operator must confirm the surface
-(REST, CLI, MCP, comm and PWA) and the parity issue for datawatch-app before
-this is described as available to use.
+### Where to see and act
+
+| Surface | How |
+|---|---|
+| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. Each row shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
+| REST | `GET /api/autonomous/unlanded-work`; `POST /api/autonomous/unlanded-work/keep`, `/archive-branch` and `/delete-worktree` (the last needs `confirm: true`) |
+| CLI | `datawatch autonomous unlanded-work [--json]`; subcommands `keep <branch> [--note ...]`, `archive-branch <branch>` and `delete-worktree <branch> --confirm` |
+| Comm channel | `autonomous unlanded-work`; `autonomous unlanded-work keep\|archive-branch\|delete-worktree <branch>` (delete needs the word `confirm`) |
+| MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
+| Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
+
+The branch audit script (`scripts/branch-audit.py`) reports the same finding from
+the command line: an `UNLANDED` row is an archived Automaton branch (cancelled,
+blocked, failed or no record) with work not on main, and the script exits with
+status 1 while any exist. Decide each one with Keep, Archive branch or Delete
+worktree, or merge it.
+
+**Review before relying on this.** Whether a kept branch also suppresses the
+safe-to-delete report is still undecided; the operator must confirm that. The
+datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
+in its own repository and is not part of this change.
 
 ## Processes the worker left running
 
