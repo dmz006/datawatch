@@ -6459,6 +6459,58 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "Deploy after ship"
+# GET /api/autonomous/deploy is read-only. POST /api/autonomous/deploy/run is
+# never called here: it would build, install and restart the daemon.
+
+DP_GET=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
+DP_CODE=$(echo "$DP_GET" | tail -n1)
+DP_BODY=$(echo "$DP_GET" | sed '$d')
+if [[ "$DP_CODE" == "503" ]]; then
+  skip "deploy: autonomous is disabled on this daemon (HTTP 503); the deploy checks are not run"
+else
+  if [[ "$DP_CODE" == "200" ]] && echo "$DP_BODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d["settings"],dict) and isinstance(d["running"],bool)' 2>/dev/null; then
+    ok "deploy: GET /api/autonomous/deploy returns settings and running"
+  else
+    ko "deploy: GET /api/autonomous/deploy answered HTTP $DP_CODE without settings and running"
+  fi
+
+  if echo "$DP_BODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "snapshot" not in d or set(d["snapshot"])<={"time","sha256"}' 2>/dev/null; then
+    ok "deploy: status shows the snapshot identity only, never its contents"
+  else
+    ko "deploy: status snapshot carries fields beyond time and sha256"
+  fi
+
+  DP_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print("deploy" in json.load(sys.stdin).get("autonomous",{}))' 2>/dev/null || echo "")
+  if [[ "$DP_CFG" == "True" ]]; then
+    ok "deploy: GET /api/config carries autonomous.deploy"
+  else
+    ko "deploy: GET /api/config has no autonomous.deploy block"
+  fi
+
+  DP_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
+  if [[ "$DP_POST" == "405" ]]; then
+    ok "deploy: POST to the status route is refused with HTTP 405"
+  else
+    ko "deploy: POST to the status route answered HTTP $DP_POST, expected 405"
+  fi
+
+  DP_GETRUN=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/autonomous/deploy/run" 2>/dev/null || echo "000")
+  if [[ "$DP_GETRUN" == "405" ]]; then
+    ok "deploy: GET on the run route is refused with HTTP 405 (nothing was started)"
+  else
+    ko "deploy: GET on the run route answered HTTP $DP_GETRUN, expected 405"
+  fi
+
+  DP_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.deploy.health_timeout":"not-a-duration"}' "$BASE/api/config" 2>/dev/null || echo "000")
+  if [[ "$DP_BAD" == "400" ]]; then
+    ok "deploy: an invalid health_timeout is refused with HTTP 400"
+  else
+    ko "deploy: an invalid health_timeout answered HTTP $DP_BAD, expected 400"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
