@@ -4030,7 +4030,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.SetAuditLog(auditLog)
 			wiredAuditLog = auditLog
 			shutdownAudit = auditLog
-			setBackoffAuditLog(auditLog) // BL428 Phase 4: automatic back-off set/auto-clear events
+			setBackoffAuditLog(auditLog)     // BL428 Phase 4: automatic back-off set/auto-clear events
 			gitpkg.SetHostAuditLog(auditLog) // host git operations (MR, issue, release, tag) are audited
 			if cfg.Audit.CEFMirrorEnabled {
 				if err := auditLog.EnableCEFMirror(); err != nil {
