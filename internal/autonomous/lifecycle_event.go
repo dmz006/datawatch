@@ -88,6 +88,13 @@ const (
 	// KindBurnGuardRungChanged fires when the burn guard's rung changes;
 	// OldStatus and NewStatus carry the old and new rung. Opt-in.
 	KindBurnGuardRungChanged = "burn_guard.rung_changed"
+	// KindJudgeVerdictBlock, KindJudgeVerdictWarn and KindJudgeVerdictPass fire
+	// once when a judge verdict with that outcome is recorded. Opt-in.
+	KindJudgeVerdictBlock = "judge.verdict_block"
+	KindJudgeVerdictWarn  = "judge.verdict_warn"
+	KindJudgeVerdictPass  = "judge.verdict_pass"
+	// KindFinalGateFailed fires once when a final gate task fails. Opt-in.
+	KindFinalGateFailed = "task.final_gate_failed"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,
