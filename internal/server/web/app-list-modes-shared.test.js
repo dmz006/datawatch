@@ -83,3 +83,52 @@ test('show-more paging', () => {
   run(sb, "_listResetPaging('s')");
   assert.equal(run(sb, "_listShownCount('s','g')"), 50);
 });
+
+// ── UI wiring: the body, toolbar and sessions groups use the shared helpers ──
+const tileOf = (it) => `<i${it.id}>`;
+test('body: group-by prefix, collapse hides tiles, paging adds a show-more button', () => {
+  const sb = load();
+  sb.__items = items.map(i => ({ id: i.id, status: i.st, tags: [] }));
+  sb.__tile = tileOf;
+  // none: one grid, no header
+  let html = run(sb, '_listBodyHTML("automata", __items, __tile)');
+  assert.ok(!html.includes('list-group-header'));
+  assert.equal((html.match(/<i\d>/g) || []).length, 4);
+  // state grouping: header per state with counts and the mix
+  run(sb, '_listGroupSet("automata", "state")');
+  html = run(sb, '_listBodyHTML("automata", __items, __tile)');
+  assert.equal((html.match(/list-group-header/g) || []).length, 3);
+  // collapsed group draws header only
+  run(sb, '_listToggleCollapsed("automata", "running")');
+  html = run(sb, '_listBodyHTML("automata", __items, __tile)');
+  assert.equal((html.match(/<i\d>/g) || []).length, 2);
+  // invalid axis is refused and the old one is kept
+  assert.equal(run(sb, '_listGroupSet("automata", "bogus")'), false);
+  assert.equal(run(sb, '_listGroupGet("automata")'), 'state');
+  assert.equal(run(sb, '_listGroupValid("prefix:lane")'), true);
+  assert.equal(run(sb, '_listGroupValid("prefix:nope")'), false);
+  // paging
+  sb.__many = Array.from({ length: 120 }, (_, i) => ({ id: i, status: 'x', tags: [] }));
+  run(sb, '_listGroupSet("automation", "none")');
+  html = run(sb, '_listBodyHTML("automation", __many, __tile)');
+  assert.equal((html.match(/<i\d+>/g) || []).length, 50);
+  assert.match(html, /listShowMore\('automation',''\)/);
+});
+
+test('toolbar: remembered mode drives the grid and a resize leaves it alone', () => {
+  const sb = load();
+  sb.innerWidth = 1000;
+  assert.match(run(sb, '_tileGridHTML("x", "automata")'), /data-tile-mode="tile"/);
+  run(sb, '_listModeSet("automata", "list")');
+  const g = run(sb, '_tileGridHTML("x", "automata")');
+  assert.match(g, /data-tile-mode="line" data-tile-chosen="1"/);
+  assert.match(run(sb, '_listControlsHTML("automata")'), /listSetMode\('automata','compact'\)/);
+});
+
+test('wiring: sessions groups and the tag browser call the shared helpers', () => {
+  const src = require('fs').readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  assert.match(src, /_listGroupHeaderHTML\('session', g, 'tag'/);
+  assert.match(src, /_listPage\(g\.items, _listShownCount\('session'/);
+  assert.match(src, /_listControlsHTML\(scope\) : ''/);
+  assert.ok(!src.includes('function _sessionGroupHeaderHTML'));
+});

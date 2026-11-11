@@ -260,7 +260,8 @@ test('the source has one tile renderer, and both lists draw through the shared t
   // Each list mounts the browser, and the browser wraps its flat grid and its sections in the tile grid.
   assert.equal((src.match(/_tagBrowseMountHTML\('automata',/g) || []).length, 1);
   assert.equal((src.match(/_tagBrowseMountHTML\('automation',/g) || []).length, 1);
-  assert.equal((src.match(/_tileGridHTML\(items\.map\(it => renderTile\(/g) || []).length, 1);
+  assert.equal((src.match(/_listBodyHTML\(scope, items, renderTile\)/g) || []).length, 2, 'the browser calls the shared body once; its definition is the other');
+  assert.equal((src.match(/_tileGridHTML\(pg\.items\.map\(it => renderTile\(/g) || []).length, 1);
 });
 
 test('an Automata tile shows the registry tags of its list item', () => {
