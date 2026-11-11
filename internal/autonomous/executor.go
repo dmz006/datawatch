@@ -2117,6 +2117,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			textCounted = act == infraFailureCounted
 		} else {
 			m.store.WithLock(func() { clearInfraRetryCount(t) })
+			m.resetNodeUnresponsive(t.ComputeNode)
 		}
 		vrFinal := vr
 		m.store.WithLock(func() { t.Verification = &vrFinal })

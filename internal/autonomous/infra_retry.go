@@ -116,6 +116,7 @@ func (m *Manager) planModelUnresponsiveRetry(cfg config.InfraRetryConfig, t *Tas
 	if model == "" {
 		model = "unknown"
 	}
+	m.RecordNodeUnresponsive(node, model)
 	n := used + 1
 	return infraRetryPlan{
 		Class: InfraClassModelUnresponsive,

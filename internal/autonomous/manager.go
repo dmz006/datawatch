@@ -1752,6 +1752,9 @@ type Manager struct {
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
 
+	// nodeUnresponsive counts consecutive model-unresponsive failures per node.
+	nodeUnresponsive *nodeUnresponsiveCounter
+
 	// releaseSizeModes holds per-project release size approval overrides
 	// written by the release CI fall-back (release_ci_fallback.go), keyed
 	// by releaseSizeModeKey. Guarded by mu.
