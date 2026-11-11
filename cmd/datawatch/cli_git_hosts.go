@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -217,4 +218,68 @@ func printGitHostRow(out io.Writer, r gitHostRow) {
 	if r.Readiness.FixCommand != "" {
 		fmt.Fprintf(out, "  fix: %s\n", r.Readiness.FixCommand)
 	}
+}
+
+// runGitHostsStats prints the git host counters from GET /api/git/hosts/stats.
+func runGitHostsStats(out io.Writer, baseURL, token string) error {
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/api/git/hosts/stats", nil)
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("git host stats: HTTP %d", resp.StatusCode)
+	}
+	var st struct {
+		Configured    int            `json:"configured"`
+		WindowSeconds int64          `json:"window_seconds"`
+		Operations    map[string]int `json:"operations"`
+		Failed        int            `json:"failed"`
+		LastSuccessAt string         `json:"last_success_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return fmt.Errorf("decode git host stats: %w", err)
+	}
+	fmt.Fprintf(out, "configured hosts: %d\nwindow: %ds\nfailed: %d\n", st.Configured, st.WindowSeconds, st.Failed)
+	last := st.LastSuccessAt
+	if last == "" || strings.HasPrefix(last, "0001-") {
+		last = "never"
+	}
+	fmt.Fprintf(out, "last success: %s\n", last)
+	kinds := make([]string, 0, len(st.Operations))
+	for k := range st.Operations {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	for _, k := range kinds {
+		fmt.Fprintf(out, "  %s: %d\n", k, st.Operations[k])
+	}
+	return nil
+}
+
+// newGitCmd is `datawatch git hosts stats`: a read of the git host counters.
+func newGitCmd() *cobra.Command {
+	git := &cobra.Command{Use: "git", Short: "Git host commands"}
+	hosts := &cobra.Command{Use: "hosts", Short: "Git host reads"}
+	hosts.AddCommand(&cobra.Command{
+		Use:   "stats",
+		Short: "Show the git host operation counters",
+		Long:  "Reads GET /api/git/hosts/stats from the running daemon: configured hosts, operations by kind over the window, failures and the last success.",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runGitHostsStats(os.Stdout, loopbackBaseURL(cfg), cfg.Server.Token)
+		},
+	})
+	git.AddCommand(hosts)
+	return git
 }

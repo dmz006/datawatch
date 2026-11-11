@@ -348,6 +348,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newLinkCmd(),
 		newConfigCmd(),
 		newGitHostsListCmd(),
+		newGitCmd(),
 		newProfileCmd(),
 		newAgentCmd(),
 		newSetupCmd(),

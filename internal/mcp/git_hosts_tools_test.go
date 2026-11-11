@@ -17,6 +17,8 @@ func gitHostsTestServer(t *testing.T) *Server {
 		switch {
 		case r.URL.Path == "/api/git/hosts" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"hosts":[{"name":"github","kind":"github","readiness":{"host":"github","logged_in":true}}]}`))
+		case r.URL.Path == "/api/git/hosts/stats" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"configured":1,"window_seconds":3600,"operations":{"push":2},"failed":0,"last_success_at":"0001-01-01T00:00:00Z"}`))
 		case r.URL.Path == "/api/git/hosts/github/test" && r.Method == http.MethodPost:
 			_, _ = w.Write([]byte(`{"host":"github","ok":true,"message":"connected"}`))
 		case strings.HasPrefix(r.URL.Path, "/api/git/hosts/"):
@@ -80,5 +82,19 @@ func TestGitHostsMCP_UnknownName(t *testing.T) {
 	res, _ = s.handleGitHostsTest(context.Background(), mcpsdk.CallToolRequest{})
 	if !res.IsError {
 		t.Errorf("expected error for empty name")
+	}
+}
+
+func TestGitHostsMCP_Stats(t *testing.T) {
+	s := gitHostsTestServer(t)
+	if got := s.toolGitHostsStats().Name; got != "git_hosts_stats" {
+		t.Fatalf("tool name = %q", got)
+	}
+	res, err := s.handleGitHostsStats(context.Background(), mcpsdk.CallToolRequest{})
+	if err != nil || res.IsError {
+		t.Fatalf("unexpected failure: %v %+v", err, res)
+	}
+	if txt := gitHostsText(t, res); !strings.Contains(txt, `"configured":1`) || !strings.Contains(txt, `"push":2`) {
+		t.Errorf("unexpected body: %s", txt)
 	}
 }
