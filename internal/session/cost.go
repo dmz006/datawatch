@@ -167,6 +167,7 @@ func (m *Manager) addUsage(sessID string, tokensIn, tokensOut int, override Cost
 	if err := m.SaveSession(sess); err != nil {
 		return err
 	}
+	m.upsertLedger(sess)
 	if tokensIn != 0 || tokensOut != 0 {
 		m.emitUsageEvent(UsageEvent{
 			SessionID: sess.FullID,
