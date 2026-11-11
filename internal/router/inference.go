@@ -49,6 +49,8 @@ Common kv pairs:
   roles=<csv>             workload roles this LLM serves; update: omit keeps them,
                           roles= (empty) clears them; "llm list"/"llm get" show them
   permission_mode=plan     default_effort=normal    fallback_chain=<csv>
+  billing_mode=api|allowance|local   how this LLM is paid for (empty = resolved
+                          from the usage billing profile)
   billing_group=<text>    operator label grouping LLMs that share one
                           cloud/billing account across federated peers
                           (label only; empty = no group)
@@ -356,6 +358,8 @@ func parseLLMKVPairs(s string) map[string]any {
 				continue
 			}
 			out[k] = v
+		case "billing_mode":
+			out[k] = strings.TrimSpace(v)
 		case "billing_group":
 			// Operator label for LLMs sharing one cloud/billing account.
 			// Pass-through string; an explicit empty value clears it on the

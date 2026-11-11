@@ -7239,3 +7239,15 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 ### Android / iPhone
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
+
+## LLM billing mode
+
+Each LLM entry carries a `billing_mode`: `api` (metered), `allowance` (a bundled
+plan allowance) or `local` (local inference). Empty resolves from the usage
+billing profile. Set it in `config.yaml` (`billing_mode:` on the entry), on the
+Settings page, with `PUT /api/config` (`llms.<name>.billing_mode`; `GET
+/api/config` lists each entry under `llms`), on `POST`/`PUT /api/llms`, with the
+comm channel `llm add|update … billing_mode=<mode>`, with the MCP tools
+`llm_add` / `llm_update` (read back with `llm_get` / `llm_list`), or with
+`datawatch config set llms.<name>.billing_mode <mode>`. Every path refuses an
+unknown value with the same message.
