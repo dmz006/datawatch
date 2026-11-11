@@ -2595,6 +2595,25 @@ use `v0.73.0`. Unifying them is an operator decision. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
+### Dependency updates: security-only Dependabot and the weekly Automation
+
+Dependabot opens **security** pull requests only. Every ecosystem in
+`.github/dependabot.yml` (`gomod`, `docker`, `github-actions`) sets
+`open-pull-requests-limit: 0`, which switches off version-update pull requests
+but not security updates. Version updates come from one weekly Automation that
+moves all dependencies together, including Docker `FROM` lines built from build
+arguments that Dependabot cannot see.
+
+`make lint` runs `make check-dependabot-security-only`
+(`scripts/check-dependabot-security-only.sh`, plus its test script), which fails
+when a limit is missing or non-zero, an ecosystem is missing, or an `ignore:`
+key appears. Run it alone after editing the file.
+
+Operator review still needed: keep "Dependabot security updates" enabled in the
+hosting settings, confirm the weekly Automation is approved and active, and
+close any version-update pull requests that were open before the change. See
+[howto/automation-dependency-update.md](howto/automation-dependency-update.md).
+
 ---
 
 ## 8. Web UI Features
