@@ -775,7 +775,8 @@ For example, with `gpu-box-1` (priority 80, 1 of 2 sessions in use) and `gpu-box
 - the node is not in the compute registry (it was deleted, or the entry names it wrongly),
 - the node is [drained](#draining-a-node-for-maintenance), open-ended or with an end time that has not yet passed,
 - the node's permissions deny the consumer the work runs under (see [Scheduling priority and permissions](#scheduling-priority-and-permissions)), or
-- a [maintenance window](#maintenance-windows) covers the current time, including an open-ended window with no `to`.
+- a [maintenance window](#maintenance-windows) covers the current time, including an open-ended window with no `to`, or
+- the node failed its [launch probe](#the-launch-probe) and still carries the unhealthy mark.
 
 A maintenance window opening or closing takes effect at once. A node added to or removed from the registry is noticed on the next capacity sync, which runs every 10 seconds.
 
@@ -791,6 +792,17 @@ An entry that lists no nodes is not affected.
 
 **Bare model names.** A model written without a provider (for example `qwen3.8:27b`) is given the provider of the backend's configured model (for example `ollama/qwen3.8:27b` when `pi_prompt.model` is set to that) before admission, so the node is chosen for the provider the launch uses. A model that already names a provider is left as written.
 
+### The launch probe
+
+Before a worker is launched on a node, the daemon sends the node a one-token chat completion (`max_tokens` 1) for the worker's model, with a 20-second limit. This catches a stalled or unreachable model before a session is started and spend begins.
+
+- **It fails:** a transport error, a non-2xx status or a timeout. The worker is not launched, the node gets an unhealthy mark whose reason is the probe error (it names the node URL and model), and the task is deferred. A deferral uses no attempt: it goes through the model-unresponsive requeue described in [Infrastructure retry](infrastructure-retry.md#a-stalled-pi-worker-and-an-unresponsive-model).
+- **It passes:** the node's unhealthy mark, if any, is cleared.
+- **It is skipped** when the launch has no node address or no model.
+- **Where you see the mark:** `GET /api/capacity` shows `unhealthy` and `unhealthy_reason` on the node's pool, and waiting workers show the reason (below).
+- **The mark is held in memory.** A daemon restart clears it.
+- The probe and the mark are not settings; there is nothing to configure.
+
 ### What you see while a worker waits
 
 The waiting reason is shown on the task and in the `waiting` list of `GET /api/capacity`. With two or more candidate nodes it names every candidate in load order and what blocks it:
@@ -801,6 +813,7 @@ waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: drained; gpu-box-2: 2/2 engin
 
 - `<node>: drained` — the node is [drained](#draining-a-node-for-maintenance).
 - `<node>: in maintenance` — a [maintenance window](#maintenance-windows) covers the current time.
+- `<node>: <probe error>` (single-node pool: `waiting for node <node>: unhealthy: <probe error>`) — the node failed its [launch probe](#the-launch-probe).
 - `<node>: consumer session_spawn denied` — the node's permissions deny the consumer the work runs under.
 - `<node>: node not in the compute registry` — the node is not in the registry at all.
 - `<node>: N/M engines in use, held by ...` — the node is full; the holders are the sessions using its slots.

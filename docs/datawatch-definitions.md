@@ -2218,6 +2218,10 @@ A wrong answer, a failed check, a task that went out of scope or a stall that is
 
 **Model unresponsive** — a pi attempt that failed because the model never answered: the output log holds a `DATAWATCH_PI_FAILED` line and the text `Request timed out`. The daemon fails the attempt as soon as it sees the failure line rather than waiting out the silence limit. The task is then requeued after the back-off without using an attempt, at most 3 times in a row (the task's `model_unresponsive_retries`, separate from the infrastructure retry count and not part of `autonomous.infra_retry.categories`). The reason names the compute node and model.
 
+**Launch probe** — the one-token chat request (`max_tokens` 1, 20-second limit) the daemon sends to a compute node's model before it launches a pi worker there. A failure means no session is started: the node gets an unhealthy mark and the task is deferred through the model-unresponsive requeue. A success clears the mark. It is skipped when the launch has no node or no model. Not a setting.
+
+**Unhealthy mark** — a per-node flag, with the probe error as its reason, that makes placement skip the node as if it were full. It shows as `unhealthy` and `unhealthy_reason` on the node's pool in `GET /api/capacity`. It is cleared by a passing launch probe and by a daemon restart (it is held in memory).
+
 **Node unresponsive alert** — the error alert "Compute node model unresponsive", raised once when 3 model-unresponsive failures in a row happen on one compute node. A success on that node resets the count; the count is in memory and restarts with the daemon.
 
 The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.

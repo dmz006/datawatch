@@ -90,6 +90,20 @@ with no reason on it. Now:
   class, counted in `model_unresponsive_retries` on the task and reset with the
   retry count once the task gets a fair attempt. The reason names the compute
   node and model: `model unresponsive on node <node>, model <model>: ...`.
+- **A node is probed before the worker starts.** Before a pi worker is launched
+  on a compute node, the daemon sends the node's model a one-token chat request
+  (20-second limit). If the probe fails (a connection error, a non-2xx status or
+  a timeout), the worker is not launched and no session is started. The node is
+  marked unhealthy with the probe's error as the reason, and the launch is
+  reported with the same `DATAWATCH_PI_FAILED ... Request timed out` wording a
+  stalled worker produces, so the task takes the `model_unresponsive` path
+  above: requeued after the back-off, no attempt used, at most 3 times. While
+  the mark is set, placement skips the node and the waiting reason reads
+  `waiting for node <node>: unhealthy: <probe error>` (or `<node>: <probe
+  error>` among several candidates). A probe that passes clears the mark. The
+  probe runs only for a launch that has a node and a model, so a launch with no
+  compute node is not probed. See
+  [How a pi-family worker picks its node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
 - **Repeats on one node raise an alert.** The daemon counts consecutive
   unresponsive failures per compute node. At 3 in a row it raises one error
   alert, "Compute node model unresponsive", naming the node and model. A task
