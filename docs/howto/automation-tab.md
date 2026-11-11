@@ -8,7 +8,7 @@ docs:
 The **Automation** view is the place in the web app where you build, watch and
 steer chains of Automata. It is the first sub-tab of the **Automata** tab: open
 Automata in the bottom navigation and Automation is selected on the sub-tab bar,
-left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
+left of **Automata**, **Events** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
 skip, insert, remove, edit edges) next to the members they act on. Inside the
 Automation sub-tab, a second row of five sub-tabs splits the view, in this
@@ -550,7 +550,7 @@ log as `autonomous_judge_outcome`.
 
 ### Tune both settings
 
-- **Settings page:** Settings > General > Automata, the two fields above.
+- **Settings page:** Settings → General → Automata, the two fields above.
 - **CLI:** `datawatch config set autonomous.judge_prompt_file_threshold_lines 300`
   and `datawatch config set autonomous.judge_delivery_wait_per_thousand_lines_seconds 60`.
 - **Comm channel:** `configure autonomous.judge_prompt_file_threshold_lines=300`,
