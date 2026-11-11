@@ -86,14 +86,14 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 // Opt-in event kinds: off by default and only fire when explicitly listed in
 // the resolved notification events (Automaton tier, else guardrail profile,
 // then the global baseline). task.session_started / task.session_cleared ride
 // on other task activity; scope_warning / guardrail_warn fire *only* because
 // some Automaton opted in. Mirrors autonomous.OptInNotifyEvents().
-const NOTIFY_EVENT_OPT_IN = ['guardrail_warn', 'scope_warning', 'task.session_cleared', 'task.session_started'];
+const NOTIFY_EVENT_OPT_IN = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'scope_warning', 'task.capacity_wait_too_long', 'task.session_cleared', 'task.session_started'];
 
 // One checkbox row per kind, grouped Automaton (prd.*) / Task
 // (task.<status>) / Session (task.session_*) / Warnings (scope_warning,
@@ -35008,7 +35008,9 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.session_started', 'task.session_cleared', 'prd.updated',
     'question.answered', 'question.withdrawn']],
   ['lifecycle_sub_form_group_warnings', 'Warnings (opt-in)', [
-    'scope_warning', 'guardrail_warn']],
+    'scope_warning', 'guardrail_warn', 'automaton.stuck_running', 'automaton.merge_ready',
+    'automaton.tasks_done_or_cancelled', 'task.capacity_wait_too_long',
+    'burn_guard.rung_changed']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
 const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue', 'webhook', 'peer'];

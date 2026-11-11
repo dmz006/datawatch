@@ -1795,7 +1795,10 @@ lifecycle event (PRD/task status changes, `task.session_started` /
 `scope_warning` and `guardrail_warn`, and the opt-in condition kinds
 `automaton.stuck_running`, `automaton.merge_ready` and
 `automaton.tasks_done_or_cancelled`, each sent once when the condition starts
-to hold and again only after it clears) to a delivery sink: a comm router,
+to hold and again only after it clears, plus `task.capacity_wait_too_long`, sent
+once per waiting episode once a task has waited for capacity longer than half of
+`autonomous.capacity_wait_timeout_seconds`, and `burn_guard.rung_changed`, sent
+when the burn guard rung changes, carrying the old and new rung) to a delivery sink: a comm router,
 a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
 tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:

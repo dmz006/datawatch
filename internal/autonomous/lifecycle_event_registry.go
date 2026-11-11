@@ -99,6 +99,8 @@ func buildEventKindRegistry() []EventKindInfo {
 	add(KindAutomatonStuckRunning, EventGroupAutomaton, "An Automaton is running with every task finished and nothing live.")
 	add(KindAutomatonMergeReady, EventGroupAutomaton, "A finished Automaton has a work branch waiting to be merged.")
 	add(KindAutomatonTasksDone, EventGroupAutomaton, "Every task of an Automaton is completed or cancelled.")
+	add(KindCapacityWaitTooLong, EventGroupCapacity, "A task has waited for capacity longer than the threshold.")
+	add(KindBurnGuardRungChanged, EventGroupBudget, "The burn guard moved to a different rung.")
 	add(KindQuestionAnswered, EventGroupReview, "An operator question was answered.")
 	add(KindQuestionWithdrawn, EventGroupReview, "An operator question was withdrawn.")
 

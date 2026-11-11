@@ -375,10 +375,12 @@ func (m *Manager) setWaiting(t *Task, reason string) {
 	if applied {
 		m.emitTaskStatus(nil, t, old, nil, nil)
 	}
+	m.beginCapacityWait(t)
 	m.EmitPRDUpdate(t.PRDID)
 }
 
 func (m *Manager) clearWaiting(t *Task) {
+	m.endCapacityWait(t.ID)
 	var old TaskStatus
 	applied := m.store.MutateTask(t.ID, func(c *Task) {
 		old = c.Status
@@ -441,6 +443,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	}
 	choices := nodeChoicesFor(choicesFn, backend, model)
 	waited := false
+	defer m.endCapacityWait(t.ID)
 	rec := m.capacityAudit()
 	var waitStart time.Time
 	var lastCause WaitCause
