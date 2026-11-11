@@ -99,6 +99,19 @@ func (m *Manager) SetSessionNode(fn SessionNodeFn) {
 	m.sessionNode = fn
 }
 
+// SessionBackendFn reports the backend and model a session really runs
+// (both "" when the session is unknown or records no backend).
+type SessionBackendFn func(sessionID string) (backend, model string)
+
+// SetSessionBackend wires the lookup adoptCapacity uses to read the backend a
+// resumed session really runs. Nil leaves adopted leases on the task's own
+// resolved backend.
+func (m *Manager) SetSessionBackend(fn SessionBackendFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionBackend = fn
+}
+
 // SessionEndpointFn names the endpoint a session was placed on (its node
 // address, else its engine URL), "" when it records none. adoptCapacity only
 // logs it, to show which endpoint matched no compute node.
@@ -751,10 +764,25 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
 	sessionNode, entryNodes, sessionEndpoint := m.sessionNode, m.entryNodes, m.sessionEndpoint
+	sessionBackend := m.sessionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
 	backend, model := admittedWorker(t, story, prd, m.AutomationForPRD(prd), fallback)
+	configured := backend
+	mismatch := false
+	if sessionBackend != nil && t.SessionID != "" {
+		if sb, sm := sessionBackend(t.SessionID); sb != "" {
+			mismatch = sb != backend
+			backend = sb
+			if sm != "" {
+				model = sm
+			}
+		}
+	}
 	pools, node := keysFn(backend, model)
+	if mismatch {
+		m.noteAdoptMismatch(led, prd, t, configured, backend, pools)
+	}
 	if len(pools) == 0 {
 		return
 	}
@@ -794,6 +822,51 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	led.Adopt(capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: choices, Model: model, NodeUnknown: unknown, Consumer: consumerSessionSpawn,
 	}, t.SessionID, VerifyHolder(t.ID))
+}
+
+// noteAdoptMismatch handles a resumed session that runs a different backend
+// than the one its task was configured for: it frees a stale lease whose pools
+// no longer match, logs one line, and raises one operator alert per task and
+// session pair.
+func (m *Manager) noteAdoptMismatch(led *capacity.Ledger, prd *PRD, t *Task, configured, actual string, pools []string) {
+	if ls := led.LeaseOf(t.ID); ls != nil && !samePools(nonNodePoolList(ls.Pools), poolsWithoutNodes(pools)) {
+		led.Release(t.ID)
+	}
+	key := t.ID + "|" + t.SessionID
+	m.mu.Lock()
+	if m.adoptMismatchAlerted == nil {
+		m.adoptMismatchAlerted = map[string]bool{}
+	}
+	seen := m.adoptMismatchAlerted[key]
+	m.adoptMismatchAlerted[key] = true
+	m.mu.Unlock()
+	if seen {
+		return
+	}
+	log.Printf("[autonomous] adopt: task=%s session=%s runs backend=%s but was configured for %s; leased from the session", t.ID, t.SessionID, actual, configured)
+	if fn := m.AlertSink(); fn != nil {
+		fn("warn", "Resumed session leased from a different backend",
+			fmt.Sprintf("Automaton task %s: session %s was leased on backend %s but runs backend %s. The lease now follows the backend the session runs.", t.ID, t.SessionID, configured, actual))
+	}
+}
+
+func nonNodePoolList(pools []string) []string { return poolsWithoutNodes(pools) }
+
+func samePools(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, p := range a {
+		seen[p]++
+	}
+	for _, p := range b {
+		if seen[p] == 0 {
+			return false
+		}
+		seen[p]--
+	}
+	return true
 }
 
 // markCapacityAdoptionComplete ends the ledger's hold on new requests (see

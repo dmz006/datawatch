@@ -920,6 +920,30 @@ A task parked on an external condition also appears under running tasks with
 a note: either the inference slot is released and the tree lock is kept, or
 both are released.
 
+## Leases after a daemon restart
+
+After a daemon restart, each resumed Automaton task is leased from the
+backend its session actually runs, read from the session record, not from the
+backend currently configured for the task. A task whose session is a pi
+session takes a pi lease even if its configured backend has since changed to
+claude-code, and the other way round.
+
+If a lease the task already holds disagrees with its session's backend, the
+lease is released and the task is leased again from the session's backend. An
+operator alert reading `Resumed session leased from a different backend` is
+raised for this, once per task and session, so a task that is reconciled again
+does not repeat the alert.
+
+When you see that alert:
+
+1. Check which lane the task ran on: open the task and note the backend of
+   its session, which is the lane that now holds its lease.
+2. Check whether the configured backend for the task is what you intend. If
+   the session's backend is the one you want, change the task's configuration
+   to match so later retries land there. If the configured backend is the one
+   you want, the task needs to run again on it instead of continuing on the
+   resumed session.
+
 ## Readable holder names
 
 You don't need to keep a task-id diary. Wherever the capacity surfaces used

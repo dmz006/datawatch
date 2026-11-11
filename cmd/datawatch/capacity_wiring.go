@@ -1068,6 +1068,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetEntryNodes(entryNodeCount(httpServer.InferenceRegistry))
 	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
 	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
+	amgr.SetSessionBackend(sessionBackend(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
 	// placement-tags: the session manager is the sink for a placed task's
 	// system tags, and the tags.placement block (autonomous.tags.placement)
 	// is the source. Both are wired here so an operator config edit takes
@@ -1663,6 +1664,22 @@ func sessionEndpoint(lookup func(id string) (*session.Session, bool)) autonomous
 			return s.NodeAddress
 		}
 		return s.OllamaURL
+	}
+}
+
+// sessionBackend builds the reader of the backend and model a session really
+// runs: its BackendFamily and recorded Model. Both are empty when lookup is
+// nil, the session is missing, or it records no BackendFamily.
+func sessionBackend(lookup func(id string) (*session.Session, bool)) autonomous.SessionBackendFn {
+	return func(sessionID string) (string, string) {
+		if lookup == nil {
+			return "", ""
+		}
+		s, ok := lookup(sessionID)
+		if !ok || s == nil || s.BackendFamily == "" {
+			return "", ""
+		}
+		return s.BackendFamily, s.Model
 	}
 }
 
