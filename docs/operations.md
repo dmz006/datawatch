@@ -7250,4 +7250,13 @@ Settings page, with `PUT /api/config` (`llms.<name>.billing_mode`; `GET
 comm channel `llm add|update … billing_mode=<mode>`, with the MCP tools
 `llm_add` / `llm_update` (read back with `llm_get` / `llm_list`), or with
 `datawatch config set llms.<name>.billing_mode <mode>`. Every path refuses an
-unknown value with the same message.
+unknown value with the same message, and `datawatch llm add|update` takes
+`--billing-mode`. Empty resolves in order: the entry's own value, the
+`usage.billing` profile for its kind (`bundled_plan` → `allowance`,
+`api_metered` → `api`, `free_local` → `local`), then the kind default
+(`claude-code` allowance; `ollama`, `openwebui`, `shell` local; else `api`).
+On load the daemon writes the resolved value onto every entry that has none
+(behavior unchanged; an entry with a value is never touched, a second run
+changes nothing). The cost report still reads the per-provider
+`usage.billing` profile for its labels, not this field. See
+[howto/llm-registry.md](howto/llm-registry.md#set-the-billing-mode-of-an-llm).
