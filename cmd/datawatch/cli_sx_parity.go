@@ -623,7 +623,7 @@ func newCostRatesCmd() *cobra.Command {
 // ----- BL9 audit -----------------------------------------------------------
 
 func newAuditCmd() *cobra.Command {
-	var actor, action, subject, sessID, since, until string
+	var actor, action, subject, sessID, packName, since, until string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "audit",
@@ -636,7 +636,7 @@ func newAuditCmd() *cobra.Command {
 		RunE: func(*cobra.Command, []string) error {
 			vals := map[string]string{
 				"actor": actor, "action": action, "subject": subject,
-				"session_id": sessID, "since": since, "until": until,
+				"session_id": sessID, "pack_name": packName, "since": since, "until": until,
 			}
 			if limit > 0 {
 				vals["limit"] = strconv.Itoa(limit)
@@ -652,6 +652,7 @@ func newAuditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&action, "action", "", "Filter by action; exact, or a prefix when it ends in '*'")
 	cmd.Flags().StringVar(&subject, "subject", "", "Filter by subject (exact match)")
 	cmd.Flags().StringVar(&sessID, "session-id", "", "Filter by session")
+	cmd.Flags().StringVar(&packName, "pack-name", "", "Filter by the installable pack that produced the entry (exact match)")
 	cmd.Flags().StringVar(&since, "since", "", "RFC3339 lower bound")
 	cmd.Flags().StringVar(&until, "until", "", "RFC3339 upper bound")
 	cmd.Flags().IntVar(&limit, "limit", audit.DefaultQueryLimit, "Max entries")

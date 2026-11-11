@@ -356,7 +356,7 @@ var auditCommKeys = audit.QueryParamNames
 func AuditCommKeys() []string { return slices.Clone(auditCommKeys) }
 
 func (r *Router) handleAudit(cmd Command) {
-	// "audit actor=<x> action=<y|prefix*> subject=<z> session_id=<s> since=<t> until=<t> limit=<n>"
+	// "audit actor=<x> action=<y|prefix*> subject=<z> session_id=<s> pack_name=<p> since=<t> until=<t> limit=<n>"
 	q := url.Values{}
 	for _, kv := range strings.Fields(cmd.Text) {
 		i := strings.IndexByte(kv, '=')
