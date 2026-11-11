@@ -159,11 +159,11 @@ test('render: defects per day shows the totals and one row per day', () => {
   assert.ok(html.includes('2026-11-09') && html.includes('2026-11-10'), 'each day is a row');
 });
 
-test('render: an inactive series card renders the empty line, never the table', () => {
+test('render: an inactive series card renders its reason, never the table', () => {
   const sb = loadAppSandbox();
   setSeries(sb, '_seriesDefects', EMPTY_DEFECTS);
   vm.runInContext('_dashRenderDefects()', sb);
   const html = sb.__els.dashDefectsCard.innerHTML;
-  assert.ok(html.includes(bundle('en').dash_series_none), 'the English empty line is rendered');
+  assert.ok(html.includes(bundle('en').dash_card_off_defects_reason), 'the English reason is rendered');
   assert.ok(!html.includes('<table'), 'no table for an empty window');
 });

@@ -168,9 +168,11 @@ test('render: the forecast column header says daily throughput and shows the per
   assert.ok(html.includes(bundle('en').dash_series_throughput) && html.includes('1.50'));
 });
 
-test('render: an empty payload shows the empty line, not a blank card', () => {
+test('render: an empty payload shows the card purpose and its reason, not a blank card', () => {
   const sb = loadAppSandbox();
   setSeries(sb, '_seriesVerifier', { nodes: [] });
   vm.runInContext('_dashRenderVerifier()', sb);
-  assert.ok(sb.__els.dashVerifierCard.innerHTML.includes(bundle('en').dash_series_none));
+  const html = sb.__els.dashVerifierCard.innerHTML;
+  assert.ok(html.includes(bundle('en').dash_series_purpose_verifier), 'purpose line');
+  assert.ok(html.includes(bundle('en').dash_card_off_verifier_reason), 'the card reason as its state line');
 });

@@ -44754,8 +44754,35 @@ function _dashSeriesFetch(slot, url, ok, render) {
     .finally(() => { _dash[flag] = false; });
 }
 
-function _dashSeriesEmpty(el) {
-  el.innerHTML = '<div style="padding:8px 6px;color:var(--text2);font-size:11px;">' + escHtml(t('dash_series_none')) + '</div>';
+// Locale keys for each series card's frame: what it is for (purpose), the next
+// action for the operator (next), and the state line that carries the live
+// count (now). The "why" of an empty card is the card's reasonKey in
+// DASH_CARD_FEATURES, shown in the state line when the card has no data.
+const _DASH_SERIES_TEXT = {
+  'lane-utilization': { purpose: 'dash_series_purpose_lane_util', next: 'dash_series_next_lane_util', now: 'dash_series_now_lane_util' },
+  'throughput-forecast': { purpose: 'dash_series_purpose_forecast', next: 'dash_series_next_forecast', now: 'dash_series_now_forecast' },
+  'verifier-health': { purpose: 'dash_series_purpose_verifier', next: 'dash_series_next_verifier', now: 'dash_series_now_verifier' },
+  'release-train': { purpose: 'dash_series_purpose_release_train', next: 'dash_series_next_release_train', now: 'dash_series_now_release_train' },
+  'review-backlog': { purpose: 'dash_series_purpose_review_backlog', next: 'dash_series_next_review_backlog', now: 'dash_series_now_review_backlog' },
+  'defects-per-day': { purpose: 'dash_series_purpose_defects', next: 'dash_series_next_defects', now: 'dash_series_now_defects' },
+};
+
+// Frame for a series card: purpose line, state line, the card body, and the
+// next action. `state` is already-translated text; it is escaped here.
+function _dashSeriesFrame(id, body, state) {
+  const k = _DASH_SERIES_TEXT[id];
+  const line = (text, extra) => '<div style="padding:0 6px 3px;color:var(--text2);font-size:10px;line-height:1.4;' + (extra || '') + '">' + escHtml(text) + '</div>';
+  return line(t(k.purpose)) +
+    '<div style="padding:0 6px 4px;font-size:11px;line-height:1.4;">' + escHtml(state || '') + '</div>' +
+    (body || '') +
+    '<div style="margin-top:4px;padding:4px 6px 0;border-top:1px solid var(--border);">' + line(t(k.next)) + '</div>';
+}
+
+// Empty series card: the frame with the card's own "why" as the state line.
+function _dashSeriesEmpty(el, id) {
+  const feat = _dashCardFeature(id);
+  const why = feat ? (t(feat.reasonKey) || feat.reasonDefault) : t('dash_series_none');
+  el.innerHTML = _dashSeriesFrame(id, '', why);
 }
 
 function _dashLaneUtilActive() {
@@ -44772,7 +44799,7 @@ function _dashRenderLaneUtil() {
   const el = document.getElementById('dashLaneUtilCard');
   if (!el) return;
   const d = _dash._seriesLaneUtil;
-  if (!d || !Array.isArray(d.lanes) || !d.lanes.length) { _dashSeriesEmpty(el); return; }
+  if (!d || !Array.isArray(d.lanes) || !d.lanes.length) { _dashSeriesEmpty(el, 'lane-utilization'); return; }
   const hourOf = h => String(new Date(h.start).getHours()).padStart(2, '0') + ':00';
   const cell = h => {
     if (h.busy_fraction == null) {
@@ -44781,10 +44808,11 @@ function _dashRenderLaneUtil() {
     const f = Math.max(0, Math.min(1, Number(h.busy_fraction) || 0));
     return '<div title="' + hourOf(h) + ' ' + Math.round(f * 100) + '%" style="flex:1;min-width:0;height:14px;background:rgba(124,58,237,' + (0.06 + 0.94 * f).toFixed(2) + ');"></div>';
   };
-  el.innerHTML = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_busy_share')) + '</div>' +
+  const body = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_busy_share')) + '</div>' +
     d.lanes.map(l => '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;">' +
       '<div title="' + escHtml(l.lane) + '" style="width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:monospace;color:var(--text2);">' + escHtml(l.lane) + '</div>' +
       '<div style="display:flex;gap:1px;flex:1;min-width:0;">' + (l.hours || []).map(cell).join('') + '</div></div>').join('');
+  el.innerHTML = _dashSeriesFrame('lane-utilization', body, t('dash_series_now_lane_util', [d.lanes.length]));
 }
 
 function _dashForecastActive() {
@@ -44801,7 +44829,7 @@ function _dashRenderForecast() {
   const el = document.getElementById('dashForecastCard');
   if (!el) return;
   const d = _dash._seriesForecast;
-  if (!d || !Array.isArray(d.points) || !d.points.length) { _dashSeriesEmpty(el); return; }
+  if (!d || !Array.isArray(d.points) || !d.points.length) { _dashSeriesEmpty(el, 'throughput-forecast'); return; }
   const num = v => (v == null ? '—' : (Number(v) || 0).toFixed(1));
   const th = 'style="padding:2px 6px;font-weight:400;"';
   const head = '<tr style="color:var(--text2);text-align:left;">' +
@@ -44812,7 +44840,8 @@ function _dashRenderForecast() {
     '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
     '<td style="padding:2px 6px;">' + (Number(p.throughput_per_day) || 0).toFixed(2) + '</td>' +
     '<td style="padding:2px 6px;">' + num(p.completion_low_days) + ' – ' + num(p.completion_high_days) + '</td></tr>').join('');
-  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  const body = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  el.innerHTML = _dashSeriesFrame('throughput-forecast', body, t('dash_series_now_forecast', [d.points.length]));
 }
 
 // Release train, review backlog and defects per day: the series cards from
@@ -44841,7 +44870,7 @@ function _dashRenderReleaseTrain() {
   const el = document.getElementById('dashReleaseTrainCard');
   if (!el) return;
   const d = _dash._seriesReleaseTrain;
-  if (!_dashReleaseTrainActive()) { _dashSeriesEmpty(el); return; }
+  if (!_dashReleaseTrainActive()) { _dashSeriesEmpty(el, 'release-train'); return; }
   const th = 'style="padding:2px 6px;font-weight:400;"';
   const row = (k, v) => '<div style="display:flex;gap:6px;padding:2px 6px;"><span style="width:90px;flex-shrink:0;color:var(--text2);">' + escHtml(k) + '</span><span>' + v + '</span></div>';
   const tags = (d.tags || []).map(g => '<span title="' + escHtml(g.prd_id || '') + '" style="font-family:monospace;margin-right:6px;">' + escHtml(g.tag) + '</span>').join('');
@@ -44849,9 +44878,11 @@ function _dashRenderReleaseTrain() {
     '<th ' + th + '>' + escHtml(t('dash_series_repo')) + '</th><th ' + th + '>' + escHtml(t('dash_series_status')) + '</th></tr>' +
     d.ci.map(r => '<tr><td style="padding:2px 6px;font-family:monospace;">' + escHtml(r.repo + ' ' + (r.workflow || '')) + '</td>' +
       '<td style="padding:2px 6px;">' + escHtml(_dashSeriesState(r.status)) + '</td></tr>').join('') + '</table>' : '';
-  el.innerHTML = row(t('dash_series_tags'), tags || escHtml(t('dash_series_state_none'))) +
+  const body = row(t('dash_series_tags'), tags || escHtml(t('dash_series_state_none'))) +
     row(t('dash_series_ci_state'), escHtml(_dashSeriesState(d.ci_state))) +
     row(t('dash_series_deploy_state'), escHtml(_dashSeriesState(d.deploy && d.deploy.state))) + ci;
+  el.innerHTML = _dashSeriesFrame('release-train', body,
+    t('dash_series_now_release_train', [(d.tags || []).length, (d.ci || []).length]));
 }
 
 function _dashReviewBacklogActive() {
@@ -44872,7 +44903,7 @@ function _dashRenderReviewBacklog() {
   const el = document.getElementById('dashReviewBacklogCard');
   if (!el) return;
   const d = _dash._seriesReviewBacklog;
-  if (!_dashReviewBacklogActive()) { _dashSeriesEmpty(el); return; }
+  if (!_dashReviewBacklogActive()) { _dashSeriesEmpty(el, 'review-backlog'); return; }
   const th = 'style="padding:2px 6px;font-weight:400;"';
   const table = (head, rows) => '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text2);text-align:left;">' +
     head.map(h => '<th ' + th + '>' + escHtml(h) + '</th>').join('') + '</tr>' + rows.join('') + '</table>';
@@ -44881,7 +44912,8 @@ function _dashRenderReviewBacklog() {
     d.plans.map(p => '<tr>' + cell(escHtml(p.title || p.id)) + cell(_dashAgeLabel(p.age_seconds)) + '</tr>')) : '';
   const qs = (d.questions || []).length ? table([t('dash_series_questions'), t('dash_series_age')],
     d.questions.map(q => '<tr>' + cell(escHtml(q.title || q.question_id)) + cell(_dashAgeLabel(q.age_seconds)) + '</tr>')) : '';
-  el.innerHTML = plans + qs;
+  el.innerHTML = _dashSeriesFrame('review-backlog', plans + qs,
+    t('dash_series_now_review_backlog', [(d.plan_count || 0), (d.question_count || 0)]));
 }
 
 function _dashDefectsActive() {
@@ -44898,7 +44930,7 @@ function _dashRenderDefects() {
   const el = document.getElementById('dashDefectsCard');
   if (!el) return;
   const d = _dash._seriesDefects;
-  if (!_dashDefectsActive()) { _dashSeriesEmpty(el); return; }
+  if (!_dashDefectsActive()) { _dashSeriesEmpty(el, 'defects-per-day'); return; }
   const th = 'style="padding:2px 6px;font-weight:400;"';
   const head = '<tr style="color:var(--text2);text-align:left;">' +
     '<th ' + th + '>' + escHtml(t('dash_series_date')) + '</th>' +
@@ -44908,9 +44940,11 @@ function _dashRenderDefects() {
     '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
     '<td style="padding:2px 6px;">' + (Number(p.found) || 0) + '</td>' +
     '<td style="padding:2px 6px;">' + (Number(p.fixed) || 0) + '</td></tr>').join('');
-  el.innerHTML = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_total')) + ': ' +
+  const body = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_total')) + ': ' +
     (Number(d.total_found) || 0) + ' / ' + (Number(d.total_fixed) || 0) + '</div>' +
     '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  el.innerHTML = _dashSeriesFrame('defects-per-day', body,
+    t('dash_series_now_defects', [(Number(d.total_found) || 0), (Number(d.total_fixed) || 0)]));
 }
 
 function _dashVerifierActive() {
@@ -44927,7 +44961,7 @@ function _dashRenderVerifier() {
   const el = document.getElementById('dashVerifierCard');
   if (!el) return;
   const d = _dash._seriesVerifier;
-  if (!d || !Array.isArray(d.nodes) || !d.nodes.length) { _dashSeriesEmpty(el); return; }
+  if (!d || !Array.isArray(d.nodes) || !d.nodes.length) { _dashSeriesEmpty(el, 'verifier-health'); return; }
   const secs = v => (Number(v) || 0).toFixed(0) + 's';
   const th = 'style="padding:2px 6px;font-weight:400;"';
   const head = '<tr style="color:var(--text2);text-align:left;">' +
@@ -44947,7 +44981,8 @@ function _dashRenderVerifier() {
     '<td style="padding:2px 6px;">' + secs(n.wait_avg_seconds) + '</td>' +
     '<td style="padding:2px 6px;">' + secs(n.run_avg_seconds) + '</td>' +
     '<td style="padding:2px 6px;" title="' + escHtml((Number(n.passes) || 0) + ' / ' + (Number(n.outcomes) || 0)) + '">' + rate(n) + '</td></tr>').join('');
-  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  const body = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  el.innerHTML = _dashSeriesFrame('verifier-health', body, t('dash_series_now_verifier', [d.nodes.length]));
 }
 
 function _renderSprintPipeline() {
