@@ -231,7 +231,7 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Signal.GroupID = "testgroup"
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
-	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
+	cfg.Server.PublicURL = "https://datawatch.example.com"      // F10 S4.2
 	cfg.MCP.PublicURL = "https://host.tailnet.example.net:8081" // GH#207
 
 	if err := Save(cfg, path); err != nil {
