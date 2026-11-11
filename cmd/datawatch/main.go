@@ -3875,6 +3875,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if mig := llmReg.MigrateAutoTags(); mig > 0 {
 					fmt.Printf("[inference] migrated auto-tags out of Tags on %d llm(s)\n", mig)
 				}
+				if mig := config.MigrateBillingModes(llmReg, cfg); mig > 0 {
+					fmt.Printf("[inference] set billing mode on %d llm(s)\n", mig)
+				}
 				disp := inference.NewDispatcher(llmReg, func(name string) (*compute.Node, error) {
 					return computeReg.Get(name)
 				})
