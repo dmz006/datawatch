@@ -31,6 +31,7 @@ func newTemplateStore(dir string) *TemplateStore {
 		dir:       dir,
 	}
 	_ = ts.load()
+	ts.seedBuiltinTemplates()
 	return ts
 }
 

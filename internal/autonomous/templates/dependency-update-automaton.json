@@ -1,0 +1,37 @@
+{
+  "id": "dependency_update",
+  "title": "Weekly dependency update",
+  "description": "One Automaton that finds outdated dependencies, updates them in one branch, and ends with one change body for review.",
+  "type": "software",
+  "tags": ["dependencies", "maintenance"],
+  "vars": [
+    {"name": "max_majors", "default": "3", "help": "Most major updates taken in one run; the rest are listed as skipped for this run."}
+  ],
+  "preamble": "Weekly dependency update. Every task is self-contained and works in the project directory using repository-relative paths. The run ends as one branch and one change for review. Leave the daemon's own release number untouched and never call the hosting CLI. Edits to files under .github/workflows raise the existing protected paths question and the task waits for the answer; there is no bypass, and this template never lists protected paths as authorised.",
+  "tasks": [
+    {
+      "title": "Find outdated dependencies",
+      "spec": "Run scripts/dependency-outdated.sh and write its classified output to .datawatch/dependency-update/outdated.json. This task is read-only except for that one file. If nothing is outdated, record that in the file and finish: the Automaton ends with no further work and the remaining tasks make no changes."
+    },
+    {
+      "title": "Update minor, patch and security updates together",
+      "spec": "Read .datawatch/dependency-update/outdated.json. If nothing is outdated, make no changes and finish. Otherwise update every minor, patch and security update together in this one task. Edit go.mod and go.sum with go get and go mod tidy. Update the container base image tags to the new tags. Update each GitHub Actions pin to the new full commit hash and rewrite its trailing version comment to the new release (never a bare tag). Edits to files under .github/workflows raise the existing protected paths question; wait for the answer, there is no bypass. Skip major updates here."
+    },
+    {
+      "title": "Add one task per major update",
+      "spec": "Read .datawatch/dependency-update/outdated.json. Take at most {{max_majors}} major updates; list the rest as skipped for this run in .datawatch/dependency-update/results.json notes. For each major taken, use the autonomous_prd_add_task tool (worker_profile: datawatch-tools) to add a task that updates just that dependency and writes a short upgrade note in .datawatch/dependency-update/notes/<dependency>.md from the project's release notes. The added task fetches the release notes page; if it is unreachable, the note says so. If there are no major updates, add nothing and finish."
+    },
+    {
+      "title": "Fix breaking changes after the updates",
+      "spec": "Run go build ./... and fix any compile error the updates caused, with the smallest change that restores the build. Make no change if the build already passes. Leave the daemon's own release number untouched."
+    },
+    {
+      "title": "Run the full checks",
+      "spec": "Run the full checks the repository requires: go build ./..., make lint, the full Go test suite run as env -u TMUX -u TMUX_TMPDIR go test ./..., the PWA test suite and bash scripts/check-no-local-leaks.sh . When a check fails and cannot be fixed, record the failing output, revert only the update that caused it, drop it from the batch, and continue. Never block the whole run on one dependency."
+    },
+    {
+      "title": "Write the results and the change description",
+      "spec": "Write .datawatch/dependency-update/results.json (updated, reverted, skipped and failed items with the recorded failing output). Render the change description with scripts/dependency-update-summary.py into .datawatch/dependency-update/summary.md for the ship step to use as the change body, so the run ends as one branch and one change for review."
+    }
+  ]
+}
