@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,6 +107,12 @@ type CleanupPassStatus struct {
 	// Skipped is the number the last run left in place (with their
 	// reasons).
 	Skipped int `json:"skipped"`
+	// SkippedByReason groups the entries the last run left in place by
+	// reason (the skip reason names, for example commits_not_on_base,
+	// dirty, not_finished). Removals refused by the file system for
+	// permission are counted under permission_denied. Nil when nothing
+	// was skipped.
+	SkippedByReason map[string]int `json:"skipped_by_reason,omitempty"`
 	// Failed is the number of removals that hit an error and were left
 	// in place.
 	Failed int `json:"failed"`
@@ -191,7 +198,15 @@ func newCleanupStatusRecorder(dir string) *cleanupStatusRecorder {
 func (r *cleanupStatusRecorder) Snapshot() CleanupStatus {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.st
+	st := r.st
+	if len(st.Worktrees.SkippedByReason) > 0 {
+		cp := make(map[string]int, len(st.Worktrees.SkippedByReason))
+		for k, v := range st.Worktrees.SkippedByReason {
+			cp[k] = v
+		}
+		st.Worktrees.SkippedByReason = cp
+	}
+	return st
 }
 
 // DiskCheck runs one statfs per configured path, stores the readings
@@ -262,6 +277,7 @@ func (r *cleanupStatusRecorder) RecordWorktree(res WorktreeCleanupResult, source
 	ps.WouldRemove = len(res.WouldRemove)
 	ps.Skipped = len(res.Skipped)
 	ps.Failed = len(res.Failed)
+	ps.SkippedByReason = skippedByReason(res)
 	var bytes int64
 	for _, rm := range res.Removed {
 		bytes += rm.BytesFreed
@@ -280,6 +296,32 @@ func (r *cleanupStatusRecorder) RecordWorktree(res WorktreeCleanupResult, source
 		ps.NetBytesFreed += bytes
 	}
 	r.save()
+}
+
+// cleanupSkipPermissionDenied counts a removal the file system refused for
+// permission; such an entry is left in place like a skipped one.
+const cleanupSkipPermissionDenied = "permission_denied"
+
+// skippedByReason groups one pass's skipped entries by reason, adding the
+// failed removals that were refused for permission. It returns nil when
+// there is nothing to group.
+func skippedByReason(res WorktreeCleanupResult) map[string]int {
+	var m map[string]int
+	add := func(k string) {
+		if m == nil {
+			m = map[string]int{}
+		}
+		m[k]++
+	}
+	for _, sk := range res.Skipped {
+		add(sk.Reason)
+	}
+	for _, f := range res.Failed {
+		if strings.Contains(strings.ToLower(f.Error), "permission denied") {
+			add(cleanupSkipPermissionDenied)
+		}
+	}
+	return m
 }
 
 // RecordTemp folds one temp sweep result into the status, attributed

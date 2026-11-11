@@ -7,6 +7,8 @@ package autonomous
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -319,5 +321,51 @@ func TestCleanupModeOffSkipsPass(t *testing.T) {
 	}
 	if st.Temp.LastRun != nil || st.Temp.Mode != "" {
 		t.Fatalf("off mode touched the temp status: %+v", st.Temp)
+	}
+}
+
+func TestCleanupStatusSkippedByReason(t *testing.T) {
+	r := newCleanupStatusRecorder(t.TempDir())
+	r.RecordWorktree(WorktreeCleanupResult{
+		Mode: config.CleanupModeOn,
+		Skipped: []WorktreeCleanupSkipped{
+			{Reason: cleanupSkipCommits}, {Reason: cleanupSkipCommits},
+			{Reason: cleanupSkipDirty}, {Reason: cleanupSkipNotFinished},
+		},
+		Failed: []WorktreeCleanupFailed{{Error: "remove: Permission denied"}, {Error: "other"}},
+	}, cleanupSourceNet)
+	got := r.Snapshot().Worktrees.SkippedByReason
+	want := map[string]int{cleanupSkipCommits: 2, cleanupSkipDirty: 1, cleanupSkipNotFinished: 1, cleanupSkipPermissionDenied: 1}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("%s: got %d want %d", k, got[k], v)
+		}
+	}
+	got[cleanupSkipDirty] = 99 // snapshot is a copy
+	if r.Snapshot().Worktrees.SkippedByReason[cleanupSkipDirty] != 1 {
+		t.Fatal("snapshot shares the map")
+	}
+	txt := RenderCleanupStatus(r.Snapshot())
+	for _, w := range []string{"skipped by reason:", "unlanded commits 2", "uncommitted work 1", "live Automaton 1", "permission denied 1"} {
+		if !strings.Contains(txt, w) {
+			t.Fatalf("missing %q in %s", w, txt)
+		}
+	}
+	// next pass replaces the groups; empty clears them
+	r.RecordWorktree(WorktreeCleanupResult{Mode: config.CleanupModeOn}, cleanupSourceNet)
+	if r.Snapshot().Worktrees.SkippedByReason != nil {
+		t.Fatal("not cleared")
+	}
+	if strings.Contains(RenderCleanupStatus(r.Snapshot()), "skipped by reason") {
+		t.Fatal("rendered empty groups")
+	}
+	// persisted and unknown reason label falls back to the key
+	r.RecordWorktree(WorktreeCleanupResult{Skipped: []WorktreeCleanupSkipped{{Reason: "weird"}}}, cleanupSourceNet)
+	r2 := newCleanupStatusRecorder(filepath.Dir(r.path))
+	if r2.Snapshot().Worktrees.SkippedByReason["weird"] != 1 || !strings.Contains(RenderCleanupStatus(r2.Snapshot()), "weird 1") {
+		t.Fatal("round trip failed")
 	}
 }
