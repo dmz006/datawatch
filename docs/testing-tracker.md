@@ -11,9 +11,9 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ## Session summary and list rows — an empty system tag list is sent as an empty array — next patch above main
 
-The changed response contract: a Sessions summary row and a legacy session list row now always carry `system_tags`, and an empty system tag list is sent as an empty array (`"system_tags": []`) instead of leaving the field out. The web client already treats an absent `system_tags` as "keep the held placement chips" and an explicit empty array as "remove them", so the two cases are now distinguishable on the wire. Automata and Automaton rows are unchanged.
+The changed response contract: a Sessions summary row and a legacy session list row now always carry `system_tags`, and an empty system tag list is sent as an empty array (`"system_tags": []`) instead of leaving the field out. The PWA already treats an absent `system_tags` as "keep the held placement chips" and an explicit empty array as "remove them", so the two cases are now distinguishable on the wire. Automata and Automaton rows are unchanged. Operator guide: `docs/howto/automata-tags.md` (the *Placement tags (the system tags)* section); operations: the *Session list via API* section of `docs/operations.md`.
 
-Both validation levels are listed. Every row is Tested by Go and Node tests run on 2026-11-11 (Go, linux/amd64; Node 24.x), with `env -u TMUX -u TMUX_TMPDIR` set, using `httptest` and a sandboxed DOM only — no daemon was started, no operator configuration touched. **Validated is No on every row: a live check (a real daemon, with a session that has no system tags, and an open Sessions page) is still owed.**
+Both validation levels are listed. Every row is Tested by Go and Node tests run on 2026-11-11 (Go, linux/amd64; Node 24.x) and re-run green the same day after this entry was written, with `env -u TMUX -u TMUX_TMPDIR` set, using `httptest` and a sandboxed DOM only — no daemon was started, no operator configuration touched. **Validated is No on every row: a live check (a real daemon, with a session that has no system tags, and an open Sessions page) is still owed.**
 
 | Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
 |---|---|---|---|---|---|---|---|---|
