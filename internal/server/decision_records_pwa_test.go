@@ -88,6 +88,13 @@ func TestDecisionRecordPWA_SettingsRowsUseAutomataPrefix(t *testing.T) {
 		if !strings.Contains(src, "docsKey: '"+label+"'") {
 			t.Errorf("row for autonomous.decisions.%s has no docsKey settings_automata_decisions_%s", k, k)
 		}
+		// The folder row opens its own how-to; every other row opens the glossary anchor.
+		if k == "folder" {
+			if !strings.Contains(src, label+": 'howto/automaton-decision-records.md'") {
+				t.Errorf("DOCS_LINKS_BY_KEY has no %s entry pointing at the decision records how-to", label)
+			}
+			continue
+		}
 		if !strings.Contains(src, label+": DOCS_DEFINITIONS") {
 			t.Errorf("DOCS_LINKS_BY_KEY has no %s entry", label)
 		}

@@ -42,6 +42,7 @@ var automataEventsLocaleKeys = []string{
 	"automata_events_help_card_automata_checks",
 	"automata_events_help_card_safe_to_delete",
 	"automata_events_help_card_cleanup_status",
+	"automata_events_config_in_settings",
 }
 
 var automataEventsKeyRef = regexp.MustCompile(`automata_events_[a-z0-9_]+`)
