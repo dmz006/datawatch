@@ -32,7 +32,7 @@ func takeSnapshot(src, dst, dataDir string, now time.Time) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("binary_path is not readable: %w", err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	fi, err := in.Stat()
 	if err != nil {
 		return Snapshot{}, err
