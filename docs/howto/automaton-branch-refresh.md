@@ -119,11 +119,17 @@ select.
 
 ## When the merge conflicts
 
-A conflict is **never resolved for you**. The daemon leaves the branch exactly
-as it was (the merge is not kept), records result `conflict`, **stops refreshing
-this Automaton**, and raises one question for you, asked by `branch-refresh`,
-listing the conflicting files. The same files raise only one open question at a
-time. Find it with `datawatch question list` or in the PWA's questions.
+The daemon merges the base in with a no-fast-forward merge. There is one
+exception it settles itself: when the **only** conflicted file is `CHANGELOG.md`,
+it takes the base branch's copy of that file and commits, and the result is
+`clean`.
+
+Any other conflict is **never resolved for you**. The daemon backs the merge
+out so the branch is left exactly as it was, records result `conflict`,
+**stops refreshing this Automaton**, and raises one question for you, asked by
+`branch-refresh`, listing the conflicting files. The same files raise only one
+open question at a time. Find it with `datawatch question list` or in the PWA's
+questions.
 
 | Option | What it does to refreshing |
 |---|---|
