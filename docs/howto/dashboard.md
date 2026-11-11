@@ -1,7 +1,20 @@
 ---
 docs:
   index: true
-  topics: [dashboard, sessions, telemetry, network, lane-pulse, guardrail]
+  topics: [dashboard, sessions, telemetry, network, lane-pulse, guardrail, work map, series]
+exec_steps:
+  - tool: dashboard_work_map_get
+    description: Read the work map (projects, Automations, Automata, tasks and sessions)
+    args: {}
+    read_only: true
+  - tool: dashboard_lane_pulse_get
+    description: Read the lane pulse traces and burn panel
+    args: {}
+    read_only: true
+  - tool: dashboard_series_get
+    description: Read one dashboard series (lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day)
+    args: {series: release-train}
+    read_only: true
 ---
 # How-to: /dashboard Mission Control
 
@@ -162,6 +175,25 @@ are what you see in the Add-Card picker.
 - **Card visibility.** The card stays off the grid until a lane held or waited in
   the window, or the burn panel can read a level. With
   `dashboard.hide_inactive_cards` off, it shows its reason instead.
+
+## Read the dashboard data from other surfaces
+
+The work map, the lane pulse and the six series each have a read-only surface
+beyond the web page, and every one returns the same body as its REST route.
+There is no setting: the cards' own visibility rules do not apply to these
+reads, which always return the data (an empty one when nothing has run).
+
+| Data | REST | MCP tool | CLI | Chat verb |
+|------|------|----------|-----|-----------|
+| Work map | `GET /api/dashboard/work-map` | `dashboard_work_map_get` | `datawatch dashboard work-map` | `dashboard work-map` |
+| Lane pulse | `GET /api/dashboard/lane-pulse?window=6h` | `dashboard_lane_pulse_get` (`window`) | `datawatch dashboard lane-pulse --window 6h` | `dashboard lane-pulse [window]` |
+| Series | `GET /api/dashboard/series/<name>` | `dashboard_series_get` (`series`, `window`, `days`, `limit`) | `datawatch dashboard series <name> [--window\|--days\|--limit]` | `dashboard series <name> [value]` |
+
+The series names are `lane-utilization` and `verifier-health` (a `window`
+duration), `throughput-forecast`, `release-train` and `defects-per-day` (a
+number of `days`) and `review-backlog` (a `limit`). In chat the optional value
+after the name feeds whichever of those the series takes. An unknown series is
+refused before anything is sent.
 
 ## Open for operator review
 

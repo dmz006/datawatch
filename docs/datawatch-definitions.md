@@ -833,6 +833,8 @@ Each feature card reads one live source. When it has nothing to draw it shows a 
 - **Network** — the same work map payload, drawn as the Network card's graph. See *Network card (work map)* above.
 - **Lane pulse** — the lane and node traces and the burn panel from `GET /api/dashboard/lane-pulse`. See *Lane pulse* and *Burn panel* above.
 
+**Dashboard data on every surface** — the work map, the lane pulse and the six series (lane utilization, throughput forecast, verifier health, release train, review backlog, defects per day) are readable beyond the web page, each returning the REST body unchanged: MCP `dashboard_work_map_get`, `dashboard_lane_pulse_get` and `dashboard_series_get` (argument `series`, plus `window`, `days` or `limit`), CLI `datawatch dashboard work-map`, `lane-pulse` and `series <name>`, and the chat verbs `dashboard work-map`, `dashboard lane-pulse [window]` and `dashboard series <name> [value]`. No setting controls them. See [howto/dashboard.md](howto/dashboard.md).
+
 **Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, lane pulse, smoke run progress, Network (work map), work map.
 
 **See also:**
