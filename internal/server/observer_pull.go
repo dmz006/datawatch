@@ -84,6 +84,9 @@ func (p *observerPull) targets() []observer.PullTarget {
 	if s == nil || s.serverStore == nil {
 		return nil
 	}
+	if !observerPullGloballyEnabled(s) {
+		return nil
+	}
 	def := observerPullDefaults(s)
 	var out []observer.PullTarget
 	for _, e := range s.serverStore.ListFederated() {
@@ -109,6 +112,16 @@ func (p *observerPull) targets() []observer.PullTarget {
 		})
 	}
 	return out
+}
+
+// ObserverPullDisabledReason is the status reason shown for an opted-in peer
+// while observer.pull.enabled is false.
+const ObserverPullDisabledReason = "disabled globally"
+
+// observerPullGloballyEnabled reads the live observer.pull.enabled value on
+// every call, so a runtime config change takes effect without a restart.
+func observerPullGloballyEnabled(s *Server) bool {
+	return s != nil && s.cfg != nil && s.cfg.Observer.Pull.Enabled
 }
 
 // observerPullDefaults resolves the observer.pull globals, falling back to
@@ -141,6 +154,7 @@ func observerPullDefaults(s *Server) config.ObserverPullConfig {
 //	last_success_at  last successful fetch (null while none)
 //	interval_s       effective pull interval (entry value, else the global default)
 //	timeout_s        effective per-pull timeout (entry value, else the global default)
+//	reason           "disabled globally" (present only while observer.pull.enabled is false)
 //
 // Bearer tokens never appear in the response.
 func (s *Server) handleObserverPull(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +172,7 @@ func (s *Server) handleObserverPull(w http.ResponseWriter, r *http.Request) {
 // handleObserverPull). It is shared by the REST endpoint and the tests.
 func (s *Server) pullStatusRows() []map[string]any {
 	def := observerPullDefaults(s)
+	globalOn := observerPullGloballyEnabled(s)
 	seen := map[string]bool{}
 	var names []string
 	addName := func(n string) {
@@ -195,6 +210,9 @@ func (s *Server) pullStatusRows() []map[string]any {
 			"last_success_at": nil,
 			"interval_s":      s.pullIntervalS(name),
 			"timeout_s":       s.pullTimeoutS(name, def),
+		}
+		if !globalOn {
+			row["reason"] = ObserverPullDisabledReason
 		}
 		if st, ok := s.pullStateFor(name); ok {
 			row["stale"] = st.Stale
