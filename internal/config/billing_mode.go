@@ -57,3 +57,27 @@ func ResolveBillingMode(entry inference.LLM, cfg *Config) string {
 	}
 	return BillingModeAPI
 }
+
+// BillingModeHelp explains the three billing modes, one line each. Every
+// surface that accepts a billing mode shows this text.
+const BillingModeHelp = "billing_mode values:\n" +
+	"  api        - metered pay-per-token spend\n" +
+	"  allowance  - a bundled plan allowance that resets on a schedule\n" +
+	"  local      - local inference at zero marginal cost"
+
+// LLMBillingModeConfigKey recognises the config key of one LLM entry's billing
+// mode, written llm.<name>.billing_mode (llms.<name>.billing_mode is accepted
+// too). It returns the entry name and the key the daemon's config endpoint
+// expects.
+func LLMBillingModeConfigKey(key string) (name, restKey string, ok bool) {
+	key = strings.TrimSpace(key)
+	for _, prefix := range []string{"llm.", "llms."} {
+		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, ".billing_mode") {
+			name = strings.TrimSuffix(strings.TrimPrefix(key, prefix), ".billing_mode")
+			if name != "" {
+				return name, "llms." + name + ".billing_mode", true
+			}
+		}
+	}
+	return "", "", false
+}
