@@ -239,7 +239,7 @@ test('the lane fill node slots list is empty without a capacity body', () => {
 
 test('the lane fill card carries the node slot counts next to its pools', () => {
   const sandbox = loadApp();
-  const status = "{mode: 'auto', lanes: [], lane_counts: {}}";
+  const status = "{mode: 'auto', lanes: [{id: 'gpu-1', type: 'gpu', state: 'idle'}], lane_counts: {}}";
   const cap = "{pools: [{name: 'node:a', limit: 4, held: 2, verifier_limit: 2, verifier_held: 2}]}";
   const html = vm.runInContext(`window.laneFillCardHtml(${status}, ${cap})`, sandbox);
   assert.match(html, /Slots on each node/);

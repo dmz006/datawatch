@@ -7345,6 +7345,31 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .usage-help { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; cursor: pointer; color: var(--accent2, #60a5fa); background: none; border: 1px solid var(--accent2, #60a5fa); }
 .usage-help-pop { position: absolute; z-index: 20; top: 22px; right: 0; box-sizing: border-box; width: 240px; max-width: 80vw; padding: 8px 10px; font-size: 12px; font-weight: 400; background: var(--bg, #111); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
 .usage-help-pop[hidden] { display: none; }
+/* Lanes card: one row per lane with a small bounded bar; a clear gap under the card header. */
+.card-head { margin-bottom: 10px; }
+.lane-card { max-width: 720px; min-width: 0; }
+.lane-rows { margin-top: 8px; }
+.lane-row { display: grid; grid-template-columns: minmax(80px, 160px) minmax(60px, 120px) minmax(70px, 120px) 64px minmax(0, 1fr); gap: 2px 10px; align-items: center; padding: 4px 0; border-top: 1px solid rgba(128,128,128,.25); min-width: 0; }
+.lane-row-name { font-weight: 600; overflow-wrap: anywhere; }
+.lane-row-node, .lane-row-state { color: var(--text2); overflow-wrap: anywhere; }
+.lane-row-runs { overflow-wrap: anywhere; min-width: 0; }
+.lane-bar { display: block; width: 64px; max-width: 64px; height: 6px; border-radius: 3px; background: rgba(128,128,128,.3); overflow: hidden; }
+.lane-bar-fill { display: block; height: 100%; background: var(--accent2, #60a5fa); }
+.lane-fill-queued, .lane-fill-evidence { margin-top: 6px; overflow-wrap: anywhere; }
+.lane-fill-evidence { color: var(--text2); }
+.lane-fill-gap { height: 14px; }
+@media (max-width: 600px) { .lane-row { grid-template-columns: 1fr 64px; } .lane-row-runs { grid-column: 1 / -1; } }
+/* Headline cards: fixed maximum size so nothing stretches on a wide screen. */
+.metric-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; margin: 6px 8px 0; }
+.metric-card { box-sizing: border-box; width: 220px; max-width: 100%; height: 130px; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
+.metric-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.metric-card-title { font-weight: 600; font-size: 13px; }
+.metric-card-value { font-size: 28px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metric-card-unit { color: var(--text2); }
+.metric-card-trend { font-weight: 600; }
+.metric-trend-up { color: var(--warning, #f59e0b); }
+.metric-trend-down { color: var(--success, #22c55e); }
+.metric-trend-flat { color: var(--text2); }
 
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
 .obs-row-nowrap { flex-wrap: nowrap; }

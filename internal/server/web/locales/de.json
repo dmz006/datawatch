@@ -4678,5 +4678,20 @@
   "usage_page_burn_next_ok": "Aktuelle Lanes beibehalten.",
   "dash_card_usage_allowance": "Weekly allowance",
   "dash_card_usage_pace": "Pace line",
-  "dash_card_usage_burn": "Burn per day"
+  "dash_card_usage_burn": "Burn per day",
+  "lane_fill_node": "Knoten: %1$s",
+  "lane_fill_node_none": "Knoten: nicht gemeldet",
+  "lane_fill_help_text": "Eine Zeile pro Lane: Knoten, Zustand und was sie ausführt. Der Balken ist voll bei Arbeit, halb beim Warten auf einen Prüfer und leer im Leerlauf.",
+  "metric_trend_up": "Steigend",
+  "metric_trend_down": "Fallend",
+  "metric_trend_flat": "Stabil",
+  "metric_progress_title": "Fortschritt",
+  "metric_progress_unit": "erledigte von allen Aufgaben",
+  "metric_progress_help": "Erledigte Aufgaben von allen Aufgaben der offenen Arbeit. Der Trend zeigt, ob das geschätzte Ende auseinanderläuft oder näher rückt.",
+  "metric_cost_title": "Kosten",
+  "metric_cost_unit": "API-äquivalente Dollar",
+  "metric_cost_help": "Was die Arbeit zu API-Preisen kosten würde. Nicht das, was Sie im Pauschaltarif zahlen.",
+  "metric_forecast_title": "Prognose",
+  "metric_forecast_unit": "Tage bis zum Ende (niedrig bis hoch)",
+  "metric_forecast_help": "Der geschätzte Bereich an Tagen, bis die offene Arbeit fertig ist."
 }

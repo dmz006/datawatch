@@ -4678,5 +4678,20 @@
   "usage_page_burn_next_ok": "Gardez les voies actuelles.",
   "dash_card_usage_allowance": "Weekly allowance",
   "dash_card_usage_pace": "Pace line",
-  "dash_card_usage_burn": "Burn per day"
+  "dash_card_usage_burn": "Burn per day",
+  "lane_fill_node": "Nœud : %1$s",
+  "lane_fill_node_none": "Nœud : non signalé",
+  "lane_fill_help_text": "Une ligne par voie : son nœud, son état et ce qu’elle exécute. La barre est pleine au travail, à moitié en attente d’un vérificateur et vide au repos.",
+  "metric_trend_up": "En hausse",
+  "metric_trend_down": "En baisse",
+  "metric_trend_flat": "Stable",
+  "metric_progress_title": "Progression",
+  "metric_progress_unit": "tâches faites sur toutes les tâches",
+  "metric_progress_help": "Tâches terminées sur l’ensemble du travail ouvert. La tendance montre si la date estimée s’élargit ou converge.",
+  "metric_cost_title": "Coût",
+  "metric_cost_unit": "dollars équivalents API",
+  "metric_cost_help": "Ce que coûterait le travail aux tarifs de l’API. Ce n’est pas ce que vous payez avec un forfait.",
+  "metric_forecast_title": "Prévision",
+  "metric_forecast_unit": "jours avant la fin (bas à haut)",
+  "metric_forecast_help": "La plage estimée de jours avant la fin du travail ouvert."
 }

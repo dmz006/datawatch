@@ -4678,5 +4678,20 @@
   "usage_page_burn_next_ok": "現在のレーン数を維持。",
   "dash_card_usage_allowance": "Weekly allowance",
   "dash_card_usage_pace": "Pace line",
-  "dash_card_usage_burn": "Burn per day"
+  "dash_card_usage_burn": "Burn per day",
+  "lane_fill_node": "ノード: %1$s",
+  "lane_fill_node_none": "ノード: 未報告",
+  "lane_fill_help_text": "レーンごとに1行: ノード、状態、実行内容を表示します。バーは作業中は満タン、検証待ちは半分、待機中は空です。",
+  "metric_trend_up": "上昇",
+  "metric_trend_down": "下降",
+  "metric_trend_flat": "横ばい",
+  "metric_progress_title": "進捗",
+  "metric_progress_unit": "全タスクのうち完了したタスク",
+  "metric_progress_help": "未完了の作業に含まれる全タスクのうち完了した数です。傾向は完了予測が広がっているか収束しているかを示します。",
+  "metric_cost_title": "コスト",
+  "metric_cost_unit": "API換算ドル",
+  "metric_cost_help": "API料金で計算した場合の作業コストです。定額プランでの支払額ではありません。",
+  "metric_forecast_title": "予測",
+  "metric_forecast_unit": "完了までの日数(下限〜上限)",
+  "metric_forecast_help": "未完了の作業が終わるまでの推定日数の範囲です。"
 }

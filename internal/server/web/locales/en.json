@@ -4678,5 +4678,20 @@
   "usage_page_burn_next_ok": "Keep the current lanes.",
   "dash_card_usage_allowance": "Weekly allowance",
   "dash_card_usage_pace": "Pace line",
-  "dash_card_usage_burn": "Burn per day"
+  "dash_card_usage_burn": "Burn per day",
+  "lane_fill_node": "Node: %1$s",
+  "lane_fill_node_none": "Node: not reported",
+  "lane_fill_help_text": "One row per lane: its node, its state and what it runs. The bar is full when the lane works, half when it waits on a verifier and empty when idle.",
+  "metric_trend_up": "Rising",
+  "metric_trend_down": "Falling",
+  "metric_trend_flat": "Steady",
+  "metric_progress_title": "Progress",
+  "metric_progress_unit": "tasks done of all tasks",
+  "metric_progress_help": "Tasks finished out of every task in open work. The trend shows whether the estimated finish date is widening or converging.",
+  "metric_cost_title": "Cost",
+  "metric_cost_unit": "API-equivalent dollars",
+  "metric_cost_help": "What the work would cost at API prices. It is not what you pay on a flat plan.",
+  "metric_forecast_title": "Forecast",
+  "metric_forecast_unit": "days to finish (low to high)",
+  "metric_forecast_help": "The estimated range of days until open work is done."
 }

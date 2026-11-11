@@ -31026,56 +31026,142 @@ function _laneFillKindModesHtml(base, modes) {
     .filter(p => p[1]).map(p => t('lane_fill_kind_modes_part', [t(p[0]), label(p[1])]));
   return `<div class="lane-fill-kind-modes" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_kind_modes', [parts.join('; ')]))}</div>`;
 }
+// One lane is one row: lane name, node, state and what it runs, then a small
+// bounded bar (full when working, half when waiting on a verifier, empty when
+// idle). The bar has a fixed maximum width so it never stretches.
+const LANE_BAR_LEVEL = { occupied: 100, waiting_verifier: 50, idle: 0 };
 function _laneFillLaneHtml(l) {
   const occupied = l.state === 'occupied';
   const waitingVerifier = l.state === 'waiting_verifier';
   const typeKey = _laneFillKey(LANE_FILL_TYPE_KEYS, l.type);
   const typeLabel = typeKey ? t(typeKey) : String(l.type || '');
-  const stateLabel = t(waitingVerifier ? 'lane_fill_state_waiting_verifier'
-    : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle'));
-  const waiting = Number(l.eligible_waiting) > 0
-    ? `<span class="lane-fill-waiting" style="color:var(--accent2,var(--text));font-weight:600;">&#9203; ${escHtml(t('lane_fill_waiting', [Number(l.eligible_waiting)]))}</span>` : '';
-  // A lane that works and a lane that waits must read differently: show why
-  // the verifier slot is taken, escaped. Absent or empty reason = label only.
-  const waitReason = waitingVerifier
-    ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
-  const waitReasonHtml = waitReason
-    ? `<span class="lane-fill-wait-reason" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_waiting_verifier_reason', [waitReason]))}</span>` : '';
-  const occupant = (occupied || waitingVerifier) && l.occupant
+  const stateKey = waitingVerifier ? 'lane_fill_state_waiting_verifier' : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle');
+  const level = waitingVerifier ? LANE_BAR_LEVEL.waiting_verifier : (occupied ? LANE_BAR_LEVEL.occupied : LANE_BAR_LEVEL.idle);
+  const node = String(l.node || (l.occupant && l.occupant.node) || '').trim();
+  const runs = (occupied || waitingVerifier) && l.occupant
     ? [l.occupant.title, l.occupant.backend].filter(Boolean).join(' · ') : '';
-  const blocker = l.blocker ? `<div style="color:var(--text2);">${escHtml(t('lane_fill_blocked', [l.blocker]))}</div>` : '';
-  return `<div class="lane-fill-lane" style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
-    `<span style="font-weight:600;overflow-wrap:anywhere;">${escHtml(l.id)} · ${escHtml(typeLabel)}</span>` +
-    `<span>${escHtml(stateLabel)}</span>${waiting}${waitReasonHtml}` +
-    `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
+  const waitReason = waitingVerifier ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
+  const notes = [];
+  if (l.blocker) notes.push(['lane-fill-blocker', t('lane_fill_blocked', [l.blocker])]);
+  if (waitReason) notes.push(['lane-fill-wait-reason', t('lane_fill_waiting_verifier_reason', [waitReason])]);
+  if (Number(l.eligible_waiting) > 0) notes.push(['lane-fill-waiting', t('lane_fill_waiting', [Number(l.eligible_waiting)])]);
+  const notesHtml = notes.map(n => `<span class="${n[0]}">${escHtml(n[1])}</span>`).join(' — ');
+  const cell = (cls, txt) => `<span class="lane-row-${cls}">${escHtml(txt)}</span>`;
+  return `<div class="lane-fill-lane lane-row" data-lane-state="${escHtml(l.state || 'idle')}">` +
+    cell('name', `${l.id} · ${typeLabel}`) +
+    cell('node', node ? t('lane_fill_node', [node]) : t('lane_fill_node_none')) +
+    cell('state', t(stateKey)) +
+    `<span class="lane-bar" role="img" aria-label="${escHtml(t(stateKey))}"><span class="lane-bar-fill" style="width:${level}%;"></span></span>` +
+    `<span class="lane-row-runs">${escHtml(runs)}${notesHtml ? (runs ? ' — ' : '') + notesHtml : ''}</span></div>`;
 }
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
     `<span style="color:var(--text2);">${escHtml(_laneFillClock(a.at))}</span> ${escHtml(a.lane_id)} · ${escHtml(a.work)}${escHtml(message)}</div>`;
 }
+// _resourceHelpHtml is the '?' entry of a Resources or Progress card: a small
+// button that opens a note with a link to the docs page.
+function _resourceHelpHtml(textKey, href) {
+  return `<span class="usage-help-wrap"><button type="button" class="usage-help" aria-expanded="false" aria-label="${escHtml(t('usage_page_help_label'))}" onclick="usageCalcHelpToggle(this)">?</button>` +
+    `<span class="usage-help-pop" role="note" hidden>${escHtml(t(textKey))} ` +
+    `<a class="usage-help-docs" href="${escHtml(href)}" target="_blank" rel="noopener">${escHtml(t('usage_page_help_docs'))}</a></span></span>`;
+}
+const LANE_FILL_DOCS_HREF = '/diagrams.html#docs/howto/automata-resources.md';
 window.laneFillCardHtml = function(status, cap) {
-  const head = `<div class="cap-title">${escHtml(t('lane_fill_card_title'))}</div>`;
-  if (!status || typeof status !== 'object') {
-    return `<div class="prd-capacity-card lane-fill-card">${head}<div style="color:var(--text2);">${escHtml(t('lane_fill_empty'))}</div></div>`;
-  }
+  // A card that is off, empty or never read is not drawn.
+  if (!status || typeof status !== 'object') return '';
   const lanes = Array.isArray(status.lanes) ? status.lanes : [];
-  const lanesHtml = lanes.length ? lanes.map(_laneFillLaneHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_lanes'))}</div>`;
+  if (!lanes.length || status.mode === 'off') return '';
+  const head = `<div class="cap-title card-head">${escHtml(t('lane_fill_card_title'))} ${_resourceHelpHtml('lane_fill_help_text', LANE_FILL_DOCS_HREF)}</div>`;
+  const lanesHtml = lanes.map(_laneFillLaneHtml).join('');
   const queued = status.queued_eligible || {};
-  const queuedLine = `<div style="margin-top:6px;">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
+  const queuedLine = `<div class="lane-fill-queued">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
   const ev = status.evidence || {};
   const models = (Array.isArray(ev.loaded_models) ? ev.loaded_models : []).map(m => `${m.host} ${m.model}`).join(', ');
   const evidenceLine = ev.error
     ? t('lane_fill_evidence_error', [ev.error])
     : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
-  const evidence = `<div style="margin-top:6px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(evidenceLine)}</div>`;
+  const evidence = `<div class="lane-fill-evidence">${escHtml(evidenceLine)}</div>`;
+  // The recent decisions log is not part of this card: its data is on the
+  // Events tab. The idle lane alerts stay, in their own block below the lanes.
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
-  const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
-  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
-    _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
-    `<div class="lane-fill-gap" aria-hidden="true" style="height:14px;"></div>` +
-    _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
+  const alertsHtml = alerts.length
+    ? `<div class="lane-fill-gap" aria-hidden="true"></div>` + _laneFillSection(t('lane_fill_alerts_heading'), alerts.map(_laneFillAlertHtml).join('')) : '';
+  return `<div class="prd-capacity-card lane-fill-card lane-card">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
+    `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + alertsHtml + `</div>`;
 };
+
+// ── Headline cards (progress, cost, forecast) ───────────────────────────────
+// metricCardHtml(spec) draws one fixed-size card: the headline number large,
+// its unit labelled beneath, and the trend. spec: {id, titleKey, helpKey,
+// docs, value (number or text), unitKey, trend ('up'|'down'|'flat')}. A value
+// that is missing (off, empty or never measured) draws nothing at all.
+const METRIC_TREND_KEYS = { up: 'metric_trend_up', down: 'metric_trend_down', flat: 'metric_trend_flat' };
+const METRIC_TREND_MARK = { up: '\u25B2', down: '\u25BC', flat: '\u25B6' };
+window.metricCardHtml = function(spec) {
+  if (!spec || spec.value === null || spec.value === undefined || spec.value === '') return '';
+  if (typeof spec.value === 'number' && !isFinite(spec.value)) return '';
+  const dir = _laneFillKey(METRIC_TREND_KEYS, spec.trend);
+  const trend = dir
+    ? `<div class="metric-card-trend metric-trend-${escHtml(spec.trend)}">${METRIC_TREND_MARK[spec.trend]} ${escHtml(t(dir))}</div>` : '';
+  return `<div class="metric-card" id="${escHtml(spec.id)}Body" data-metric="${escHtml(spec.id)}">` +
+    `<div class="metric-card-head card-head"><span class="metric-card-title">${escHtml(t(spec.titleKey))}</span> ${_resourceHelpHtml(spec.helpKey, spec.docs)}</div>` +
+    `<div class="metric-card-value">${escHtml(String(spec.value))}</div>` +
+    `<div class="metric-card-unit">${escHtml(t(spec.unitKey))}</div>${trend}</div>`;
+};
+const METRIC_PROGRESS_DOCS = '/diagrams.html#docs/howto/automata-progress.md';
+const METRIC_COST_DOCS = '/diagrams.html#docs/howto/automata-cost.md';
+function _metricTrendOf(dir) {
+  return dir === 'converging' ? 'down' : (dir === 'widening' ? 'up' : (dir === 'flat' ? 'flat' : ''));
+}
+// metricCardSpecs turns the decoded progress body, the progress trend body and
+// the cost body into the three card specs. Missing parts give a spec with no value.
+window.metricCardSpecs = function(progress, trend, cost, prevCost) {
+  const tot = (progress && progress.totals) || {};
+  const comp = (progress && progress.completion) || {};
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
+  const done = num(tot.tasks_done);
+  const total = num(tot.tasks);
+  const trendDir = _metricTrendOf(trend && trend.direction);
+  const usd = num(cost && cost.total_usd);
+  let costTrend = '';
+  if (usd !== null && num(prevCost) !== null) costTrend = usd > prevCost ? 'up' : (usd < prevCost ? 'down' : 'flat');
+  const lo = num(comp.low_days), hi = num(comp.high_days);
+  return [
+    { id: 'automationProgressHeadline', titleKey: 'metric_progress_title', helpKey: 'metric_progress_help', docs: METRIC_PROGRESS_DOCS,
+      value: done !== null && total !== null && total > 0 ? `${done} / ${total}` : null, unitKey: 'metric_progress_unit', trend: trendDir },
+    { id: 'automationCostBillingCard', titleKey: 'metric_cost_title', helpKey: 'metric_cost_help', docs: METRIC_COST_DOCS,
+      value: usd !== null && usd > 0 ? '$' + usd.toFixed(2) : null, unitKey: 'metric_cost_unit', trend: costTrend },
+    { id: 'automationCompletionForecastCard', titleKey: 'metric_forecast_title', helpKey: 'metric_forecast_help', docs: METRIC_PROGRESS_DOCS,
+      value: lo !== null && hi !== null ? `${Number(lo.toFixed(1))}\u2013${Number(hi.toFixed(1))}` : null, unitKey: 'metric_forecast_unit', trend: trendDir },
+  ];
+};
+// _metricCardsPaint draws each spec into its slot and hides a slot whose card is empty.
+function _metricCardsPaint(specs) {
+  specs.forEach(sp => {
+    const el = document.getElementById(sp.id);
+    if (!el) return;
+    const html = window.metricCardHtml(sp);
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
+  });
+}
+function _metricCardsLoad() {
+  const get = (u) => Promise.resolve(apiFetch(u)).catch(() => null);
+  return Promise.all([get('/api/autonomous/progress'), get('/api/autonomous/progress/trend?days=14'), get('/api/cost')]).then(([pr, tr, co]) => {
+    const prev = window._metricPrevCost;
+    if (co && typeof co.total_usd === 'number') window._metricPrevCost = co.total_usd;
+    _metricCardsPaint(window.metricCardSpecs(pr, tr, co, prev));
+  });
+}
+function _metricCardsStart() {
+  _metricCardsStop();
+  _metricCardsLoad();
+  window._metricCardsInterval = setInterval(_metricCardsLoad, 30000);
+}
+function _metricCardsStop() {
+  if (window._metricCardsInterval) { clearInterval(window._metricCardsInterval); window._metricCardsInterval = null; }
+}
 
 // ── Infrastructure retries card ─────────────────────────────────────────────
 // infraRetryCardHtml(status) turns the decoded GET /api/autonomous/infra-retries
@@ -36232,10 +36318,12 @@ function _automationPlaceholderHTML(id) {
   ['resources', 'automationLaneUtilizationCard', 100],
   ['resources', 'automationVerifierSlotsCard', 110],
   ['progress', 'automationAllProjectsGanttCard', 100],
-  ['progress', 'automationCostBillingCard', 110],
-  ['progress', 'automationCompletionForecastCard', 120],
   ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
+// The three headline cards sit in one row on the Progress tab; the cost slot
+// starts and stops the shared loader. Each card hides itself when it has no value.
+registerAutomationCardSlot('progress', { id: 'automationProgressHeadline', order: 105, html: '<div id="metricCardRow" class="metric-cards"><div id="automationProgressHeadline" style="display:none;"></div><div id="automationCostBillingCard" style="display:none;"></div><div id="automationCompletionForecastCard" style="display:none;"></div></div>',
+  mount: _metricCardsStart, stop: _metricCardsStop });
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,
 // security failures and open supervisor-watch findings. The counts live here
@@ -36595,7 +36683,12 @@ function _automationLaneFillLoader() {
     key: 'automation_lane_fill', el: 'automationLaneFillCard', url: '/api/autonomous/lane-fill?limit=20', pollMs: 5000,
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
-    render: status => window.laneFillCardHtml(status, window._lastAutomationCapacity),
+    render: status => {
+      const html = window.laneFillCardHtml(status, window._lastAutomationCapacity);
+      const el = document.getElementById('automationLaneFillCard');
+      if (el) el.style.display = html ? '' : 'none';
+      return html;
+    },
   });
 }
 
