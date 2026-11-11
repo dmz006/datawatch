@@ -96,6 +96,8 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 		rec := costreport.Record{
 			SessionID:     e.SessionID,
 			AutomatonID:   e.AutomatonID,
+			TaskID:        e.TaskID,
+			Role:          e.Role,
 			Backend:       e.Backend,
 			At:            at,
 			TokensIn:      int(e.TokensIn),
