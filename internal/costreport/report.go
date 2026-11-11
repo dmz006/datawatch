@@ -212,6 +212,19 @@ type Row struct {
 	// Units is the count of shipped PRDs / automations in the release;
 	// release groupings only.
 	Units int `json:"units,omitempty"`
+
+	// WindowPartial is true when the row's first activity precedes the
+	// window start: the row is the in-window slice of a longer life, so
+	// its figures are not the Automaton's whole spend.
+	WindowPartial bool `json:"window_partial,omitempty"`
+	// WindowNote says so plainly when WindowPartial is set.
+	WindowNote string `json:"window_note,omitempty"`
+	// SpendUnknown is true when the window reaches before the ledger
+	// horizon: spend before the horizon is unknown, never zero and never
+	// backfilled.
+	SpendUnknown bool `json:"spend_unknown,omitempty"`
+	// SpendUnknownNote explains SpendUnknown on the row.
+	SpendUnknownNote string `json:"spend_unknown_note,omitempty"`
 }
 
 // Report is the finished cost report.
@@ -232,6 +245,34 @@ type Report struct {
 	// the rows carry the sessions' lifetime totals instead of in-window
 	// spend.
 	RetentionNote string `json:"retention_note"`
+	// WindowNote is the top-level note, present when any row is a partial
+	// slice of a longer life. It names the default window and the ledger.
+	WindowNote string `json:"window_note,omitempty"`
+	// UnknownSpendNote is present when the window reaches before the
+	// ledger horizon.
+	UnknownSpendNote string `json:"unknown_spend_note,omitempty"`
+	// UnknownBefore is the ledger horizon: spend before it is unknown.
+	// Set only with UnknownSpendNote.
+	UnknownBefore *time.Time `json:"unknown_before,omitempty"`
+}
+
+// windowRowNote is the per-row text for a row that began before the window.
+func windowRowNote(since time.Time, defaultDays int) string {
+	return fmt.Sprintf("Activity began before this window (starts %s); figures cover the window only, not the whole life. The default window is %d days and the spend ledger keeps %d days. A missing row means no activity in the window, not zero spend.",
+		since.UTC().Format("2006-01-02"), defaultDays, RetentionDays)
+}
+
+// windowReportNote is the top-level text for partial rows.
+func windowReportNote(since time.Time, defaultDays, partial int) string {
+	return fmt.Sprintf("%d row(s) began before the window start (%s) and show only their in-window part. The default window is %d days and the spend ledger keeps %d days; widen the window to see more. An Automaton absent from the report had no activity in the window; that is not zero spend.",
+		partial, since.UTC().Format("2006-01-02"), defaultDays, RetentionDays)
+}
+
+// unknownSpendNote is the text for a window reaching before the ledger
+// horizon.
+func unknownSpendNote(horizon time.Time) string {
+	return fmt.Sprintf("Spend before %s is unknown: it is older than the %d-day ledger. It is not zero and is not backfilled.",
+		horizon.UTC().Format("2006-01-02"), RetentionDays)
 }
 
 // The billing-mode row labels, surfaced verbatim.
@@ -572,7 +613,7 @@ func Build(
 	lifetimeFallback := res.LifetimeFallback ||
 		since.Before(now.AddDate(0, 0, -RetentionDays))
 
-	return &Report{
+	rep := &Report{
 		GroupBy:          req.GroupBy,
 		Since:            since,
 		Until:            until,
@@ -580,5 +621,35 @@ func Build(
 		RetentionDays:    RetentionDays,
 		LifetimeFallback: lifetimeFallback,
 		RetentionNote:    retentionNote(lifetimeFallback),
-	}, nil
+	}
+
+	defDays := cfg.EffectiveWindowDays()
+	partial := 0
+	for i := range rep.Rows {
+		r := &rep.Rows[i]
+		if r.FirstActivity != nil && r.FirstActivity.Before(since) {
+			r.WindowPartial = true
+			r.WindowNote = windowRowNote(since, defDays)
+			partial++
+		}
+	}
+	if partial > 0 {
+		rep.WindowNote = windowReportNote(since, defDays, partial)
+	}
+	horizon := now.AddDate(0, 0, -RetentionDays)
+	if since.Before(horizon) {
+		rep.UnknownSpendNote = unknownSpendNote(horizon)
+		rep.UnknownBefore = &horizon
+		for i := range rep.Rows {
+			// Only rows with activity before the horizon (or with
+			// unknown activity times) carry unknown spend; rows wholly
+			// inside the ledger are known.
+			fa := rep.Rows[i].FirstActivity
+			if fa == nil || fa.Before(horizon) {
+				rep.Rows[i].SpendUnknown = true
+				rep.Rows[i].SpendUnknownNote = rep.UnknownSpendNote
+			}
+		}
+	}
+	return rep, nil
 }
