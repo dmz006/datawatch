@@ -310,6 +310,24 @@ pool set than the worker's, the hand-off is refused and the verifier is
 admitted separately with its own lease; a second slot is never stacked on
 top of the first.
 
+## An idle verifier is the verifier's own incident
+
+When a task moves to verification and the verifier session goes idle — no
+output, no pane activity, a dead runner — datawatch does not treat it as a
+worker failure. It re-runs the verification on a **fresh verifier session**,
+up to a small fixed number of times, and each idle is reported as a
+**verifier incident**: an event on the task (which verifier backend and model
+went idle and for how long), an entry on the Automaton's decision log, and an
+`autonomous.verifier_incident` audit event you can list like any other
+(`datawatch audit --action autonomous.verifier_incident`).
+
+None of this touches the worker's attempt budget, its attempt count or its
+escalation failures — the worker's result was never judged, so there is
+nothing to fail. If the verifier keeps going idle until the small cap is used
+up, the task is parked for operator review (`held for operator review: the
+verifier went idle N times`, in the infra category). Still no worker failure
+is counted, and the worker's result is left standing for you to judge.
+
 ## Retries with an explicit backend and model
 
 When you retry a task and pick a backend and model yourself (a review
@@ -401,6 +419,30 @@ request is retargeted to the new pool and reported with
 section, and [`autonomous-planning.md`](autonomous-planning.md) for the
 queued-versus-started behaviour and the changed / left-alone report).
 
+## Changing a waiting task's worker
+
+A per-task worker override — the backend and model written onto the task
+itself with `set_task_llm` (or the task's story with `set_story_llm`, which
+each task inherits when it has no override of its own) — is honoured at
+admission: the task's next start resolves that pair and takes its slot in
+that backend's pools, exactly like the explicit pair of a retry above. What
+a task is admitted with is carried on the task, so a re-admission after a
+daemon restart places it on the same pool again.
+
+That works on a task that is **waiting for capacity** too, while the
+Automaton is still running, as long as `autonomous.override_queued_tasks` is
+on (the default — unset reads as on). The call touches only unstarted
+tasks, and a waiting task gets more than the write: its single queued
+capacity request is **re-targeted in place** to the pool the new pair
+resolves to and re-queued there immediately, so its re-admission happens
+against the pool you actually want, and its wait reason names that pool
+from the next read on. Nothing is duplicated — moving the same queue entry
+to the pool it already carries is a no-op — and a task that already holds a
+live lease is left entirely alone, along with every running or finished
+task, each reported as *left alone* with its reason. The response names
+each affected task as *changed* or *left alone* and says, for the ones that
+moved, that their capacity request was retargeted (`capacity_moved`).
+
 ## Park on an external condition
 
 A task blocked on something outside the daemon — a long CI run, a deploy
@@ -445,8 +487,10 @@ restarts.
 3. Give an important Automaton a higher priority so its tasks go first:
    `POST /api/autonomous/prds/{id}/set_priority {"priority": 10}` (PWA:
    Automaton settings > Priority).
-4. Cancel or reset a waiting task like any other; cancelling removes it
-   from the queue.
+4. Reset a waiting task to re-admit it (it has not started, so no
+   force is needed — the reset keeps its place in the capacity queue,
+   retargeting its target pool if the worker resolution changed, with
+   a fresh wait budget); cancelling removes it from the queue outright.
 5. After a daemon restart, waiting tasks are put back in the queue.
 
 An alert is raised when a task has waited 30 minutes.

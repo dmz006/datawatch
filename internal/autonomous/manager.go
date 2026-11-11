@@ -4016,8 +4016,11 @@ func (m *Manager) RepairDependsOn(prdID, actor string) (*PRD, error) {
 
 // ResetTask (v8.23.0) resets a failed or blocked task back to pending so
 // the autonomous loop will retry it. Only allowed while the PRD is running.
-// Clears status, error, session_id, verification, and retry_count.
-// ResetTask resets a failed/blocked task to pending for retry.
+// A waiting-for-capacity task also qualifies (no force needed): it has
+// not started, so the reset re-admits it, keeping its capacity queue
+// slot (retargeting the pool the task now resolves to) with a fresh
+// wait budget. Clears status, error, session_id, verification, and retry_count.
+// ResetTask resets a failed/blocked/waiting-for-capacity task to pending for retry.
 // BL382: force=true also requeues completed or cancelled tasks.
 // recoverPendingTask reopens a terminal PRD whose target task is already
 // pending (BL451). The task is left untouched; the containing story is
@@ -4132,6 +4135,10 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	emitReset := func(*Decision) {}
 	var resetOld PRDStatus
 	kind := ""
+	// wasWaiting records whether the reset task was in the capacity queue: it
+	// has not started yet, so a reset re-admits it (after the save below)
+	// rather than clearing a finished attempt.
+	wasWaiting := false
 	// prd is the shared stored pointer (Store.GetPRD): the task, story and PRD
 	// writes below run under the store lock so they are ordered against
 	// readers (EmitPRDUpdate, snapshots) and persist. SavePRD takes Store.mu
@@ -4141,13 +4148,15 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 			for ti := range prd.Story[si].Tasks {
 				t := &prd.Story[si].Tasks[ti]
 				if t.ID == taskID {
-					isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || (review != nil && t.Status == TaskReviewNeeded)
+					// A task waiting for capacity has not started: resetting it re-admits
+					// it (after the save, below) and needs no force, unlike a finished task.
+					isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || t.Status == TaskWaitingCapacity || (review != nil && t.Status == TaskReviewNeeded)
 					isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
 					if !isRetryable && !isRequeue {
 						if force {
 							return fmt.Errorf("task %q status %q cannot be requeued even with force=true; only completed or cancelled tasks qualify", taskID, t.Status)
 						}
-						return fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried (use force=true to requeue completed/cancelled tasks)", taskID, t.Status)
+						return fmt.Errorf("task %q status %q cannot be reset; only failed, blocked, or waiting-for-capacity tasks can be retried (use force=true to requeue completed/cancelled tasks)", taskID, t.Status)
 					}
 					// v8.36.1 — capture why the previous attempt didn't land
 					// before clearing it, so the retry's worker gets told what
@@ -4179,6 +4188,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 							strings.Join(hintParts, " ") +
 							" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing the actual required deliverable files themselves — do not run git add or git commit; your work is committed automatically when you finish. Verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
 					}
+					wasWaiting = t.Status == TaskWaitingCapacity
 					resetEv := pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID}
 					t.Status = ""
 					t.Error = ""
@@ -4202,6 +4212,10 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// The next attempt is admitted afresh, from the task's current
 					// worker: drop the pair the last attempt was admitted with.
 					t.AdmittedBackend, t.AdmittedModel = "", ""
+					t.AdmittedTaskBackend, t.AdmittedTaskModel = "", ""
+					// A reset ends the recorded capacity wait too: the task is
+					// unstarted again, so a stale wait reason must not survive it.
+					t.WaitReason = ""
 					// A human reset starts a new count of failed attempts for the
 					// failure escalation policy, so the ladder restarts at step 1.
 					t.EscalationFailures = 0
@@ -4295,6 +4309,24 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 		m.emitPRDStatus(prd, resetOld, lastDecision(prd, kind), nil)
 	}
 	emitReset(lastDecision(prd, kind))
+	// A reset of a waiting-capacity task re-admits it: the task is pending
+	// again and its capacity wait must stay live. requeueQueuedCapacity moves
+	// the task's single live ledger request to the pool the task now resolves
+	// to (a no-op, keeping the request at its queue position, when that is
+	// the pool it already waits on, and it is a no-op as well when no
+	// request is live at all), and the re-admission starts with a fresh
+	// capacity-wait budget: the reset is a new attempt, so the queue time
+	// already spent must not count against its wait bound.
+	if wasWaiting {
+		if up, ok := m.store.GetPRD(prdID); ok {
+			if tk, story := findTaskInPRD(up, taskID); tk != nil {
+				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), m.cfg.ExecutionBackend); backend != "" {
+					m.requeueQueuedCapacity(up, tk, backend, model)
+				}
+				m.resetCapacityWait(tk.ID)
+			}
+		}
+	}
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -5453,6 +5485,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 		task.Effort = Effort(effort)
 		task.Model = model
 		task.AdmittedBackend, task.AdmittedModel = "", ""
+		task.AdmittedTaskBackend, task.AdmittedTaskModel = "", ""
 		task.UpdatedAt = time.Now()
 		prd.UpdatedAt = time.Now()
 		prd.Decisions = append(prd.Decisions, Decision{

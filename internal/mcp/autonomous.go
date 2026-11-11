@@ -1522,10 +1522,10 @@ func (s *Server) handleAutonomousPRDRemoveTask(_ context.Context, req mcpsdk.Cal
 
 func (s *Server) toolAutonomousPRDResetTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reset_task",
-		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked task to pending so the autonomous loop retries it. BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running."),
+		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked/waiting-for-capacity task to pending so the autonomous loop retries it. A waiting-for-capacity task needs no force: the daemon re-admits it (same queue position, retargeted pool if the worker resolution changed, fresh wait budget). BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to reset")),
-		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (not just failed/blocked)")),
+		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (failed, blocked and waiting-for-capacity tasks never need force)")),
 		mcpsdk.WithBoolean("clean_restart", mcpsdk.Description("Set true to start the next attempt from the pre-task tree: the preserved work of earlier attempts is not restored for that one attempt. Default false (restore stays on)")),
 	)
 }

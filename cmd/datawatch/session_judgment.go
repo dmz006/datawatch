@@ -324,6 +324,16 @@ func judgeAskBody(question, kind, llm, model, node string) map[string]any {
 	return body
 }
 
+// verifierWatchdogTripError is the error a tripped verifier no-progress
+// watchdog raises. It is a *autonomous.VerifierIdleError — not just the
+// OneShotNoOutputError text spelling — so the executor's idle retry path
+// (autonomous.IsVerifierIdleError in verifyRetryingIdle) sees the typed
+// error and treats the trip as a verifier incident to retry on a fresh
+// verifier instead of counting a worker failure against Task.Attempts.
+func verifierWatchdogTripError(limit time.Duration) error {
+	return autonomouspkg.NewVerifierIdleError(limit)
+}
+
 // verifierSessionNamePrefix is the sessionName prefix of the PRD task
 // verifier one-shot session ("autonomous:verify:<task id>").
 const verifierSessionNamePrefix = "autonomous:verify"
@@ -655,7 +665,7 @@ func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, p
 					}
 					fmt.Printf("[%s] %s no progress for %v — no-progress watchdog ending session (runner: %v; model-server request: %v; capacity slot: %v; no output file, no pane change)\n",
 						sessionName, startOut.ID, watchdogLimit, runner, request, slot)
-					return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: autonomouspkg.VerifierWatchdogMessage(watchdogLimit)}
+					return "", sessionID, verifierWatchdogTripError(watchdogLimit)
 				}
 				// Run cap: decided on every poll with the same slot state the
 				// watchdog saw, so waiting-for-slot time is excluded.

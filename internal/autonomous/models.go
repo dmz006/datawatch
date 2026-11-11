@@ -1096,6 +1096,20 @@ type DeliveryFailureEvent struct {
 	Reason string    `json:"reason"`
 }
 
+// VerifierIncidentEvent records one idle-verifier incident on a task: the
+// verifier session went idle (no output, no pane activity, dead runner, no
+// capacity slot) past its no-progress limit while running on Backend/Model.
+// It is the verifier's own incident, not a worker failure. TaskID repeats
+// the task the event sits on so an entry read in isolation is
+// self-describing; Idle is how long the verifier was idle.
+type VerifierIncidentEvent struct {
+	At      time.Time     `json:"at"`
+	TaskID  string        `json:"task_id,omitempty"`
+	Backend string        `json:"backend,omitempty"`
+	Model   string        `json:"model,omitempty"`
+	Idle    time.Duration `json:"idle"`
+}
+
 // InfraRetryRecord is one scheduled retry of a task after an infrastructure
 // failure: which retry it was, the failure class and text, when it was
 // decided, the back-off delay and when the retry is due.
@@ -1201,6 +1215,11 @@ type Task struct {
 	// reached its main prompt, so the task was never given its work. Each
 	// event carries the reason logged at the time.
 	DeliveryFailureEvents []DeliveryFailureEvent `json:"delivery_failure_events,omitempty"`
+	// VerifierIncidentEvents records each time this task's verifier went idle
+	// and was reported as a verifier incident (its own incident, not a
+	// worker failure): the verifier backend/model and the idle duration.
+	// Written by RecordVerifierIncident.
+	VerifierIncidentEvents []VerifierIncidentEvent `json:"verifier_incident_events,omitempty"`
 	// History is a short audit trail of task-level events that have no field of
 	// their own, e.g. live sessions ended before a replacement launched.
 	History []TaskHistoryEntry `json:"history,omitempty"`
@@ -1339,6 +1358,15 @@ type Task struct {
 	// attempt was admitted. A requeue or reset clears them.
 	AdmittedBackend string `json:"admitted_backend,omitempty"`
 	AdmittedModel   string `json:"admitted_model,omitempty"`
+	// AdmittedTaskBackend and AdmittedTaskModel snapshot the task's own
+	// Backend/Model at the moment its current attempt was admitted. admittedWorker
+	// uses them to tell a still-running attempt (task fields unchanged, so the
+	// recorded pair stands) from a task whose worker the operator re-overrode
+	// after admission: once Backend/Model differ from the snapshot, the
+	// recorded pair is stale and admission follows the task's current worker.
+	// Cleared wherever the admitted pair is cleared.
+	AdmittedTaskBackend string `json:"admitted_task_backend,omitempty"`
+	AdmittedTaskModel   string `json:"admitted_task_model,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for

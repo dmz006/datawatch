@@ -1,7 +1,9 @@
 package autonomous
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -123,8 +125,52 @@ func (w *VerifierWatchdog) Observe(now time.Time, outputPresent bool, marker str
 	return w.Decide(now, ProgressSignals{OutputPresent: outputPresent, Marker: marker})
 }
 
+// verifierIdlePrefix is the stable leading fragment of the watchdog error
+// text: it is what makes a tripped-watchdog failure recognizable in the
+// OneShotNoOutputError text the cmd layer builds for it, and what the
+// IsVerifierIdleError classifier matches on.
+const verifierIdlePrefix = "verifier no-progress watchdog: "
+
 // VerifierWatchdogMessage is the OneShotNoOutputError text for a tripped
 // watchdog.
 func VerifierWatchdogMessage(limit time.Duration) string {
-	return fmt.Sprintf("verifier no-progress watchdog: no output file or pane activity for %v", limit)
+	return fmt.Sprintf("%sno output file or pane activity for %v", verifierIdlePrefix, limit)
+}
+
+// VerifierIdleError marks a verifier failure caused by the no-progress
+// watchdog tripping: the verifier session went idle (no output file, no
+// pane activity, dead runner, no slot, no active request) past the limit,
+// as opposed to a worker failure such as a session that ended in a broken
+// state or hit its time limit. NewVerifierIdleError carries the same text
+// as the OneShotNoOutputError the cmd layer builds for the same trip, so
+// the two spellings of the same event classify identically.
+type VerifierIdleError struct {
+	Msg string
+}
+
+func (e *VerifierIdleError) Error() string { return e.Msg }
+
+// NewVerifierIdleError returns a VerifierIdleError for a watchdog that
+// tripped after limit of silence, with the standard watchdog text.
+func NewVerifierIdleError(limit time.Duration) *VerifierIdleError {
+	return &VerifierIdleError{Msg: VerifierWatchdogMessage(limit)}
+}
+
+// IsVerifierIdleError reports whether err is a tripped-verifier-watchdog
+// failure, so a caller can tell a verifier that went idle apart from a
+// worker failure. It is true for a *VerifierIdleError (or anything that
+// wraps one), and for a *OneShotNoOutputError whose text is the watchdog
+// text — the spelling the one-shot loop currently raises — at any point
+// in the error chain. Timeouts, other one-shot no-output ends and plain
+// errors are not idle.
+func IsVerifierIdleError(err error) bool {
+	var idle *VerifierIdleError
+	if errors.As(err, &idle) {
+		return true
+	}
+	var noOutput *OneShotNoOutputError
+	if errors.As(err, &noOutput) {
+		return strings.HasPrefix(noOutput.Msg, verifierIdlePrefix)
+	}
+	return false
 }

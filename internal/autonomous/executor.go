@@ -2013,7 +2013,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 		var vr VerificationResult
 		if verify != nil {
-			vr, err = verify(ctx, prd, t)
+			var idleHeld bool
+			vr, idleHeld, err = m.verifyRetryingIdle(ctx, prd, t, verify)
+			if idleHeld {
+				return err
+			}
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
 					return nil
@@ -3292,9 +3296,17 @@ const (
 func recordAdmittedWorker(t *Task, source, backend, model string) {
 	if t.Backend == "" {
 		t.AdmittedBackend, t.AdmittedModel = "", ""
+		t.AdmittedTaskBackend, t.AdmittedTaskModel = "", ""
 		return
 	}
 	t.AdmittedBackend, t.AdmittedModel = backend, model
+	// Snapshot the task's own worker as it was chosen at admission, before
+	// the task-source branch below rewrites t.Model to the admitted one.
+	// admittedWorker treats the recorded pair as stale once the task's
+	// Backend/Model differ from this snapshot (an operator re-overrode the
+	// worker); a still-running attempt, whose fields are unchanged, keeps
+	// its recorded pair.
+	t.AdmittedTaskBackend, t.AdmittedTaskModel = t.Backend, t.Model
 	if source == ExecutorSourceTask {
 		t.Model = model
 	}
@@ -3306,10 +3318,24 @@ func recordAdmittedWorker(t *Task, source, backend, model string) {
 // adoption and reporting use it so they never re-derive a different worker
 // than the attempt started with.
 func admittedWorker(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
-	if t.Backend != "" && t.AdmittedBackend != "" {
+	if t.Backend != "" && t.AdmittedBackend != "" && admittedPairStillValid(t) {
 		return t.AdmittedBackend, t.AdmittedModel
 	}
 	return resolveTaskBackendModel(t, story, prd, auto, fallbackBackend)
+}
+
+// admittedPairStillValid reports whether a task's recorded admitted pair may
+// still stand for it. A record made before the snapshot fields existed
+// carries an empty snapshot and always stands: a running attempt keeps the
+// pair it was admitted with. Once the snapshot is set, the pair stands only
+// while the task's own Backend/Model are the ones it was admitted with — an
+// operator re-override of the task's worker (set_task_llm, a review requeue)
+// is newer than the record and admission must follow the override instead.
+func admittedPairStillValid(t *Task) bool {
+	if t.AdmittedTaskBackend == "" && t.AdmittedTaskModel == "" {
+		return true
+	}
+	return t.AdmittedTaskBackend == t.Backend && t.AdmittedTaskModel == t.Model
 }
 
 // resolveTaskBackendModel resolves a task's effective backend and model.

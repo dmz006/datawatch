@@ -1778,9 +1778,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "reset_task":
-		// v8.23.0 — operator resets a failed/blocked task to pending so
-		// the autonomous loop retries it without cancelling the whole PRD.
-		// BL382 — force=true also requeues completed/cancelled tasks.
+		// v8.23.0 — operator resets a failed, blocked or waiting-for-capacity
+		// task to pending so the autonomous loop retries it without cancelling
+		// the whole PRD (a waiting task is re-admitted with a fresh wait
+		// budget; no force needed). BL382 — force=true also requeues
+		// completed/cancelled tasks.
 		// Body: {task_id, actor?, force?}.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
