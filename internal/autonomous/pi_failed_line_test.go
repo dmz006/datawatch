@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPiFailedLineEvidence(t *testing.T) {
@@ -45,4 +46,32 @@ func TestPiFailedLineEvidence(t *testing.T) {
 			t.Fatalf("got %+v ok=%v", ev, ok)
 		}
 	})
+}
+
+func TestPiFailedLineEvidenceImmediate(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "output.log")
+	if err := os.WriteFile(p, []byte("start\nDATAWATCH_PI_FAILED: pi exited with status 7 (model m)\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	begin := time.Now()
+	ev, ok := PiFailedLineEvidence(p, "n", "m")
+	if !ok {
+		t.Fatal("want true")
+	}
+	if ev.ExitStatus == nil || *ev.ExitStatus != 7 {
+		t.Fatalf("want status 7, got %+v", ev.ExitStatus)
+	}
+	if d := time.Since(begin); d > time.Second {
+		t.Fatalf("detection took %v, want immediate", d)
+	}
+}
+
+func TestPiFailedLineEvidenceNoLine(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "output.log")
+	if err := os.WriteFile(p, []byte("still working\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := PiFailedLineEvidence(p, "n", "m"); ok {
+		t.Fatal("want false")
+	}
 }
