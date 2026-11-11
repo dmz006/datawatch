@@ -45,7 +45,7 @@ func TestWakeCoalesceBurst(t *testing.T) {
 	c.Offer(WakeEvent{Kind: "task.failed", AutomatonID: "a1", TaskID: "t1", Fingerprint: "x"})
 	clk.Advance(10 * time.Second)
 	c.Offer(WakeEvent{Kind: "task.failed", AutomatonID: "a1", TaskID: "t2", Fingerprint: "x"})
-	c.Offer(WakeEvent{Kind: "prd.blocked", AutomatonID: "a2", Fingerprint: "y"})
+	c.Offer(WakeEvent{Kind: "automaton.blocked", AutomatonID: "a2", Fingerprint: "y"})
 	if len(*got) != 0 {
 		t.Fatalf("delivered before window closed: %d", len(*got))
 	}
