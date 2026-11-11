@@ -520,3 +520,128 @@ func joinStrings(items []string, sep string) string {
 	}
 	return out
 }
+
+// ── Permission error classification ────────────────────────────────────
+
+// CleanupPermissionIssue is the single record the cleanup status shows
+// for removals the file system refused for permission. Why is one plain
+// line saying why this happens; Fixable says the safe fix
+// (FixCleanupPermissions) can apply; Hidden marks a harmless case (every
+// affected folder is already gone) the operator does not need to see.
+type CleanupPermissionIssue struct {
+	// Count is the number of failed removals refused for permission.
+	Count int `json:"count"`
+	// Paths are the affected worktree paths, sorted, without repeats.
+	Paths []string `json:"paths,omitempty"`
+	// Why is one plain line saying why these errors happen.
+	Why string `json:"why"`
+	// Fixable is true when the safe fix can run: at least one affected
+	// folder still exists.
+	Fixable bool `json:"fixable"`
+	// Hidden is true when the errors are harmless and need no action.
+	Hidden bool `json:"hidden"`
+}
+
+const (
+	cleanupPermissionWhy  = "A build or test left read-only files in the worktree, so the folder cannot be deleted until the owner write permission is restored."
+	cleanupPermissionGone = "The folders that could not be removed are already gone, so nothing needs to be done."
+)
+
+// ClassifyCleanupPermissionErrors turns the permission failures of one
+// worktree pass into a single record. It returns nil when no failure was
+// refused for permission. A folder that no longer exists is harmless; when
+// every affected folder is gone the record is hidden and not fixable.
+func ClassifyCleanupPermissionErrors(failed []WorktreeCleanupFailed) *CleanupPermissionIssue {
+	seen := map[string]bool{}
+	var paths []string
+	count := 0
+	for _, f := range failed {
+		if !strings.Contains(strings.ToLower(f.Error), "permission denied") {
+			continue
+		}
+		count++
+		if f.Worktree != "" && !seen[f.Worktree] {
+			seen[f.Worktree] = true
+			paths = append(paths, f.Worktree)
+		}
+	}
+	if count == 0 {
+		return nil
+	}
+	sort.Strings(paths)
+	exist := false
+	for _, p := range paths {
+		if _, err := os.Lstat(p); err == nil {
+			exist = true
+			break
+		}
+	}
+	iss := &CleanupPermissionIssue{Count: count, Paths: paths, Why: cleanupPermissionWhy, Fixable: exist}
+	if !exist {
+		iss.Hidden = true
+		iss.Why = cleanupPermissionGone
+	}
+	return iss
+}
+
+// FixCleanupPermissions applies the safe fix: it restores the owner write
+// permission (and, on folders, owner read and search) on each given path
+// and everything under it. Only paths inside base are touched; a path
+// outside it, or one that resolves outside it through a link, is refused
+// and reported in the error. Symbolic links are never followed or changed.
+// It returns the number of entries changed.
+func FixCleanupPermissions(base string, paths []string) (int, error) {
+	realBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return 0, fmt.Errorf("worktree base %q: %w", base, err)
+	}
+	realBase = filepath.Clean(realBase)
+	changed := 0
+	var errs []string
+	for _, p := range paths {
+		if _, err := os.Lstat(p); err != nil {
+			continue // already gone: nothing to fix
+		}
+		// Resolve the parent so a final symlink is not followed.
+		rp, err := filepath.EvalSymlinks(filepath.Dir(p))
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", p, err))
+			continue
+		}
+		rp = filepath.Join(rp, filepath.Base(p))
+		if rp == realBase || !strings.HasPrefix(rp, realBase+string(filepath.Separator)) {
+			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", p))
+			continue
+		}
+		walkErr := filepath.WalkDir(rp, func(path string, d os.DirEntry, werr error) error {
+			if werr != nil && d == nil {
+				return werr
+			}
+			if d.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
+			info, ierr := d.Info()
+			if ierr != nil {
+				return ierr
+			}
+			want := info.Mode().Perm() | 0o200
+			if d.IsDir() {
+				want |= 0o500
+			}
+			if want != info.Mode().Perm() {
+				if cerr := os.Chmod(path, want); cerr != nil {
+					return cerr
+				}
+				changed++
+			}
+			return nil
+		})
+		if walkErr != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", p, walkErr))
+		}
+	}
+	if len(errs) > 0 {
+		return changed, fmt.Errorf("fix permissions: %s", strings.Join(errs, "; "))
+	}
+	return changed, nil
+}
