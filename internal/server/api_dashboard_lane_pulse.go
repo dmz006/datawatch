@@ -6,14 +6,15 @@
 // queued for the lane and node) and idle (neither, after the ledger began
 // keeping history). Waiting often overlaps busy, because a request queues while
 // the lane is full, so the waiting segments are reported alongside the busy
-// ones; idle is the time neither is true. The leases and waits come from the capacity ledger
-// behind GET /api/capacity: closed intervals from its history, plus the leases
-// and waits still open at the time of the call.
+// ones; idle is the time neither is true. The leases and waits come from the
+// capacity ledger behind GET /api/capacity: closed intervals from its history,
+// plus the leases and waits still open at the time of the call.
 //
 // The burn panel carries the usage level in points of the weekly allowance
 // against the pace line, read from the usage calculator's advice. It never
 // carries dollar values. When the calculator is not wired or cannot answer, the
-// burn block says so with a reason and the series still stand.
+// burn block carries a reason code (see lanePulseReason*); clients render the
+// text from their locale bundles, so the server sends no English prose here.
 //
 //	GET /api/dashboard/lane-pulse?window=6h   dashboard:read
 package server
@@ -41,6 +42,15 @@ const (
 	lanePulseBusy    = "busy"
 	lanePulseWaiting = "waiting"
 	lanePulseIdle    = "idle"
+)
+
+// Burn reason codes. Each one has a locale key lane_pulse_reason_<code> in
+// every bundle under internal/server/web/locales/, so the PWA and the native
+// apps render the text in the operator's language.
+const (
+	lanePulseReasonNotWired     = "not_wired"
+	lanePulseReasonAdviceFailed = "advice_unavailable"
+	lanePulseReasonNeedsPrefix  = "needs_" // plus the usagecalc Needs value: percent, reading or reset
 )
 
 // lanePulseSegment is one stretch of a series in one state.
@@ -237,15 +247,15 @@ func (s *Server) lanePulseIntervals(from, now time.Time) ([]capacity.LaneInterva
 func (s *Server) lanePulseBurnPanel(r *http.Request, from, now time.Time) lanePulseBurn {
 	calc := s.UsageCalculator()
 	if calc == nil {
-		return lanePulseBurn{Reason: "usage calculator not wired on this daemon"}
+		return lanePulseBurn{Reason: lanePulseReasonNotWired}
 	}
 	res, err := calc.Advice(r.Context(), usagecalc.Options{})
 	if err != nil {
-		return lanePulseBurn{Reason: "usage advice unavailable: " + err.Error()}
+		return lanePulseBurn{Reason: lanePulseReasonAdviceFailed}
 	}
 	adv := res.Advice
 	if adv.Needs != "" {
-		return lanePulseBurn{Reason: adv.Needs, Stale: res.Stale}
+		return lanePulseBurn{Reason: lanePulseReasonNeedsPrefix + adv.Needs, Stale: res.Stale}
 	}
 	weekDays := adv.DaysSinceReset + adv.DaysLeft
 	out := lanePulseBurn{

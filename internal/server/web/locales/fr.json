@@ -4663,5 +4663,10 @@
   "cost_report_reconcile_ahead": "au-dessus de la ligne de rythme",
   "cost_report_reconcile_within": "dans la ligne de rythme",
   "cost_report_reconcile_implied": "$%1$s équivalent API pour %2$s points font $%3$s équivalent API par point",
-  "cost_report_reconcile_day": "%1$s : %2$s points · $%3$s équivalent API"
+  "cost_report_reconcile_day": "%1$s : %2$s points · $%3$s équivalent API",
+  "lane_pulse_reason_not_wired": "The usage calculator is not wired on this daemon.",
+  "lane_pulse_reason_advice_unavailable": "Usage advice could not be read.",
+  "lane_pulse_reason_needs_percent": "A weekly percentage is needed before the usage advice can show numbers.",
+  "lane_pulse_reason_needs_reading": "Enter a weekly reading to see the usage advice.",
+  "lane_pulse_reason_needs_reset": "Set the weekly reset to see the usage advice."
 }

@@ -9717,7 +9717,8 @@ paths:
         The `burn` block is the usage level in points of the weekly allowance against the
         pace line, read from the usage advice, with the readings in the window. It carries no
         dollar values. When the usage calculator is not wired or cannot answer, `burn.available`
-        is false and `burn.reason` says why; the series still stand.
+        is false and `burn.reason` carries a code (not_wired, advice_unavailable, needs_percent,
+        needs_reading or needs_reset) that clients render from their locale keys; the series still stand.
       operationId: dashboardLanePulse
       tags: [Dashboard]
       parameters:
@@ -9763,7 +9764,7 @@ paths:
                     type: object
                     properties:
                       available: {type: boolean}
-                      reason: {type: string, description: Why the burn is unavailable, when available is false}
+                      reason: {type: string, description: 'Code for why the burn is unavailable, when available is false (not_wired, advice_unavailable, needs_percent, needs_reading, needs_reset); clients map it to a lane_pulse_reason_* locale key'}
                       stale: {type: boolean, description: True when the readings were served from a last copy because the keeper could not be reached}
                       points: {type: number, description: Usage level in points of the weekly allowance (0 to 100 at the reset-week scale)}
                       pace_line: {type: number, description: Where the pace line stands now, in the same points}

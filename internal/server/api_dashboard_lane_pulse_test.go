@@ -112,8 +112,18 @@ func TestLanePulse_NoLedgerIsEmptyNotError(t *testing.T) {
 	if len(body.Series) != 0 || body.WindowSeconds != int64((6*time.Hour)/time.Second) {
 		t.Fatalf("empty body: series=%d window=%d", len(body.Series), body.WindowSeconds)
 	}
-	if body.Burn.Available || body.Burn.Reason == "" {
-		t.Fatalf("burn should say why it is unavailable: %+v", body.Burn)
+	if body.Burn.Available || body.Burn.Reason != lanePulseReasonNotWired {
+		t.Fatalf("burn should carry the not-wired reason code: %+v", body.Burn)
+	}
+}
+
+// TestLanePulse_BurnReasonIsCodeNotProse pins the burn reason to a stable code,
+// so no English text reaches the clients.
+func TestLanePulse_BurnReasonIsCodeNotProse(t *testing.T) {
+	for _, code := range []string{lanePulseReasonNotWired, lanePulseReasonAdviceFailed, lanePulseReasonNeedsPrefix + "reading"} {
+		if strings.ContainsAny(code, " :.,") || strings.ToLower(code) != code {
+			t.Fatalf("reason %q is not a bare lowercase code", code)
+		}
 	}
 }
 

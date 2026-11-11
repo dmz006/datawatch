@@ -11,7 +11,7 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ## Lane pulse data — busy, idle and waiting per lane and node, usage burn in points — next minor above main
 
-`GET /api/dashboard/lane-pulse` answers one series per lane and node over a window (default 6 hours, at most 168). Busy and waiting come from the capacity ledger: the ledger now keeps closed lease and wait intervals in a bounded history, and the endpoint adds the leases and waits still open. The burn block is the usage level in points against the pace line, read from the usage advice, and carries no dollar values. All rows are Tested by Go tests run on 2026-11-10 (Go, linux/amd64). **Validated is No on every row — the live check (a daemon with real lease traffic and usage readings) is still owed.**
+`GET /api/dashboard/lane-pulse` answers one series per lane and node over a window (default 6 hours, at most 168). Busy and waiting come from the capacity ledger: the ledger now keeps closed lease and wait intervals in a bounded history, and the endpoint adds the leases and waits still open. The burn block is the usage level in points against the pace line, read from the usage advice, and carries no dollar values. Its reason is a code (`not_wired`, `advice_unavailable`, `needs_percent`, `needs_reading`, `needs_reset`) with a `lane_pulse_reason_*` locale key in all five bundles, guarded by `internal/server/web/app-lane-pulse-locales.test.js`. All rows are Tested by Go tests run on 2026-11-10 (Go, linux/amd64). **Validated is No on every row — the live check (a daemon with real lease traffic and usage readings) is still owed.**
 
 | Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
 |---|---|---|---|---|---|---|---|---|
