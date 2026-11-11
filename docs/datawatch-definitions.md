@@ -797,7 +797,7 @@ Five cards that open the board — **Questions waiting**, **Held & blocked**, **
 
 ### Network card (work map)
 
-The **Network** card draws the work map from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link. Click a project to expand it and a session to open it. A button in the footer steps to the next running session. The card replaces the older session constellation; it is hidden from the grid while the map has no nodes.
+The **work map** is the graph of every project, Automation, Automaton, task and live session with one edge per parent-to-child link. The **Network** card draws it from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link. Click a project to expand it and a session to open it. A button in the footer steps to the next running session. The card replaces the older session constellation; it is hidden from the grid while the map has no nodes.
 
 <a id="ekg-waveform"></a>
 
@@ -820,6 +820,9 @@ Three-column overlay opened by the `⊞` button on a session card or an Automata
 
 ### Feature cards and their data
 
+Every card has a one-line purpose under its title and a **?** link to its own section in [howto/dashboard.md](howto/dashboard.md#card-data-sources) (what it is for, where its data comes from, what *off* means).
+
+
 Each feature card reads one live source. When it has nothing to draw it shows a one-line reason and a link here, and while `dashboard.hide_inactive_cards` is true (the default) it stays off the grid.
 
 - **Live Events** — the daemon's own event stream (`GET /api/autonomous/event-log`), the same feed as the Events tab. Not hook events.
@@ -832,6 +835,9 @@ Each feature card reads one live source. When it has nothing to draw it shows a 
 - **Work map** — a read-only graph from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link, plus a **Running now** list of the live sessions in an active state. With no trace store the card's header reads "placement only (no trace store)". Tasks are capped per Automaton (the overflow is `tasks_omitted`).
 - **Network** — the same work map payload, drawn as the Network card's graph. See *Network card (work map)* above.
 - **Lane pulse** — the lane and node traces and the burn panel from `GET /api/dashboard/lane-pulse`. See *Lane pulse* and *Burn panel* above.
+- **Release train** — tags, CI runs and deploys in the window, in order (`GET /api/dashboard/series/release-train`). Hidden until the window holds a tag, a CI run or deploy state.
+- **Review backlog** — plans and held questions waiting for a decision, oldest first (`GET /api/dashboard/series/review-backlog`). Hidden while nothing waits.
+- **Defects per day** — defects found and fixed per UTC day (`GET /api/dashboard/series/defects-per-day`). Hidden until a defect was found or fixed in the window.
 
 **Dashboard data on every surface** — the work map, the lane pulse and the six series (lane utilization, throughput forecast, verifier health, release train, review backlog, defects per day) are readable beyond the web page, each returning the REST body unchanged: MCP `dashboard_work_map_get`, `dashboard_lane_pulse_get` and `dashboard_series_get` (argument `series`, plus `window`, `days` or `limit`), CLI `datawatch dashboard work-map`, `lane-pulse` and `series <name>`, and the chat verbs `dashboard work-map`, `dashboard lane-pulse [window]` and `dashboard series <name> [value]`. No setting controls them. See [howto/dashboard.md](howto/dashboard.md).
 

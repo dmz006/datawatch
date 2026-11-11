@@ -169,6 +169,15 @@ follows:
 | `watch_mode`, `watch_off`, `watch_link` | The repo CI watch mode. When the watch is off (`watch_off` is `true`) the card says *repo CI watch off* and offers the next step, linking to Settings. The release and ship state stay filled in. |
 | `failing_runs` | The newest failing or hung runs, at most five, each with an *Open run* link. Listed only while the watch is on; an empty list reads *No failing or hung CI runs*. |
 
+**When the card is shown.** The CI and release card is on the board only once
+the daemon has reported a release check or a ship policy (the page's
+`DASH_CARD_FEATURES` entry for `console-ci-release`). Until then it is not
+shown, and with `dashboard.hide_inactive_cards` off it shows one line instead:
+"No release or ship state reported yet — this card fills after the first
+release check." A repo CI watch that is off does not hide it. Its **?** link
+opens the *CI and release card* section of [dashboard.md](dashboard.md#ci-and-release-card).
+There is no setting for this beyond the ones in [the seven keys](#the-seven-keys).
+
 The section's `count` is the number of CI runs under the watch, not the number
 failing. The failing or hung ones are counted in `summary`, which also carries
 the ship policy and the release state, one clause each.
