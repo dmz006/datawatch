@@ -213,5 +213,7 @@ parses the same verb.
   re-reading.
 - `dashboard.hide_inactive_cards` affects the dashboard board, not the
   console: the console's five sections are listed exactly as above, while the
-  separate feature cards (EKG, Gantt, heatmap, …) are hidden from the grid
-  and the Add-Card picker while they have no live data.
+  separate feature cards (Lane pulse, Timeline, 30-Day Activity, …) are hidden
+  from the grid and the Add-Card picker while they have no live data. The
+  Network and Work map cards are hidden the same way while the work map has no
+  nodes. See [dashboard.md](dashboard.md#card-data-sources).

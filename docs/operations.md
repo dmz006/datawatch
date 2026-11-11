@@ -784,6 +784,23 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
 
+### Dashboard work map and lane pulse
+
+The **Network** and **Work map** cards read `GET /api/dashboard/work-map`, and the **Lane pulse** card reads `GET /api/dashboard/lane-pulse?window=<duration>` (default `6h`, from `1m` to `168h`; anything else is a `400`). Both are read-only: they change no session, lane or usage state, and they need the `dashboard:read` scope. The work map answers `503` only on a daemon with neither a session store nor a trace store; with no trace store it still answers, and the card says so.
+
+The lane pulse's burn panel reads the usage calculator's advice, so it follows the `usage.calculator.*` keys (see the usage calculator how-to). With the calculator off or unset, the panel shows a reason code instead of a level; the card itself still draws the lane traces.
+
+| Method | How |
+|--------|-----|
+| **YAML config** | None. Both endpoints have no settings of their own. The burn panel reads `usage.calculator.*`. |
+| **CLI** | None. Use the REST endpoints. |
+| **Web UI** | The **Network**, **Work map** and **Lane pulse** cards on the dashboard. A card is hidden from the grid until its data is present, unless `dashboard.hide_inactive_cards` is off. |
+| **REST API** | `GET /api/dashboard/work-map`; `GET /api/dashboard/lane-pulse?window=<duration>` |
+| **MCP** | None. |
+| **Comm channel** | None. |
+
+A client that reads these endpoints must treat the burn block as points only; the endpoints never return dollar figures.
+
 ### Worker start-up size
 
 Each worker attempt records the size of the starting context it was launched with

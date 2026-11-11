@@ -95,9 +95,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
   - [Shipped](#shipped)
 - [Dashboard](#dashboard)
-  - [Session constellation](#session-constellation)
-  - [EKG waveform](#ekg-waveform)
-  - [Sprint pipeline](#sprint-pipeline)
+  - [Network card (work map)](#network-card-work-map)
+  - [Lane pulse](#lane-pulse)
+  - [Burn panel](#burn-panel)
   - [Expand panel](#expand-panel)
 - [Observer](#observer)
   - [Federated peers](#federated-peers)
@@ -793,23 +793,25 @@ The layout is fully customisable: drag cards to reorder, resize with the width/h
 
 Five cards that open the board — **Questions waiting**, **Held & blocked**, **Lanes**, **Usage**, **CI & release** — each pointing at the PWA anchor where that part of the daemon is handled. They are the PWA face of the one-glance summary served by `GET /api/dashboard/console` (one count, one summary line and one link per section: `questions_waiting`, `held_blocked`, `lanes`, `usage`, `ci_release`); the same body is on MCP (`dashboard_console_get`), the CLI (`datawatch dashboard console`) and the chat verb `dashboard console`. The seven switches are `dashboard.console.enabled` plus the five `dashboard.console.show_*` keys and `dashboard.hide_inactive_cards`, each a boolean that reads **true** while absent. Disabling the console drops the console cards from the board.
 
-### Session constellation
+<a id="session-constellation"></a>
 
-Force-directed SVG graph where each node is a session. Node colour reflects state (green = running, amber = waiting, grey = done). A pulsing ring indicates activity; a guardrail ring shows hook health from the session's status board.
+### Network card (work map)
 
-Click any node to open the **expand panel** for that session.
+The **Network** card draws the work map from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link. Click a project to expand it and a session to open it. A button in the footer steps to the next running session. The card replaces the older session constellation; it is hidden from the grid while the map has no nodes.
 
-### EKG waveform
+<a id="ekg-waveform"></a>
 
-Scrolling canvas trace driven by every incoming `hook_update` WebSocket event. Spikes decay over time, giving a visual heartbeat of fleet activity. Flat line = quiet; busy fleet = rhythmic spikes.
+### Lane pulse
 
-### Sprint pipeline
+The **Lane pulse** card replaces the older EKG waveform. It draws one trace per capacity lane and node over a time window (default 6 hours, up to 7 days), in three states: **busy** (a capacity lease held), **waiting** (a request queued for that lane and node) and **idle** (neither). Waiting often overlaps busy, because a request queues while the lane is full. Data: `GET /api/dashboard/lane-pulse?window=<duration>`. The card is hidden until a lane held or waited in the window, or the burn panel can read a level.
 
-Shown when Automata are running. Horizontal stage bar with story nodes, gate rings (pass/fail from guardrail verdicts), and stage colours matching story status. Lets you see at a glance how far along the active sprint is and where blockers have appeared.
+### Burn panel
+
+The panel under the lane pulse traces. It shows the weekly usage level in **points** of the allowance, against the **pace line**, and says *ahead of pace* or *on pace*. It never shows dollars. When the usage calculator cannot answer, the panel shows the reason instead of a level. See [usage-calculator.md](howto/usage-calculator.md).
 
 ### Expand panel
 
-Three-column overlay opened by clicking a constellation node or a session card's `⊞` button:
+Three-column overlay opened by the `⊞` button on a session card or an Automata card:
 - **Left sidebar** — live task tree (reuses the telemetry task tree renderer).
 - **Main area** — session status board: hook health ring, current focus, test counts, git state.
 - **Right rail** — guardrail verdicts from the session's telemetry.
@@ -826,8 +828,10 @@ Each feature card reads one live source. When it has nothing to draw it shows a 
 - **Cost report** — see *Cost Report* below.
 - **Search Usage** — see *Web Search (multi-provider registry)* below.
 - **Work map** — a read-only graph from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link, plus a **Running now** list of the live sessions in an active state. With no trace store the card's header reads "placement only (no trace store)". Tasks are capped per Automaton (the overflow is `tasks_omitted`).
+- **Network** — the same work map payload, drawn as the Network card's graph. See *Network card (work map)* above.
+- **Lane pulse** — the lane and node traces and the burn panel from `GET /api/dashboard/lane-pulse`. See *Lane pulse* and *Burn panel* above.
 
-**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, multi-session EKG overlay, smoke run progress, work map.
+**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, lane pulse, smoke run progress, Network (work map), work map.
 
 **See also:**
 [howto/dashboard.md](howto/dashboard.md) ·
