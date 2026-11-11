@@ -65,7 +65,12 @@ func Save(dataDir, id string, plan *MergePlan) error {
 }
 
 // writeAtomic writes data to dir/name via a synced temp file and a rename.
+// name must be a single plain file name that stays inside dir.
 func writeAtomic(dir, name string, data []byte) error {
+	target, err := containedPath(dir, name)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
@@ -85,7 +90,7 @@ func writeAtomic(dir, name string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, name))
+	return os.Rename(tmp.Name(), target)
 }
 
 // Load reads <dataDir>/merge-plans/<id>.json.
@@ -96,11 +101,18 @@ func Load(dataDir, id string) (*MergePlan, error) {
 	}
 	storeMu.Lock()
 	defer storeMu.Unlock()
-	return readPlan(p)
+	return readPlan(filepath.Dir(p), filepath.Base(p))
 }
 
-func readPlan(p string) (*MergePlan, error) {
-	data, err := os.ReadFile(p) // #nosec G304 -- id validated, path under dataDir
+// readPlan reads one plan file named name inside dir. The name is re-checked
+// against dir (single plain file name, cleaned path still inside dir) right
+// before the read, whichever caller supplied it.
+func readPlan(dir, name string) (*MergePlan, error) {
+	p, err := containedPath(dir, name)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p) // #nosec G304 -- name validated by containedPath, path inside the merge-plans directory
 	if err != nil {
 		return nil, err
 	}
@@ -151,12 +163,11 @@ func listLocked(dir string) ([]storedPlan, error) {
 		if e.IsDir() || !strings.HasSuffix(name, ".json") || strings.HasPrefix(name, ".") {
 			continue
 		}
-		p := filepath.Join(dir, name)
-		plan, err := readPlan(p)
+		plan, err := readPlan(dir, name)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, storedPlan{plan: plan, path: p})
+		out = append(out, storedPlan{plan: plan, path: filepath.Join(filepath.Clean(dir), name)})
 	}
 	return out, nil
 }
@@ -195,7 +206,11 @@ func Prune(dataDir string, keep int) (int, error) {
 		if seen[s.plan.Project] <= keep {
 			continue
 		}
-		if err := os.Remove(s.path); err != nil {
+		rp, err := containedPath(filepath.Dir(s.path), filepath.Base(s.path))
+		if err != nil {
+			return removed, err
+		}
+		if err := os.Remove(rp); err != nil {
 			return removed, err
 		}
 		removed++

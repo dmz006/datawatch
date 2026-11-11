@@ -282,3 +282,37 @@ func TestConfigureWriteAttribution(t *testing.T) {
 		}
 	})
 }
+
+// The recorder never lets a wrapped handler's body go out as markup: nosniff
+// always, and a plain-text type when the handler set none or an HTML one.
+func TestConfigPutRecorderHardensResponse(t *testing.T) {
+	cases := map[string]struct{ set, want string }{
+		"unset":     {"", "text/plain; charset=utf-8"},
+		"html":      {"text/html; charset=utf-8", "text/plain; charset=utf-8"},
+		"json kept": {"application/json", "application/json"},
+	}
+	for name, c := range cases {
+		for _, viaHeader := range []bool{true, false} {
+			w := httptest.NewRecorder()
+			if c.set != "" {
+				w.Header().Set("Content-Type", c.set)
+			}
+			rec := &configPutRecorder{ResponseWriter: w, status: 200}
+			if viaHeader {
+				rec.WriteHeader(http.StatusBadRequest)
+			}
+			if _, err := rec.Write([]byte("<script>alert(1)</script>")); err != nil {
+				t.Fatal(err)
+			}
+			if got := w.Header().Get("Content-Type"); got != c.want {
+				t.Errorf("%s (header first=%v): Content-Type = %q, want %q", name, viaHeader, got, c.want)
+			}
+			if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("%s: X-Content-Type-Options = %q, want nosniff", name, got)
+			}
+			if !strings.Contains(rec.body.String(), "alert(1)") {
+				t.Errorf("%s: recorder lost the body", name)
+			}
+		}
+	}
+}

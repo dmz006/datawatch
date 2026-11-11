@@ -155,17 +155,37 @@ func (s *Server) configureWriteAttribution(r *http.Request) TestMessageAttributi
 // record.
 type configPutRecorder struct {
 	http.ResponseWriter
-	status int
-	body   bytes.Buffer
+	status   int
+	body     bytes.Buffer
+	hardened bool
 }
 
 func (c *configPutRecorder) WriteHeader(code int) {
 	c.status = code
+	c.harden()
 	c.ResponseWriter.WriteHeader(code)
 }
 
 func (c *configPutRecorder) Write(p []byte) (int, error) {
+	c.harden()
 	c.body.Write(p) // best effort; the recorder is not the source of truth
-	n, err := c.ResponseWriter.Write(p)
-	return n, err
+	return c.ResponseWriter.Write(p)
+}
+
+// harden runs before the first header or body byte leaves the recorder. The
+// wrapped config handlers answer with JSON or with http.Error plain text;
+// this makes that guarantee hold for any response: nosniff always, and a
+// non-HTML content type whenever the handler set none (or set an HTML one),
+// so a body that echoes request text can never be rendered as markup.
+func (c *configPutRecorder) harden() {
+	if c.hardened {
+		return
+	}
+	c.hardened = true
+	h := c.ResponseWriter.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	ct := strings.ToLower(strings.TrimSpace(h.Get("Content-Type")))
+	if ct == "" || strings.HasPrefix(ct, "text/html") || strings.HasPrefix(ct, "application/xhtml") {
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+	}
 }
