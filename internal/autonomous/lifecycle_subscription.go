@@ -65,33 +65,14 @@ const SinkActionSendInput = "send_input"
 const SubscriptionActionTextLimit = 4096
 
 // KnownEventKinds is the closed set of event kinds a subscription may
-// filter on: every PRD/task status-change kind plus the non-status
-// lifecycle kinds.
+// filter on, derived from the event kind registry
+// (lifecycle_event_registry.go).
 var KnownEventKinds = func() map[string]bool {
-	m := map[string]bool{
-		KindTaskSessionStarted: true,
-		KindTaskSessionCleared: true,
-		KindScopeWarning:       true,
-		KindGuardrailWarn:      true,
-		KindPRDUpdated:         true,
-		// The operator-question kinds are subscribable but never in the
-		// default set: a subscriber lists them explicitly.
-		KindQuestionAnswered:  true,
-		KindQuestionWithdrawn: true,
-	}
-	for _, s := range []PRDStatus{
-		PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked,
-		PRDActive, PRDRunning, PRDCompleted, PRDRejected, PRDCancelled,
-		PRDArchived, PRDBlocked, PRDFailed, PRDPaused,
-	} {
-		m[PRDStatusKind(s)] = true
-	}
-	for _, s := range []TaskStatus{
-		TaskPending, TaskQueued, TaskInProgress, TaskRunningTests,
-		TaskVerifying, TaskCompleted, TaskFailed, TaskBlocked,
-		TaskCancelled, TaskWaitingCapacity, TaskAwaitingApproval, TaskReviewNeeded,
-	} {
-		m[TaskStatusKind(s)] = true
+	m := make(map[string]bool, len(eventKindRegistry))
+	for _, e := range eventKindRegistry {
+		if !notSubscribableKinds[e.Kind] {
+			m[e.Kind] = true
+		}
 	}
 	return m
 }()
