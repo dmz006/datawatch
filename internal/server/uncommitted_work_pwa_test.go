@@ -149,9 +149,11 @@ func TestUncommittedLocaleKeysInAllBundles(t *testing.T) {
 			if uncommittedTrackerIDWord.MatchString(v) {
 				t.Errorf("locale %s: key %q carries a tracker id: %q", lang, k, v)
 			}
-			// Until translations arrive the other bundles carry the English text.
-			if lang != "en" && v != loadLocaleBundle(t, "en")[k] {
-				t.Errorf("locale %s: key %q differs from the English text", lang, k)
+			// The other bundles carry real translations that keep the placeholders.
+			if lang != "en" {
+				if got, want := strings.Count(v, "%"), strings.Count(loadLocaleBundle(t, "en")[k], "%"); got != want {
+					t.Errorf("locale %s: key %q has %d placeholders, English has %d", lang, k, got, want)
+				}
 			}
 		}
 	}
