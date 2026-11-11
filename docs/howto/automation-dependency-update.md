@@ -1,128 +1,139 @@
 ---
 docs:
   index: true
-  topics: [dependencies, dependabot, security, automation, ci, maintenance]
-exec_params: []
-exec_steps: []
+  topics: [autonomous, automation, dependencies, dependency update, weekly, dependabot, security updates, major updates, upgrade note, protected paths, alert]
+exec_steps:
+  - tool: dependency_update_status
+    description: Read the weekly dependency update status - the settings in effect, the next scheduled run in local time and the last run with its outcome
+    args: {}
+    read_only: true
+  - tool: autonomous_config_get
+    description: Read the autonomous settings, including the autonomous.automation.dependency_update block
+    args: {}
+    read_only: true
+  - tool: get_config
+    description: Read the full configuration to confirm the three dependency update settings
+    args: {}
+    read_only: true
 ---
-# Dependency updates: security-only Dependabot plus a weekly Automation
 
-Dependency updates reach this repository by two separate routes. Dependabot
-handles **security** updates only. A **weekly Automation** handles every
-**version** update, so the whole set moves together.
+# Dependency update
 
-## What changed
+The **weekly dependency update** is one datawatch Automation that brings every
+dependency up to date together. It replaces the stream of single-package
+version-update pull requests that Dependabot used to open: each of those
+rebased on every push and started the same CI jobs, so they competed for the
+shared API rate limit and overlapped with each other. One weekly Automaton
+makes one branch and one change for review instead.
 
-Before, Dependabot opened one version-update pull request per package and per
-ecosystem every day. Those pull requests each rebased on every push to main and
-each started the same CI jobs. Now:
+## Base requirements
 
-| Kind of update | Who does it | Result |
-|---|---|---|
-| Security update (an advisory exists) | Dependabot, security updates | One reviewable pull request per advisory |
-| Version update (Go modules, Docker base images, GitHub Actions) | The weekly dependency update Automation | One Automaton, one branch, all ecosystems together |
+- A running daemon with the autonomous engine enabled.
+- The repository added as a project, so the Automaton has a directory to work in.
 
-## How Dependabot is held to security-only
+## What the weekly run does and when
 
-`.github/dependabot.yml` keeps its three ecosystems (`gomod`, `docker`,
-`github-actions`) and sets `open-pull-requests-limit: 0` on every one. That
-limit turns off version-update pull requests. It does not limit security
-updates, which are governed by the repository's security settings instead.
+By default it runs **Monday at 05:00, in the daemon's local time**. Each run
+creates one Automaton that:
 
-The file also keeps these rules, each explained in its header:
+1. **Checks three places** for outdated dependencies: the Go modules, the
+   container base image tags (including tags built from build arguments), and
+   the pinned GitHub Actions.
+2. **Updates minor and patch versions together** in one task. Security updates
+   are included and labelled as security in the change.
+3. **Gives each major update its own task**, with a short upgrade note written
+   from the project's release notes. At most `max_majors` majors are taken in
+   one run; the rest wait for a later run.
+4. Fixes any build error the updates caused, runs the repository's full checks,
+   and ends as **one branch and one change for review**.
 
-- No auto-merge. A human merges every Dependabot pull request.
-- No custom labels, no cooldown and no `ignore` entries (an ignore rule could
-  hide a security update).
+If nothing is outdated the run makes no change, writes no Events row and raises
+no alert.
 
-### The lint check
+## How to read its change
 
-`scripts/check-dependabot-security-only.sh [path]` fails (exit 1) when:
+The change description opens with a one-line count (updated, dropped, skipped,
+failed its tests) and then a summary table with these columns:
 
-- any `package-ecosystem` entry lacks `open-pull-requests-limit: 0`;
-- `gomod`, `docker` or `github-actions` is missing;
-- the file has an uncommented `ignore:` key.
+| Column | Meaning |
+|---|---|
+| Dependency | The module, image or action name |
+| Old version | The version before the run |
+| New version | The version the run moved it to |
+| Kind | `security`, `major`, `minor` or `patch` |
+| Test result | `passed`, `failed`, `dropped` or `skipped` for that dependency |
 
-It exits 2 on a usage error (unreadable file, more than one argument).
-`scripts/check-dependabot-security-only_test.sh` exercises those cases, and
-`make check-dependabot-security-only` runs both. The target is part of
-`make lint`, so a change that re-enables version updates fails lint.
+Rows are sorted security first, then major, minor and patch.
 
-## What the weekly Automation covers
+The **Needs your attention** section lists every major update and every update
+that failed or was dropped. A failed or dropped update shows the last lines of
+its failing output so you can see why. A major shows its upgrade note.
 
-The Automation updates everything Dependabot no longer opens version pull
-requests for, plus what Dependabot could never see: Docker `FROM` lines built
-from build arguments (for example `golang:${GO_VERSION}-...` and
-`${REGISTRY}/agent-base:${BASE_TAG}`). Do not try to pin those tags in
-`dependabot.yml`.
+A dependency is **dropped** when the full checks failed because of it and could
+not be fixed: only that update is reverted, the rest of the batch continues,
+and the dropped update is named in the change. One bad dependency never blocks
+the whole run. A dropped update is picked up again in the next run.
 
-Review its pull request like any other: a human merges first, and breaking
-changes in a major bump are fixed in the same Automaton's work.
+The run is also reported on the Automata Events tab as one `check` row, such as
+"2 updated, 1 dropped, 0 skipped". An alert is raised only when the run needs
+you, once per run: a dropped or failed update, a task waiting on a protected
+paths question, or a run that could not start.
 
-## Where a run is reported
+## How to skip a major
 
-Each run is reported on the Automata Events tab (see
-[Automata Events](automata-events.md#the-weekly-dependency-update)):
+Any one of these:
 
-- A run that updated something, or needs attention, writes one `check` row with
-  a one-line summary such as "2 updated, 1 dropped, 0 skipped".
-- A run with nothing to update writes no row and raises no alert.
-- An alert is raised only when the run needs you, once per run: a dropped or
-  failed update, a major waiting on a protected paths decision, or a run that
-  could not start. An updated run alerts only while its Automaton waits for you.
+- **Take fewer majors.** Set `max_majors` lower (0 means no majors at all).
+- **Cancel that major's task** in the Automaton before it runs.
+- **Skip it when its review comes up**, if you would rather leave the
+  dependency where it is.
+
+A skipped major is listed as skipped in the change and is offered again next
+week.
+
+## How to turn it off
+
+Set `autonomous.automation.dependency_update.enabled` to `false`, from any of:
+
+- **Settings** in the PWA (Automata section, Dependency update toggle).
+- **config.yaml**: the `autonomous.automation.dependency_update` block.
+- **Comm channel**: `configure autonomous.automation.dependency_update.enabled=false`.
+- **CLI**: `datawatch config set autonomous.automation.dependency_update.enabled false`.
+- **API**: `PUT /api/config` with the same dotted key.
+
+The MCP tool `config_set` also works. `dependency_update_status` shows the
+setting in effect and leaves `next_run` empty while it is off.
 
 ## Settings
 
-Three keys under `autonomous.automation.dependency_update` control the weekly
-Automation. Defaults apply when a key is unset; a bad value is refused on every
-write path and when the config loads.
+A bad value is refused on every write path and when the config loads. A
+schedule change applies from the next scheduled run.
 
 | Key | Default | Allowed |
 |---|---|---|
-| `enabled` | `true` | `true` or `false` |
-| `schedule` | `monday 05:00` | `weekday HH:MM`: a weekday name (monday..sunday) and a 24-hour time, in the daemon's local time |
-| `max_majors` | `5` | a whole number from 0 to 20; 0 means no major updates in a run |
+| `autonomous.automation.dependency_update.enabled` | `true` | `true` or `false` |
+| `autonomous.automation.dependency_update.schedule` | `monday 05:00` | `weekday HH:MM`: a weekday name (monday to sunday) and a 24-hour time, in the daemon's local time |
+| `autonomous.automation.dependency_update.max_majors` | `5` | a whole number from 0 to 20; 0 means no major updates in a run |
 
-Change them from any surface:
+Read the settings in effect, the next run and the last run with the MCP tool
+`dependency_update_status` (read-only), or with `datawatch config get`, the
+REST `GET /api/config`, or the Settings page.
 
-- **PWA:** Settings, Automata section: "Dependency update" toggle, schedule and
-  major-limit fields (translated in en, de, es, fr and ja).
-- **REST / config:** `PUT /api/config` with the dotted key, or edit the YAML
-  block (see `docs/config-reference.yaml`).
-- **CLI:** `datawatch config set autonomous.automation.dependency_update.schedule "friday 03:00"`.
-- **Chat:** `configure autonomous.automation.dependency_update.max_majors=3`.
-- **MCP:** `config_set` changes the keys; the read-only `dependency_update_status`
-  tool reports the settings in effect, the next scheduled run in local time
-  (empty while the Automation is off), and the last run: when, the Automaton
-  title and the outcome (`updated`, `nothing to update` or `needs attention`).
-  The last-run fields are empty until a run has happened.
+## Dependabot and workflow files
 
-A schedule change applies to the next scheduled run.
+**Dependabot stays on for security updates only.** `.github/dependabot.yml`
+sets `open-pull-requests-limit: 0` on every ecosystem, which turns off
+version-update pull requests but not security ones, so each advisory still gets
+its own pull request. `make lint` keeps that limit at zero.
 
-## Operator checklist (needs a human)
-
-These cannot be verified from the repository files:
-
-1. **Dependabot security updates must be enabled** in the hosting settings
-   (Settings, then Code security and analysis). `dependabot.yml` alone does not
-   turn them on; if the setting is off, no security pull request will appear.
-2. **Confirm the weekly Automation exists and is active.** It was filed as a
-   draft; until it is approved and activated, nothing opens version updates.
-   Check it on the Automation tab or with `automation_list`.
-3. **Close the version-update pull requests that are still open.** Dependabot
-   does not close existing ones when the limit drops to zero.
-4. **Confirm the schedule, major limit and the model** the Automation runs with;
-   all are operator choices. The settings above only have defaults; nothing
-   verifies that they suit this repository.
-5. **Watch the Events tab and Alerts after the first run.** The row summary and
-   the alert rules above are new; confirm they tell you what you need.
-6. **Check the parity follow-up:** the mobile apps (datawatch-app) do not yet
-   show these settings; that is tracked outside this repository.
+Updating a pinned action edits files under `.github/workflows`. Those are
+protected paths: the edit **raises the protected paths question and waits for
+your answer**. There is no bypass and the weekly run never authorises those
+paths in advance. See [Automaton protected paths](automaton-protected-paths.md).
 
 ## See also
 
+- [Repo CI watch](automation-repo-ci-watch.md): the standing watch over CI that
+  will show the run of the resulting change.
 - [Container image refresh](container-image-refresh.md): the daily image
   rebuild, which is unrelated to dependency versions.
-- [Operations: Dependency updates](../operations.md#dependency-updates-security-only-dependabot-and-the-weekly-automation)
-- Upstream monitoring maintainer guide:
-  [2026-11-01-upstream-monitoring-maintainer-guide.md](../plans/historical-plans/2026-11-01-upstream-monitoring-maintainer-guide.md)
