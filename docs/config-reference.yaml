@@ -1658,6 +1658,18 @@ autonomous:
       hung_after_minutes: 60
       security_workflows: [CodeQL, dependency-review, owasp-zap, secret-scan, security-scan]
       delete_superseded: report
+    # Dependency update: the weekly Automation that updates every dependency
+    # together. Operator docs: docs/howto/automation-dependency-update.md.
+    dependency_update:
+      # enabled: run the weekly update Automation. Default true; allowed: true
+      # or false. See docs/howto/automation-dependency-update.md.
+      enabled: true
+      # schedule: when the run starts, in the daemon's local time. Default
+      # 'monday 05:00'; allowed form: 'weekday HH:MM' (monday..sunday, 24-hour).
+      schedule: "monday 05:00"
+      # max_majors: how many major updates go into one run. Default 5; allowed:
+      # a whole number from 0 to 20 (0 = no major updates in a run).
+      max_majors: 5
     # Security failure: switches the coordinator's security-failure handling
     # on, off, or into shadow. The one key is mode: off, shadow or on
     # (case-insensitive; any other value is refused on every write path).
