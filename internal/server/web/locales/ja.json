@@ -907,6 +907,8 @@
   "projects_links_arc_designs": "設計ドキュメント",
   "projects_links_arc_issues": "datawatch-app の Issue",
   "projects_links_none": "記録なし",
+  "projects_show_empty": "空の行とセクションを表示",
+  "projects_show_empty_help": "空のフィールド、「記録なし」の行、空のイベントストリームは既定で非表示です。これをオンにすると表示されます。",
   "projects_links_loading": "読み込み中…",
   "projects_links_failed": "読み込めませんでした:",
   "projects_page_priority": "優先度",
