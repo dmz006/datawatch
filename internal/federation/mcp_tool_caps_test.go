@@ -171,10 +171,7 @@ func TestIsConfigWriteTool_Classification(t *testing.T) {
 		"get_config",
 		"observer_config_get",
 		"compute_node_get",
-		"secret_get", "secret_set", "secrets_vault_status",
-		"set_identity", "update_identity", "configure_identity",
-		"restore_identity", "reset_identity",
-		"restart_daemon", "reload",
+		"secrets_vault_status", "secret_list", "secret_exists",
 		"agent_spawn", "autonomous_prd_create",
 	}
 	for _, name := range nonConfigWrite {
@@ -183,6 +180,22 @@ func TestIsConfigWriteTool_Classification(t *testing.T) {
 		}
 		if !federation.IsNonConfigWriteTool(name) {
 			t.Errorf("IsNonConfigWriteTool(%q) = false — must be explicitly listed non-config-write", name)
+		}
+	}
+
+	// Sensitive class: in exactly one class, never config or non-config.
+	for _, name := range []string{
+		"secret_set", "secret_delete", "secret_get",
+		"set_identity", "update_identity", "configure_identity",
+		"restore_identity", "reset_identity", "restart_daemon", "reload",
+		"plugin_install", "plugin_run_subcommand", "send_input", "start_session",
+		"tailscale_acl_push", "tailscale_auth_key", "acme_renew",
+	} {
+		if !federation.IsSensitiveWriteTool(name) {
+			t.Errorf("IsSensitiveWriteTool(%q) = false, want true", name)
+		}
+		if federation.IsConfigWriteTool(name) || federation.IsNonConfigWriteTool(name) {
+			t.Errorf("%q is in more than one class", name)
 		}
 	}
 
@@ -206,7 +219,7 @@ func TestIsConfigWriteTool_EveryRegisteredToolIsClassified(t *testing.T) {
 	}
 	var unclassified []string
 	for _, name := range names {
-		if federation.IsConfigWriteTool(name) || federation.IsNonConfigWriteTool(name) {
+		if federation.IsConfigWriteTool(name) || federation.IsNonConfigWriteTool(name) || federation.IsSensitiveWriteTool(name) {
 			continue
 		}
 		unclassified = append(unclassified, name)
