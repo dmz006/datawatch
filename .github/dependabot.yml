@@ -1,16 +1,17 @@
 # Dependabot configuration (version 2).
 #
 # Purpose:
-#   - Security updates: Dependabot opens a dedicated PR per advisory. These are
-#     NOT grouped (see the gomod group below), so each security fix gets its own
-#     reviewable PR.
-#   - Routine version updates: daily, minor and patch only, grouped per
-#     ecosystem so recurring non-security updates arrive as one PR instead of
-#     one per dependency.
+#   - Dependabot runs for security alerts and security updates only. Every
+#     ecosystem below sets open-pull-requests-limit: 0, which turns off
+#     version-update pull requests; security updates are not limited by it, so
+#     each advisory still gets its own reviewable PR.
+#   - Version updates come from the weekly dependency update Automation (see
+#     docs/howto/automation-dependency-update.md), not from Dependabot.
+#   - scripts/check-dependabot-security-only.sh keeps the limit at zero.
 #
-# Repository settings (cannot be checked from the repo):
-#   - "Dependabot security updates" (Dependabot alerts) must be ENABLED in
-#     Settings -> Code security and analysis, or the security PRs above will
+# Repository settings (cannot be checked from this file):
+#   - "Dependabot security updates" must stay ENABLED in the hosting settings
+#     (Settings -> Code security and analysis), or the security PRs above will
 #     never appear. This file alone does not turn them on.
 #
 # Merge policy:
@@ -20,11 +21,12 @@
 #     skipped with a warning, and Dependabot's default "dependencies" labels
 #     are enough.
 #   - No cooldown: security updates ignore it, and no one has asked for one.
+#   - No ignore entries: an ignore rule could hide a security update.
 #
 # Maintainer guide: see the upstream-monitoring proposal under docs/plans/
 # (search for "upstream-monitoring"); it covers the whole tooling policy,
-# including the scheduled upstream-watch job that covers what Dependabot
-# cannot see (FROM lines built from ARGs).
+# including what Dependabot cannot see (FROM lines built from ARGs), which the
+# weekly Automation covers.
 
 version: 2
 
@@ -37,24 +39,15 @@ updates:
     open-pull-requests-limit: 0
     commit-message:
       prefix: "chore(deps)"
-    # Routine non-security updates arrive as one grouped PR. Version updates
-    # only: security updates stay ungrouped so each advisory gets its own
-    # reviewable PR.
-    groups:
-      version-updates:
-        applies-to: version-updates
-        update-types:
-          - minor
-          - patch
 
   # Docker base images.
   # Directories cover docker/dockerfiles/Dockerfile.* (dependabot matches any
   # file name containing "dockerfile" case-insensitively) and the repo-root
   # Dockerfile.dev.
   # GAP BY DESIGN: FROM lines built from ARGs (golang:${GO_VERSION}-...,
-  # ${REGISTRY}/agent-base:${BASE_TAG}) are invisible to Dependabot. Closing
-  # that gap is the job of the separate scheduled upstream-watch job, not this
-  # file - do not try to pin those tags here.
+  # ${REGISTRY}/agent-base:${BASE_TAG}) are invisible to Dependabot. The
+  # weekly dependency update Automation covers them - do not try to pin those
+  # tags here.
   - package-ecosystem: docker
     directories:
       - "/docker/dockerfiles"
