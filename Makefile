@@ -264,6 +264,10 @@ check-service-scope:
 check-go-pins:
 	bash scripts/check-go-toolchain-pins.sh
 
+check-trivy-version:
+	bash scripts/check-trivy-version-single.sh
+	bash scripts/tests/check-trivy-version-single_test.sh
+
 check-internal-refs:
 	bash scripts/check-no-internal-refs.sh
 
