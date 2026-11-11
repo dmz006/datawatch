@@ -12289,7 +12289,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		// A liveness, merge-pipeline release or attempt-cost value that is valid
 		// JSON and was refused keeps the daemon's message; quoting it again would
 		// replace it with a bad-JSON error.
-		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key)) && json.Valid([]byte(value)) {
+		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key) || isDependencyUpdateConfigKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
