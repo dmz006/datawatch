@@ -1,0 +1,1694 @@
+entries:
+- id: sessions
+  area: Sessions
+  summary: Start, observe, steer, tag, summarize and clean up running AI coding sessions.
+  tools:
+  - copy_response
+  - delete_session
+  - get_my_scope
+  - get_my_session_id
+  - get_prompt
+  - kill_session
+  - list_orphaned_sessions
+  - list_saved_commands
+  - list_sessions
+  - rename_session
+  - reply_to_parent
+  - research_sessions
+  - restart_interruptions
+  - restart_session
+  - send_input
+  - send_saved_command
+  - session_bind_agent
+  - session_children
+  - session_guardrail_approve
+  - session_guardrail_run
+  - session_import
+  - session_output
+  - session_reconcile
+  - session_rollback
+  - session_set_state
+  - session_set_tags
+  - session_summarize
+  - session_tag_list
+  - session_timeline
+  - sessions_stale
+  - set_session_priority
+  - start_session
+  - stop_all_sessions
+  commands:
+  - attach
+  - copy
+  - kill
+  - link
+  - list
+  - logs
+  - new
+  - progress
+  - prompt
+  - restart
+  - rollback
+  - send
+  - session
+  - stale
+  - start
+  - stop
+  - tail
+  routes:
+  - /api/command
+  - /api/commands
+  - /api/output
+  - /api/sessions
+  - /api/sessions/
+  - /api/sessions/aggregated
+  - /api/sessions/bind
+  - /api/sessions/delete
+  - /api/sessions/finished-oneshots
+  - /api/sessions/import
+  - /api/sessions/kill
+  - /api/sessions/orphaned
+  - /api/sessions/prompt
+  - /api/sessions/reconcile
+  - /api/sessions/rename
+  - /api/sessions/response
+  - /api/sessions/restart
+  - /api/sessions/self
+  - /api/sessions/self/scope
+  - /api/sessions/send
+  - /api/sessions/set_llm_ref
+  - /api/sessions/set_priority
+  - /api/sessions/stale
+  - /api/sessions/start
+  - /api/sessions/state
+  - /api/sessions/tags
+  - /api/sessions/timeline
+  settings:
+  - resource_limits
+  - session
+  - shell_backend
+  - vision
+  - whisper
+  howtos:
+  - chat-and-llm-quickstart
+  - claude-hooks
+  - cross-session-policy
+  - host-load-check
+  - session-telemetry
+  - sessions-deep-dive
+  - vision-image-descriptions
+  - voice-input
+  - worker-session-profiles
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: projects
+  area: Projects
+  summary: 'Project folders sessions work in: registry, aliases, summaries and effective policy.'
+  tools:
+  - project_alias_delete
+  - project_history
+  - project_list
+  - project_policy_effective
+  - project_rollup
+  - project_set_arcs
+  - project_summary
+  - project_upsert
+  commands:
+  - project-summary
+  - projects
+  - smoke
+  routes:
+  - /api/project/summary
+  - /api/projects
+  - /api/projects/
+  settings:
+  - git
+  - github_webhook
+  - projects
+  - projects_defaults
+  howtos:
+  - plans-folder-tidy
+  - project-automation-policy
+  - projects-tab
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: automata-core
+  area: 'Automata and Automations: lifecycle'
+  summary: Create, decompose, approve, run and cancel Automata; stories, tasks and revisions.
+  tools:
+  - automation_activate
+  - automation_approve_insert
+  - automation_cancel
+  - automation_create
+  - automation_delete
+  - automation_get
+  - automation_import_graph
+  - automation_insert_member
+  - automation_list
+  - automation_merged_members
+  - automation_pause
+  - automation_remove_member
+  - automation_rename_stage
+  - automation_reorder_edges
+  - automation_requirements_report
+  - automation_resume
+  - automation_return_to_draft
+  - automation_skip_member
+  - automation_update
+  - autonomous_attention_list
+  - autonomous_cleanup_status
+  - autonomous_event_log
+  - autonomous_events_pending
+  - autonomous_held_questions
+  - autonomous_infra_retries
+  - autonomous_merge
+  - autonomous_merge_pipeline_get
+  - autonomous_merge_pipeline_set_record
+  - autonomous_merge_pipeline_validate
+  - autonomous_merge_shadow_status
+  - autonomous_overlap_search
+  - autonomous_prd_add_story
+  - autonomous_prd_add_task
+  - autonomous_prd_approve
+  - autonomous_prd_approve_task
+  - autonomous_prd_cancel
+  - autonomous_prd_cancel_story
+  - autonomous_prd_cancel_task
+  - autonomous_prd_change_record
+  - autonomous_prd_children
+  - autonomous_prd_clone_to_template
+  - autonomous_prd_create
+  - autonomous_prd_decompose
+  - autonomous_prd_edit_story
+  - autonomous_prd_edit_task
+  - autonomous_prd_generated_artefact
+  - autonomous_prd_get
+  - autonomous_prd_instantiate
+  - autonomous_prd_list
+  - autonomous_prd_plan_coverage_acknowledge
+  - autonomous_prd_plan_coverage_get
+  - autonomous_prd_plan_review
+  - autonomous_prd_regenerate_artefact
+  - autonomous_prd_reject
+  - autonomous_prd_rejudge
+  - autonomous_prd_remove_story
+  - autonomous_prd_remove_task
+  - autonomous_prd_repair_depends_on
+  - autonomous_prd_request_revision
+  - autonomous_prd_reset_task
+  - autonomous_prd_reset_to_draft
+  - autonomous_prd_resolve_task_review
+  - autonomous_prd_resume
+  - autonomous_prd_run
+  - autonomous_progress
+  - autonomous_progress_trend
+  - autonomous_protected_paths
+  - autonomous_release_readiness
+  - autonomous_repo_ci_watch
+  - autonomous_request_watch
+  - autonomous_safe_to_delete
+  - autonomous_standard_tasks
+  - autonomous_status
+  - autonomous_triage
+  - autonomous_uncommitted_work
+  commands:
+  - automation
+  - autonomous
+  - pipeline
+  - queue
+  - supervisor-loop
+  routes:
+  - /api/automation/model-consent
+  - /api/automation/onboarding-report
+  - /api/automation/requirements-report
+  - /api/automations
+  - /api/automations/
+  - /api/automations/merged-members
+  - /api/autonomous/attention
+  - /api/autonomous/checks
+  - /api/autonomous/cleanup
+  - /api/autonomous/config
+  - /api/autonomous/decision-records
+  - /api/autonomous/decision-records/
+  - /api/autonomous/decisions
+  - /api/autonomous/decompose-lint/config
+  - /api/autonomous/defects/batches
+  - /api/autonomous/defects/batches/
+  - /api/autonomous/defects/intake
+  - /api/autonomous/defects/tiny-fix/check
+  - /api/autonomous/event-log
+  - /api/autonomous/events
+  - /api/autonomous/generated-artefacts
+  - /api/autonomous/guardrail_profiles
+  - /api/autonomous/guardrail_profiles/
+  - /api/autonomous/guardrails
+  - /api/autonomous/held-questions
+  - /api/autonomous/infra-retries
+  - /api/autonomous/lane-fill
+  - /api/autonomous/learnings
+  - /api/autonomous/merge
+  - /api/autonomous/merge-pipeline
+  - /api/autonomous/merge-pipeline/record
+  - /api/autonomous/merge-pipeline/validate
+  - /api/autonomous/merge/run
+  - /api/autonomous/merge/shadow
+  - /api/autonomous/overlap
+  - /api/autonomous/planning-routing
+  - /api/autonomous/planning-routing/scorecard
+  - /api/autonomous/planning-routing/test
+  - /api/autonomous/prds
+  - /api/autonomous/prds/
+  - /api/autonomous/prds/aggregated
+  - /api/autonomous/prds/{id}/decompose-lint
+  - /api/autonomous/progress
+  - /api/autonomous/progress/trend
+  - /api/autonomous/protected-paths
+  - /api/autonomous/release-readiness
+  - /api/autonomous/repo-ci-watch
+  - /api/autonomous/request-watch
+  - /api/autonomous/restart-interruptions
+  - /api/autonomous/retry_profiles
+  - /api/autonomous/retry_profiles/
+  - /api/autonomous/rules-context
+  - /api/autonomous/safe-to-delete
+  - /api/autonomous/scan/config
+  - /api/autonomous/security-failures
+  - /api/autonomous/ship
+  - /api/autonomous/shipped/backfill
+  - /api/autonomous/shipped/counts
+  - /api/autonomous/standard-tasks
+  - /api/autonomous/status
+  - /api/autonomous/subscriptions
+  - /api/autonomous/subscriptions/
+  - /api/autonomous/supervisor-watch
+  - /api/autonomous/supervisor-watch/stats
+  - /api/autonomous/tags
+  - /api/autonomous/tags/
+  - /api/autonomous/tags/registry
+  - /api/autonomous/tags/registry/notes/
+  - /api/autonomous/tags/registry/write
+  - /api/autonomous/tags/sweep
+  - /api/autonomous/tags/sweep/
+  - /api/autonomous/templates
+  - /api/autonomous/templates/
+  - /api/autonomous/triage
+  - /api/autonomous/types
+  - /api/autonomous/uncommitted-work
+  settings:
+  - autonomous
+  - pipeline
+  howtos:
+  - automata-capacity
+  - automata-checks-and-ship
+  - automata-completion-review-autofix
+  - automata-events
+  - automata-memory-workflow
+  - automata-orphan-reaping
+  - automata-progress
+  - automata-shipped-status
+  - automata-standard-tasks
+  - automata-tab-loading
+  - automation-chains
+  - automation-lane-fill
+  - automation-merged-member
+  - automation-queue-advance
+  - automation-repo-ci-watch
+  - automation-requirements
+  - automation-security-failure
+  - automation-supervisor-watch
+  - automation-tab
+  - automaton-daemon-task-modes
+  - automaton-held-state-questions
+  - automaton-lifecycle-subscriptions
+  - automaton-lifecycle-webhooks
+  - automaton-operator-decisions
+  - automaton-parallel-tasks
+  - automaton-protected-paths
+  - automaton-search-before-create
+  - automaton-uncommitted-work
+  - automaton-verifier-run-cap
+  - automaton-worktree-cleanup
+  - autonomous
+  - autonomous-planning
+  - autonomous-priority-by-kind
+  - autonomous-recovery
+  - autonomous-review-approve
+  - ci-watch-guardrail
+  - decompose-async
+  - major-release-requirements
+  - merge-pipeline
+  - merge-shadow
+  - pipeline-chaining
+  - plan-coverage-filters
+  - post-ship-hooks
+  - prd-memory-workflow
+  - release-push-and-tag
+  - release-size-and-milestones
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: automata-config
+  area: 'Automata and Automations: settings, LLM and tags'
+  summary: Per-Automaton LLM, verifier, budget, guardrails, priority, tags, templates, types and decision records.
+  tools:
+  - automation_model_pull_consent_get
+  - automation_model_pull_consent_set
+  - automation_set_budget
+  - automation_set_decision_assistant
+  - automation_set_effort_ceiling
+  - automation_set_llm
+  - automation_set_verification_llm
+  - autonomous_config_get
+  - autonomous_config_set
+  - autonomous_decision_record_create
+  - autonomous_decision_record_get
+  - autonomous_decision_record_list
+  - autonomous_decision_record_update
+  - autonomous_decision_record_withdraw
+  - autonomous_decisions
+  - autonomous_decompose_lint_config_get
+  - autonomous_decompose_lint_config_set
+  - autonomous_decompose_lint_dry_run
+  - autonomous_decompose_lint_findings
+  - autonomous_defect_batch_split
+  - autonomous_defect_batches
+  - autonomous_defect_intake
+  - autonomous_defect_tinyfix_check
+  - autonomous_lane_fill_status
+  - autonomous_learnings
+  - autonomous_prd_scan
+  - autonomous_prd_scan_fix
+  - autonomous_prd_scan_results
+  - autonomous_prd_scan_rules
+  - autonomous_prd_set_authorized_paths
+  - autonomous_prd_set_breaking_change
+  - autonomous_prd_set_continue_on_story_failure
+  - autonomous_prd_set_failure_escalation
+  - autonomous_prd_set_git
+  - autonomous_prd_set_guided_mode
+  - autonomous_prd_set_kind
+  - autonomous_prd_set_lane_preference
+  - autonomous_prd_set_llm
+  - autonomous_prd_set_memory_harvest
+  - autonomous_prd_set_memory_seed
+  - autonomous_prd_set_notify_events
+  - autonomous_prd_set_priority
+  - autonomous_prd_set_quality_gates
+  - autonomous_prd_set_release_size
+  - autonomous_prd_set_skills
+  - autonomous_prd_set_story_llm
+  - autonomous_prd_set_story_node
+  - autonomous_prd_set_story_thinking_level
+  - autonomous_prd_set_story_verification_llm
+  - autonomous_prd_set_tags
+  - autonomous_prd_set_task_effort_ceiling
+  - autonomous_prd_set_task_llm
+  - autonomous_prd_set_task_node
+  - autonomous_prd_set_task_project_dir
+  - autonomous_prd_set_task_thinking_level
+  - autonomous_prd_set_task_verification_llm
+  - autonomous_prd_set_task_verifier_policy
+  - autonomous_prd_set_thinking_level
+  - autonomous_prd_set_type
+  - autonomous_prd_set_verification_llm
+  - autonomous_prd_set_verifier_policy
+  - autonomous_prd_set_worker_profile
+  - autonomous_scan_config_get
+  - autonomous_scan_config_set
+  - autonomous_shipped_backfill
+  - autonomous_shipped_counts
+  - autonomous_shipped_record
+  - autonomous_subscribe
+  - autonomous_subscription_test
+  - autonomous_subscription_update
+  - autonomous_subscriptions
+  - autonomous_tag_create
+  - autonomous_tag_delete
+  - autonomous_tag_list
+  - autonomous_tag_registry_dismiss_note
+  - autonomous_tag_registry_status
+  - autonomous_tag_rename
+  - autonomous_tag_set_color
+  - autonomous_tag_set_parent
+  - autonomous_tag_sweep
+  - autonomous_template_create
+  - autonomous_template_delete
+  - autonomous_template_get
+  - autonomous_template_instantiate
+  - autonomous_template_list
+  - autonomous_template_update
+  - autonomous_type_list
+  - autonomous_type_register
+  - autonomous_unsubscribe
+  - per_automaton_guardrails_set
+  - per_automaton_retry_policy_set
+  - pipeline_cancel
+  - pipeline_list
+  - pipeline_start
+  - pipeline_status
+  - queue_claim
+  - queue_complete
+  - queue_fail
+  - queue_list
+  - queue_push
+  - template_delete
+  - template_list
+  - template_upsert
+  commands:
+  - retry
+  - template
+  routes:
+  - /api/pipeline
+  - /api/pipelines
+  - /api/templates
+  - /api/templates/
+  settings:
+  - classifier
+  - orchestrator
+  howtos:
+  - automata-auto-tags
+  - automata-defect-queue
+  - automata-planning-routing
+  - automata-rules-and-context
+  - automata-tag-registry
+  - automata-tags
+  - automation-decision-assistant
+  - automaton-decision-records
+  - automaton-decompose-lint
+  - classification-verdicts
+  - failed-attempt-cost
+  - failure-escalation
+  - judge-policy
+  - model-pull-consent
+  - quality-gate-scope
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: orchestrator
+  area: Orchestrator and algorithm mode
+  summary: Graph orchestration, verdicts and the stepwise algorithm mode.
+  tools:
+  - algorithm_abort
+  - algorithm_advance
+  - algorithm_edit
+  - algorithm_get
+  - algorithm_list
+  - algorithm_measure
+  - algorithm_reset
+  - algorithm_start
+  - orchestrator_config_get
+  - orchestrator_config_set
+  - orchestrator_graph_cancel
+  - orchestrator_graph_create
+  - orchestrator_graph_get
+  - orchestrator_graph_list
+  - orchestrator_graph_plan
+  - orchestrator_graph_run
+  - orchestrator_verdicts
+  commands:
+  - algorithm
+  - orchestrator
+  routes:
+  - /api/algorithm
+  - /api/algorithm/
+  - /api/orchestrator/config
+  - /api/orchestrator/graphs
+  - /api/orchestrator/graphs/
+  - /api/orchestrator/verdicts
+  settings: []
+  howtos:
+  - algorithm-mode
+  - automata-orchestrator
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+- id: memory
+  area: Memory
+  summary: 'Facts kept between sessions: remember, recall, knowledge graph, scopes, discussions and handoff.'
+  tools:
+  - discussion_subscribe
+  - discussion_subscriptions
+  - discussion_unsubscribe
+  - kg_add
+  - kg_invalidate
+  - kg_query
+  - kg_stats
+  - kg_timeline
+  - memory_archive_import
+  - memory_discussion_participants
+  - memory_discussion_recall
+  - memory_discussion_wal
+  - memory_discussion_write
+  - memory_export
+  - memory_extract_facts
+  - memory_forget
+  - memory_handoff
+  - memory_import
+  - memory_learnings
+  - memory_list
+  - memory_pin
+  - memory_prd_report
+  - memory_recall
+  - memory_reindex
+  - memory_remember
+  - memory_schema_version
+  - memory_scope_borrow
+  - memory_scope_inventory
+  - memory_scope_promote
+  - memory_scope_recall
+  - memory_scope_seed
+  - memory_spellcheck
+  - memory_stats
+  - memory_sweep_stale
+  - memory_test_embedder
+  - memory_wakeup
+  - memory_wal
+  commands:
+  - discussion-sub
+  - export
+  - forget
+  - identity
+  - kg
+  - learnings
+  - memories
+  - memory
+  - recall
+  - remember
+  - seed
+  routes:
+  - /api/discussion-subs
+  - /api/discussion-subs/
+  - /api/identity
+  - /api/identity/backups
+  - /api/identity/reset
+  - /api/identity/restore
+  - /api/memory/delete
+  - /api/memory/discussion
+  - /api/memory/discussion/
+  - /api/memory/export
+  - /api/memory/extract_facts
+  - /api/memory/import
+  - /api/memory/kg/add
+  - /api/memory/kg/invalidate
+  - /api/memory/kg/query
+  - /api/memory/kg/stats
+  - /api/memory/kg/timeline
+  - /api/memory/learnings
+  - /api/memory/list
+  - /api/memory/pin
+  - /api/memory/reindex
+  - /api/memory/research
+  - /api/memory/save
+  - /api/memory/scopes/
+  - /api/memory/search
+  - /api/memory/spellcheck
+  - /api/memory/stats
+  - /api/memory/sweep_stale
+  - /api/memory/test
+  - /api/memory/wakeup
+  - /api/memory/wal
+  settings:
+  - cross_session
+  - identity
+  howtos:
+  - cross-agent-memory
+  - discussion-scopes
+  - identity-and-telos
+  - identity-scaffold-bootstrap
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: federation
+  area: Federation
+  summary: Peers, groups, fingerprints and shared sessions across datawatch instances.
+  tools:
+  - federation_fingerprint_confirm
+  - federation_fingerprint_matches
+  - federation_fingerprint_reject
+  - federation_group_add
+  - federation_group_delete
+  - federation_group_get
+  - federation_group_list
+  - federation_group_list_builtins
+  - federation_group_update
+  - federation_meta_peers
+  - federation_peer_add
+  - federation_peer_delete
+  - federation_peer_get
+  - federation_peer_list
+  - federation_peer_test
+  - federation_peer_update
+  - federation_sessions
+  - server_add
+  - server_delete
+  - server_get
+  - server_list
+  - server_test
+  - server_update
+  commands:
+  - federation
+  - server
+  routes:
+  - /api/federation/fingerprint-matches
+  - /api/federation/fingerprint-matches/
+  - /api/federation/fingerprints
+  - /api/federation/groups
+  - /api/federation/groups/
+  - /api/federation/meta-peers
+  - /api/federation/peers
+  - /api/federation/peers/
+  - /api/federation/sessions
+  - /api/servers
+  - /api/servers/
+  - /api/servers/health
+  settings:
+  - server
+  - servers
+  howtos:
+  - federation-cbac
+  - federation-fingerprint
+  - multi-servers
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: compute
+  area: LLM backends and compute nodes
+  summary: LLM registry, backends, models, compute nodes, pulls and routing.
+  tools:
+  - backends_active
+  - backends_list
+  - capacity_admission
+  - capacity_status
+  - claude_efforts
+  - claude_models
+  - claude_permission_modes
+  - compute_node_add
+  - compute_node_attach_observer
+  - compute_node_backend_versions
+  - compute_node_delete
+  - compute_node_detach_observer
+  - compute_node_detail
+  - compute_node_drain
+  - compute_node_get
+  - compute_node_health
+  - compute_node_list
+  - compute_node_pull_model
+  - compute_node_remove_model
+  - compute_node_undrain
+  - compute_node_update
+  - compute_pin_settings
+  - compute_served_models
+  - cooldown_clear
+  - cooldown_set
+  - cooldown_status
+  - llm_add
+  - llm_add_model
+  - llm_classifier
+  - llm_delete
+  - llm_disable
+  - llm_enable
+  - llm_get
+  - llm_in_use
+  - llm_list
+  - llm_list_models
+  - llm_refresh_models
+  - llm_remove_model
+  - llm_test
+  - llm_update
+  - marketplace_ollama_catalog
+  - marketplace_pull_task
+  - ollama_stats
+  - planning_routing_get
+  - planning_routing_set
+  - planning_routing_test
+  - planning_scorecard
+  - profile_create
+  - profile_delete
+  - profile_get
+  - profile_list
+  - profile_set_agent_settings
+  - profile_smoke
+  - profile_update
+  - retry_profile_create
+  - retry_profile_delete
+  - retry_profile_get
+  - retry_profile_list
+  - retry_profile_update
+  - routing_rules_list
+  - routing_rules_test
+  - usage_backoff_clear
+  - usage_backoff_recheck
+  - usage_backoff_set
+  - usage_backoff_status
+  - worker_profile_status
+  commands:
+  - backend
+  - capacity
+  - compute
+  - cooldown
+  - llm
+  - marketplace
+  - profile
+  - routing-rules
+  - usage-backoff
+  routes:
+  - /api/backends
+  - /api/backends/active
+  - /api/capacity
+  - /api/capacity/admission
+  - /api/compute/nodes
+  - /api/compute/nodes/
+  - /api/compute/nodes/{name}/versions
+  - /api/compute/served-models
+  - /api/cooldown
+  - /api/llm-roles
+  - /api/llm/classifier
+  - /api/llm/classifier/publishers
+  - /api/llm/classifier/verdicts
+  - /api/llm/claude/efforts
+  - /api/llm/claude/models
+  - /api/llm/claude/permission_modes
+  - /api/llms
+  - /api/llms/
+  - /api/marketplace/ollama/catalog
+  - /api/marketplace/ollama/tasks/
+  - /api/ollama/models
+  - /api/ollama/stats
+  - /api/profiles
+  - /api/profiles/clusters
+  - /api/profiles/clusters/
+  - /api/profiles/projects
+  - /api/profiles/projects/
+  - /api/routing-rules
+  - /api/routing-rules/test
+  settings:
+  - aider
+  - gemini
+  - goose
+  - ollama
+  - opencode
+  - opencode_acp
+  - openwebui
+  - pi
+  - pi_prompt
+  - profiles
+  howtos:
+  - compute-nodes
+  - compute-routing
+  - container-image-refresh
+  - container-workers
+  - infrastructure-retry
+  - llm-registry
+  - model-request-progress
+  - model-routing
+  - ollama-marketplace
+  - profiles
+  - retry-policy
+  - v7-compute-migration
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: council
+  area: The council
+  summary: Multi-persona council runs, persona drafts and configuration.
+  tools:
+  - council_config_get
+  - council_config_set
+  - council_get_run
+  - council_list_runs
+  - council_persona_draft_answer
+  - council_persona_draft_list
+  - council_persona_draft_purge
+  - council_persona_draft_refine
+  - council_persona_draft_save
+  - council_persona_draft_start
+  - council_persona_oneshot
+  - council_personas
+  - council_personas_get
+  - council_personas_set
+  - council_run
+  - council_run_cancel
+  commands:
+  - council
+  routes:
+  - /api/council/config
+  - /api/council/personas
+  - /api/council/personas/
+  - /api/council/personas/refine-step
+  - /api/council/run
+  - /api/council/runs
+  - /api/council/runs/
+  settings:
+  - council
+  howtos:
+  - council-mode
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: messaging
+  area: Messaging channels
+  summary: 'How datawatch talks to the operator: chat channels, routing, push, DNS and Matrix.'
+  tools:
+  - ask
+  - assist
+  - channel_diagnostics
+  - channel_info
+  - channel_routing_config_get
+  - channel_routing_config_set
+  - configure_identity
+  - dns_channel_config_get
+  - dns_channel_config_set
+  - matrix_status
+  - matrix_test
+  - reload
+  commands:
+  - ask
+  - assist
+  - channel
+  - channel-routing
+  - matrix
+  - push
+  - question
+  - splash-info
+  routes:
+  - /api/channel/diagnostics
+  - /api/channel/history
+  - /api/channel/info
+  - /api/channel/notify
+  - /api/channel/ready
+  - /api/channel/reply
+  - /api/channel/routing
+  - /api/channel/send
+  - /api/channels
+  - /api/channels/
+  - /api/matrix/status
+  - /api/matrix/test
+  - /api/push/
+  - /api/push/apns/test
+  - /api/push/notify
+  - /api/push/register
+  - /api/push/unregister
+  - /api/questions
+  - /api/questions/
+  - /api/questions/quality
+  - /api/questions/stats
+  - /ws
+  settings:
+  - discord
+  - dns_channel
+  - email
+  - imap_mcp
+  - matrix
+  - notify_exclude
+  - ntfy
+  - push
+  - signal
+  - slack
+  - telegram
+  - twilio
+  - webhook
+  howtos:
+  - channel-routing
+  - channel-state-engine
+  - comm-channels
+  - imap-mcp-service
+  - mcp-elicitation
+  - operator-questions-answering
+  - operator-questions-notifications
+  - operator-questions-workers
+  - push-notifications
+  - push-setup
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: secrets
+  area: Secrets
+  summary: Stored credentials, never printed; vault status and secret scanning.
+  tools:
+  - secret_delete
+  - secret_exists
+  - secret_get
+  - secret_list
+  - secret_scan_config_get
+  - secret_scan_config_set
+  - secret_scan_stats
+  - secret_set
+  - secrets_vault_status
+  commands:
+  - secrets
+  routes:
+  - /api/secrets
+  - /api/secrets/
+  - /api/secrets/service-tokens
+  - /api/secrets/service-tokens/
+  settings:
+  - secrets
+  howtos:
+  - secret-scan-push-gate
+  - secrets-manager
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: alerts
+  area: Alerts
+  summary: Notices about sessions and the system; alert rules and exit hooks.
+  tools:
+  - alert_rule_create
+  - alert_rule_delete
+  - alert_rule_disable
+  - alert_rule_enable
+  - alert_rule_firings
+  - alert_rule_get
+  - alert_rule_list
+  - alert_rule_update
+  - create_alert
+  - detection_config_get
+  - detection_config_set
+  - detection_status
+  - exit_hook_add
+  - exit_hook_delete
+  - exit_hook_disable
+  - exit_hook_enable
+  - exit_hook_list
+  - filter_add
+  - filter_delete
+  - filter_list
+  - filter_toggle
+  - get_alerts
+  - mark_alert_read
+  commands:
+  - alert-rules
+  - alerts
+  - exit-hook
+  - filter
+  routes:
+  - /api/alert-rules
+  - /api/alert-rules/
+  - /api/alerts
+  - /api/alerts/aggregated
+  - /api/alerts/count
+  - /api/alerts/create
+  - /api/exit-hooks
+  - /api/exit-hooks/
+  - /api/filters
+  settings:
+  - detection
+  howtos:
+  - alert-rules
+  - alerts-and-notifications
+  - file-drift-guardrail
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: observer
+  area: The observer
+  summary: Stats, envelopes, peers and agent telemetry from the observer.
+  tools:
+  - agent_audit
+  - agent_get
+  - agent_list
+  - agent_logs
+  - agent_spawn
+  - agent_terminate
+  - analytics
+  - get_stats
+  - observer_agent_list
+  - observer_agent_stats
+  - observer_config_get
+  - observer_config_set
+  - observer_envelope
+  - observer_envelopes
+  - observer_envelopes_all_peers
+  - observer_peer_delete
+  - observer_peer_get
+  - observer_peer_register
+  - observer_peer_stats
+  - observer_peers_by_node
+  - observer_peers_free
+  - observer_peers_list
+  - observer_stats
+  - onboarding_report
+  - telemetry_get
+  - telemetry_list
+  - trace_automaton
+  - trace_coverage
+  - trace_rollup
+  - trace_session
+  - trace_stats
+  commands:
+  - agent
+  - analytics
+  - health
+  - observer
+  - stats
+  - trace
+  routes:
+  - /api/agents
+  - /api/agents/
+  - /api/agents/audit
+  - /api/agents/bootstrap
+  - /api/agents/ca.pem
+  - /api/agents/peer/inbox
+  - /api/agents/peer/send
+  - /api/agents/report
+  - /api/agents/secrets/
+  - /api/analytics
+  - /api/observer/config
+  - /api/observer/envelope
+  - /api/observer/envelopes
+  - /api/observer/envelopes/all-peers
+  - /api/observer/peers
+  - /api/observer/peers/
+  - /api/observer/stats
+  - /api/stats
+  - /api/stats/kill-orphans
+  - /api/trace/automaton/
+  - /api/trace/coverage
+  - /api/trace/rollup
+  - /api/trace/session/
+  - /api/trace/stats
+  settings:
+  - observer
+  - onboarding_report
+  - tracing
+  howtos:
+  - agent-tracing
+  - federated-observer
+  - onboarding-report
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: schedules
+  area: Schedules
+  summary: Timed and recurring runs, spawn and result listings.
+  tools:
+  - schedule_add
+  - schedule_cancel
+  - schedule_list
+  - schedule_results_list
+  - schedule_spawn
+  commands:
+  - schedule
+  - schedule-results
+  routes:
+  - /api/schedule
+  - /api/schedule-results
+  - /api/schedule-results/
+  - /api/schedules
+  settings: []
+  howtos: []
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+- id: plugins
+  area: Plugins
+  summary: Plugin registry, services, tokens and widgets.
+  tools:
+  - plugin_browse_registry
+  - plugin_disable
+  - plugin_enable
+  - plugin_get
+  - plugin_install
+  - plugin_run_subcommand
+  - plugin_service_restart
+  - plugin_service_start
+  - plugin_service_status
+  - plugin_service_stop
+  - plugin_test
+  - plugin_token_list
+  - plugin_token_rotate
+  - plugin_widget_get
+  - plugin_widget_list
+  - plugins_list
+  - plugins_reload
+  commands:
+  - plugins
+  routes:
+  - /api/plugins
+  - /api/plugins/
+  settings:
+  - plugins
+  howtos: []
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: skills
+  area: Skills and packs
+  summary: Skills registry, sync and loading; docs-as-MCP and generated artefacts.
+  tools:
+  - docs_apply
+  - docs_list_howtos
+  - docs_read
+  - docs_search
+  - docs_trust_accept
+  - docs_trust_add
+  - docs_trust_dismiss
+  - docs_trust_list
+  - docs_trust_pending
+  - docs_trust_remove
+  - generated_artefacts_get
+  - skill_load
+  - skills_get
+  - skills_list
+  - skills_registry_add_default
+  - skills_registry_available
+  - skills_registry_connect
+  - skills_registry_create
+  - skills_registry_delete
+  - skills_registry_get
+  - skills_registry_list
+  - skills_registry_sync
+  - skills_registry_unsync
+  - skills_registry_update
+  commands:
+  - docs
+  - mcp
+  - mcp-search
+  - skills
+  routes:
+  - /api/docs
+  - /api/docs/
+  - /api/mcp/call
+  - /api/mcp/docs
+  - /api/mcp/elicit
+  - /api/mcp/prompts
+  - /api/mcp/prompts/get
+  - /api/mcp/resources
+  - /api/mcp/resources/read
+  - /api/mcp/resources/templates
+  - /api/mcp/sample
+  - /api/mcp/sampling-log
+  - /api/mcp/tools
+  - /api/skills
+  - /api/skills/
+  - /api/skills/registries
+  - /api/skills/registries/
+  settings:
+  - mcp
+  howtos:
+  - docs-as-mcp
+  - generated-artefacts
+  - mcp-prompts
+  - mcp-resources
+  - mcp-sampling
+  - mcp-tools
+  - skills-sync
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: settings
+  area: Settings and configuration
+  summary: Reading and changing configuration, proxy, daemon operations and tooling.
+  tools:
+  - acme_issuer_log
+  - acme_renew
+  - acme_status
+  - burn_guard_config_get
+  - burn_guard_config_set
+  - burn_guard_run
+  - burn_guard_status
+  - checks_status
+  - config_set
+  - daemon_logs
+  - dashboard_card_add
+  - dashboard_card_delete
+  - dashboard_card_update
+  - dashboard_cards_list
+  - dashboard_config_get
+  - dashboard_console_get
+  - diagnose
+  - files_delete
+  - files_list
+  - files_meta
+  - files_upload
+  - get_config
+  - get_identity
+  - get_version
+  - identity_backups
+  - platform_context_status
+  - post_result
+  - proxy_config_get
+  - proxy_config_set
+  - release_push_status
+  - reset_identity
+  - restart_daemon
+  - restore_identity
+  - result_delete
+  - result_get
+  - result_list
+  - result_put
+  - rtk_check
+  - rtk_discover
+  - rtk_update
+  - rtk_version
+  - rules_context_set
+  - rules_context_status
+  - self_config_audit
+  - set_identity
+  - ship_status
+  - smoke_forward_config_get
+  - smoke_forward_config_set
+  - splash_info
+  - tailscale_acl_generate
+  - tailscale_acl_push
+  - tailscale_auth_key
+  - tailscale_nodes
+  - tailscale_status
+  - tooling_cleanup
+  - tooling_gitignore
+  - tooling_status
+  - update_identity
+  - vision_describe
+  - web_search_stats
+  - websearch_history
+  - websearch_provider_add
+  - websearch_provider_delete
+  - websearch_provider_disable
+  - websearch_provider_enable
+  - websearch_provider_get
+  - websearch_provider_test
+  - websearch_provider_update
+  - websearch_providers_list
+  - websearch_stats
+  commands:
+  - about
+  - acme
+  - cmd
+  - completion
+  - config
+  - dashboard
+  - diagnose
+  - files
+  - help
+  - proxy
+  - reload
+  - result
+  - setup
+  - status
+  - tailscale
+  - test
+  - tooling
+  - update
+  - version
+  - websearch
+  routes:
+  - /
+  - /api/acme/renew
+  - /api/acme/status
+  - /api/acme/verify
+  - /api/config
+  - /api/dashboard/cards
+  - /api/dashboard/cards/
+  - /api/dashboard/console
+  - /api/dashboard/layout
+  - /api/dashboard/smoke-progress
+  - /api/dashboard/smoke-progress/
+  - /api/dashboard/smoke-runs
+  - /api/dashboard/smoke-runs/
+  - /api/diagnose
+  - /api/files
+  - /api/files/discussions/
+  - /api/files/download
+  - /api/files/meta
+  - /api/files/peers/
+  - /api/files/upload
+  - /api/health
+  - /api/info
+  - /api/proxy/
+  - /api/proxy/comm/
+  - /api/proxy/llm/
+  - /api/restart
+  - /api/result-store
+  - /api/result-store/
+  - /api/tailscale/acl/generate
+  - /api/tailscale/acl/push
+  - /api/tailscale/auth/key
+  - /api/tailscale/nodes
+  - /api/tailscale/status
+  - /api/tooling/cleanup
+  - /api/tooling/gitignore
+  - /api/tooling/status
+  - /api/update
+  - /api/update/check
+  - /api/websearch/history
+  - /api/websearch/providers
+  - /api/websearch/providers/
+  - /api/websearch/stats
+  - /.well-known/unifiedpush
+  - /api/
+  - /api/ask
+  - /api/assist
+  - /api/auth/nonce
+  - /api/auth/rotate-token
+  - /api/cert
+  - /api/external/secrets/
+  - /api/git/secret-scan/stats
+  - /api/interfaces
+  - /api/link/
+  - /api/link/qr
+  - /api/link/start
+  - /api/link/status
+  - /api/link/stream
+  - /api/logs
+  - /api/lsp
+  - /api/migration/compute-kinds
+  - /api/migration/compute-kinds/
+  - /api/migration/status
+  - /api/openapi.yaml
+  - /api/opencode/models
+  - /api/opencode/providers
+  - /api/openwebui/models
+  - /api/queue
+  - /api/queue/
+  - /api/quick_commands
+  - /api/reload
+  - /api/rtk/check
+  - /api/rtk/discover
+  - /api/rtk/update
+  - /api/rtk/version
+  - /api/smoke/forward-url
+  - /api/smoke/progress
+  - /api/smoke/progress/
+  - /api/splash/info
+  - /api/splash/logo
+  - /api/summarizer/test
+  - /api/test/message
+  - /api/vision/describe
+  - /api/voice/test
+  - /api/voice/transcribe
+  - /api/web_search/stats
+  - /api/whisper/transcribe
+  - /healthz
+  - /locales/
+  - /metrics
+  - /readyz
+  - /remote/
+  - GET /api/projects/{name}/history
+  - GET /api/projects/{name}/rollup
+  settings:
+  - acme
+  - dashboard
+  - data_dir
+  - hostname
+  - platform_context
+  - results
+  - rtk
+  - tailscale
+  - ui
+  - update
+  - web_search
+  - pin_check_seconds
+  howtos:
+  - burn-guard
+  - codeql-local-scan
+  - daemon-operations
+  - dashboard
+  - dashboard-operator-console
+  - file-service
+  - letsencrypt-acme
+  - list-endpoints-and-paging
+  - navigation-mobile-fit
+  - result-panel
+  - self-config-capability
+  - setup-and-install
+  - tailscale-mesh
+  - testing-against-a-running-daemon
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: security
+  area: Security and encryption
+  summary: Audit, security failures, guardrails and encryption of data at rest.
+  tools:
+  - audit_access_query
+  - audit_query
+  - guardrail_library_list
+  - guardrail_profile_create
+  - guardrail_profile_delete
+  - guardrail_profile_get
+  - guardrail_profile_list
+  - guardrail_profile_update
+  - security_failure_list
+  commands:
+  - audit
+  - guardrail
+  - security
+  routes:
+  - /api/audit
+  - /api/audit/access
+  - /api/audit/self-config
+  - /api/security/encryption/migrate
+  - /api/security/encryption/status
+  - /api/security/wipe-plaintext
+  settings:
+  - audit
+  howtos:
+  - audit-logging
+  - guardrail-library
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: reports-cost
+  area: Reports and cost
+  summary: Cost, budget and usage reports and the usage calculator.
+  tools:
+  - budget_status
+  - cost_rates
+  - cost_report
+  - cost_summary
+  - cost_usage
+  - usage_advice
+  - usage_autolanes_status
+  - usage_extra_credit_set
+  - usage_reading_add
+  - usage_reading_delete
+  - usage_readings
+  - usage_remaining_work_set
+  commands:
+  - budget
+  - cost
+  - usage
+  routes:
+  - /api/budget
+  - /api/budget/usage
+  - /api/cost
+  - /api/cost/aggregated
+  - /api/cost/rates
+  - /api/cost/report
+  - /api/cost/usage
+  - /api/usage-backoff
+  - /api/usage-backoff/recheck
+  - /api/usage/advice
+  - /api/usage/autolanes
+  - /api/usage/burn-guard
+  - /api/usage/burn-guard/config
+  - /api/usage/burn-guard/run
+  - /api/usage/extra-credit
+  - /api/usage/readings
+  - /api/usage/readings/
+  - /api/usage/remaining-work
+  settings:
+  - cost_report
+  - usage
+  howtos:
+  - cost-report
+  - usage-calculator
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
+- id: devices
+  area: Devices and the web app
+  summary: Registered devices, aliases and the web app surfaces.
+  tools:
+  - device_alias_delete
+  - device_alias_list
+  - device_alias_upsert
+  - device_delete
+  - device_list
+  - device_register
+  commands:
+  - device-alias
+  routes:
+  - /api/device-aliases
+  - /api/device-aliases/
+  - /api/devices
+  - /api/devices/
+  - /api/devices/register
+  settings: []
+  howtos: []
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+- id: questions
+  area: Operator questions
+  summary: Questions raised to the operator and their answers.
+  tools:
+  - question_answer
+  - question_get
+  - question_list
+  - question_quality
+  - question_raise
+  - question_stats
+  - question_withdraw
+  commands: []
+  routes: []
+  settings: []
+  howtos: []
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+- id: evals
+  area: Evaluations
+  summary: Evaluation suites and runs.
+  tools:
+  - eval_get_run
+  - eval_list_runs
+  - eval_list_suites
+  - eval_run
+  commands:
+  - evals
+  routes:
+  - /api/evals
+  - /api/evals/run
+  - /api/evals/runs
+  - /api/evals/runs/
+  - /api/evals/suites
+  settings: []
+  howtos:
+  - evals
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh commands + docs/commands.md
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+- id: supervisor
+  area: Supervisor
+  summary: Supervisor loop jobs, runs, watches and evaluation.
+  tools:
+  - supervisor_loop_eval
+  - supervisor_loop_jobs
+  - supervisor_loop_run_job
+  - supervisor_loop_runs
+  - supervisor_loop_stats
+  - supervisor_watch_list
+  - supervisor_watch_stats
+  commands: []
+  routes:
+  - /api/supervisor-loop/eval
+  - /api/supervisor-loop/jobs
+  - /api/supervisor-loop/jobs/
+  - /api/supervisor-loop/runs
+  - /api/supervisor-loop/stats
+  settings: []
+  howtos:
+  - supervisor-loop
+  sources:
+  - scripts/skills-coverage-extract.sh mcp-tools
+  - scripts/skills-coverage-extract.sh howtos
+  - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
+- id: web-app
+  area: The web app
+  summary: 'The browser web app (PWA): tabs, dashboard and operator console; reaches every feature over REST and the event
+    stream.'
+  tools: []
+  commands: []
+  routes:
+  - /
+  - /ws
+  settings:
+  - ui
+  - dashboard
+  howtos: []
+  sources:
+  - scripts/skills-coverage-extract.sh routes
+  - scripts/skills-coverage-extract.sh settings
+  - docs/howto/
+- id: cli
+  area: The CLI
+  summary: 'The datawatch command line: daemon control plus a subcommand for most areas; see docs/commands.md.'
+  tools: []
+  commands:
+  - cmd
+  - completion
+  - help
+  - about
+  - version
+  - setup
+  - config
+  routes: []
+  settings: []
+  howtos: []
+  sources:
+  - scripts/skills-coverage-extract.sh commands
+  - docs/commands.md
+- id: rest-and-mcp
+  area: REST and MCP
+  summary: The REST API and MCP tool surface that mirror each other; mapping documented in docs/api-mcp-mapping.md.
+  tools: []
+  commands:
+  - mcp
+  - mcp-search
+  routes:
+  - /api/openapi.yaml
+  - /api/mcp/docs
+  settings:
+  - mcp
+  howtos: []
+  sources:
+  - docs/api-mcp-mapping.md
+  - scripts/skills-coverage-extract.sh routes
+  - scripts/skills-coverage-extract.sh mcp-tools
