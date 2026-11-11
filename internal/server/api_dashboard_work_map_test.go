@@ -232,6 +232,80 @@ func TestWorkMapTraceFailureSetsErrorStatus(t *testing.T) {
 	}
 }
 
+func TestWorkMapOrphanTaskIsOmitted(t *testing.T) {
+	// A task whose trace events never named an Automaton has no parent to hang
+	// under, so it must not appear as a parentless task node. Its session still
+	// shows, placed by its own tags.
+	srv, st := newWorkMapServer(t)
+	sess := startWorkMapSession(t, srv, "orphan", "project:projo", "lane:cpu")
+	appendWorkMapTrace(t, st, sess, "taskOrphan", "", false, time.Now().UTC().Truncate(time.Second))
+
+	code, body := getWorkMap(t, srv)
+	if code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", code)
+	}
+	for _, n := range body.Nodes {
+		if n.ID == "taskOrphan" {
+			t.Fatalf("orphan task node present: %+v", n)
+		}
+		if n.Kind == workMapKindTask && n.Parent == "" {
+			t.Fatalf("task node without a parent: %+v", n)
+		}
+	}
+	if body.Counts[workMapKindTask] != 0 {
+		t.Errorf("task count = %d, want 0", body.Counts[workMapKindTask])
+	}
+	workMapNodeByID(t, body, sess)
+}
+
+func TestWorkMapAutomatonCountsMatchTraceRollup(t *testing.T) {
+	// The Automaton counts come from the same roll-up that GET /api/trace/rollup
+	// serves, so the two endpoints must agree on events and errors.
+	srv, st := newWorkMapServer(t)
+	sess := startWorkMapSession(t, srv, "parity", "automaton:autpar")
+	at := time.Now().UTC().Truncate(time.Second)
+	appendWorkMapTrace(t, st, sess, "taskP1", "autpar", false, at)
+	appendWorkMapTrace(t, st, sess, "taskP2", "autpar", true, at.Add(time.Second))
+
+	_, body := getWorkMap(t, srv)
+	an := workMapNodeByID(t, body, "autpar")
+
+	rr := traceGet(t, srv.handleTraceRollup, "/api/trace/rollup?dimension=automaton&key=autpar")
+	var out struct {
+		Rollups []trace.Rollup `json:"rollups"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode trace rollup: %v: %s", err, rr.Body.String())
+	}
+	if len(out.Rollups) != 1 {
+		t.Fatalf("trace rollup rows = %d, want 1: %s", len(out.Rollups), rr.Body.String())
+	}
+	if an.Events != out.Rollups[0].Events || an.Errors != out.Rollups[0].Errors {
+		t.Errorf("work map automaton events/errors = %d/%d, trace rollup = %d/%d",
+			an.Events, an.Errors, out.Rollups[0].Events, out.Rollups[0].Errors)
+	}
+	if an.Events == 0 {
+		t.Errorf("automaton events = 0, want the recorded events")
+	}
+}
+
+func TestWorkMapRunningCarriesUpdatedAt(t *testing.T) {
+	srv, _ := newWorkMapServer(t)
+	sess := startWorkMapSession(t, srv, "rotating", "lane:gpu")
+
+	_, body := getWorkMap(t, srv)
+	if len(body.Running) != 1 || body.Running[0].ID != sess {
+		t.Fatalf("running = %+v, want the one live session", body.Running)
+	}
+	ts := body.Running[0].UpdatedAt
+	if ts == "" {
+		t.Fatal("running entry has no updated_at")
+	}
+	if _, err := time.Parse(time.RFC3339, ts); err != nil {
+		t.Errorf("updated_at %q is not RFC3339: %v", ts, err)
+	}
+}
+
 func TestWorkMapTraceOnlyNoSessions(t *testing.T) {
 	// A daemon with a trace store but no live sessions still renders the
 	// Automaton/task graph from the trace.

@@ -77,12 +77,13 @@ type workMapEdge struct {
 
 // workMapRunning is one live session for the card's rotation strip.
 type workMapRunning struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	State string `json:"state"`
-	Node  string `json:"node,omitempty"`
-	Lane  string `json:"lane,omitempty"`
-	Role  string `json:"role,omitempty"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	State     string `json:"state"`
+	Node      string `json:"node,omitempty"`
+	Lane      string `json:"lane,omitempty"`
+	Role      string `json:"role,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 // workMapResponse is the GET /api/dashboard/work-map body.
@@ -233,14 +234,20 @@ func (s *Server) handleWorkMap(w http.ResponseWriter, r *http.Request) {
 	if s.traceStore != nil {
 		if evs, err := s.traceStore.ReadAll(); err == nil {
 			traceOn = true
-			opts := trace.RollupOptions{}
-			for _, ro := range trace.BuildRollups(evs, trace.DimSession, opts) {
+			// One read of the store, rolled up along the three dimensions the
+			// map needs with the zero RollupOptions that GET /api/trace/rollup
+			// uses when no loop_threshold is given. Store.Rollups would read
+			// the whole store once per dimension, so the events are read here
+			// once and rolled up from memory. TestWorkMapAutomatonCountsMatchTraceRollup
+			// pins the Automaton counts to that endpoint.
+			rolls := trace.RollupAll(evs, trace.RollupOptions{})
+			for _, ro := range rolls[trace.DimSession] {
 				sessionRollups[ro.Key] = ro
 			}
-			for _, ro := range trace.BuildRollups(evs, trace.DimTask, opts) {
+			for _, ro := range rolls[trace.DimTask] {
 				taskRollups[ro.Key] = ro
 			}
-			for _, ro := range trace.BuildRollups(evs, trace.DimAutomaton, opts) {
+			for _, ro := range rolls[trace.DimAutomaton] {
 				automatonRollups[ro.Key] = ro
 			}
 			for _, ev := range evs {
@@ -296,7 +303,11 @@ func (s *Server) handleWorkMap(w http.ResponseWriter, r *http.Request) {
 	//    left out (their sessions still show, just higher up).
 	tasksByAutomaton := map[string][]string{}
 	for id := range taskRollups {
-		tasksByAutomaton[taskToAutomaton[id]] = append(tasksByAutomaton[taskToAutomaton[id]], id)
+		automatonID := taskToAutomaton[id]
+		if automatonID == "" {
+			continue
+		}
+		tasksByAutomaton[automatonID] = append(tasksByAutomaton[automatonID], id)
 	}
 	sessionIDs := map[string]bool{}
 	for _, sess := range sessions {
@@ -315,13 +326,9 @@ func (s *Server) handleWorkMap(w http.ResponseWriter, r *http.Request) {
 			omitted = len(kept) - workMapMaxTasksPerAutomaton
 			kept = kept[:workMapMaxTasksPerAutomaton]
 		}
-		if automatonID != "" {
-			automaton := b.node(automatonID, workMapKindAutomaton, automatonID)
-			automaton.TasksOmitted += omitted
-			if roll, ok := automatonRollups[automatonID]; ok && automaton.Events == 0 {
-				automaton.Events = roll.Events
-			}
-		}
+		// Step 1 already created this Automaton node from its rollup; the
+		// call returns that node and records the overflow on it.
+		b.node(automatonID, workMapKindAutomaton, automatonID).TasksOmitted += omitted
 		for _, taskID := range kept {
 			roll := taskRollups[taskID]
 			n := b.node(taskID, workMapKindTask, taskID)
@@ -332,10 +339,8 @@ func (s *Server) handleWorkMap(w http.ResponseWriter, r *http.Request) {
 			} else if n.Status == "" {
 				n.Status = "ok"
 			}
-			if automatonID != "" {
-				n.Parent = automatonID
-				b.edge(automatonID, taskID)
-			}
+			n.Parent = automatonID
+			b.edge(automatonID, taskID)
 			for _, sessID := range taskToSessions[taskID] {
 				if sessionIDs[sessID] {
 					b.edge(taskID, sessID)
@@ -458,14 +463,18 @@ func (s *Server) handleWorkMap(w http.ResponseWriter, r *http.Request) {
 	})
 	running := make([]workMapRunning, 0, len(active))
 	for _, sess := range active {
-		running = append(running, workMapRunning{
+		entry := workMapRunning{
 			ID:    sess.id,
 			Label: sess.label,
 			State: sess.state,
 			Node:  sess.axes["compute"],
 			Lane:  sess.axes["lane"],
 			Role:  sess.axes["role"],
-		})
+		}
+		if !sess.updatedAt.IsZero() {
+			entry.UpdatedAt = sess.updatedAt.UTC().Format(time.RFC3339)
+		}
+		running = append(running, entry)
 	}
 
 	counts := map[string]int{}

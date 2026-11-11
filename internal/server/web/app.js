@@ -10312,6 +10312,7 @@ const DOCS_LINKS_BY_KEY = {
   dash_card_events: DOCS_DEFINITIONS + '#dashboard',
   dash_card_gantt: DOCS_DEFINITIONS + '#dashboard',
   dash_card_heatmap: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_work_map: DOCS_DEFINITIONS + '#dashboard',
   dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
@@ -46334,8 +46335,9 @@ function _dashRenderWorkMap() {
   if (!el) return;
   const d = _dash._workMap;
   if (!d) {
+    // No refetch here: this renders ~5 times a second, and the 30s tick is the
+    // retry cadence. Refetching from the render path would hammer a 503.
     el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('dash_work_map_unavailable') || 'Work map unavailable')}</div>`;
-    _dashFetchWorkMap();
     return;
   }
   const nodes = Array.isArray(d.nodes) ? d.nodes : [];

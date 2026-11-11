@@ -9676,7 +9676,8 @@ paths:
         that are running right now. Node placement axes (`node`, `lane`, `role`) come from
         each session's placement tags; Automaton and task events and error counts come from
         the trace roll-up. Task nodes are capped per Automaton (newest first, overflow
-        reported in the Automaton's `tasks_omitted`). When the trace store is absent the
+        reported in the Automaton's `tasks_omitted`); a task the trace never linked to an
+        Automaton is left out, and its session still appears under its own placement. When the trace store is absent the
         graph degrades to placement only (`trace: false`); with neither a session store nor
         a trace store there is nothing to map and the endpoint reports 503.
       operationId: dashboardWorkMap
@@ -9703,7 +9704,15 @@ paths:
                         id: {type: string}
                         kind: {type: string, enum: [project, automation, automaton, task, session]}
                         label: {type: string}
-                        status: {type: string, enum: [ok, running, waiting, done, error, unknown]}
+                        status:
+                          type: string
+                          description: |
+                            Session nodes carry the session's status word: `running`, `waiting` (waiting for
+                            input), `done` (complete), `error` (failed or killed), or the raw state `rate_limited`
+                            or `stalled`. Task nodes are `ok` or `error` (a failing trace event). Project,
+                            Automation and Automaton containers aggregate their direct children: `error` if any
+                            child is in error, else `running` if any child is running, else `ok`.
+                          enum: [ok, running, waiting, done, error, rate_limited, stalled]
                         node: {type: string, description: Compute node placement axis}
                         lane: {type: string, description: Lane placement axis}
                         role: {type: string, description: Role placement axis}
