@@ -4086,6 +4086,14 @@ autonomous:
 
 ## Tag browser settings (autonomous.tags)
 
+The **List / Tiles / Compact** toggle, the **Group by** select, the collapsed
+groups and the show-more paging on the Automata and Automation lists are
+browser-only: they are kept in local storage on each device and are not
+daemon settings. Nothing under `autonomous.tags` controls them, and they
+are not in `GET /api/config`. To reset them, clear the site data for the PWA
+(keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
+See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
+
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
 tag. The `autonomous.tags` block sets which view opens first, which statuses
