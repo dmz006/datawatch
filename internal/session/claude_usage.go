@@ -83,17 +83,11 @@ type claudeUsageEntry struct {
 		Usage struct {
 			InputTokens  int `json:"input_tokens"`
 			OutputTokens int `json:"output_tokens"`
-			// Cache tokens (cache_creation_input_tokens / cache_read_
-			// input_tokens) are deliberately NOT counted here. Anthropic
-			// bills them at very different rates than base input tokens
-			// (cache writes ~1.25x, cache reads ~0.1x) and CostRate
-			// (cost.go) only has one InPerK for all input tokens --
-			// folding cache tokens in at the standard rate would produce
-			// a wildly inflated dollar figure (this session's own
-			// transcript sample had 30,745 cache-creation tokens against
-			// 2 real input tokens), which is worse than the current
-			// honest zero. Needs a CostRate schema extension to do
-			// properly; tracked as a known gap rather than guessed at.
+			// Cache tokens are counted apart from InputTokens: they are
+			// billed at very different rates (see costreport.CacheReadFactor
+			// and CacheWriteFactor), so they never fold into TokensIn.
+			CacheReadTokens  int `json:"cache_read_input_tokens"`
+			CacheWriteTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
 }
@@ -112,6 +106,14 @@ type claudeUsageEntry struct {
 // zero" and silently staying there is strictly better than crashing
 // the session monitor over a usage-reporting nicety.
 func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, initialLinesRead int, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
+	trackClaudeCodeUsageWithCache(ctx, fullID, projectDir, initialLinesRead, tick, reportFn, nil)
+}
+
+// trackClaudeCodeUsageWithCache is trackClaudeCodeUsage that also reports the
+// prompt-cache tokens it finds, through cacheFn (nil skips them). The cache
+// report comes before the line checkpoint, so a restart never counts a line's
+// cache tokens twice.
+func trackClaudeCodeUsageWithCache(ctx context.Context, fullID, projectDir string, initialLinesRead int, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut, linesRead int), cacheFn func(sessID string, cacheRead, cacheWrite int)) {
 	path := claudeTranscriptPath(projectDir, fullID)
 	if path == "" || reportFn == nil {
 		return
@@ -126,12 +128,16 @@ func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, initia
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			scanClaudeUsageOnce(path, fullID, reportFn)
+			scanClaudeUsage(path, fullID, reportFn, cacheFn)
 		}
 	}
 }
 
 func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
+	scanClaudeUsage(path, fullID, reportFn, nil)
+}
+
+func scanClaudeUsage(path, fullID string, reportFn func(sessID string, tokensIn, tokensOut, linesRead int), cacheFn func(sessID string, cacheRead, cacheWrite int)) {
 	f, err := os.Open(path) // #nosec G304 -- path is derived from this daemon's own session record, not external input
 	if err != nil {
 		return // transcript not written yet, or path guess was wrong -- try again next tick
@@ -145,7 +151,7 @@ func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, token
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024) // transcript lines can be large (big tool outputs)
-	var sumIn, sumOut, lineNum int
+	var sumIn, sumOut, sumCR, sumCW, lineNum int
 	for scanner.Scan() {
 		lineNum++
 		if lineNum <= alreadyRead {
@@ -161,12 +167,17 @@ func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, token
 		u := entry.Message.Usage
 		sumIn += u.InputTokens
 		sumOut += u.OutputTokens
+		sumCR += u.CacheReadTokens
+		sumCW += u.CacheWriteTokens
 	}
 	if lineNum > alreadyRead {
 		claudeUsageLinesRead.Store(fullID, lineNum)
 		// Persist the new checkpoint even when this tick found no usage
 		// (sumIn/sumOut both 0 -- e.g. a tool-only turn) so the
 		// already-scanned lines aren't re-scanned after a restart.
+		if cacheFn != nil && (sumCR > 0 || sumCW > 0) {
+			cacheFn(fullID, sumCR, sumCW)
+		}
 		if sumIn > 0 || sumOut > 0 {
 			reportFn(fullID, sumIn, sumOut, lineNum)
 		} else {

@@ -130,40 +130,57 @@ func TestScanClaudeUsageOnce_MissingFileIsNoop(t *testing.T) {
 	}
 }
 
-func TestScanClaudeUsageOnce_CacheTokensNotCounted(t *testing.T) {
-	// GH#98 deliberate scope limit: cache_creation_input_tokens /
-	// cache_read_input_tokens are billed at very different rates than
-	// base input tokens, and CostRate has no cache-aware field --
-	// folding them in would silently produce a wildly wrong dollar
-	// figure. Confirm they're ignored, not just "not implemented yet
-	// but accidentally summed".
+func TestScanClaudeUsage_CacheTokensCountedApart(t *testing.T) {
+	// Cache tokens are reported through their own callback and never folded
+	// into the input count; without a callback they are simply not reported.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "transcript.jsonl")
-	f, err := os.Create(path) // #nosec G304 -- test fixture
-	if err != nil {
-		t.Fatal(err)
-	}
 	raw := `{"type":"assistant","message":{"usage":{"input_tokens":2,"output_tokens":136,"cache_creation_input_tokens":30745,"cache_read_input_tokens":9893}}}` + "\n"
-	if _, err := f.WriteString(raw); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Unique session ID + explicit cleanup -- claudeUsageLinesRead is
-	// package-level state shared across every test in this file AND
-	// across -count=N repeats of this same test within one process;
-	// without both, a later run picks up a stale "already read" count
-	// and skips this file's only line as "already seen".
 	const sessID = "sess-cache-test"
 	t.Cleanup(func() { claudeUsageLinesRead.Delete(sessID) })
-	var gotIn, gotOut int
-	scanClaudeUsageOnce(path, sessID, func(sessID string, tokensIn, tokensOut, linesRead int) {
+	var gotIn, gotOut, gotCR, gotCW int
+	scanClaudeUsage(path, sessID, func(_ string, tokensIn, tokensOut, _ int) {
 		gotIn, gotOut = tokensIn, tokensOut
-	})
+	}, func(_ string, cr, cw int) { gotCR, gotCW = cr, cw })
 	if gotIn != 2 || gotOut != 136 {
 		t.Fatalf("got in=%d out=%d, want in=2 out=136 (cache tokens must not be folded in)", gotIn, gotOut)
+	}
+	if gotCR != 9893 || gotCW != 30745 {
+		t.Fatalf("got cache read=%d write=%d, want 9893 / 30745", gotCR, gotCW)
+	}
+
+	// Nil cache callback: scanning still works and reports no cache.
+	claudeUsageLinesRead.Delete(sessID)
+	gotIn = 0
+	scanClaudeUsageOnce(path, sessID, func(_ string, tokensIn, _, _ int) { gotIn = tokensIn })
+	if gotIn != 2 {
+		t.Fatalf("scanClaudeUsageOnce in=%d, want 2", gotIn)
+	}
+}
+
+func TestAddCacheUsage_AccumulatesAndRejectsUnknown(t *testing.T) {
+	mgr, _ := newTestManagerWithFake(t)
+	if err := mgr.AddCacheUsage("nope", 1, 1); err == nil {
+		t.Fatal("unknown session must fail")
+	}
+	if err := mgr.SaveSession(&Session{ID: "c1", FullID: "h-c1"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := mgr.AddCacheUsage("c1", 10, 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok := mgr.GetSession("c1")
+	if !ok {
+		t.Fatal("session vanished")
+	}
+	if got.CacheReadTokens != 20 || got.CacheWriteTokens != 10 {
+		t.Fatalf("cache totals = %d/%d, want 20/10", got.CacheReadTokens, got.CacheWriteTokens)
 	}
 }
 
