@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- **The Projects tab hides empty lines and sections by default, and a show-empty checkbox brings them back.** Lines and sections with nothing in them no longer clutter the Projects tab; tick **Show empty** to see them all. The choice is remembered per viewer, so each browser keeps its own setting.
+- **The Projects tab hides empty lines and sections by default, and a show-empty checkbox brings them back.** Lines and sections with nothing in them no longer clutter the Projects tab; tick **Show empty lines and sections** to see them all. The choice is remembered per viewer, so each browser keeps its own setting.
 - **A missing weekly share is reported as an Events entry.** When the weekly share is missing, the Projects tab no longer leaves a silent gap; the problem is recorded as an entry on the Events tab so it is not missed.
 
 ## v9.135.0 — Self-config is a built-in capability group
