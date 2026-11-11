@@ -4,6 +4,8 @@ Issue: not filed yet (record the issue URL here once it is filed)
 
 ## Body of the issue
 
+This is the parity issue for the mobile app datawatch-app: datawatch-app must render the dashboard card data listed below, so that its dashboard matches the PWA.
+
 The dashboard cards were reworked so that each card either works or is not shown. Two cards were rebuilt (Network is now the Work map, Multi-EKG is now the Lane pulse), six new series cards were added, and the Live Events, Timeline, 30-Day Activity, CI and release, Smoke Run, Search Usage and Cost report cards now read real data. This records the exact contract the mobile app should render: the new and changed REST endpoints and fields, the card purposes, the rule for hiding a card, and the locale keys. No setting was added, so there is nothing to expose in the app's settings.
 
 ### Hiding rule (all cards)
