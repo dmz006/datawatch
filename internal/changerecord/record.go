@@ -79,6 +79,48 @@ type ChangeRecord struct {
 	LocaleKeysAdded []LocaleKey  `json:"locale_keys_added"`
 	TestsAdded      []string     `json:"tests_added"`
 	Commands        []CommandRun `json:"commands"`
+	// Cost is the Automaton's spend read from the ledger; nil when no
+	// ledger reading was attached.
+	Cost *CostSummary `json:"cost,omitempty"`
+}
+
+// CostSummary is the ledger view of one Automaton's spend. The dollar figure
+// is an API-equivalent estimate, never a charge.
+type CostSummary struct {
+	Sessions      int     `json:"sessions"`
+	TokensIn      int     `json:"tokens_in"`
+	TokensOut     int     `json:"tokens_out"`
+	CacheRead     int     `json:"cache_read"`
+	CacheCreation int     `json:"cache_creation"`
+	ToolCalls     int     `json:"tool_calls"`
+	SpanSeconds   float64 `json:"span_seconds"`
+	// USDLabel names the dollar figure (for example "API-equivalent
+	// estimate, not billed"). Empty when there is no figure.
+	USDLabel         string   `json:"usd_label,omitempty"`
+	APIEquivalentUSD *float64 `json:"api_equivalent_usd,omitempty"`
+	// WindowNote and UnknownNote carry the ledger's partial-window and
+	// unknown-spend caveats verbatim.
+	WindowNote  string `json:"window_note,omitempty"`
+	UnknownNote string `json:"unknown_note,omitempty"`
+}
+
+// CostLedger reads one Automaton's cost from the spend ledger.
+type CostLedger interface {
+	AutomatonCost(automatonID string) (*CostSummary, error)
+}
+
+// AttachCost reads the Automaton's cost from the ledger onto the record. A
+// nil ledger or an empty automaton id leaves the record unchanged.
+func AttachCost(rec *ChangeRecord, ledger CostLedger) error {
+	if rec == nil || ledger == nil || rec.AutomatonID == "" {
+		return nil
+	}
+	c, err := ledger.AutomatonCost(rec.AutomatonID)
+	if err != nil {
+		return fmt.Errorf("changerecord: read cost: %w", err)
+	}
+	rec.Cost = c
+	return nil
 }
 
 var (
@@ -281,6 +323,10 @@ func Merge(records ...*ChangeRecord) *ChangeRecord {
 		ts = append(ts, r.TestsAdded...)
 		lk = append(lk, r.LocaleKeysAdded...)
 		out.Commands = append(out.Commands, r.Commands...)
+		if out.Cost == nil && r.Cost != nil {
+			c := *r.Cost
+			out.Cost = &c
+		}
 	}
 	for p, s := range files {
 		out.Files = append(out.Files, FileChange{Path: p, Status: s})

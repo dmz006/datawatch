@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
@@ -183,6 +184,33 @@ type view struct {
 	Screens    []string
 	Bullets    []string
 	Surfaces   []surface
+
+	// Cost is the ledger-backed cost section; nil renders no section.
+	Cost *costView
+}
+
+type costView struct {
+	Sessions, TokensIn, TokensOut, CacheRead, CacheCreation, ToolCalls int
+	Span                                                               string
+	Estimate, Label                                                    string
+	WindowNote, UnknownNote                                            string
+}
+
+func costOf(c *changerecord.CostSummary) *costView {
+	if c == nil {
+		return nil
+	}
+	v := &costView{Sessions: c.Sessions, TokensIn: c.TokensIn, TokensOut: c.TokensOut,
+		CacheRead: c.CacheRead, CacheCreation: c.CacheCreation, ToolCalls: c.ToolCalls,
+		Span: (time.Duration(c.SpanSeconds) * time.Second).String(), WindowNote: c.WindowNote, UnknownNote: c.UnknownNote}
+	if c.APIEquivalentUSD != nil {
+		v.Estimate = fmt.Sprintf("$%.2f", *c.APIEquivalentUSD)
+		v.Label = c.USDLabel
+		if v.Label == "" {
+			v.Label = "API-equivalent estimate, not billed"
+		}
+	}
+	return v
 }
 
 func buildData(kind Kind, rec *changerecord.ChangeRecord, o Options) view {
@@ -219,6 +247,7 @@ func buildData(kind Kind, rec *changerecord.ChangeRecord, o Options) view {
 	v.Screens = screensOf(rec)
 	v.Bullets = bulletsOf(rec)
 	v.Surfaces = surfacesOf(rec)
+	v.Cost = costOf(rec.Cost)
 	return v
 }
 

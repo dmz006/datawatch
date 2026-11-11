@@ -244,3 +244,36 @@ func TestGitDiff(t *testing.T) {
 		t.Error("bad base must fail")
 	}
 }
+
+type fakeLedger struct {
+	c   *CostSummary
+	err error
+	id  string
+}
+
+func (f *fakeLedger) AutomatonCost(id string) (*CostSummary, error) {
+	f.id = id
+	return f.c, f.err
+}
+
+func TestAttachCostAndMerge(t *testing.T) {
+	usd := 1.5
+	l := &fakeLedger{c: &CostSummary{Sessions: 2, TokensIn: 10, ToolCalls: 3, APIEquivalentUSD: &usd}}
+	rec := &ChangeRecord{AutomatonID: "auto"}
+	if err := AttachCost(rec, l); err != nil || l.id != "auto" || rec.Cost == nil || rec.Cost.Sessions != 2 {
+		t.Fatalf("attach: %v %+v", err, rec.Cost)
+	}
+	if m := Merge(&ChangeRecord{}, rec); m.Cost == nil || m.Cost.TokensIn != 10 || m.Cost == rec.Cost {
+		t.Errorf("merge cost %+v", m.Cost)
+	}
+	if Merge(&ChangeRecord{}).Cost != nil {
+		t.Error("merge without cost must stay nil")
+	}
+	if err := AttachCost(&ChangeRecord{AutomatonID: "x"}, &fakeLedger{err: errors.New("boom")}); err == nil {
+		t.Error("ledger error must surface")
+	}
+	none := &ChangeRecord{}
+	if err := AttachCost(none, l); err != nil || none.Cost != nil {
+		t.Error("no automaton id must be a no-op")
+	}
+}
