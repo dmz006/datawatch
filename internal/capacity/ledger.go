@@ -263,8 +263,12 @@ type PoolStatus struct {
 	// Options.NodeState; a non-node pool or an undrained node leaves them
 	// unset (zero). A drained pool still shows its Held count: the tasks
 	// still holding it.
-	Drained    bool      `json:"drained,omitempty"`
-	DrainUntil time.Time `json:"drain_until,omitzero"`
+	Drained bool `json:"drained,omitempty"`
+	// Unhealthy and UnhealthyReason show a MarkNodeUnhealthy mark on a node
+	// pool; placement skips the node while it is set.
+	Unhealthy       bool      `json:"unhealthy,omitempty"`
+	UnhealthyReason string    `json:"unhealthy_reason,omitempty"`
+	DrainUntil      time.Time `json:"drain_until,omitzero"`
 	// Overflow counts adopted leases running on this node beyond its limit (see
 	// Lease.NodeOverflow). They are not in Held, so Held+External never exceeds
 	// Limit, but they occupy the node: admission counts Held+External+Overflow.
@@ -441,7 +445,8 @@ type Ledger struct {
 	rates     map[string]RateCeiling
 	rateUse   map[string][]rateEntry
 	opt       Options
-	changed   chan struct{} // closed and replaced on every capacity change; see Changed
+	unhealthy unhealthyMarks // see node_unhealthy.go
+	changed   chan struct{}  // closed and replaced on every capacity change; see Changed
 
 	adopting   bool      // set by BeginAdoption; requests wait while it is set
 	adoptSince time.Time // when BeginAdoption was called
@@ -814,6 +819,12 @@ func (l *Ledger) swapVerifierNodePoolLocked(req *Request, node string) {
 // consumer now: NodeGate when set (its reason verbatim), else the legacy
 // NodeHealthy hook ("unhealthy" when it refuses), else every node is open.
 func (l *Ledger) nodeGateLocked(node, consumer string) (bool, string) {
+	if bad, why := l.unhealthy.get(node); bad {
+		if why == "" {
+			why = "unhealthy"
+		}
+		return false, why
+	}
 	if l.opt.NodeGate != nil {
 		ok, reason := l.opt.NodeGate(node, consumer)
 		return ok, reason
@@ -829,6 +840,11 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 		return req, why
 	}
 	if !req.multiNode() {
+		if req.Node != "" {
+			if bad, why := l.unhealthy.get(req.Node); bad {
+				return req, fmt.Sprintf("waiting for node %s: unhealthy: %s", req.Node, why)
+			}
+		}
 		if req.Node != "" && l.opt.NodeGate != nil {
 			if ok, why := l.opt.NodeGate(req.Node, req.Consumer); !ok {
 				return req, fmt.Sprintf("waiting for node %s: %s", req.Node, why)
@@ -1624,6 +1640,9 @@ func (l *Ledger) Snapshot() Status {
 		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
 		if node, ok := strings.CutPrefix(p, "node:"); ok {
 			ps.Overflow = len(l.overflowLocked(node))
+			if bad, why := l.unhealthy.get(node); bad {
+				ps.Unhealthy, ps.UnhealthyReason = true, why
+			}
 			if l.opt.NodeState != nil {
 				if ns := l.opt.NodeState(node); ns.Drained {
 					ps.Drained = true
