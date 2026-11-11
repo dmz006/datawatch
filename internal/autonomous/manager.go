@@ -128,6 +128,11 @@ func (m *Manager) checkGateBaseline(dir string, cfg pipeline.QualityGateConfig) 
 type Config struct {
 	Enabled             bool `json:"enabled"`
 	PollIntervalSeconds int  `json:"poll_interval_seconds,omitempty"`
+	// BranchRefreshEnabled and BranchRefreshBehindLimit mirror
+	// autonomous.branch_refresh_enabled / branch_refresh_behind_limit
+	// (branch_refresh.go). A zero limit reads as 5.
+	BranchRefreshEnabled     bool `json:"branch_refresh_enabled,omitempty"`
+	BranchRefreshBehindLimit int  `json:"branch_refresh_behind_limit,omitempty"`
 	// ModelPullConsent is the operator's model-pull consent
 	// (autonomous.model_pull_consent): the models the Automation setup
 	// needs, each with a pull allow flag, plus the publisher allow-list.
@@ -1768,6 +1773,11 @@ type Manager struct {
 	// decisions on file; a nil config function leaves the gate off.
 	decisionStore   *QuestionStore
 	decisionGateCfg func() config.AutonomousQuestionsConfig
+
+	// branchRefreshGitRunner replaces the production git runner of the
+	// between-task branch refresh (branch_refresh.go); nil uses git.
+	// Guarded by mu.
+	branchRefreshGitRunner MergeGitRunner
 
 	// requestWatchCfg reads the live autonomous.request_watch block and
 	// requestWatchEpisodes holds, per watched session, the key of the

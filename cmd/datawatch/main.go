@@ -4577,6 +4577,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		amgrCfg := autonomouspkg.Config{
 			Enabled:                          acfgIn.Enabled,
 			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
+			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
+			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
