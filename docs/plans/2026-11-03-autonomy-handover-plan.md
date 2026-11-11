@@ -290,3 +290,5 @@ Operator, 2026-11-11, quoted, on the docs-set task of the Code Scanning upload r
 Operator, 2026-11-11, quoted: "Yes" (approve the image-refresh workflow change that reads the Trivy version from scripts/trivy-version.txt).
 
 Operator reading, 2026-11-11 15:13: Claude session 62 percent, weekly 63 percent (58 percent at 14:28). Weekly rose 5 points in about 45 minutes while the session window rose from 23 to 62 percent, so one full session window is about 13 weekly points; at three lanes the session limit arrives in about half an hour. Supervisor lowered claude-code max in flight from 3 to 2 to stay under the session limit.
+
+Operator, 2026-11-11, quoted: "Yes to merge based rule". Added the decompose-lint rule verify-script-merge-base (warn, shadow mode) whose message is carried into the planner's guidance: verification scripts compare added lines against the merge base, never the working tree. The root cause was planner-written scripts using git diff against the working tree, which pass at task time and fail at the final gate.
