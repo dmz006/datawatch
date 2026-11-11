@@ -4618,6 +4618,7 @@
   "automata_events_project": "Projekt",
   "automata_events_reason": "Grund",
   "automata_events_tab": "Ereignisse",
+  "automata_events_config_in_settings": "Die Automata-Konfiguration finden Sie in den Einstellungen unter Automata",
   "automata_events_help_tip": "Anleitung zu Ereignissen öffnen — was jede Ereignisart bedeutet und wie man darauf reagiert",
   "automata_events_help_filters": "Die Ereignisliste nach Art, Projekt oder Text eingrenzen. Die Art-Chips schalten ein und aus.",
   "automata_events_help_card_supervisor_watch": "Supervisor-Überwachung — was der Supervisor gerade beobachtet und warum",

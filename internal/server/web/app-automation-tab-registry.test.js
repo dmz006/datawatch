@@ -1,7 +1,7 @@
-// The Automation view's six-tab registry, ordered strip, card ownership, card
+// The Automation view's five-tab registry, ordered strip, card ownership, card
 // slots, Inbox badge, strip styling and switching behaviour.
 //
-// Counts and names are asserted, not just shapes: six entries in the order
+// Counts and names are asserted, not just shapes: five entries in the order
 // inbox, automations, resources, progress, setup, housekeeping; the English
 // labels; the exact card ids each tab body owns; the pre-registered hidden
 // placeholders; the Inbox badge sum; the strip rules in style.css.
@@ -33,8 +33,8 @@ function loadView(fetchImpl) {
   return { sb: sandbox, out, els };
 }
 
-const IDS = ['inbox', 'automations', 'resources', 'progress', 'setup', 'housekeeping'];
-const LABELS = ['Inbox', 'Automations', 'Resources', 'Progress and cost', 'Setup and policy', 'Housekeeping'];
+const IDS = ['inbox', 'automations', 'resources', 'progress', 'housekeeping'];
+const LABELS = ['Inbox', 'Automations', 'Resources', 'Progress and cost', 'Housekeeping'];
 const registry = sb => vm.runInContext('_AUTOMATION_SUBTABS', sb);
 const subtabOf = sb => vm.runInContext('_automationState.subtab', sb);
 
@@ -45,7 +45,6 @@ const FIXED = {
   automations: ['automationFilterBar', 'automationPanel'],
   resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard', 'automationShipCard'],
   progress: ['progressCard'],
-  setup: ['automationOnboardingReportCard', 'automationMergePipelineCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'],
   housekeeping: ['automationUncommittedWorkCard', 'automationProtectedPathsCard'],
 };
 const PLACEHOLDERS = {
@@ -53,7 +52,6 @@ const PLACEHOLDERS = {
   automations: ['automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationLaneUtilizationCard', 'automationVerifierSlotsCard'],
   progress: ['automationAllProjectsGanttCard', 'automationCostBillingCard', 'automationCompletionForecastCard'],
-  setup: ['automationProjectPolicyCard', 'automationDecomposeLintCard', 'automationPriorityByKindCard', 'automationGroupingTagsCard', 'automationSupervisorLoopCard'],
   housekeeping: ['automationStaleWorktreesCard'],
 };
 
@@ -73,10 +71,10 @@ function stripButtons(html) {
     .map(m => ({ id: m[3], active: !!m[1], selected: m[2], inner: m[4] }));
 }
 
-test('registry: exactly six entries in order, each with labelKey in all five locales, bodyHTML, mount, stop', () => {
+test('registry: exactly five entries in order, each with labelKey in all five locales, bodyHTML, mount, stop', () => {
   const { sb } = loadView();
   const reg = registry(sb);
-  assert.equal(reg.length, 6, 'six entries');
+  assert.equal(reg.length, 5, 'five entries');
   assert.deepEqual(Array.from(reg, e => e.id), IDS, 'order');
   const bundles = Object.fromEntries(['en', 'de', 'es', 'fr', 'ja'].map(l => [l, readLocale(l)]));
   for (const e of reg) {
@@ -92,20 +90,20 @@ test('registry: exactly six entries in order, each with labelKey in all five loc
   assert.equal(subtabOf(sb), 'inbox', 'initial state');
 });
 
-test('order and labels: six buttons with the English labels, each exactly t(labelKey); a locale override renames the tab', () => {
+test('order and labels: five buttons with the English labels, each exactly t(labelKey); a locale override renames the tab', () => {
   const { sb, out } = loadView();
   sb.renderAutonomousView();
   const row = stripButtons(out.view);
-  assert.equal(row.length, 6);
+  assert.equal(row.length, 5);
   assert.deepEqual(row.map(b => b.id), IDS);
   row.forEach((b, i) => {
     assert.equal(b.inner.replace(/<span[\s\S]*<\/span>/, ''), LABELS[i], b.id + ' English label');
     assert.equal(b.selected, i === 0 ? 'true' : 'false');
   });
   assert.match(out.view, /<div class="output-tabs automation-subtabs" role="tablist">/, 'wrapper class contract');
-  assert.equal((out.view.match(/class="output-tab/g) || []).length >= 6, true);
-  assert.equal((out.view.match(/role="tab"/g) || []).length, 6, 'six role=tab');
-  assert.equal((out.view.match(/data-subtab="/g) || []).length, 6, 'six data-subtab');
+  assert.equal((out.view.match(/class="output-tab/g) || []).length >= 5, true);
+  assert.equal((out.view.match(/role="tab"/g) || []).length, 5, 'five role=tab');
+  assert.equal((out.view.match(/data-subtab="/g) || []).length, 5, 'five data-subtab');
 
   const reg = registry(sb);
   reg.forEach((e, i) => assert.equal(sb.t(e.labelKey), LABELS[i], e.id + ' label is t(labelKey)'));
@@ -132,7 +130,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
       seen.set(c, id);
     });
   }
-  assert.equal(seen.size, 4 + 2 + 4 + 1 + 5 + 2 + 13, 'total distinct card ids (fixed 18 + placeholders 13)');
+  assert.equal(seen.size, 4 + 2 + 4 + 1 + 2 + 8, 'total distinct card ids (fixed 13 + placeholders 8)');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationQuestionsCard', 'open questions card is first on Inbox');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[2], 'automationTriageCard', 'triage card follows the question and held cards');
 });
@@ -166,7 +164,7 @@ test('slots: a slot registered on resources appears only there, after the fixed 
       assert.match(body, new RegExp('<div id="' + p + '" class="prd-capacity-slot" style="display:none;[^"]*"></div>'), p + ' is a hidden empty placeholder on ' + tab);
     }
   }
-  assert.equal(Object.values(PLACEHOLDERS).flat().length, 13, 'thirteen placeholders');
+  assert.equal(Object.values(PLACEHOLDERS).flat().length, 8, 'eight placeholders');
 });
 
 test('inbox badge: summed count from the existing routes, aria-label, hidden at zero, kept when another tab is shown', async () => {
@@ -199,10 +197,10 @@ test('inbox badge: summed count from the existing routes, aria-label, hidden at 
   assert.equal(m[1], '4 waiting on you', 'aria-label');
   assert.doesNotMatch(m[2], /display:none/, 'visible when non-zero');
 
-  sb.switchAutomationSubtab('setup');
+  sb.switchAutomationSubtab('progress');
   inbox = stripButtons(out.view).find(b => b.id === 'inbox');
   assert.equal(inbox.active, false, 'Inbox no longer active');
-  assert.match(inbox.inner, /automation-subtab-badge" aria-label="4 waiting on you" style="[^"]*">4</, 'badge stays on Inbox behind Setup');
+  assert.match(inbox.inner, /automation-subtab-badge" aria-label="4 waiting on you" style="[^"]*">4</, 'badge stays on Inbox behind Progress');
   for (const b of stripButtons(out.view).filter(b => b.id !== 'inbox')) assert.doesNotMatch(b.inner, /badge/, b.id + ' has no badge');
 
   // In-place update through the DOM: a stub badge gets the count text and aria-label.
@@ -283,7 +281,7 @@ test('switching: unknown id ignored, previous stop() runs, only the selected tab
     sb.switchAutomationSubtab('housekeeping');
     assert.equal(log[0], 'stop:resources');
     assert.ok(log.includes('mount:housekeeping'));
-    assert.ok(!log.includes('mount:setup') && !log.includes('mount:progress'));
+    assert.ok(!log.includes('mount:progress'));
     log.length = 0;
 
     sb.switchAutomationSubtab('housekeeping');
