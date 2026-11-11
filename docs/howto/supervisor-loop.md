@@ -82,15 +82,54 @@ the [definitions](../datawatch-definitions.md#supervisor-loop).
 | `wake.coalesce_seconds` | `30` | The quiet window after a wake: events arriving within it fold into the same pass. `0` to `3600`; `0` wakes on every event. |
 | `wake.fallback_interval_minutes` | `20` | Minutes between scheduled passes when no event wakes the supervisor, `1` to `1440`. The default equals the scheduled check. |
 
+## Event wake
+
+By default the supervisor loop runs only on its schedule. Turn on
+`wake.enabled` and a listed lifecycle event starts a pass at once instead of
+waiting for the next scheduled check. The schedule stays as the fallback, run
+every `wake.fallback_interval_minutes`, so a missed event is still caught.
+
+How it behaves:
+
+- Enabling it registers a built-in subscription set named `supervisor-wake`, one
+  subscription per kind in `wake.kinds`. Nothing is registered while the wake is
+  off, and none of your own stored subscriptions are touched.
+- Events arriving within `wake.coalesce_seconds` of each other are folded into
+  one pass. Only one pass runs at a time; events that arrive during a pass are
+  queued and handled by the next one.
+- Each pass is started by typing a line such as
+  `supervisor wake: task.failed automaton=<id> task=<id>` into the supervisor
+  session. If no supervisor session is running, the wake is dropped and the
+  scheduled check covers it.
+- The wake status shows when the supervisor last woke for an event and when it
+  last ran a scheduled check, with a count of each. If the event path has been
+  silent for more than an hour, the status says so, which usually means the
+  kinds list is too narrow or the wake is not reaching a session.
+
+Review before relying on it: the wake is off by default and nothing turns it on
+for you. Check that the kinds list matches the states you want a pass for,
+and that a supervisor session is running.
+
+Change the settings and read the status on any surface:
+
+| Surface | Settings and status |
+|---|---|
+| Web UI | **Settings → Automata → Supervisor wake**; the status line sits in the same group. |
+| CLI | `datawatch supervisor-loop wake` shows the status; add `--enabled=true`, `--kinds A,B`, `--coalesce-seconds N` or `--fallback-interval-minutes N` to set. |
+| REST API | `GET /api/supervisor-loop/wake` for the status; write the `autonomous.supervisor_loop.wake.*` keys with `PUT /api/config`. |
+| MCP | `supervisor_loop_stats` returns a `wake` object; write the keys with `config_set`. |
+| Comm channel | `supervisor wake` or `supervisor wake status`; `supervisor wake set key=value ...` to change. |
+| YAML | The `"supervisor_loop.wake.*"` keys in the `autonomous.supervisor_loop` block; see `docs/config-reference.yaml`. |
+
 ## Access methods
 
 | Method | How |
 |---|---|
 | YAML | Edit the `autonomous.supervisor_loop` block in your config file; see `docs/config-reference.yaml`. Example: `"supervisor_loop.lane_count.max": 4` (quote the key and keep the `supervisor_loop.` prefix). |
-| CLI | `datawatch config set autonomous.supervisor_loop.enabled false`. Read with `datawatch supervisor-loop jobs` and `datawatch supervisor-loop runs`; run one job with `datawatch supervisor-loop run <job>`. |
+| CLI | `datawatch config set autonomous.supervisor_loop.enabled false`. Read with `datawatch supervisor-loop jobs` and `datawatch supervisor-loop runs`; run one job with `datawatch supervisor-loop run <job>`; show or set the event wake with `datawatch supervisor-loop wake`. |
 | Web UI | **Settings → Automata → Supervisor loop** to change settings. The **Supervisor loop** card on the **Setup** sub-tab of the **Automation** view shows the jobs and runs. |
-| REST API | `PUT /api/config` with the `autonomous.supervisor_loop.*` key. `GET /api/supervisor-loop/jobs`, `GET /api/supervisor-loop/runs`, `POST /api/supervisor-loop/jobs/<job>/run`, `POST /api/supervisor-loop/eval`. |
-| Comm channel | `configure autonomous.supervisor_loop.enabled=false` to change a setting. `supervisor jobs`, `supervisor runs`, `supervisor stats` and `supervisor run job=<job>` to read and run. |
+| REST API | `PUT /api/config` with the `autonomous.supervisor_loop.*` key. `GET /api/supervisor-loop/jobs`, `GET /api/supervisor-loop/runs`, `GET /api/supervisor-loop/wake`, `POST /api/supervisor-loop/jobs/<job>/run`, `POST /api/supervisor-loop/eval`. |
+| Comm channel | `configure autonomous.supervisor_loop.enabled=false` to change a setting. `supervisor jobs`, `supervisor runs`, `supervisor stats`, `supervisor wake` and `supervisor run job=<job>` to read and run. |
 
 MCP clients use `config_set` for settings and the five `supervisor_loop_*` tools
 listed in the [MCP reference](../mcp.md).
