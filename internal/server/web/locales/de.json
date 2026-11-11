@@ -4644,5 +4644,9 @@
   "settings.self_config_recent_loading": "Wird geladen …",
   "settings.self_config_recent_empty": "Noch keine self-config-Audit-Einträge.",
   "settings.self_config_recent_more": "%1$d ältere(r) Eintrag(e) nicht angezeigt",
-  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar"
+  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar",
+  "settings_usage_entry_title": "Usage reading and extra credit",
+  "settings_usage_entry_intro": "Save a usage reading or the extra credit figure here. These are the same forms and the same endpoints as the usage page, so Automata lane advice and the burn guard see the result at once.",
+  "settings_usage_entry_saved": "Saved. The advice now uses this figure.",
+  "settings_usage_entry_help": "Usage reading and extra credit help"
 }
