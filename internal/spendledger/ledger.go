@@ -3,6 +3,7 @@ package spendledger
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -64,6 +65,9 @@ func Open(dataDir string, now func() time.Time) (*Ledger, error) {
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		l.horizon = now()
+		if err := l.save(l.entries, l.horizon); err != nil {
+			return nil, err
+		}
 		return l, nil
 	case err != nil:
 		return nil, err
@@ -78,6 +82,9 @@ func Open(dataDir string, now func() time.Time) (*Ledger, error) {
 	l.horizon = f.Horizon
 	if l.horizon.IsZero() {
 		l.horizon = now()
+		if err := l.save(l.entries, l.horizon); err != nil {
+			return nil, err
+		}
 	}
 	return l, nil
 }
@@ -93,17 +100,36 @@ func (l *Ledger) Upsert(e Entry) error {
 	if e.Role == "" {
 		e.Role = RoleOther
 	}
+	if !validRole(e.Role) {
+		return fmt.Errorf("spendledger: unknown role %q", e.Role)
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.entries[key(e)] = e
-	return l.save()
+	next := make(map[string]Entry, len(l.entries)+1)
+	for k, v := range l.entries {
+		next[k] = v
+	}
+	next[key(e)] = e
+	if err := l.save(next, l.horizon); err != nil {
+		return err
+	}
+	l.entries = next
+	return nil
+}
+
+func validRole(r string) bool {
+	switch r {
+	case RoleWorker, RoleDecompose, RoleRulesReview, RoleVerification, RoleGuardrail, RoleOther:
+		return true
+	}
+	return false
 }
 
 // Entries returns all retained entries ordered by start time.
 func (l *Ledger) Entries() []Entry {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.sorted()
+	return sortEntries(l.entries)
 }
 
 // Prune drops entries that ended (or started, if still open) before now-Retention
@@ -112,19 +138,25 @@ func (l *Ledger) Prune(now time.Time) error {
 	cutoff := now.Add(-Retention)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	next := make(map[string]Entry, len(l.entries))
 	for k, e := range l.entries {
 		t := e.EndedAt
 		if t.IsZero() {
 			t = e.StartedAt
 		}
-		if t.Before(cutoff) {
-			delete(l.entries, k)
+		if !t.Before(cutoff) {
+			next[k] = e
 		}
 	}
-	if cutoff.After(l.horizon) {
-		l.horizon = cutoff
+	horizon := l.horizon
+	if cutoff.After(horizon) {
+		horizon = cutoff
 	}
-	return l.save()
+	if err := l.save(next, horizon); err != nil {
+		return err
+	}
+	l.entries, l.horizon = next, horizon
+	return nil
 }
 
 // Horizon returns the oldest time the ledger covers; spend before it is unknown.
@@ -134,9 +166,9 @@ func (l *Ledger) Horizon() time.Time {
 	return l.horizon
 }
 
-func (l *Ledger) sorted() []Entry {
-	out := make([]Entry, 0, len(l.entries))
-	for _, e := range l.entries {
+func sortEntries(m map[string]Entry) []Entry {
+	out := make([]Entry, 0, len(m))
+	for _, e := range m {
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -148,17 +180,42 @@ func (l *Ledger) sorted() []Entry {
 	return out
 }
 
-func (l *Ledger) save() error {
-	b, err := json.MarshalIndent(fileFormat{Horizon: l.horizon, Entries: l.sorted()}, "", "  ")
+// save writes the given state atomically: temp file, fsync, rename, fsync dir.
+func (l *Ledger) save(entries map[string]Entry, horizon time.Time) error {
+	b, err := json.MarshalIndent(fileFormat{Horizon: horizon, Entries: sortEntries(entries)}, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
+	dir := filepath.Dir(l.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	tmp := l.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, l.path)
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, l.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
