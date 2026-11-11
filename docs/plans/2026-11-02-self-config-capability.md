@@ -52,6 +52,19 @@ tied to this repository's name, paths or people.
 | Comm channel | `configure mcp.allow_self_config=false` (admin) | read-only: `GET /api/audit/self-config` via REST |
 | MCP | `config_get` reads it; `config_set` refuses it — bootstrap-protected, by design | `self_config_audit` (read-only, never gated, limit 1–1000 default 100) |
 
+### Monitoring and observability
+
+Decided per surface; none adds code.
+
+| Monitoring surface | Decision |
+|---|---|
+| SystemStats field | Not applicable. SystemStats reports resource and capacity gauges for the daemon and its Automata. Self-config writes are rare, operator-scale events, not a load signal, and the audit log already holds the exact record of each one. |
+| Monitor card stats | Not applicable. The Monitor card charts load over time. The Settings > Self-config card already shows the audit view, so a second count there would duplicate it. |
+| Prometheus metric | Not applicable. A counter of config-write attempts would only restate the audit log, which is append-only JSONL and can be shipped to an archive or alerting pipeline. Alerting on denied writes is done from that log. |
+
+If self-config writes ever become high-volume, a single counter incremented at the
+audit write point would be the place to add one, exposed on all three surfaces at once.
+
 The group itself is managed through the federation group machinery, not through the
 alias: `datawatch federation group builtins|list|add|update`, and per-session scoping
 with `session.capabilities` (the default grant is `config:write` present iff the alias

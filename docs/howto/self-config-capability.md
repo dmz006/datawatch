@@ -197,6 +197,19 @@ you set `mcp.self_config_audit_denied: false`. The file is append-only JSONL
 and safe to tail or ship to an archive; the read endpoints are a view over the
 same file, newest first.
 
+### Monitoring and metrics
+
+This capability adds no SystemStats field, no Monitor card stat and no
+Prometheus metric. The audit log above is the monitoring surface:
+
+- **SystemStats field:** not applicable. SystemStats carries resource and
+  capacity gauges; config writes are rare operator-scale events, not load.
+- **Monitor card stats:** not applicable. The Settings > Self-config card
+  already shows the audit view.
+- **Prometheus metric:** not applicable. A counter would only restate the
+  audit log. To alert on refused writes, tail or ship the JSONL file and
+  match `"allowed":false`.
+
 ## Walking through: disable, verify, re-enable
 
 **Disable.**
