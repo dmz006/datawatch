@@ -152,9 +152,23 @@ jobs:
           if live_n < base_n:
               print(f"::notice::gosec: live count {live_n} BELOW baseline {base_n}. Lower the baseline so regressions get caught at the new bar.")
           PY
+      # Copy of results the scan step already judged: never blocks the release.
+      # One retry after a 60 s wait, which covers GitHub's rate-limit answer.
       - name: Upload gosec SARIF to Code Scanning
+        id: sarif_gosec
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/gosec.sarif
+          category: gosec
+      - name: Wait before retrying the Code Scanning upload
+        if: always() && steps.sarif_gosec.outcome == 'failure'
+        run: sleep 60
+      - name: Upload gosec SARIF to Code Scanning (retry)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.sarif_gosec.outcome == 'failure'
+        continue-on-error: true
         with:
           sarif_file: /tmp/gosec.sarif
           category: gosec
@@ -298,9 +312,23 @@ jobs:
             --format sarif \
             -o /tmp/trivy-${{ matrix.name }}.sarif \
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+      # Copy of results the scan step already judged: never blocks the release.
+      # One retry after a 60 s wait, which covers GitHub's rate-limit answer.
       - name: Upload ${{ matrix.name }} SARIF to Code Scanning
+        id: sarif_trivy
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Wait before retrying the Code Scanning upload
+        if: always() && steps.sarif_trivy.outcome == 'failure'
+        run: sleep 60
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (retry)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.sarif_trivy.outcome == 'failure'
+        continue-on-error: true
         with:
           sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
           category: trivy-${{ matrix.name }}
@@ -386,9 +414,23 @@ jobs:
             --format sarif \
             -o /tmp/trivy-${{ matrix.name }}.sarif \
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+      # Copy of results the scan step already judged: never blocks the release.
+      # One retry after a 60 s wait, which covers GitHub's rate-limit answer.
       - name: Upload ${{ matrix.name }} SARIF to Code Scanning
+        id: sarif_trivy
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Wait before retrying the Code Scanning upload
+        if: always() && steps.sarif_trivy.outcome == 'failure'
+        run: sleep 60
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (retry)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.sarif_trivy.outcome == 'failure'
+        continue-on-error: true
         with:
           sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
           category: trivy-${{ matrix.name }}
