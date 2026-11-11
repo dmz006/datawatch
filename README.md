@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.133.1 (2026-11-10).** The CI Trivy install steps now retry the download, fail loudly, and fetch the installer for the pinned version tag instead of the moving main branch. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.134.0 (2026-11-11).** Per-Automaton cost now counts every session an Automaton launches, from a spend ledger that survives session deletion, and shows on REST, MCP, CLI, comm and the Automaton detail view. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

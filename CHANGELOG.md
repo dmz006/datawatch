@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.134.0 — Per-Automaton cost counts all of its spend
+
+### Per-Automaton cost now counts all of its spend
+
+An Automaton's cost now covers the tokens, time, sessions and tool calls of every session it launches, not just its worker sessions.
+
+- **What changed.** Each session records which Automaton and task it belongs to, stamped at every autonomous launcher (workers, verifiers, planner and decompose sessions). A new spend ledger keyed by session stores the tokens, time and tool calls, and the Claude usage reader now counts tool calls from the transcript.
+- **How it shows.** The per-Automaton cost totals include planning, verification and retry spend that was missing before, with the session and tool-call counts beside the tokens and time.
+- **Deleting sessions.** The ledger keeps the attribution after a session is deleted or cleaned up, so an Automaton's cost no longer drops when its sessions are removed.
+- **Cost report.** The cost report now reads the spend ledger, so its per-Automaton rows match the totals above.
+- **Web UI.** The Automaton detail view and the cost report view show the tokens, time, sessions and tool calls, with labels translated in English, German, Spanish, French and Japanese.
+- **Merge report.** The merge report now has a cost section with the same per-Automaton totals.
+- **Where to read it.** The per-Automaton cost (tokens, time, sessions and tool calls) is available over the REST API (documented in the OpenAPI spec), the MCP cost report tools, the `datawatch` CLI cost report and the comm-channel cost command, all from the same ledger.
+- **Attribution check.** A new check in the checks and ship status reports Automaton-launched sessions that have no attribution, so a launcher that misses the stamp shows up instead of silently under-counting.
+- **Migration.** None. Sessions that ran before this change have no attribution and stay uncounted; new sessions are counted from the first launch after the upgrade.
+
 ## v9.133.1 — Retry and fail loudly on the Trivy install step in the workflows
 
 - **The CI "Install Trivy" steps retry the download and fail loudly, and fetch the installer for the pinned version tag.** The eight "Install Trivy" steps in `release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) used to pipe an installer fetched from the moving `main` branch straight into `sh`. A failed or partial download could finish the step green and leave the worker with no Trivy binary. Each step now runs `scripts/ci-install-trivy.sh <tag> <install-dir>`, which downloads `aquasecurity/trivy/<tag>/contrib/install.sh` for the pinned tag into a temp file, retries the download 5 times 10 seconds apart, and on a persistent failure exits non-zero, naming curl's status and the URL. The installer runs from that file, never from a pipe. Coverage is in `scripts/tests/ci-install-trivy_test.sh`; the operator-facing write-up is in [howto/container-image-refresh.md](docs/howto/container-image-refresh.md#how-ci-installs-trivy).
