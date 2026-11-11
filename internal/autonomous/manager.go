@@ -794,6 +794,11 @@ type AutomationConfig struct {
 	// the 60-minute default.
 	SupervisorWatch SupervisorWatchConfig `json:"supervisor_watch"`
 
+	// DependencyUpdate: the weekly dependency update knobs
+	// (autonomous.automation.dependency_update.*). Defaults live in the
+	// Effective* accessors of the config type.
+	DependencyUpdate config.DependencyUpdateConfig `json:"dependency_update"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
