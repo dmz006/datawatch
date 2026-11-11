@@ -290,6 +290,32 @@ The same hold is also carried as `uncommitted_work` on the held task in the
 Automaton's task list, and on the Automaton's own summary when the hold is on
 the whole worktree.
 
+## Reading the diff and committing a worktree
+
+The Housekeeping list shows the uncommitted files of a worktree and offers to
+commit them. Two calls back that, both working on a single Automaton worktree.
+
+- **Diff.** Returns the uncommitted files as one diff: tracked changes against
+  `HEAD`, and the full content of each new file as an added-file diff. It lists
+  the same files this check lists, so you see what Commit would record. It
+  changes nothing in the worktree. An empty result means the worktree is clean.
+- **Commit.** Stages exactly the files this check lists, by explicit path (never
+  a blanket add), commits them with the message you give and returns the new
+  `HEAD` commit. A commit hook that fails is a failed commit, and nothing is
+  forced.
+
+Both refuse a directory that is not strictly inside the Automaton worktree base
+and is not the top of a git working tree, after following symbolic links, so a
+wrong path can never reach another repository. Commit also refuses before
+staging anything when the message is empty, or the worktree has no uncommitted
+files. A file path that would leave the worktree is refused.
+
+**Review before relying on this.** The diff and commit are engine functions in
+this change. Their REST route, CLI verb, MCP tool, comm verb and PWA button
+(and the message the button proposes) are not described here because they are
+not part of this change; the operator must confirm them. This is separate from
+the **commit** answer to a held-task question, which is unchanged.
+
 ## Where to see
 
 | Location | What you see |

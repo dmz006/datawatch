@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -310,6 +310,85 @@ unfinished Automaton, never uses `--force` or `-D`, never removes anything
 outside the `automaton/` branch namespace or the daemon's own scratch files,
 and never follows a symbolic link. In `off` it does not even run git for the
 cleanup. The disk alert never removes anything.
+
+## Skipped by reason, permission errors and the fix
+
+The worktrees pass also groups what it left in place by the reason, so the
+status can say *why* entries are held instead of only counting them. The status
+carries `skipped_by_reason` on the `worktrees` pass: a map from reason to count
+(absent when nothing was skipped). A removal the file system refused for
+permission is counted under `permission_denied`.
+
+**Permission errors.** A build or test sometimes leaves read-only files in a
+worktree (a read-only module cache, for example), and git then cannot delete the
+folder. The status turns every such failure of the last worktrees pass into one
+record, `permission_issue`, instead of a list of raw errors:
+
+| Field | Meaning |
+|---|---|
+| `count` | How many removals were refused for permission |
+| `paths` | The affected worktree paths, sorted, without repeats |
+| `why` | One plain line saying why this happens |
+| `fixable` | True when the safe fix can run: at least one affected folder still exists |
+| `hidden` | True when every affected folder is already gone. Nothing needs to be done, so the Housekeeping list does not show it |
+
+**The fix.** The safe fix restores the owner write permission (and, on folders,
+owner read and search) on each affected path and everything under it. It
+touches only paths inside the worktree base, refuses a path outside it or one
+that resolves outside it through a link, never follows or changes a symbolic
+link, and skips a path that is already gone. It reports how many entries it
+changed. It changes permissions only: it removes nothing, so the next cleanup
+pass still applies every check above before it deletes anything.
+
+**Review before relying on this.** The classification and the fix are in the
+daemon's engine and the status body. A button, REST route, CLI verb, MCP tool or
+comm verb that *runs* the fix is not part of this change; until one ships,
+restore the permissions by hand.
+
+## Unlanded branches (finished work that never reached the default branch)
+
+The cleanup never removes a branch whose commits are not on the default branch,
+so a finished Automaton whose work was never merged keeps its branch forever.
+The **unlanded work** list is the review of exactly those branches. It looks at
+the archived Automata whose `automaton/<id>` branch has commits not on the
+default branch, and recommends one of three things for each. It is strictly
+read-only, and it compares by commit content (so a merge that rewrote commits,
+by rebase or renumbering, still counts as landed). Running Automata are left out
+because their commits are expected to be ahead.
+
+| Recommendation | Meaning |
+|---|---|
+| `landed` | Every commit is already on the default branch by content: the branch is a leftover |
+| `superseded` | Some commits are not on the default branch, but every file they change was changed on the default branch since the branch forked, so later work replaced them |
+| `needs_decision` | Commits are not on the default branch and nothing shows they were replaced: you decide |
+
+Each entry shows the Automaton, its title, the branch, the number of commits not
+landed, the last activity, the recommendation and a one-line reason. The list is
+ordered least settled first (needs a decision, superseded, landed), then newest
+activity first. Branches with nothing ahead, branches that no longer exist and
+Automata that are not archived are not listed.
+
+### The actions on an unlanded branch
+
+| Action | What it does | Destructive |
+|---|---|---|
+| **Keep** | Records that you want the branch left alone, with an optional note, in `unlanded-keep.json` in the daemon's state directory. Keeping twice updates the note. The cleaner and the unlanded list skip a kept branch | No |
+| **Archive branch** | Moves the branch under `refs/archive/<branch>` and removes the branch name. The commits stay reachable from the archive ref | No (reversible: recreate the branch from the ref) |
+| **Delete worktree** | Writes a git bundle backup of the branch under the `backups` folder of the worktree base, then removes the worktree and the branch | Yes |
+
+Delete is the only destructive action and it is guarded: it refuses unless the
+entry carries a recommendation from the list above, a base repository and a
+worktree base are known, and the caller passed an explicit confirm. The bundle
+is written and verified **first**; if it cannot be, nothing is removed. A delete
+returns the branch, the bundle path and the worktree path it removed.
+
+**Review before relying on this.** Keep, Archive branch and Delete worktree are
+engine functions today. No REST route, CLI verb, MCP tool, comm verb or PWA
+button for the unlanded list or its actions is described here, because none was
+part of this change. Whether a kept branch also suppresses the safe-to-delete
+report is not decided in this change. The operator must confirm the surface
+(REST, CLI, MCP, comm and PWA) and the parity issue for datawatch-app before
+this is described as available to use.
 
 ## Processes the worker left running
 
