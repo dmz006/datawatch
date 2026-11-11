@@ -43,6 +43,10 @@ func (m *Manager) upsertLedger(sess *Session) {
 		StartedAt:   snap.CreatedAt,
 		TokensIn:    int64(snap.TokensIn),
 		TokensOut:   int64(snap.TokensOut),
+
+		CacheRead:     int64(snap.CacheReadTokens),
+		CacheCreation: int64(snap.CacheCreationTokens),
+		ToolCalls:     int64(snap.ToolCalls),
 	}
 	if snap.State.IsTerminal() {
 		e.EndedAt = snap.UpdatedAt

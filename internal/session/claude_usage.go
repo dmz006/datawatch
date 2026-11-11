@@ -78,24 +78,57 @@ func claudeTranscriptPath(projectDir, fullID string) string {
 // an assistant line with no usage, e.g. a tool-only turn) harmlessly
 // decode to zero values and contribute nothing.
 type claudeUsageEntry struct {
-	Type    string `json:"type"`
-	Message struct {
+	Type      string `json:"type"`
+	RequestID string `json:"requestId"`
+	Message   struct {
+		ID    string `json:"id"`
 		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-			// Cache tokens (cache_creation_input_tokens / cache_read_
-			// input_tokens) are deliberately NOT counted here. Anthropic
-			// bills them at very different rates than base input tokens
-			// (cache writes ~1.25x, cache reads ~0.1x) and CostRate
-			// (cost.go) only has one InPerK for all input tokens --
-			// folding cache tokens in at the standard rate would produce
-			// a wildly inflated dollar figure (this session's own
-			// transcript sample had 30,745 cache-creation tokens against
-			// 2 real input tokens), which is worse than the current
-			// honest zero. Needs a CostRate schema extension to do
-			// properly; tracked as a known gap rather than guessed at.
+			InputTokens         int `json:"input_tokens"`
+			OutputTokens        int `json:"output_tokens"`
+			CacheReadTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
+		// Content is decoded loosely: it is a block list for assistant
+		// lines but a plain string on some user lines.
+		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+}
+
+// ClaudeUsageDelta is the usage found in newly-read transcript lines.
+// In is the non-cache input; cache tokens are reported separately.
+type ClaudeUsageDelta struct {
+	In, Out, CacheRead, CacheCreation, ToolCalls int
+	LinesRead                                    int
+}
+
+// claudeUsageSeen holds, per session, the message ids and tool_use ids
+// already counted, so a message written on several lines is counted once.
+var claudeUsageSeen sync.Map // FullID -> *claudeSeen
+
+type claudeSeen struct{ msgs, tools map[string]struct{} }
+
+func countToolUse(raw json.RawMessage, seen map[string]struct{}) int {
+	var blocks []struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+	}
+	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &blocks) != nil {
+		return 0
+	}
+	n := 0
+	for _, b := range blocks {
+		if b.Type != "tool_use" {
+			continue
+		}
+		if b.ID != "" {
+			if _, dup := seen[b.ID]; dup {
+				continue
+			}
+			seen[b.ID] = struct{}{}
+		}
+		n++
+	}
+	return n
 }
 
 // trackClaudeCodeUsage polls sess's own JSONL transcript every tick and
@@ -112,12 +145,23 @@ type claudeUsageEntry struct {
 // zero" and silently staying there is strictly better than crashing
 // the session monitor over a usage-reporting nicety.
 func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, initialLinesRead int, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
+	if reportFn == nil {
+		return
+	}
+	trackClaudeCodeUsageDelta(ctx, fullID, projectDir, initialLinesRead, tick, func(id string, d ClaudeUsageDelta) {
+		reportFn(id, d.In, d.Out, d.LinesRead)
+	})
+}
+
+// trackClaudeCodeUsageDelta is trackClaudeCodeUsage reporting the full delta.
+func trackClaudeCodeUsageDelta(ctx context.Context, fullID, projectDir string, initialLinesRead int, tick time.Duration, reportFn func(sessID string, d ClaudeUsageDelta)) {
 	path := claudeTranscriptPath(projectDir, fullID)
 	if path == "" || reportFn == nil {
 		return
 	}
 	claudeUsageLinesRead.Store(fullID, initialLinesRead)
 	defer claudeUsageLinesRead.Delete(fullID)
+	defer claudeUsageSeen.Delete(fullID)
 
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
@@ -126,12 +170,18 @@ func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, initia
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			scanClaudeUsageOnce(path, fullID, reportFn)
+			scanClaudeUsageDeltaOnce(path, fullID, reportFn)
 		}
 	}
 }
 
 func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
+	scanClaudeUsageDeltaOnce(path, fullID, func(id string, d ClaudeUsageDelta) {
+		reportFn(id, d.In, d.Out, d.LinesRead)
+	})
+}
+
+func scanClaudeUsageDeltaOnce(path, fullID string, reportFn func(sessID string, d ClaudeUsageDelta)) {
 	f, err := os.Open(path) // #nosec G304 -- path is derived from this daemon's own session record, not external input
 	if err != nil {
 		return // transcript not written yet, or path guess was wrong -- try again next tick
@@ -142,10 +192,18 @@ func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, token
 	if v, ok := claudeUsageLinesRead.Load(fullID); ok {
 		alreadyRead = v.(int)
 	}
+	var seen *claudeSeen
+	if v, ok := claudeUsageSeen.Load(fullID); ok {
+		seen = v.(*claudeSeen)
+	} else {
+		seen = &claudeSeen{msgs: map[string]struct{}{}, tools: map[string]struct{}{}}
+		claudeUsageSeen.Store(fullID, seen)
+	}
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024) // transcript lines can be large (big tool outputs)
-	var sumIn, sumOut, lineNum int
+	var d ClaudeUsageDelta
+	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
 		if lineNum <= alreadyRead {
@@ -158,19 +216,28 @@ func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, token
 		if entry.Type != "assistant" {
 			continue
 		}
+		d.ToolCalls += countToolUse(entry.Message.Content, seen.tools)
+		// Usage is repeated on every line of one message: count it once.
+		id := entry.Message.ID
+		if id == "" {
+			id = entry.RequestID
+		}
+		if id != "" {
+			if _, dup := seen.msgs[id]; dup {
+				continue
+			}
+			seen.msgs[id] = struct{}{}
+		}
 		u := entry.Message.Usage
-		sumIn += u.InputTokens
-		sumOut += u.OutputTokens
+		d.In += u.InputTokens
+		d.Out += u.OutputTokens
+		d.CacheRead += u.CacheReadTokens
+		d.CacheCreation += u.CacheCreationTokens
 	}
 	if lineNum > alreadyRead {
 		claudeUsageLinesRead.Store(fullID, lineNum)
-		// Persist the new checkpoint even when this tick found no usage
-		// (sumIn/sumOut both 0 -- e.g. a tool-only turn) so the
-		// already-scanned lines aren't re-scanned after a restart.
-		if sumIn > 0 || sumOut > 0 {
-			reportFn(fullID, sumIn, sumOut, lineNum)
-		} else {
-			reportFn(fullID, 0, 0, lineNum)
-		}
+		// Persist the checkpoint even when nothing was found this tick.
+		d.LinesRead = lineNum
+		reportFn(fullID, d)
 	}
 }

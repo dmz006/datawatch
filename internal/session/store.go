@@ -260,6 +260,12 @@ type Session struct {
 	UsageLastIn    int `json:"usage_last_in,omitempty"`
 	UsageLastOut   int `json:"usage_last_out,omitempty"`
 
+	// Cache and tool-call totals read from the claude-code transcript.
+	// They feed the spend ledger; TokensIn stays the non-cache input.
+	CacheReadTokens     int `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
+	ToolCalls           int `json:"tool_calls,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). It is metadata only: no backend

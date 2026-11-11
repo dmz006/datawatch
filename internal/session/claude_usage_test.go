@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -204,5 +205,80 @@ func TestTrackClaudeCodeUsage_EmptyProjectDirIsNoop(t *testing.T) {
 	}
 	if called {
 		t.Error("should never call reportFn when there's no path to read")
+	}
+}
+
+func writeFixtureTranscript(t *testing.T, lines ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func scanFixture(t *testing.T, id, path string) ClaudeUsageDelta {
+	t.Helper()
+	t.Cleanup(func() { claudeUsageLinesRead.Delete(id); claudeUsageSeen.Delete(id) })
+	var got ClaudeUsageDelta
+	scanClaudeUsageDeltaOnce(path, id, func(_ string, d ClaudeUsageDelta) { got = d })
+	return got
+}
+
+func TestScanClaudeUsageDelta_CacheDedupAndToolCalls(t *testing.T) {
+	path := writeFixtureTranscript(t,
+		`{"type":"user","message":{"content":"hi"}}`,
+		// message m1 is written on two lines with identical usage; each line carries one tool_use
+		`{"type":"assistant","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":2,"output_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":30},"content":[{"type":"text","text":"x"},{"type":"tool_use","id":"t1"}]}}`,
+		`{"type":"assistant","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":2,"output_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":30},"content":[{"type":"tool_use","id":"t2"}]}}`,
+		`{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":5,"cache_read_input_tokens":50,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"t3"},{"type":"tool_use","id":"t3"}]}}`,
+		`not json`,
+	)
+	got := scanFixture(t, "sess-cache-dedup-fixture", path)
+	want := ClaudeUsageDelta{In: 3, Out: 15, CacheRead: 150, CacheCreation: 30, ToolCalls: 3, LinesRead: 5}
+	if got != want {
+		t.Fatalf("got %+v want %+v", got, want)
+	}
+}
+
+func TestScanClaudeUsageDelta_DedupAcrossTicks(t *testing.T) {
+	const id = "sess-dedup-ticks-fixture"
+	line := `{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":4,"output_tokens":6,"cache_read_input_tokens":7,"cache_creation_input_tokens":8},"content":[]}}`
+	path := writeFixtureTranscript(t, line)
+	t.Cleanup(func() { claudeUsageLinesRead.Delete(id); claudeUsageSeen.Delete(id) })
+	var total ClaudeUsageDelta
+	rep := func(_ string, d ClaudeUsageDelta) {
+		total.In += d.In
+		total.CacheRead += d.CacheRead
+		total.CacheCreation += d.CacheCreation
+	}
+	scanClaudeUsageDeltaOnce(path, id, rep)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- test fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(line + "\n") // same message id again on a later tick
+	_ = f.Close()
+	scanClaudeUsageDeltaOnce(path, id, rep)
+	if total.In != 4 || total.CacheRead != 7 || total.CacheCreation != 8 {
+		t.Fatalf("duplicate id re-counted across ticks: %+v", total)
+	}
+}
+
+func TestAddClaudeUsage_FeedsLedger(t *testing.T) {
+	mgr, led := newLedgerManager(t)
+	sess := &Session{FullID: "host-cu1", ID: "cu1", BackendFamily: "claude-code", State: StateRunning}
+	mgr.store.mu.Lock()
+	mgr.store.sessions[sess.FullID] = sess
+	mgr.store.mu.Unlock()
+	if err := mgr.AddClaudeUsage(sess.FullID, ClaudeUsageDelta{In: 1, Out: 2, CacheRead: 30, CacheCreation: 4, ToolCalls: 5, LinesRead: 9}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.AddClaudeUsage(sess.FullID, ClaudeUsageDelta{CacheRead: 10, ToolCalls: 1, LinesRead: 12}); err != nil {
+		t.Fatal(err)
+	}
+	e := led.last(t)
+	if e.TokensIn != 1 || e.TokensOut != 2 || e.CacheRead != 40 || e.CacheCreation != 4 || e.ToolCalls != 6 {
+		t.Fatalf("ledger entry %+v", e)
 	}
 }
