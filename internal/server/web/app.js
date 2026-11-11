@@ -19550,6 +19550,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.post_ship.companion_repository', label: 'Companion repository (repository the parity_issue hook opens the issue in)', labelKey: 'settings_post_ship_companion_repository', hintKey: 'settings_post_ship_companion_repository_hint', docsKey: 'settings_post_ship_companion_repository', type: 'text', placeholder: 'owner/parity-tracker' },
     { key: 'autonomous.merge_pipeline.post_ship.issue_title_template', label: 'Issue title template (the title the parity_issue hook files; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_issue_title_template', hintKey: 'settings_post_ship_issue_title_template_hint', docsKey: 'settings_post_ship_issue_title_template', type: 'text', placeholder: 'Parity: {project} {version}' },
     { key: 'autonomous.merge_pipeline.post_ship.notify_template', label: 'Notify template (the message the notify hook sends; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_notify_template', hintKey: 'settings_post_ship_notify_template_hint', docsKey: 'settings_post_ship_notify_template', type: 'textarea' },
+    // Branch refresh — merge main into an Automaton branch between tasks.
+    { label: 'Branch refresh', labelKey: 'branch_refresh_settings_title', type: 'group' },
+    ...(typeof branchRefreshSettingsFields === 'function' ? branchRefreshSettingsFields() : []),
     // Merge shadow — the finish-time shadow merge plan: what merging an
     // Automaton's branch would do, kept per project for comparison with the
     // real merge. On by default (enabled=false turns the plan off); each field
@@ -28852,7 +28855,7 @@ function _renderDetailContent(prd) {
   const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd) + automatonReleaseBadgesHtml(prd),tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
-  if (tab === 'overview') tabBody = _renderDetailOverview(prd);
+  if (tab === 'overview') tabBody = _renderDetailOverview(prd) + (typeof branchRefreshPanelHtml === 'function' ? branchRefreshPanelHtml(prd) : '');
   else if (tab === 'stories') tabBody = _renderDetailStories(prd);
   else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
   else if (tab === 'memory') tabBody = _renderDetailMemoryTab(prd); // GH#192 D77a
