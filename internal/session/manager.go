@@ -359,6 +359,10 @@ type Manager struct {
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
 
+	// ledger receives spend attribution entries (nil = disabled).
+	ledgerMu sync.Mutex
+	ledger   SpendLedger
+
 	// restartedAt records when each session was last restarted (in-memory only).
 	// Used to suppress DATAWATCH_COMPLETE: detection during the post-restart
 	// grace window while the resumed TUI re-renders prior conversation history.
@@ -2006,9 +2010,13 @@ type StartOptions struct {
 	// PRDID, TaskID, and StoryID link an autonomous task session to its executor
 	// so the PWA detail view can filter sessions by PRD and show which task is
 	// actively being worked on. StoryID added BL385 Phase 4 for memory scope routing.
-	PRDID   string
-	TaskID  string
-	StoryID string
+	PRDID  string
+	TaskID string
+	// AutomatonID (defaults to PRDID) and SpendRole attribute the session's
+	// spend ledger entry.
+	AutomatonID string
+	SpendRole   string
+	StoryID     string
 	// TaskTitle is the PRD task's title, used for the automatic task commit subject.
 	TaskTitle string
 
@@ -2387,6 +2395,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.PRDID != "" {
 		sess.PRDID = opt.PRDID
 	}
+	if opt != nil {
+		sess.AutomatonID = opt.AutomatonID
+		if sess.AutomatonID == "" {
+			sess.AutomatonID = opt.PRDID
+		}
+		sess.SpendRole = opt.SpendRole
+	}
 	if opt != nil && opt.TaskID != "" {
 		sess.TaskID = opt.TaskID
 	}
@@ -2736,6 +2751,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 	}
 	m.scrubPaneTmuxEnv(sess)
+	m.upsertLedger(sess)
 	m.notifySessionCreated(sess)
 	if launchFn != nil {
 		var launchErr error

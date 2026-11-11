@@ -327,9 +327,13 @@ type Session struct {
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.
 	// StoryID added BL385 Phase 4 for memory scope routing.
-	PRDID   string `json:"prd_id,omitempty"`
-	TaskID  string `json:"task_id,omitempty"`
-	StoryID string `json:"story_id,omitempty"`
+	PRDID string `json:"prd_id,omitempty"`
+	// AutomatonID and SpendRole attribute the session's spend in the spend
+	// ledger. TaskID (above) is the owning task.
+	AutomatonID string `json:"automaton_id,omitempty"`
+	SpendRole   string `json:"spend_role,omitempty"`
+	TaskID      string `json:"task_id,omitempty"`
+	StoryID     string `json:"story_id,omitempty"`
 	// TaskTitle is the bare autonomous task title (no "autonomous:" prefix),
 	// so the completion commit can use it without parsing Name.
 	TaskTitle string `json:"task_title,omitempty"`
