@@ -4675,5 +4675,8 @@
   "usage_page_burn_state": "%1$s points par jour (récent)",
   "usage_page_burn_why": "Moyenne de la semaine %1$s points par jour",
   "usage_page_burn_next_over": "Essayez %1$s voie(s) pour rester dans le quota.",
-  "usage_page_burn_next_ok": "Gardez les voies actuelles."
+  "usage_page_burn_next_ok": "Gardez les voies actuelles.",
+  "dash_card_usage_allowance": "Weekly allowance",
+  "dash_card_usage_pace": "Pace line",
+  "dash_card_usage_burn": "Burn per day"
 }

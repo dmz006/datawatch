@@ -29671,6 +29671,22 @@ function _usageCalcBurnCard(a) {
     t('usage_page_burn_why', [_usageCalcNum(a.week_avg_burn_per_24h)]), next, chart);
 }
 
+// The three cards by dashboard card type: one table, shared by the Resources row
+// and the built-in dashboard cards so they render identically at the bounded size.
+const USAGE_CARD_RENDERERS = {
+  'usage-allowance': _usageCalcAllowanceCard,
+  'usage-pace': _usageCalcPaceCard,
+  'usage-burn': _usageCalcBurnCard,
+};
+function _usageCalcCardsRowHtml(a) {
+  const cards = _usageCalcAllowanceCard(a) + _usageCalcPaceCard(a) + _usageCalcBurnCard(a);
+  return cards ? `<div class="usage-cards">${cards}</div>` : '';
+}
+window.usageCalcCardForType = function (type, advice) {
+  const fn = USAGE_CARD_RENDERERS[type];
+  return fn && advice && !advice.needs ? fn(advice) : '';
+};
+
 window.usageCalcFrameHtml = function (body, opts) {
   opts = opts || {};
   const res = body || null;
@@ -29689,8 +29705,8 @@ window.usageCalcFrameHtml = function (body, opts) {
     parts.push(`<div class="usage-verdict-sentence" role="status">${escHtml(_usageCalcSentence(a))}</div>`);
     if (a.recent_fallback) parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
     if (res.stale) parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)]))}</div>`);
-    const cards = _usageCalcAllowanceCard(a) + _usageCalcPaceCard(a) + _usageCalcBurnCard(a);
-    if (cards) parts.push(`<div class="usage-cards">${cards}</div>`);
+    const row = _usageCalcCardsRowHtml(a);
+    if (row) parts.push(row);
   }
   parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
   parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
@@ -45460,6 +45476,14 @@ const DASH_CARD_DEFS = [
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
+  // The three small usage cards (one shared renderer, bounded size).
+  { id: 'usage-allowance', label: 'Weekly allowance', labelKey: 'dash_card_usage_allowance', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-allowance" style="height:100%;overflow:auto;"></div>' },
+  { id: 'usage-pace', label: 'Pace line', labelKey: 'dash_card_usage_pace', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-pace" style="height:100%;overflow:auto;"></div>' },
+  { id: 'usage-burn', label: 'Burn per day', labelKey: 'dash_card_usage_burn', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-burn" style="height:100%;overflow:auto;"></div>' },
+
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
   // GET /api/cost/report; controls in the card: group select, window
@@ -45744,6 +45768,7 @@ function _dashBuildGrid(layout) {
   _dashRenderWebSearchUsage();
   _dashFetchCostReport();
   _dashRenderCostReport();
+  _dashRenderUsageCards();
   _dashRenderConsole();
   // Operator console: prime/refresh the one shared summary payload whenever
   // the board carries at least one console card; per-tick refresh then
@@ -46373,6 +46398,17 @@ window._costReportSetDays = function(v) {
   c.userTouched = true;
   window._costReportRefresh();
 };
+
+// Usage cards: one GET of /api/usage/advice fills every usage card on the board.
+function _dashRenderUsageCards() {
+  const els = document.querySelectorAll ? document.querySelectorAll('[data-usage-card]') : [];
+  if (!els || !els.length) return;
+  const fill = advice => els.forEach(el => {
+    el.innerHTML = window.usageCalcCardForType(el.getAttribute('data-usage-card'), advice) ||
+      `<div style="font-size:11px;color:var(--text2);padding:6px 8px;">${escHtml(t('usage_calc_empty_title'))}</div>`;
+  });
+  Promise.resolve(apiFetch('/api/usage/advice')).then(b => fill(b && b.advice ? b.advice : {})).catch(() => fill({}));
+}
 
 function _dashRenderCostReport() {
   const el = document.getElementById('dashCostReportCard');

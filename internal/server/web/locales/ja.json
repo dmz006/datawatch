@@ -4675,5 +4675,8 @@
   "usage_page_burn_state": "1日%1$sポイント(直近)",
   "usage_page_burn_why": "週平均は1日%1$sポイント",
   "usage_page_burn_next_over": "枠内に収めるため%1$sレーンを試してください。",
-  "usage_page_burn_next_ok": "現在のレーン数を維持。"
+  "usage_page_burn_next_ok": "現在のレーン数を維持。",
+  "dash_card_usage_allowance": "Weekly allowance",
+  "dash_card_usage_pace": "Pace line",
+  "dash_card_usage_burn": "Burn per day"
 }

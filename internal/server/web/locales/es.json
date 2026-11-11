@@ -4675,5 +4675,8 @@
   "usage_page_burn_state": "%1$s puntos por día (reciente)",
   "usage_page_burn_why": "Media semanal %1$s puntos por día",
   "usage_page_burn_next_over": "Prueba %1$s carril(es) para mantenerte dentro de la cuota.",
-  "usage_page_burn_next_ok": "Mantén los carriles actuales."
+  "usage_page_burn_next_ok": "Mantén los carriles actuales.",
+  "dash_card_usage_allowance": "Weekly allowance",
+  "dash_card_usage_pace": "Pace line",
+  "dash_card_usage_burn": "Burn per day"
 }

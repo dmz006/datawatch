@@ -4675,5 +4675,8 @@
   "usage_page_burn_state": "%1$s Punkte pro Tag (zuletzt)",
   "usage_page_burn_why": "Wochendurchschnitt %1$s Punkte pro Tag",
   "usage_page_burn_next_over": "%1$s Lane(s) probieren, um im Kontingent zu bleiben.",
-  "usage_page_burn_next_ok": "Aktuelle Lanes beibehalten."
+  "usage_page_burn_next_ok": "Aktuelle Lanes beibehalten.",
+  "dash_card_usage_allowance": "Weekly allowance",
+  "dash_card_usage_pace": "Pace line",
+  "dash_card_usage_burn": "Burn per day"
 }
