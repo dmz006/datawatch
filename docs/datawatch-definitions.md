@@ -2155,6 +2155,14 @@ The settings under `autonomous.decisions` (Settings → Automata) control the de
 - **`supervisor_loop.lane_count.min`** — The lowest lane count the loop may set.
 <a id="supervisor-loop-lane-count-max"></a>
 - **`supervisor_loop.lane_count.max`** — The highest lane count the loop may set. 0 means no bounds, so the lane count step moves nothing.
+<a id="supervisor-loop-wake-enabled"></a>
+- **`supervisor_loop.wake.enabled`** — Turns the event wake on. When on, a lifecycle event of a kind listed in [`supervisor_loop.wake.kinds`](#supervisor-loop-wake-kinds) starts a supervisor pass at once instead of waiting for the next scheduled check; the schedule stays as the fallback. Off by default, so the supervisor keeps running on its schedule alone until you switch it on.
+<a id="supervisor-loop-wake-kinds"></a>
+- **`supervisor_loop.wake.kinds`** — The event kinds that wake the supervisor, as a list. Each kind must be one a subscription can filter on (`datawatch autonomous event-kinds` lists them); an unknown or duplicate kind is refused, and a hand-edited config with one falls back to the default list. The default list is a blocked Automaton (`prd.blocked`), a task needing review (`task.review_needed`), a failed task (`task.failed`), a failed final gate (`task.final_gate_failed`), every judge verdict (`judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`), every task of an Automaton done or cancelled (`automaton.tasks_done_or_cancelled`), an Automaton stuck running (`automaton.stuck_running`), a task waiting too long for capacity (`task.capacity_wait_too_long`) and a burn guard rung change (`burn_guard.rung_changed`). Over the CLI and the comm channel the list is written comma-separated; the list may not be empty while the wake is on, and holds at most 64 kinds.
+<a id="supervisor-loop-wake-coalesce-seconds"></a>
+- **`supervisor_loop.wake.coalesce_seconds`** — The quiet window, in seconds, after a wake: further wake events arriving within it are handled by the same pass, so a burst of events does not start a pass per event. Between 0 and 3600; 0 wakes on every event. Default 30.
+<a id="supervisor-loop-wake-fallback-interval-minutes"></a>
+- **`supervisor_loop.wake.fallback_interval_minutes`** — How often, in minutes, the supervisor still runs when no event wakes it. Between 1 and 1440. The default of 20 equals the scheduled check, so turning the wake on changes nothing about the schedule.
 
 **Tag subtree count** — the number of distinct Automata under a tag, counting Automata that carry the tag or any tag below it. An Automaton that carries two of the tags in the subtree is counted once. It is the main count the tag browser shows. Sessions have their own subtree count, which also includes the tags a session inherits. The direct count (Automata carrying exactly that tag) is available as a tooltip when `autonomous.tags.direct_counts_visible` is on. See [howto/automata-tags.md](howto/automata-tags.md).
 

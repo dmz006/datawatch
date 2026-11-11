@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.136.0 — Supervisor wake settings
+
+### Added
+
+- **Settings for waking the supervisor on events, off by default.** The supervisor loop block gains `supervisor_loop.wake.enabled` (default `false`), `supervisor_loop.wake.kinds` (the lifecycle event kinds that wake a pass; the default list is a blocked Automaton, a task needing review, a failed task or final gate, every judge verdict, all tasks done or cancelled, an Automaton stuck running, a long capacity wait and a burn guard rung change), `supervisor_loop.wake.coalesce_seconds` (0 to 3600, default 30) and `supervisor_loop.wake.fallback_interval_minutes` (1 to 1440, default 20, the same as the scheduled check, so behaviour is unchanged until the wake is switched on). A kind must be one a subscription can filter on; an unknown or duplicate kind is refused and a hand-edited config with one falls back to the default list. The settings are on the config file, REST config, CLI, comm channel, MCP and the PWA Settings supervisor loop group in all five languages, each with a help entry in the definitions.
+
 ## v9.135.0 — Self-config is a built-in capability group
 
 ### Added

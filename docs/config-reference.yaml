@@ -4309,6 +4309,32 @@ autonomous:
     # step moves nothing. When set, max must be at least min.
     "supervisor_loop.lane_count.min": 0
     "supervisor_loop.lane_count.max": 0
+    # Event wake. When on, a listed lifecycle event starts a supervisor pass
+    # at once instead of waiting for the scheduled check; the schedule stays
+    # as the fallback. Off by default, so nothing changes until you turn it on.
+    "supervisor_loop.wake.enabled": false
+    # The event kinds that wake the supervisor. Each must be a kind a
+    # subscription can filter on (datawatch autonomous event-kinds lists
+    # them); an unknown kind resets the list to this default.
+    "supervisor_loop.wake.kinds":
+      - prd.blocked
+      - task.review_needed
+      - task.failed
+      - task.final_gate_failed
+      - judge.verdict_block
+      - judge.verdict_warn
+      - judge.verdict_pass
+      - automaton.tasks_done_or_cancelled
+      - automaton.stuck_running
+      - task.capacity_wait_too_long
+      - burn_guard.rung_changed
+    # Quiet window in seconds: events arriving within it after a wake fold
+    # into the same pass (0 to 3600; 0 wakes on every event).
+    "supervisor_loop.wake.coalesce_seconds": 30
+    # Minutes between scheduled passes when no event wakes the supervisor
+    # (1 to 1440). The default equals the scheduled check, so turning the
+    # wake on leaves the schedule as it was.
+    "supervisor_loop.wake.fallback_interval_minutes": 20
   # ── Automation requirements (requirements report + capability minimums ──
   # The requirements report answers "can this daemon run the automations it is
   # configured to run": the built-in capability minimums (capability → minimum
