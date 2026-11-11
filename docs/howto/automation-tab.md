@@ -11,9 +11,11 @@ Automata in the bottom navigation and Automation is selected on the sub-tab bar,
 left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
 skip, insert, remove, edit edges) next to the members they act on. Inside the
-Automation sub-tab, a second row of six sub-tabs splits the view, in this
-order: **Inbox**, **Automations**, **Resources**, **Progress and cost**,
-**Setup and policy** and **Housekeeping**. Inbox is the one open by default.
+Automation sub-tab, a second row of five sub-tabs splits the view, in this
+order: **Inbox**, **Automations**, **Resources**, **Progress and cost**
+and **Housekeeping**. The former **Setup and policy** sub-tab is gone: a
+stored or bookmarked link to it opens Inbox, its status cards moved to the
+Events tab and its configuration moved to Settings. Inbox is the one open by default.
 
 The first sub-tab row also holds an **Events** sub-tab (between **Automata**
 and **Templates**): the one stream of what the daemon watches and does for
@@ -34,7 +36,7 @@ to its tab without changing the other tabs.
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
 | **Resources** | Capacity, lane fill, usage against the plan, and the Automata ship status card. Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
 | **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
-| **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind and the supervisor loop appear here when they ship. The automatic grouping tags (the placement axes and the tag sweep) ship today, but they live on the Settings page under **Settings → General → Automata → Placement tags**, not as a card of this tab; see [automata-tags](automata-tags.md). |
+| *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
 | **Housekeeping** | The uncommitted work card. The safe-to-delete report and the cleanup card now live in the Events tab. Stale worktrees appears here when it ships. |
 
 ## What an Automation is
@@ -163,8 +165,9 @@ never blanks the cards.
   Automata checks cards (the four report-only checks) are in the Events tab.
 - **Progress and cost:** the Progress card, with the kind table, work left and
   completion range.
-- **Setup and policy:** the onboarding and requirements report, the merge
-  pipeline card and the model request watch card.
+- **Setup and policy (removed):** its cards are on the Events tab (see
+  [automata-events.md](automata-events.md#status-cards-on-the-events-tab)) and
+  its configuration is in Settings under Automata.
 - **Housekeeping:** the uncommitted work card. The safe-to-delete report and
   the cleanup card are in the Events tab.
 

@@ -111,6 +111,23 @@ Automation tab:
 The repo CI watch's CI line is a `watch` row now too. Each moved card's
 **?** link opens this page.
 
+## Status cards on the Events tab
+
+The Events tab also carries the status that used to sit on the removed
+**Setup and policy** sub-tab. Each card stays hidden while it is off, empty or
+has never run, so a quiet system shows only the stream:
+
+- **Onboarding report**
+- **Supervisor loop**: the recent runs and their escalation counts. It polls
+  only while the Events tab is open, and stays hidden until the loop has run.
+- **Merge shadow**
+- **Release readiness**
+- **Model request watch** (see [model-request-progress.md](model-request-progress.md))
+
+A link under the cards opens Settings, where all Automata configuration now
+lives: the merge pipeline, the decision records folder, and the usage reading
+and extra credit forms (**Settings → General → Automata**).
+
 ## Related
 
 - [Supervisor watch](automation-supervisor-watch.md) — the findings behind the `watch` rows

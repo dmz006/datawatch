@@ -343,7 +343,7 @@ lighter profile would take, for example:
 
 | Where | What you see |
 |---|---|
-| PWA | The calculator card (see [parity status](../parity-status.md) for what has shipped) |
+| PWA | The calculator card (see [parity status](../parity-status.md) for what has shipped). The usage reading and extra credit forms are also in **Settings → General → Automata → Usage reading and extra credit**, the same forms and endpoints |
 | Android and iOS | Pending, tracked in [parity status](../parity-status.md) |
 | CLI | `datawatch usage advice` |
 | REST | `GET /api/usage/advice` |

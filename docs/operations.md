@@ -6406,7 +6406,7 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 | MCP | `autonomous_request_watch` (read-only; optional `session` and `automaton` arguments) |
 | CLI | `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` |
 | Comm channel | `autonomous request-watch [session <id> \| automaton <id>]` |
-| Web UI | **Automata model request progress** card on the Automation Setup and policy sub-tab, refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
+| Web UI | **Automata model request progress** card on the Automata Events tab (hidden while nothing is watched), refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
 
 The read is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the watch is wired. It returns `enabled`, `poll_seconds`, `no_progress_minutes` and `observations`; each observation carries `session_id`, `automaton_id`, `task_id`, `role`, `node`, `model`, `state`, `last_change`, `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (left out when empty) and `summary`. With the watch off the list is empty.
 
