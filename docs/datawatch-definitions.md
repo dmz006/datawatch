@@ -825,7 +825,7 @@ Each feature card reads one live source. When it has nothing to draw it shows a 
 - **Smoke Run** — release smoke and end-to-end run progress (`GET /api/smoke/progress`). A release smoke run against an external daemon (`DW_BASE`) posts its progress to that daemon; a default run's throwaway test daemon is not posted.
 - **Cost report** — see *Cost Report* below.
 - **Search Usage** — see *Web Search (multi-provider registry)* below.
-- **Work map** — a read-only graph from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link, plus a **Running now** list of the live sessions in an active state. Without the trace store the graph shows placement only (no trace store). Tasks are capped per Automaton (the overflow is `tasks_omitted`).
+- **Work map** — a read-only graph from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link, plus a **Running now** list of the live sessions in an active state. With no trace store the card's header reads "placement only (no trace store)". Tasks are capped per Automaton (the overflow is `tasks_omitted`).
 
 **Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, multi-session EKG overlay, smoke run progress, work map.
 

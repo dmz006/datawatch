@@ -113,21 +113,21 @@ are what you see in the Add-Card picker.
 | **Timeline** (6-hour Gantt) | Each Automaton task's start and end timestamps. Bars are drawn to the task times and the card is bounded to 960 px wide. | "No Automaton task has run in the last 6 hours — its bar appears here when one starts." |
 | **30-Day Activity** (heatmap) | The daily progress trend, the shipped counts and the release tags. The card draws the whole 30-day month; each day's tooltip gives the Automata completed to date, the shipped count and any release. | "No Automata completed or shipped in the last 30 days — the month fills as work lands." |
 | **CI & release** | The operator console's `ci_release` section: running and latest release, ship policy, repo CI watch and failing or hung runs. See [dashboard-operator-console.md](dashboard-operator-console.md#ci-and-release-detail). | "No release or ship state reported yet — this card fills after the first release check." |
-| **Smoke Run** | Release smoke and end-to-end run progress, from `GET /api/smoke/progress`. A run against an external daemon (`DW_BASE`) posts its progress to that daemon, so the card shows it there; the throwaway test daemon of a default run is not posted. | — (the card carries its one-line purpose instead). |
+| **Smoke Run** | Release smoke and end-to-end run progress, from `GET /api/smoke/progress`. A run against an external daemon (`DW_BASE`) posts its progress to that daemon, so the card shows it there; the throwaway test daemon of a default run is not posted. | "No smoke runs recorded on this machine." |
 | **Cost report** | `GET /api/cost/report`, with the reconciliation against usage readings. See [cost-report.md](cost-report.md). | "No recorded sessions with token usage in this window — the card fills as sessions report usage." |
-| **Search Usage** | `GET /api/websearch/stats`. Searches are counted by caller: session, Automaton task, MCP client, REST and CLI. See [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md). | — |
+| **Search Usage** | `GET /api/websearch/stats`. Searches are counted by caller: session, Automaton task, MCP client, REST and CLI. See [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md). | "Web search is off or no providers are configured." |
 | **Work map** | `GET /api/dashboard/work-map` — a graph of projects, Automations, Automata, tasks and live sessions, with one edge per parent-to-child link and a list of the running sessions. | "No live sessions or Automaton tasks yet — the map fills as work runs." |
 
 ### Work map details
 
-- The graph is read-only. A missing trace store drops the task and session
-  trace nodes and the card reads **placement only (no trace store)**; a daemon
-  with neither the trace store nor the session manager returns 503.
+- The graph is read-only. When the daemon has no trace store, the card's header
+  shows the note **placement only (no trace store)**. A daemon with neither a
+  session store nor a trace store returns 503.
 - Tasks are capped per Automaton, newest first. The overflow is counted in the
   Automaton node's `tasks_omitted`, so one long-lived Automaton cannot flood the
   card.
-- The **Running now** list rotates under the graph: the live sessions in an
-  active state, newest first.
+- The **Running now** strip lists up to eight live sessions in an active state,
+  newest first, and shows the total count beside its heading.
 
 ## Related how-tos
 
