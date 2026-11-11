@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,7 +142,7 @@ func TestDashboardSeries_RoutesAreMounted(t *testing.T) {
 func TestForecast_PointsKeepCompletionRange(t *testing.T) {
 	low, high := 2.5, 4.0
 	pts := buildThroughputForecast([]autonomous.ProgressTrendPoint{
-		{Date: "2026-11-09", Throughput3d: 3, CompletionLowDays: &low, CompletionHighDays: &high, KnownTasks: 12, EstimatedTasks: 9},
+		{Date: "2026-11-09", Throughput3d: 3, PRDsPerDay24h: 1.5, PRDsLast24h: 2, CompletionLowDays: &low, CompletionHighDays: &high, KnownTasks: 12, EstimatedTasks: 9},
 		{Date: "2026-11-10", Throughput3d: 0},
 	})
 	if len(pts) != 2 {
@@ -153,8 +154,15 @@ func TestForecast_PointsKeepCompletionRange(t *testing.T) {
 	if pts[1].CompletionLowDays != nil || pts[1].CompletionHighDays != nil {
 		t.Fatalf("a point without a range must keep null bounds: %+v", pts[1])
 	}
-	if pts[0].Throughput3d != 3 || pts[0].KnownTasks != 12 || pts[0].EstimatedTasks != 9 || pts[0].Date != "2026-11-09" {
+	if pts[0].ThroughputPerDay != 1.5 || pts[0].PRDsLast24h != 2 || pts[0].KnownTasks != 12 || pts[0].EstimatedTasks != 9 || pts[0].Date != "2026-11-09" {
 		t.Fatalf("fields: %+v", pts[0])
+	}
+	raw, err := json.Marshal(pts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"throughput_per_day":1.5`) || strings.Contains(string(raw), "throughput_3d") {
+		t.Fatalf("forecast point must carry the daily figure, not the rolling one: %s", raw)
 	}
 }
 
@@ -207,17 +215,13 @@ func TestVerifierHealth_WaitsAndRunsPerNode(t *testing.T) {
 	}
 }
 
-func TestVerifierHealth_OutcomesPassRateAcrossNodes(t *testing.T) {
-	got := buildVerifierOutcomes(autonomous.VerifierStatsView{
-		Runs:       4,
-		Categories: map[string]int{autonomous.VerifierCatPass: 3, autonomous.VerifierCatInfra: 1},
-	})
-	if got.PassRate == nil || !approx(*got.PassRate, 0.75) || got.Runs != 4 {
-		t.Fatalf("pass rate: %+v", got)
+func TestVerifierHealth_ResponseHasNoAllNodesPassRate(t *testing.T) {
+	raw, err := json.Marshal(verifierHealthResponse{Nodes: []verifierNodeHealth{{Node: "n1", Runs: 2}}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	none := buildVerifierOutcomes(autonomous.VerifierStatsView{})
-	if none.PassRate != nil || none.Categories == nil {
-		t.Fatalf("no runs must give a null pass rate and non-nil categories: %+v", none)
+	if strings.Contains(string(raw), "pass_rate") || strings.Contains(string(raw), "outcomes") {
+		t.Fatalf("no pass rate may be reported without a per-node source: %s", raw)
 	}
 }
 

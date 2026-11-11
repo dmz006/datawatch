@@ -15,14 +15,15 @@
 // null fraction, so it is never drawn as idle.
 //
 // The throughput forecast reduces the progress trend to one point per saved
-// snapshot: the completion range in days and the throughput over the last three
-// days (throughput_3d, the trend's own rolling figure, not a per-day count).
+// snapshot: the completion range in days, the throughput per day (completions
+// per active day over the 24 hours before the snapshot) and the completion
+// count behind it.
 //
 // Verifier health reports, per compute node, the verifier waits and runs seen
 // in the window. Verifier leases take the node-verify:<node> pool, so a verifier
-// is recognised by that pool name; the ledger does not record verifier role on
-// its intervals. The pass rate is kept only for all nodes together, since the
-// daemon started, from the verifier aggregate. No per-node pass rate exists.
+// is recognised by that pool name. No pass rate is reported: the ledger records
+// no verifier verdict on its intervals, and the process-wide verifier outcome
+// aggregate is not tied to a node, so neither can give a per-node pass rate.
 package server
 
 import (
@@ -70,11 +71,12 @@ type laneUtilizationResponse struct {
 	Lanes         []seriesLane `json:"lanes"`
 }
 
-// forecastPoint is one saved progress snapshot reduced to the throughput and
-// the completion range.
+// forecastPoint is one saved progress snapshot reduced to the daily throughput
+// and the completion range.
 type forecastPoint struct {
 	Date               string   `json:"date"`
-	Throughput3d       float64  `json:"throughput_3d"`
+	ThroughputPerDay   float64  `json:"throughput_per_day"`
+	PRDsLast24h        int      `json:"prds_last_24h"`
 	CompletionLowDays  *float64 `json:"completion_low_days"`
 	CompletionHighDays *float64 `json:"completion_high_days"`
 	KnownTasks         int      `json:"known_tasks"`
@@ -100,15 +102,6 @@ type verifierNodeHealth struct {
 	RunAvgSeconds    float64 `json:"run_avg_seconds"`
 }
 
-// verifierOutcomes is the verifier outcome aggregate for all nodes since the
-// daemon started. PassRate is null while no verifier has run.
-type verifierOutcomes struct {
-	Runs       int            `json:"runs"`
-	Categories map[string]int `json:"categories"`
-	PassRate   *float64       `json:"pass_rate"`
-	Since      time.Time      `json:"since"`
-}
-
 // verifierHealthResponse is the body of GET /api/dashboard/series/verifier-health.
 type verifierHealthResponse struct {
 	GeneratedAt   time.Time            `json:"generated_at"`
@@ -117,7 +110,6 @@ type verifierHealthResponse struct {
 	WindowSeconds int64                `json:"window_seconds"`
 	RecordingFrom *time.Time           `json:"recording_from,omitempty"`
 	Nodes         []verifierNodeHealth `json:"nodes"`
-	Outcomes      verifierOutcomes     `json:"outcomes"`
 }
 
 // registerDashboardSeriesRoutes mounts the three series routes on the daemon's mux.
@@ -223,7 +215,7 @@ func buildThroughputForecast(points []autonomous.ProgressTrendPoint) []forecastP
 	out := make([]forecastPoint, 0, len(points))
 	for _, p := range points {
 		out = append(out, forecastPoint{
-			Date: p.Date, Throughput3d: p.Throughput3d,
+			Date: p.Date, ThroughputPerDay: p.PRDsPerDay24h, PRDsLast24h: p.PRDsLast24h,
 			CompletionLowDays: p.CompletionLowDays, CompletionHighDays: p.CompletionHighDays,
 			KnownTasks: p.KnownTasks, EstimatedTasks: p.EstimatedTasks,
 		})
@@ -313,20 +305,6 @@ func buildVerifierNodes(ivs []capacity.LaneInterval, from, now time.Time) []veri
 	return out
 }
 
-// buildVerifierOutcomes shapes the verifier aggregate. The pass rate is the
-// pass category over all runs; it is null while there are no runs.
-func buildVerifierOutcomes(v autonomous.VerifierStatsView) verifierOutcomes {
-	out := verifierOutcomes{Runs: v.Runs, Categories: v.Categories, Since: v.Since}
-	if out.Categories == nil {
-		out.Categories = map[string]int{}
-	}
-	if v.Runs > 0 {
-		rate := float64(v.Categories[autonomous.VerifierCatPass]) / float64(v.Runs)
-		out.PassRate = &rate
-	}
-	return out
-}
-
 // handleDashboardSeriesVerifierHealth serves GET /api/dashboard/series/verifier-health.
 func (s *Server) handleDashboardSeriesVerifierHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -348,7 +326,6 @@ func (s *Server) handleDashboardSeriesVerifierHealth(w http.ResponseWriter, r *h
 	writeJSONOK(w, verifierHealthResponse{
 		GeneratedAt: now, WindowFrom: from, WindowTo: now,
 		WindowSeconds: int64(window / time.Second), RecordingFrom: recording,
-		Nodes:    buildVerifierNodes(ivs, from, now),
-		Outcomes: buildVerifierOutcomes(autonomous.DefaultVerifierStats.Snapshot()),
+		Nodes: buildVerifierNodes(ivs, from, now),
 	})
 }

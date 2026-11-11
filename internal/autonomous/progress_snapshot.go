@@ -241,6 +241,8 @@ type ProgressTrendPoint struct {
 	KnownTasks         int      `json:"known_tasks"`
 	EstimatedTasks     float64  `json:"estimated_tasks"`
 	Throughput3d       float64  `json:"throughput_3d"`
+	PRDsPerDay24h      float64  `json:"prds_per_day_24h"` // completions per active day over the 24 hours before the snapshot
+	PRDsLast24h        int      `json:"prds_last_24h"`    // completions in those 24 hours
 	Utilization        float64  `json:"utilization"`
 	CompletedPRDs      int      `json:"completed_prds"`
 }
@@ -303,6 +305,8 @@ func Trend(snaps []ProgressSnapshot, project string) ProgressTrend {
 			KnownTasks:         m.Remaining.Known.Tasks,
 			EstimatedTasks:     m.Remaining.Estimated.EstimatedTasks,
 			Throughput3d:       m.Throughput.PRDsPerDay3d,
+			PRDsPerDay24h:      m.Throughput.PRDsPerDay24h,
+			PRDsLast24h:        m.Throughput.PRDsLast24h,
 			Utilization:        m.Utilization.Ratio,
 			CompletedPRDs:      m.CompletedPRDs,
 		}

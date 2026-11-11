@@ -548,7 +548,6 @@
   "dash_series_waits": "Esperas",
   "dash_series_avg_wait": "Espera media",
   "dash_series_avg_run": "Ejecución media",
-  "dash_series_pass_rate": "Tasa de aprobación, todos los nodos desde el inicio",
   "dash_card_off_lane_util_reason": "Ningún carril ha tenido una concesión en las últimas 24 horas; la tarjeta se llena al ejecutarse carriles.",
   "dash_card_off_forecast_reason": "Aún no hay una instantánea de progreso con estimación de rendimiento o finalización; la previsión se llena al terminar los autómatas.",
   "dash_card_off_verifier_reason": "Ningún verificador ha ejecutado ni esperado en un nodo en este intervalo; la tarjeta se llena al ejecutarse verificadores.",

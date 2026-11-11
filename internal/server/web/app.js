@@ -44789,7 +44789,7 @@ function _dashRenderLaneUtil() {
 
 function _dashForecastActive() {
   const d = _dash._seriesForecast;
-  return !!(d && Array.isArray(d.points) && d.points.some(p => (Number(p.throughput_3d) || 0) > 0 || p.completion_low_days != null));
+  return !!(d && Array.isArray(d.points) && d.points.some(p => (Number(p.throughput_per_day) || 0) > 0 || p.completion_low_days != null));
 }
 
 function _dashFetchForecast() {
@@ -44810,7 +44810,7 @@ function _dashRenderForecast() {
     '<th ' + th + '>' + escHtml(t('dash_series_range')) + '</th></tr>';
   const rows = d.points.slice(-14).map(p => '<tr>' +
     '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
-    '<td style="padding:2px 6px;">' + (Number(p.throughput_3d) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.throughput_per_day) || 0).toFixed(2) + '</td>' +
     '<td style="padding:2px 6px;">' + num(p.completion_low_days) + ' – ' + num(p.completion_high_days) + '</td></tr>').join('');
   el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
 }
@@ -44831,8 +44831,6 @@ function _dashRenderVerifier() {
   const d = _dash._seriesVerifier;
   if (!d || !Array.isArray(d.nodes) || !d.nodes.length) { _dashSeriesEmpty(el); return; }
   const secs = v => (Number(v) || 0).toFixed(0) + 's';
-  const pr = d.outcomes && d.outcomes.pass_rate;
-  const rate = pr == null ? '—' : Math.round(pr * 100) + '%';
   const th = 'style="padding:2px 6px;font-weight:400;"';
   const head = '<tr style="color:var(--text2);text-align:left;">' +
     '<th ' + th + '>' + escHtml(t('dash_series_node')) + '</th>' +
@@ -44846,8 +44844,7 @@ function _dashRenderVerifier() {
     '<td style="padding:2px 6px;">' + (Number(n.waits) || 0) + '</td>' +
     '<td style="padding:2px 6px;">' + secs(n.wait_avg_seconds) + '</td>' +
     '<td style="padding:2px 6px;">' + secs(n.run_avg_seconds) + '</td></tr>').join('');
-  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>' +
-    '<div style="padding:4px 6px;font-size:10px;color:var(--text2);">' + escHtml(t('dash_series_pass_rate')) + ': ' + rate + '</div>';
+  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
 }
 
 function _renderSprintPipeline() {

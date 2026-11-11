@@ -548,7 +548,6 @@
   "dash_series_waits": "Wartezeiten",
   "dash_series_avg_wait": "Ø Wartezeit",
   "dash_series_avg_run": "Ø Laufzeit",
-  "dash_series_pass_rate": "Erfolgsquote, alle Nodes seit Start",
   "dash_card_off_lane_util_reason": "Keine Lane hat in den letzten 24 Stunden eine Lease gehalten — die Karte füllt sich, sobald Lanes laufen.",
   "dash_card_off_forecast_reason": "Noch kein gespeicherter Fortschrittsschnappschuss mit Durchsatz- oder Fertigstellungsschätzung — die Prognose füllt sich, sobald Automaten abgeschlossen werden.",
   "dash_card_off_verifier_reason": "Kein Verifier hat in diesem Zeitraum auf einem Node gearbeitet oder gewartet — die Karte füllt sich, sobald Verifier laufen.",

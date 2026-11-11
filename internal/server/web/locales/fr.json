@@ -548,7 +548,6 @@
   "dash_series_waits": "Attentes",
   "dash_series_avg_wait": "Attente moy.",
   "dash_series_avg_run": "Exécution moy.",
-  "dash_series_pass_rate": "Taux de réussite, tous nœuds depuis le démarrage",
   "dash_card_off_lane_util_reason": "Aucune voie n’a détenu de bail au cours des 24 dernières heures ; la carte se remplit à mesure que les voies tournent.",
   "dash_card_off_forecast_reason": "Aucun instantané de progression n’a encore d’estimation de débit ou d’achèvement ; la prévision se remplit à mesure que les automates se terminent.",
   "dash_card_off_verifier_reason": "Aucun vérificateur n’a tourné ni attendu sur un nœud pendant cette période ; la carte se remplit à mesure qu’ils tournent.",

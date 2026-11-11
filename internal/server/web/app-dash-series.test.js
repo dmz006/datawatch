@@ -18,7 +18,7 @@ const SERIES_KEYS = [
   'dash_series_busy_share', 'dash_series_no_history', 'dash_series_none',
   'dash_series_date', 'dash_series_throughput', 'dash_series_range',
   'dash_series_node', 'dash_series_runs', 'dash_series_waits',
-  'dash_series_avg_wait', 'dash_series_avg_run', 'dash_series_pass_rate',
+  'dash_series_avg_wait', 'dash_series_avg_run',
   'dash_card_off_lane_util_reason', 'dash_card_off_forecast_reason',
   'dash_card_off_verifier_reason', 'dash_card_off_series_link',
 ];
@@ -81,9 +81,9 @@ test('feature gate: the forecast shows once a point has throughput or a completi
   const sb = loadAppSandbox();
   const feat = vm.runInContext('DASH_CARD_FEATURES', sb)['throughput-forecast'];
   assert.equal(feat.active(), false, 'no payload yet');
-  setSeries(sb, '_seriesForecast', { points: [{ date: '2026-11-10', throughput_3d: 0, completion_low_days: null, completion_high_days: null }] });
+  setSeries(sb, '_seriesForecast', { points: [{ date: '2026-11-10', throughput_per_day: 0, completion_low_days: null, completion_high_days: null }] });
   assert.equal(feat.active(), false, 'an empty trend is not shown');
-  setSeries(sb, '_seriesForecast', { points: [{ date: '2026-11-10', throughput_3d: 0, completion_low_days: 2, completion_high_days: 5 }] });
+  setSeries(sb, '_seriesForecast', { points: [{ date: '2026-11-10', throughput_per_day: 0, completion_low_days: 2, completion_high_days: 5 }] });
   assert.equal(feat.active(), true, 'a completion range shows the card');
 });
 
@@ -91,9 +91,9 @@ test('feature gate: verifier health shows once a node ran or waited', () => {
   const sb = loadAppSandbox();
   const feat = vm.runInContext('DASH_CARD_FEATURES', sb)['verifier-health'];
   assert.equal(feat.active(), false, 'no payload yet');
-  setSeries(sb, '_seriesVerifier', { nodes: [{ node: 'n1', runs: 0, waits: 0 }], outcomes: { runs: 0, pass_rate: null } });
+  setSeries(sb, '_seriesVerifier', { nodes: [{ node: 'n1', runs: 0, waits: 0 }] });
   assert.equal(feat.active(), false, 'a node with no activity is not shown');
-  setSeries(sb, '_seriesVerifier', { nodes: [{ node: 'n1', runs: 2, waits: 0 }], outcomes: { runs: 2, pass_rate: 0.5 } });
+  setSeries(sb, '_seriesVerifier', { nodes: [{ node: 'n1', runs: 2, waits: 0 }] });
   assert.equal(feat.active(), true, 'a run shows the card');
 });
 
@@ -123,8 +123,8 @@ test('render: an unrecorded hour is hatched, a recorded hour is tinted by its sh
 test('render: the forecast table keeps a null completion bound as a dash', () => {
   const sb = loadAppSandbox();
   setSeries(sb, '_seriesForecast', { points: [
-    { date: '2026-11-09', throughput_3d: 3, completion_low_days: 2, completion_high_days: 4.5 },
-    { date: '2026-11-10', throughput_3d: 1, completion_low_days: null, completion_high_days: null },
+    { date: '2026-11-09', throughput_per_day: 3, completion_low_days: 2, completion_high_days: 4.5 },
+    { date: '2026-11-10', throughput_per_day: 1, completion_low_days: null, completion_high_days: null },
   ] });
   vm.runInContext('_dashRenderForecast()', sb);
   const html = sb.__els.dashForecastCard.innerHTML;
@@ -132,23 +132,22 @@ test('render: the forecast table keeps a null completion bound as a dash', () =>
   assert.ok(html.includes('— – —'), 'a missing range shows dashes');
 });
 
-test('render: verifier health shows the all-nodes pass rate and escapes node names', () => {
+test('render: verifier health escapes node names and shows no pass rate', () => {
   const sb = loadAppSandbox();
   setSeries(sb, '_seriesVerifier', {
     nodes: [{ node: '<n1>', runs: 2, waits: 1, wait_avg_seconds: 30, run_avg_seconds: 120 }],
-    outcomes: { runs: 4, pass_rate: 0.75 },
   });
   vm.runInContext('_dashRenderVerifier()', sb);
   const html = sb.__els.dashVerifierCard.innerHTML;
   assert.ok(html.includes('&lt;n1&gt;'), 'the node name is escaped');
   assert.ok(!html.includes('<n1>'), 'no raw node markup');
-  assert.ok(html.includes('75%'), 'the pass rate is shown for all nodes');
+  assert.ok(!/\d%/.test(html.replace('width:100%', '')), 'no pass rate is shown without a per-node source');
   assert.ok(html.includes('30s') && html.includes('120s'), 'average wait and run are shown in seconds');
 });
 
 test('render: an empty payload shows the empty line, not a blank card', () => {
   const sb = loadAppSandbox();
-  setSeries(sb, '_seriesVerifier', { nodes: [], outcomes: { runs: 0, pass_rate: null } });
+  setSeries(sb, '_seriesVerifier', { nodes: [] });
   vm.runInContext('_dashRenderVerifier()', sb);
   assert.ok(sb.__els.dashVerifierCard.innerHTML.includes(bundle('en').dash_series_none));
 });

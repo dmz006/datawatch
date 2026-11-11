@@ -3117,6 +3117,8 @@ paths:
                         known_tasks: {type: integer}
                         estimated_tasks: {type: number}
                         throughput_3d: {type: number}
+                        prds_per_day_24h: {type: number, description: Completions per active day over the 24 hours before the snapshot}
+                        prds_last_24h: {type: integer, description: Completions in those 24 hours}
                         utilization: {type: number}
                         completed_prds: {type: integer}
                   direction: {type: string, enum: [converging, widening, flat, unknown]}
@@ -9838,10 +9840,10 @@ paths:
       summary: Throughput and completion range by day
       description: |
         The saved progress snapshots reduced to one point per day for the last `days` days: the
-        completion range in days (low and high) and the throughput over the last three days. The
-        throughput is the trend's rolling three-day figure (`throughput_3d`), not a count for that
-        single day. Points come from the same snapshots as `GET /api/autonomous/progress/trend`. With
-        no snapshot, `points` is an empty array.
+        completion range in days (low and high), the throughput per day (`throughput_per_day`:
+        completions per active day over the 24 hours before the snapshot) and the completions behind
+        it (`prds_last_24h`). Points come from the same snapshots as `GET /api/autonomous/progress/trend`.
+        With no snapshot, `points` is an empty array.
       operationId: dashboardSeriesThroughputForecast
       tags: [Dashboard]
       parameters:
@@ -9867,7 +9869,8 @@ paths:
                       type: object
                       properties:
                         date: {type: string, description: Snapshot date, YYYY-MM-DD}
-                        throughput_3d: {type: number}
+                        throughput_per_day: {type: number, description: Completions per active day over the 24 hours before the snapshot}
+                        prds_last_24h: {type: integer, description: Completions in those 24 hours}
                         completion_low_days: {type: number, nullable: true}
                         completion_high_days: {type: number, nullable: true}
                         known_tasks: {type: integer}
@@ -9883,9 +9886,8 @@ paths:
         Verifier queue waits and runs per compute node over a window (default 24 hours, from 1 minute to
         168 hours). A verifier is recognised by its node verifier pool (`node-verify:<node>`), so only
         verifier work on a node that has a verifier pool is counted. Times are clipped to the window.
-        `outcomes` is the verifier outcome aggregate for all nodes together since the daemon started:
-        `pass_rate` is the pass count over all runs, and it is null while no verifier has run. No pass
-        rate is given per node, because the ledger does not record outcomes per node.
+        No pass rate is reported: the capacity ledger records no verifier verdict, and the process-wide
+        verifier outcome aggregate is not tied to a node, so neither gives a per-node pass rate.
       operationId: dashboardSeriesVerifierHealth
       tags: [Dashboard]
       parameters:
@@ -9896,7 +9898,7 @@ paths:
           schema: {type: string, default: 24h}
       responses:
         "200":
-          description: Verifier waits and runs per node, and the overall outcomes
+          description: Verifier waits and runs per node
           content:
             application/json:
               schema:
@@ -9920,13 +9922,6 @@ paths:
                         wait_avg_seconds: {type: number}
                         run_total_seconds: {type: number}
                         run_avg_seconds: {type: number}
-                  outcomes:
-                    type: object
-                    properties:
-                      runs: {type: integer, description: Verifier runs since the daemon started, all nodes}
-                      categories: {type: object, additionalProperties: {type: integer}}
-                      pass_rate: {type: number, nullable: true, description: Pass runs over all runs, 0 to 1; null with no runs}
-                      since: {type: string, format: date-time}
         "400":
           description: The window is not a duration from 1m to 168h
         "405":

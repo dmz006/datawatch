@@ -809,7 +809,7 @@ The **Lane pulse** card replaces the older EKG waveform. It draws one trace per 
 
 The panel under the lane pulse traces. It shows the weekly usage level in **points** of the allowance, against the **pace line**, and says *ahead of pace* or *on pace*. It never shows dollars. When the usage calculator cannot answer, the panel shows the reason instead of a level. See [usage-calculator.md](howto/usage-calculator.md).
 
-**Lane utilization**, **Throughput forecast** and **Verifier health** are opt-in series cards (Edit → Add Card). Lane utilization shows, for each lane and clock hour, the share of that hour in which a lane held a lease. Throughput forecast shows each saved progress day with the completion range in days. Verifier health shows verifier waits and runs per compute node, and one pass rate for all nodes since the daemon started. Each card is hidden until it has data.
+**Lane utilization**, **Throughput forecast** and **Verifier health** are opt-in series cards (Edit → Add Card). Lane utilization shows, for each lane and clock hour, the share of that hour in which a lane held a lease. Throughput forecast shows each saved progress day with the completion range in days and the completions per active day over the 24 hours before that snapshot. Verifier health shows verifier waits and runs per compute node. It shows no pass rate: the capacity ledger records no verifier verdict, so a per-node pass rate cannot be given. Each card is hidden until it has data.
 
 ### Expand panel
 

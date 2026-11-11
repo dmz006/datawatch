@@ -528,7 +528,6 @@
   "dash_series_waits": "Waits",
   "dash_series_avg_wait": "Avg wait",
   "dash_series_avg_run": "Avg run",
-  "dash_series_pass_rate": "Pass rate, all nodes since start",
   "dash_card_off_lane_util_reason": "No lane has held a lease in the last 24 hours — this card fills as lanes run.",
   "dash_card_off_forecast_reason": "No saved progress snapshot has a throughput or completion estimate yet — the forecast fills as Automata finish.",
   "dash_card_off_verifier_reason": "No verifier has run or waited on a node in this window — this card fills as verifiers run.",
