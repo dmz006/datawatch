@@ -26,13 +26,13 @@ func newObserverPullServer(t *testing.T, url, token string, mutate func(*multise
 		t.Fatalf("NewStore: %v", err)
 	}
 	e := &multiserver.Entry{
-		Name:                 "peer1",
-		URL:                  url,
-		Token:                token,
-		Enabled:              true,
-		Federated:            true,
-		ObserverPull:         true,
-		Capabilities:         []string{federation.CapObserversRead},
+		Name:                  "peer1",
+		URL:                   url,
+		Token:                 token,
+		Enabled:               true,
+		Federated:             true,
+		ObserverPull:          true,
+		Capabilities:          []string{federation.CapObserversRead},
 		ObserverPullIntervalS: 30,
 		ObserverPullTimeoutS:  5,
 	}
@@ -42,7 +42,7 @@ func newObserverPullServer(t *testing.T, url, token string, mutate func(*multise
 	if err := st.Add(e); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	return &Server{serverStore: st, cfg: &config.Config{}}
+	return &Server{serverStore: st, cfg: pullCfg(true)}
 }
 
 // statsOK writes a minimal valid v2 StatsResponse.
@@ -368,11 +368,11 @@ func TestObserverPullFetch_TargetsUseEntryAndGlobalDefaults(t *testing.T) {
 	}
 	// A third peer opted out — must never be a target.
 	e3 := &multiserver.Entry{
-		Name:       "peer3",
-		URL:        srv.URL,
-		Token:      "token-3",
-		Enabled:    true,
-		Federated:  true,
+		Name:         "peer3",
+		URL:          srv.URL,
+		Token:        "token-3",
+		Enabled:      true,
+		Federated:    true,
 		Capabilities: []string{federation.CapObserversRead},
 	}
 	if err := s.serverStore.Add(e3); err != nil {
@@ -405,5 +405,59 @@ func TestObserverPullFetch_TargetsUseEntryAndGlobalDefaults(t *testing.T) {
 	}
 	if t0.Timeout != time.Duration(def.DefaultTimeoutS)*time.Second {
 		t.Errorf("peer0 Timeout = %s, want global default %s", t0.Timeout, time.Duration(def.DefaultTimeoutS)*time.Second)
+	}
+}
+
+func pullCfg(enabled bool) *config.Config {
+	c := &config.Config{}
+	c.Observer.Pull.Enabled = enabled
+	return c
+}
+
+func TestObserverPullTargets_GlobalGate(t *testing.T) {
+	cases := []struct {
+		name       string
+		global     bool
+		optedIn    bool
+		wantTarget bool
+		wantReason bool
+	}{
+		{"global off, peer opted in", false, true, false, true},
+		{"global on, peer opted in", true, true, true, false},
+		{"global on, peer not opted in", true, false, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&requests, 1)
+				statsOK(w, r)
+			}))
+			defer srv.Close()
+			s := newObserverPullServer(t, srv.URL, "tok", func(e *multiserver.Entry) { e.ObserverPull = tc.optedIn })
+			s.cfg.Observer.Pull.Enabled = tc.global
+			op := &observerPull{s: s}
+			got := op.targets()
+			if (len(got) == 1) != tc.wantTarget || len(got) > 1 {
+				t.Fatalf("targets = %v, wantTarget=%v", got, tc.wantTarget)
+			}
+			if !tc.wantTarget && atomic.LoadInt32(&requests) != 0 {
+				t.Errorf("requests = %d, want 0", requests)
+			}
+			for _, row := range s.pullStatusRows() {
+				_, has := row["reason"]
+				if has != tc.wantReason {
+					t.Errorf("row reason present=%v, want %v (%v)", has, tc.wantReason, row)
+				}
+				if has && row["reason"] != ObserverPullDisabledReason {
+					t.Errorf("reason = %v", row["reason"])
+				}
+			}
+			// Live read: flipping the flag changes the result without rebuilding.
+			s.cfg.Observer.Pull.Enabled = !tc.global
+			if again := op.targets(); tc.optedIn && (len(again) == 1) != !tc.global {
+				t.Errorf("targets did not follow live config flip: %v", again)
+			}
+		})
 	}
 }
