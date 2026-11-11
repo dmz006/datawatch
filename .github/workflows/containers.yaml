@@ -89,7 +89,7 @@ jobs:
             ${{ matrix.name == 'agent-base' && 'ghcr.io/dmz006/datawatch/agent-base:latest' || '' }}
           push: true
       - name: Install Trivy
-        run: bash scripts/ci-install-trivy.sh v0.70.0 /usr/local/bin
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy)
         # Unfixable base-image CVE exceptions live in .trivyignore.
         # Net-new findings not listed there will fail this step.
@@ -164,7 +164,7 @@ jobs:
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
           push: true
       - name: Install Trivy
-        run: bash scripts/ci-install-trivy.sh v0.70.0 /usr/local/bin
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy)
         run: |
           trivy image \
