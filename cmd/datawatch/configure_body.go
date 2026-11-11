@@ -85,6 +85,16 @@ func isAttemptCostScalarKey(key string) bool {
 		key == "autonomous.retry_resume_max_context_tokens"
 }
 
+// isDependencyUpdateConfigKey reports whether key is one of the dependency
+// update settings (enabled, schedule, max_majors). A value that is valid JSON
+// and refused by the daemon keeps the daemon's message, with the allowed form,
+// instead of being quoted and retried.
+func isDependencyUpdateConfigKey(key string) bool {
+	return key == "autonomous.automation.dependency_update.enabled" ||
+		key == "autonomous.automation.dependency_update.schedule" ||
+		key == "autonomous.automation.dependency_update.max_majors"
+}
+
 // formatLivenessOverrides renders the overrides map for `config show`:
 // "(none)" when empty, else sorted backend=seconds pairs.
 func formatLivenessOverrides(m map[string]int) string {
