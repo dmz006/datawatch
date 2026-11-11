@@ -103,3 +103,25 @@ test('smoke card: expanding a run shows its detail section rows', () => {
   assert.match(html, /UI/, 'detail should list the UI section');
   assert.match(html, /pending/, 'detail should surface the pending count');
 });
+
+test('smoke card: keeps a one-line purpose above the run list', () => {
+  const { sandbox, byId } = makeEnv();
+  setEnvelopes(sandbox, [
+    { id: 'run-1', type: 'smoke', version: 'v9.99.0', pass: 5, fail: 0, active: false },
+  ]);
+  vm.runInContext(`_dash._smokeExpandedId = null; _dash._smokeExpandedData = null; _dashRenderSmoke();`, sandbox);
+  const html = byId.dashSmokeCard.innerHTML;
+  assert.match(html, new RegExp(EN.dash_card_smoke_purpose.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    'the purpose line must render from the dash_card_smoke_purpose key');
+  assert.ok(html.indexOf('dash-smoke-purpose') < html.indexOf('v9.99.0'), 'purpose comes before the run rows');
+});
+
+test('smoke card: purpose key exists in all five locales and never says PRD', () => {
+  for (const loc of ['en', 'de', 'es', 'fr', 'ja']) {
+    const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', loc + '.json'), 'utf8'));
+    for (const k of ['dash_card_smoke_purpose', 'dash_card_off_smoke_reason', 'dash_card_off_smoke_link']) {
+      assert.ok(j[k] && j[k].length > 0, `${loc} is missing ${k}`);
+    }
+    assert.doesNotMatch(j.dash_card_smoke_purpose, /\bPRDs?\b/);
+  }
+});

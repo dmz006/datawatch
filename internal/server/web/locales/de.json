@@ -4635,5 +4635,6 @@
   "dash_heatmap_total": "%1$d ausgeliefert · %2$d Releases · letzte %3$d Tage",
   "dash_card_off_gantt_reason": "In den letzten 6 Stunden lief keine Automaten-Aufgabe — ihr Balken erscheint hier, sobald eine startet.",
   "dash_card_off_gantt_link": "Dashboard-Kartenreferenz",
-  "dash_card_events_purpose": "Neueste Ereignisse aus Hintergrundarbeit und Sitzungen."
+  "dash_card_events_purpose": "Neueste Ereignisse aus Hintergrundarbeit und Sitzungen.",
+  "dash_card_smoke_purpose": "Fortschritt von Release-Smoke- und End-to-End-Testläufen."
 }

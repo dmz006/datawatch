@@ -46609,9 +46609,10 @@ function _dashRenderSmoke() {
   const el = document.getElementById('dashSmokeCard');
   if (!el) return;
 
+  const smokePurpose = `<div class="dash-smoke-purpose" style="color:var(--text2);padding:4px 8px;font-size:10px;opacity:0.7;flex-shrink:0;">${escHtml(t('dash_card_smoke_purpose') || 'Progress of release smoke and end-to-end test runs.')}</div>`;
   const envelopes = _dash._smokeEnvelopes || [];
   if (envelopes.length === 0) {
-    el.innerHTML = `<div style="padding:12px;color:var(--text2);font-size:11px;">No runs — start <code>release-smoke.sh</code> or <code>run-tests.sh</code></div>`;
+    el.innerHTML = smokePurpose + `<div style="padding:12px;color:var(--text2);font-size:11px;">No runs — start <code>release-smoke.sh</code> or <code>run-tests.sh</code></div>`;
     return;
   }
 
@@ -46739,7 +46740,7 @@ function _dashRenderSmoke() {
   const _smokePaneStyle = _smokeNarrowOuter
     ? 'flex:1;min-height:0;display:flex;flex-direction:column;overflow-x:auto;-webkit-overflow-scrolling:touch;'
     : 'flex:1;min-height:0;display:flex;flex-direction:column;';
-  el.innerHTML = envListHtml + (_dash._smokeExpandedId
+  el.innerHTML = smokePurpose + envListHtml + (_dash._smokeExpandedId
     ? `<div style="${_smokePaneStyle}">${detailHtml}</div>`
     : `<div style="padding:10px 8px;color:var(--text2);font-size:10px;">↑ Click a run to expand</div>`);
 }
