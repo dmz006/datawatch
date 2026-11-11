@@ -7104,6 +7104,18 @@ adds no tool, script or file scope; a widening version waits for an operator acc
 3. The enable check, the `packs.active` validation and the daemon's start-up read of the
    pack block are not run.
 4. The datawatch app (Android and iPhone) does not show packs.
+5. The pack attribution read side is partly wired. Trace roll-ups group by
+   `pack_name` and `pack_version`, and the audit query filters on `pack_name`. The
+   trace `pack` parameter that the MCP tools send is ignored by the REST routes. The
+   per-pack usage summary (`packs.UsageByPack`) and the cost report's pack breakdown are
+   not called by any surface.
+
+**Pack attribution on a running daemon.** Trace events and audit entries written by a
+pack's tasks carry the pack name and version. The `builtin` pack writes
+`pack_name: builtin`. Older events have no pack name and are grouped as unattributed.
+Query them with the trace roll-up (`GET /api/trace/rollup?dimension=pack_name`) and the
+audit query (`pack_name=<name>`). See [howto/agent-tracing.md](howto/agent-tracing.md)
+and [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#pack-attribution-traces-audit-and-cost).
 
 **The `builtin` name and the fixture folders.** `builtin` means the task and template
 definitions embedded in the binary from `internal/packs/builtinpacks/builtin/`. They are

@@ -133,7 +133,8 @@ task, story, Automaton, agent and backend.
 | `error` | A failure, with the redacted message as the outcome. |
 
 The **roll-up** groups events along one dimension: `session` (default), `task`,
-`story`, `automaton`, `agent` or `backend`. It shows event, tool-call, error and
+`story`, `automaton`, `agent`, `backend`, `pack_name` or `pack_version` (the
+installable pack that produced the event; events with none group under a blank key). It shows event, tool-call, error and
 model-request counts, tokens in and out, and per tool the calls, errors and
 average and maximum milliseconds. A **loop warning** is raised when one tool is
 called with the same argument summary five times or more; change the threshold
