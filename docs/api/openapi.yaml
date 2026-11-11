@@ -8219,6 +8219,14 @@ paths:
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
+  /api/dashboard/arc:
+    get:
+      summary: Arc summary — stages in order (bugs, features, final) with progress, the maintenance lane, any blocked stage, shared lane usage and plan usage in points and tokens (needs dashboard:read)
+      operationId: dashboardArc
+      tags: [Singletons]
+      parameters:
+        - {name: arc, in: query, required: false, schema: {type: string}, description: Arc (Automation) id; default is the first arc with staged work}
+      responses: {"200": {description: "OK; a part this daemon cannot read reports available=false with a reason, never a 5xx"}}
   /api/analytics:
     get:
       summary: Aggregate analytics — session counts, backend distribution, cost summary
