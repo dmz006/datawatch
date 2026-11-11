@@ -46066,6 +46066,75 @@ function _dashCardOffBody(feat) {
   return out;
 }
 
+// One-line purpose and '?' help entry for every dashboard card. Each card id
+// has a purpose line under its title (locale key dash_card_purpose_<id>, the
+// id with '-' as '_') and a help link into docs/howto/dashboard.md at the
+// card's own heading (locale key dash_card_help_<id> is the tooltip). The
+// Network card already carries its purpose line in its body, so its purpose
+// key is the existing dash_network_purpose and no second line is drawn.
+// The anchors are the headings of the card sections in docs/howto/dashboard.md.
+const DASH_CARD_HELP_DOC = 'howto/dashboard.md';
+const DASH_CARD_HELP_ANCHORS = {
+  'console-questions': 'questions-waiting-card',
+  'console-held': 'held-and-blocked-card',
+  'console-lanes': 'lanes-card',
+  'console-usage': 'usage-card',
+  'console-ci-release': 'ci-and-release-card',
+  'integration-status': 'integration-status-card',
+  'tree': 'automata-card',
+  'orbital': 'network-card',
+  'events': 'live-events-card',
+  'sparklines': 'sessions-card',
+  'gantt': 'timeline-card',
+  'heatmap': '30-day-activity-card',
+  'guardrails': 'guardrails-card',
+  'ekg': 'lane-pulse-card',
+  'smoke': 'smoke-run-card',
+  'memory-scope': 'memory-scopes-card',
+  'websearch-usage': 'search-usage-card',
+  'work-map': 'work-map-card',
+  'lane-utilization': 'lane-utilization-card',
+  'throughput-forecast': 'throughput-forecast-card',
+  'verifier-health': 'verifier-health-card',
+  'release-train': 'release-train-card',
+  'review-backlog': 'review-backlog-card',
+  'defects-per-day': 'defects-per-day-card',
+  'cost-report': 'cost-report-card',
+};
+
+function _dashCardKeyId(id) {
+  return String(id).replace(/-/g, '_');
+}
+
+function _dashCardPurposeKey(id) {
+  return id === 'orbital' ? 'dash_network_purpose' : 'dash_card_purpose_' + _dashCardKeyId(id);
+}
+
+function _dashCardHelpKey(id) {
+  return 'dash_card_help_' + _dashCardKeyId(id);
+}
+
+// The one-line purpose under the card title. Empty for a card that draws its
+// own purpose line in its body (Network).
+function _dashCardPurposeHTML(id) {
+  if (id === 'orbital') return '';
+  const text = t(_dashCardPurposeKey(id)) || '';
+  if (!text) return '';
+  return `<div class="dboard-card-purpose" title="${escHtml(text)}">${escHtml(text)}</div>`;
+}
+
+// The '?' help entry in the card header, built with the shared
+// settingsHelpLink helper so it follows the inline-docs-links switch.
+function _dashCardHelpHTML(id) {
+  const anchor = DASH_CARD_HELP_ANCHORS[id];
+  if (!anchor) return '';
+  return settingsHelpLink({
+    helpDocs: DASH_CARD_HELP_DOC + '#' + anchor,
+    helpKey: _dashCardHelpKey(id),
+    helpLabelKey: 'dash_card_help_label',
+  });
+}
+
 // Body for a card definition: a feature card with no data renders the
 // one-line related-setting state instead of an empty render; every other
 // card renders normally.
@@ -46185,11 +46254,12 @@ function _dashCardHTML(entry) {
     ondragend="window._dashDragEnd(event)">
     <div class="dboard-card-hdr">
       <span class="dboard-card-drag">⣿</span>
-      <span class="dboard-card-title">${def.icon} ${escHtml(_dashDefLabel(def))}</span>
+      <span class="dboard-card-title">${def.icon} ${escHtml(_dashDefLabel(def))}</span>${_dashCardHelpHTML(def.id)}
       <span class="dboard-card-span" onclick="window._dashCycleSpan('${entry.id}')" title="Width (click to cycle)">${cs}w</span>
       <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
       <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
     </div>
+    ${_dashCardPurposeHTML(def.id)}
     <div class="dboard-card-body">${_dashCardBodySafe(def)}</div>
   </div>`;
 }
