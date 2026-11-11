@@ -4345,5 +4345,18 @@
   "git_hosts_err_kind": "Choose a kind",
   "git_hosts_err_source": "Choose a credential source",
   "git_hosts_err_base_url": "Base URL is required for this kind",
-  "git_hosts_err_vault": "Vault secret name is required for the vault source"
+  "git_hosts_err_vault": "Vault secret name is required for the vault source",
+  "git_hosts_card_title": "Gitホスト",
+  "git_hosts_card_purpose": "設定済みGitホストの状況を表示します: プッシュ、プルリクエスト、マージ、タグ、CI読み取り。",
+  "git_hosts_configured": "設定済みホスト",
+  "git_hosts_operations": "操作（直近1時間）",
+  "git_hosts_failed": "失敗",
+  "git_hosts_last_success": "最後の成功",
+  "git_hosts_never": "なし",
+  "git_hosts_no_ops": "まだ操作はありません。",
+  "git_hosts_op_push": "プッシュ",
+  "git_hosts_op_pull_request": "プルリクエスト",
+  "git_hosts_op_merge": "マージ",
+  "git_hosts_op_tag": "タグ",
+  "git_hosts_op_ci_read": "CI読み取り"
 }

@@ -4345,5 +4345,18 @@
   "git_hosts_err_kind": "Choose a kind",
   "git_hosts_err_source": "Choose a credential source",
   "git_hosts_err_base_url": "Base URL is required for this kind",
-  "git_hosts_err_vault": "Vault secret name is required for the vault source"
+  "git_hosts_err_vault": "Vault secret name is required for the vault source",
+  "git_hosts_card_title": "Git-Hosts",
+  "git_hosts_card_purpose": "Zeigt, wie die konfigurierten Git-Hosts laufen: Pushes, Pull Requests, Merges, Tags und CI-Abfragen.",
+  "git_hosts_configured": "Konfigurierte Hosts",
+  "git_hosts_operations": "Vorgänge (letzte Stunde)",
+  "git_hosts_failed": "Fehlschläge",
+  "git_hosts_last_success": "Letzter Erfolg",
+  "git_hosts_never": "nie",
+  "git_hosts_no_ops": "Noch keine Vorgänge.",
+  "git_hosts_op_push": "Push",
+  "git_hosts_op_pull_request": "Pull Request",
+  "git_hosts_op_merge": "Merge",
+  "git_hosts_op_tag": "Tag",
+  "git_hosts_op_ci_read": "CI-Abfrage"
 }

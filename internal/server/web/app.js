@@ -40465,6 +40465,42 @@ function loadObserverClusterNodes() {
 // BL391 — Dashboard "Search Usage" card data + rendering. See the call site
 // in renderStatsData for why this is a decoupled fetch/cache/interval
 // instead of riding the main stats poll.
+// Git hosts monitor card: counters from GET /api/git/hosts/stats (configured
+// hosts, operations by kind, failures, last success). Hidden while no git
+// host is configured (hide-empty rule). Cached so a stats rebuild does not flash.
+function gitHostsCardHtml(st) {
+  const s = (st && typeof st === 'object') ? st : {};
+  if (!(Number(s.configured) > 0)) return '';
+  const row = (k, v) => `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(k)}</span><span>${escHtml(v)}</span></div>`;
+  const ops = (s.operations && typeof s.operations === 'object') ? s.operations : {};
+  const kinds = Object.keys(ops).sort();
+  const opRows = kinds.length
+    ? kinds.map(k => row('  ' + (t('git_hosts_op_' + k) || k), ops[k])).join('')
+    : `<div style="color:var(--text2);">${escHtml(t('git_hosts_no_ops'))}</div>`;
+  const last = s.last_success_at && !String(s.last_success_at).startsWith('0001-')
+    ? timeAgo(s.last_success_at) : t('git_hosts_never');
+  const failed = Number(s.failed) || 0;
+  return `<div class="stat-label">${escHtml(t('git_hosts_card_title'))}</div>
+    <div style="font-size:10px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('git_hosts_card_purpose'))}</div>
+    <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+      ${row(t('git_hosts_configured'), s.configured)}
+      <div style="color:var(--text2);">${escHtml(t('git_hosts_operations'))}</div>${opRows}
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t('git_hosts_failed'))}</span><span style="color:${failed > 0 ? 'var(--error)' : 'var(--text)'};">${escHtml(failed)}</span></div>
+      ${row(t('git_hosts_last_success'), last)}
+    </div>`;
+}
+
+function refreshGitHostsCard() {
+  const apply = html => {
+    window._gitHostsCardHTML = html;
+    const el = document.getElementById('gitHostsStatsCard');
+    if (!el) return;
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
+  };
+  return apiFetch('/api/git/hosts/stats').then(st => apply(gitHostsCardHtml(st))).catch(() => apply(''));
+}
+
 function refreshWebSearchStatsCard() {
   apiFetch('/api/websearch/stats?days=14').then(stats => {
     window._webSearchStatsHTML = renderWebSearchStatsHTML(stats || {});
@@ -40684,6 +40720,12 @@ function renderStatsData(el, data) {
     if (!window._webSearchStatsInterval) {
       refreshWebSearchStatsCard();
       window._webSearchStatsInterval = setInterval(refreshWebSearchStatsCard, 20000);
+    }
+    // Git hosts card: hidden until the REST counters report a configured host.
+    html += `<div class="stat-card" id="gitHostsStatsCard"${window._gitHostsCardHTML ? '' : ' style="display:none"'}>${window._gitHostsCardHTML || ''}</div>`;
+    if (!window._gitHostsStatsInterval) {
+      refreshGitHostsCard();
+      window._gitHostsStatsInterval = setInterval(refreshGitHostsCard, 20000);
     }
     // BL367 — quality gate stats card (visible when at least one gate has run).
     if (data.quality_gate_runs > 0) {
