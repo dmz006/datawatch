@@ -690,7 +690,7 @@ tasks in any status, stay locked.
 
 The usage calculator advises how many lanes the weekly provider allowance can
 carry. It never stops or slows a lane. Keys live under `usage.calculator.`;
-`usage.calculator.variant` (`all` by default, or `pace-gauge`, `lane-planner`, `burn-ledger`),
+`usage.calculator.variant` (kept for compatibility; the PWA now always draws the three usage cards),
 `policy`, `safety_points` (default 5), `cost_per_task_points`, `baseline_per_24h`,
 `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone` (a zone name, never a
 fixed offset) and `keeper` (the federation peer that keeps the shared
@@ -700,7 +700,7 @@ readings). Settings apply without a restart.
 |--------|-----|
 | **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
-| **Web UI** | The calculator screen and its Settings fields (not yet shipped; use another method) |
+| **Web UI** | The usage page (one verdict sentence and three fixed-size cards: weekly allowance, pace line, burn per day), the same cards on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
@@ -734,7 +734,7 @@ not through the config keys.
 |--------|-----|
 | **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.burn_guard.<key> <value>`; `datawatch usage burn-guard status|run|config`; `datawatch automation set-effort-ceiling <id> docs=low` |
-| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage calculator and the Monitor tab |
+| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage page and the Monitor tab |
 | **REST API** | `PUT /api/config` with `{"usage.burn_guard.<key>": value}`; `GET /api/usage/burn-guard`, `GET`/`PUT /api/usage/burn-guard/config`, `POST /api/usage/burn-guard/run` |
 | **MCP** | `burn_guard_*` tools; `automation_set_effort_ceiling` |
 | **Comm channel** | `configure usage.burn_guard.<key>=<value>`; `usage burn-guard`; `automation set-effort-ceiling` |

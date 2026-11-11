@@ -34,8 +34,8 @@ to its tab without changing the other tabs.
 |---|---|
 | **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting. |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
-| **Resources** | Capacity, lane fill, usage against the plan, and the Automata ship status card. Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
-| **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
+| **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
+| **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
 | *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
 | **Housekeeping** | The uncommitted work card. The safe-to-delete report and the cleanup card now live in the Events tab. Stale worktrees appears here when it ships. |
 
@@ -158,9 +158,10 @@ never blanks the cards.
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
   counts what is waiting on you.
-- **Resources:** the capacity and queue card (the pools and their usage, any
+- **Resources:** the three usage cards in a row (weekly allowance, pace line,
+  burn per day), the capacity and queue card (the pools and their usage, any
   usage back-off, budgets, and the Automata waiting for capacity), the lane fill
-  card, the usage card (usage against the plan) and the Automata ship status
+  card (one row per lane, with its node) and the Automata ship status
   card (the push, tag and release steps). The infrastructure retries and the
   Automata checks cards (the four report-only checks) are in the Events tab.
 - **Progress and cost:** the Progress card, with the kind table, work left and
