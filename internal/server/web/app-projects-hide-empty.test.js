@@ -58,3 +58,19 @@ test('a project with data renders its values', () => {
   assert.ok(html.includes('hello'));
   assert.ok(html.includes('20%'));
 });
+
+test('empty event stream, merge pipeline and arc sections are hidden unless show-empty is on', () => {
+  const off = load(false);
+  const on = load(true);
+  assert.equal(off._projectEventStreamHTML({ events: [] }, ''), '');
+  assert.equal(off._projectMergePipelineHTML({ definition: { steps: [] } }, ''), '');
+  assert.ok(off._projectEventStreamHTML(null, '').includes('project-event-stream'));
+  assert.ok(off._projectEventStreamHTML({ events: [] }, 'boom').includes('boom'));
+  assert.ok(off._projectMergePipelineHTML(null, '').includes('project-merge-pipeline'));
+  assert.ok(off._projectEventStreamHTML({ events: [{ kind: 'k' }] }, '').includes('project-event-row'));
+  assert.ok(on._projectEventStreamHTML({ events: [] }, '').includes('project-event-stream'));
+  assert.ok(on._projectMergePipelineHTML({ definition: { steps: [] } }, '').includes('project-merge-pipeline'));
+  const page = (sb) => sb._projectPageHTML({ name: 'acme', arcs: [] }, { arcs: [] }, '', null);
+  assert.ok(!page(off).includes('>Arcs<'));
+  assert.ok(page(on).includes('>Arcs<'));
+});

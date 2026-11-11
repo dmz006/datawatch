@@ -3227,11 +3227,16 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
     body += _projectRollupHTML(roll, arcs);
-    if (!arcs.length) events.push(t('projects_event_no_arcs'));
-    else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+    if (!arcs.length) {
+      events.push(t('projects_event_no_arcs'));
+      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
+    } else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else events.push(t('projects_event_no_unassigned'));
+    else {
+      events.push(t('projects_event_no_unassigned'));
+      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+    }
   }
   body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
@@ -3344,6 +3349,7 @@ function _projectMergePipelineHTML(mp, err) {
     const polEntry = MERGE_PIPELINE_POLICIES.find(([v]) => v === mp.conflict_policy);
     const polLabel = polEntry ? t(polEntry[1]) : (mp.conflict_policy || '');
     const steps = mp.definition && Array.isArray(mp.definition.steps) ? mp.definition.steps : [];
+    if (!steps.length && !mp.source && !mp.reason && !mp.file_error && !mp.conflict_policy && !_projectsShowEmpty()) return '';
     inner = `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_source_label'))}:</span> ${escHtml(src)}</div>` +
       (mp.reason ? `<div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_reason', [mp.reason]))}</div>` : '') +
       (mp.file_error ? `<div style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_file_error', [mp.file_error]))}</div>` : '') +
@@ -3368,6 +3374,7 @@ function _projectEventStreamHTML(ev, err) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
   } else {
     const items = Array.isArray(ev.events) ? ev.events : [];
+    if (!items.length && !ev.dropped && !_projectsShowEmpty()) return '';
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
