@@ -186,6 +186,10 @@ type LLM struct {
 	// plan_tier_max_inflight). Unset falls back to conservative
 	// kind-based defaults (see EffectiveMaxInflight).
 	PlanTier PlanTier `yaml:"plan_tier,omitempty" json:"plan_tier,omitempty"`
+	// BillingMode (api|allowance|local) says how this entry is paid for.
+	// Empty resolves via config.ResolveBillingMode: the usage.billing
+	// profile first, then the entry kind.
+	BillingMode string `yaml:"billing_mode,omitempty" json:"billing_mode,omitempty"`
 	// Budget is the optional dollar ceiling for this LLM entry over a rolling
 	// or weekly window. Nil means no budget.
 	Budget *BudgetWindow `yaml:"budget,omitempty" json:"budget,omitempty"`
