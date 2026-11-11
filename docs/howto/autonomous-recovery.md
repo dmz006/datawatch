@@ -283,8 +283,12 @@ run record of the same script does not cause a second run — a run left
 behind by an earlier attempt is retired before a fresh one starts, so its
 verdict is never consumed. The live verifier/judge adoption and the
 script-run pickup are the parts of this story still owed a live restart check
-on the build in use; see the *Still to review (operator)* notes in
-[operations.md](../operations.md) and [restart-with-work-running.md](restart-with-work-running.md#verifying-judging-and-verification-scripts).
+on the build in use — and the restart matrix that would run them cannot run
+against this tree's build yet: its sandbox config lacks
+`server.allowed_project_roots`, so its states fail at Automaton creation (see
+*Current status* in restart-with-work-running.md). See the *Still to review
+(operator)* notes in [operations.md](../operations.md) and
+[restart-with-work-running.md](restart-with-work-running.md#verifying-judging-and-verification-scripts).
 
 ### A launch that was held at restart
 
