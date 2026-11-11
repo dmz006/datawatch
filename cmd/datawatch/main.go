@@ -4746,6 +4746,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// supervisor watch block (autonomous.automation.supervisor_watch.*):
 				// without it the watch re-reads its defaults after every restart.
 				SupervisorWatch: supervisorWatchFromYAML(acfgIn.Automation.SupervisorWatch),
+				// weekly dependency update block (autonomous.automation.dependency_update.*)
+				DependencyUpdate: acfgIn.Automation.DependencyUpdate,
 				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
 				// without it the watch reads off after every restart.
 				RepoCIWatch: repoCIWatchFromYAML(acfgIn.Automation.RepoCIWatch),

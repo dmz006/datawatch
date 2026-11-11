@@ -2350,6 +2350,8 @@ Settings for the weekly Automation that updates every dependency together. Defau
 | `schedule` | string | `monday 05:00` | `weekday HH:MM` in the daemon's local time: monday..sunday (case-insensitive) then a 24-hour time |
 | `max_majors` | integer | `5` | 0..20; 0 means no major updates in a run |
 
+The coordinator checks the schedule at most once a minute. When it is due and the Automaton from the previous run is finished, it creates one Automaton from the built-in `dependency_update` template, passing `max_majors` as a template variable, and records the time and the Automaton's title as the last run in `dependency_update_state.json` in the Automata data directory, so a restart does not run the same week twice. While the previous Automaton is not finished the run is held and one note goes in the Events record; it starts once that Automaton ends. A first start never runs on its own: the next scheduled time applies.
+
 ## Repo CI watch (autonomous.automation.repo_ci_watch)
 
 The coordinator watches the CI runs of repositories you name it to, on the

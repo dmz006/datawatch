@@ -99,6 +99,18 @@ type Coordinator struct {
 	// supervisor watch (see supervisor_watch_pass.go):
 	supervisorWatchLastPoll time.Time
 
+	// weekly dependency update (see dependency_update_pass.go): the last
+	// poll instant guards the minimum poll interval; dependencyUpdateRun
+	// is the persisted last run (loaded on the first pass after a
+	// restart); dependencyUpdateLoc is the daemon's local zone (nil reads
+	// time.Local; tests inject one).
+	dependencyUpdateLastPoll time.Time
+	dependencyUpdateRun      dependencyUpdateState
+	dependencyUpdateLoaded   bool
+	// dependencyUpdateSkipNoted: the Events note for the held run is written.
+	dependencyUpdateSkipNoted bool
+	dependencyUpdateLoc       *time.Location
+
 	// slSteps are the supervisor loop's mechanical steps the idle tick runs
 	// (supervisor_loop_steps.go); nil until the daemon registers them.
 	slSteps *SupervisorLoopSteps
