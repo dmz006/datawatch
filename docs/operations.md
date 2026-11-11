@@ -745,7 +745,7 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 |--------|-----|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`; `datawatch config set cost_report.<key> <value>` |
-| **Web UI** | The **Cost report** card on the dashboard; Settings → Cost Report for the five keys |
+| **Web UI** | The **Cost report** card on the dashboard; the **Overview** of an Automaton's detail view (its tokens, time, sessions and tool calls); Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; `PUT /api/config` with `{"cost_report.<key>": value}`; the block reads back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |

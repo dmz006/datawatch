@@ -301,7 +301,9 @@ default.
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; settings with `configure cost_report.<key>=<value>` |
 
-The merged change record (merge report) of an Automaton also carries a cost section, read from the same ledger through the same engine.
+The merged change record (merge report) of an Automaton also carries a cost section, read from the same ledger through the same engine. It lists sessions, tokens in and out, cache read and creation tokens, tool calls, the span, the session ids, and a dollar figure only where a rate is configured (labelled as an API-equivalent on a bundled plan). It adds a window note when the figures cover only part of the Automaton's life, and an unknown-spend note when some spend could not be read. The section is left out when no spend ledger is wired.
+
+The **Overview** of an Automaton's detail view in the web UI shows the same row as `cost` on `GET /api/autonomous/prds/{id}`: sessions, tokens, tool calls and time together, with the same bundled-plan label.
 
 All five read methods answer from the same engine call over the daemon's
 recorded sessions, so the same window and grouping give the same rows.
