@@ -80,12 +80,20 @@ Each Automaton also has an **override** that wins over the daemon setting:
 refreshes it, and cleared (the default) follows the daemon setting. The
 override is stored on the Automaton as `branch_refresh_override`.
 
-Set it over REST with `POST /api/autonomous/prds/{id}/branch-refresh` and a
-body of `{"enabled": true}`, `{"enabled": false}` or `{"enabled": null}` (null
-clears the override). The reply is the Automaton record with its refresh state.
+Set it from any surface:
 
-> **Review needed.** The override has a REST route only. There is no CLI
-> command, MCP tool, comm verb or PWA control for it yet.
+| Surface | How |
+|---|---|
+| Web app | Automaton page, Overview tab, **Branch refresh** card: the *Refresh for this Automaton* select (*Use the daemon setting*, *Always refresh*, *Never refresh*) |
+| CLI | `datawatch autonomous branch-refresh <id> enabled\|disabled\|inherit` |
+| Chat | `autonomous branch-refresh <id> enabled\|disabled\|inherit` |
+| MCP | `autonomous_prd_set_branch_refresh` (`id`, `enabled` true or false, or `clear=true` to remove the override) |
+| REST | `POST /api/autonomous/prds/{id}/branch-refresh` with `{"enabled": true}`, `{"enabled": false}` or `{"enabled": null}` (null clears the override); the reply is the Automaton record with its refresh state |
+
+The two daemon settings are in the web app's Settings, Autonomous list
+(*Refresh Automaton branches from main between tasks* and *Branch refresh
+commits-behind limit*), or set with `datawatch config set`, chat `configure`
+or MCP `config_set`.
 
 ## What you see
 
@@ -104,8 +112,10 @@ carries `branch_refresh` (null when no refresh has run),
 `branch_refresh_override` (true, false or null) and `branch_refresh_enabled`,
 the setting in effect for that Automaton.
 
-> **Review needed.** That state has no dedicated card in the PWA yet. Read it
-> from the Automaton's JSON record or its Decisions list.
+The Automaton page's Overview tab shows the same state on the **Branch
+refresh** card: the last refresh time, the commits behind main, the last result
+(*Clean*, *Conflict*, *Skipped*, *Error* or *No refresh yet*) and the override
+select.
 
 ## When the merge conflicts
 
