@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.137.0 — Tile, compact and group modes for Automata and Automation lists
+
+### Added
+
+- **The Automata and Automation lists can be drawn as a List, as Tiles or as Compact cards, and grouped.** A **View mode** toggle (List, Tiles, Compact) sits above each flat list. Until a button is pressed the mode follows the window width (wide: Tiles, mid: Compact, narrow: List) and keeps following it on resize; once a button is pressed that choice wins on that device. A **Group by** select groups the list by tag (an item with several tags appears under each), state, node, project, or a placement tag axis (`automation:`, `stage:`, `kind:`, `compute:`, `peer:`, `backend:`, `lane:`, `role:`, `project:`); items with no value on the axis fall under **No tag** or **None**. The tile, header and grouping helpers are shared by the Automata list, the Automation list and the Sessions list, so a change to one applies to all three.
+- **Group headers show a collapse toggle, a count and a state mix, and long groups page.** Each group header has a collapse toggle (the collapsed groups are remembered per list), the number of items in the group and a state mix (how many are running, blocked, failed and so on). A group draws its first 50 items and a **Show more** button adds the next 50 and says how many are left; changing the group-by choice starts every group back at 50. The Sessions list, when grouped by a placement axis, now uses the same group header, collapse and paging.
+- **The mode, the group-by and the collapsed groups are a per-device choice kept in the browser.** They are stored in local storage per list and device (`dw_list_mode_<scope>`, `dw_list_group_<scope>` and `dw_list_collapsed_<scope>`), not on the daemon, so they follow neither the operator to another browser nor to the mobile apps, and have no daemon setting, REST route, CLI command, MCP tool or messaging-channel verb. Clearing the site data resets them to the defaults.
+- **Eleven new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** `list_mode_toggle`, `list_mode_list`, `list_mode_tiles`, `list_mode_compact`, `list_group_by`, `list_group_by_none`, `list_group_untagged`, `list_group_none`, `list_state_mix`, `list_show_more` and `list_overflow_menu`.
+- **Operator documentation for the list modes.** A new how-to, [List, Tiles and Compact modes, and grouping](docs/howto/list-tiles-and-grouping.md), covers the three modes and their width defaults, every group-by choice, the group header, Show more, grouping Sessions by placement, where the choices are kept and troubleshooting; the Automata tags how-to ([docs/howto/automata-tags.md](docs/howto/automata-tags.md)) gains a display mode and group-by section, the *List modes and group-by* glossary entry and the Automata and Automation list entries are added to [docs/datawatch-definitions.md](docs/datawatch-definitions.md), and the browser-only storage keys are recorded in [docs/operations.md](docs/operations.md) with how to reset them. Tests cover the mode logic, the grouping and paging, both lists and the locale keys.
+
 ## v9.136.0 — Observer stats pull for federated peers
 
 ### Added

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.136.0 (2026-11-11).** Federated observer peers can now be pulled on a schedule instead of pushing: an opt-in per peer, a pull status read on REST, the CLI, chat and MCP, a source badge and stale chip in the Web UI, and an operator howto. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.137.0 (2026-11-11).** The Automata and Automation lists can be shown as a list, tiles or compact cards and grouped by tag, state, node, project or a placement axis, with the choice remembered per device. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
