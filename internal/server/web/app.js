@@ -19478,11 +19478,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.supervisor_loop.archive_cancelled_after_minutes', label: 'Archive a cancelled Automaton after (minutes since its most recent cancel, 0 = at once, default 60)', labelKey: 'supervisor_loop_archive_cancelled_after_minutes', hintKey: 'supervisor_loop_archive_cancelled_after_minutes_hint', docsKey: 'supervisor_loop.archive_cancelled_after_minutes', type: 'number', placeholder: '60', min: 0, step: 1, default: '60' },
     { key: 'autonomous.supervisor_loop.lane_count.min', label: 'Lane count minimum (lowest lane count the loop may set)', labelKey: 'supervisor_loop_lane_count_min', docsKey: 'supervisor_loop.lane_count.min', type: 'number', placeholder: '0', min: 0, step: 1 },
     { key: 'autonomous.supervisor_loop.lane_count.max', label: 'Lane count maximum (highest lane count the loop may set, 0 = no bounds so the step moves nothing)', labelKey: 'supervisor_loop_lane_count_max', docsKey: 'supervisor_loop.lane_count.max', type: 'number', placeholder: '0', min: 0, step: 1 },
-    // Event wake: an event starts a supervisor pass at once; the schedule stays as the fallback. Off by default.
-    { key: 'autonomous.supervisor_loop.wake.enabled', label: 'Wake on events (an event starts a pass at once, off by default)', labelKey: 'supervisor_loop_wake_enabled', hintKey: 'supervisor_loop_wake_enabled_hint', docsKey: 'supervisor_loop.wake.enabled', type: 'toggle' },
-    { key: 'autonomous.supervisor_loop.wake.kinds', label: 'Wake event kinds (comma-separated event kinds that wake the supervisor)', labelKey: 'supervisor_loop_wake_kinds', hintKey: 'supervisor_loop_wake_kinds_hint', docsKey: 'supervisor_loop.wake.kinds', type: 'textarea' },
-    { key: 'autonomous.supervisor_loop.wake.coalesce_seconds', label: 'Wake quiet window (seconds during which further events fold into one pass, 0 = every event, default 30)', labelKey: 'supervisor_loop_wake_coalesce_seconds', hintKey: 'supervisor_loop_wake_coalesce_seconds_hint', docsKey: 'supervisor_loop.wake.coalesce_seconds', type: 'number', placeholder: '30', min: 0, max: 3600, step: 1, default: '30' },
-    { key: 'autonomous.supervisor_loop.wake.fallback_interval_minutes', label: 'Wake fallback interval (minutes between scheduled passes when no event wakes the supervisor, default 20)', labelKey: 'supervisor_loop_wake_fallback_interval_minutes', hintKey: 'supervisor_loop_wake_fallback_interval_minutes_hint', docsKey: 'supervisor_loop.wake.fallback_interval_minutes', type: 'number', placeholder: '20', min: 1, max: 1440, step: 1, default: '20' },
+    // Supervisor wake: an event starts a supervisor pass at once; the schedule stays as the fallback. Off by default.
+    // The card holds the switch, the kind list, the quiet window, the fallback interval and the status line.
+    { label: 'Supervisor wake', labelKey: 'supervisor_wake_group', docsKey: 'supervisor_loop.wake.enabled', type: 'group', hintKey: 'supervisor_wake_group_hint' },
+    { key: 'autonomous.supervisor_loop.wake.enabled', label: 'Wake on events (an event starts a pass at once, off by default)', labelKey: 'supervisor_loop_wake_enabled', hintKey: 'supervisor_loop_wake_enabled_hint', docsKey: 'supervisor_loop.wake.enabled', card: 'supervisor_wake', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.wake.kinds', label: 'Wake event kinds (comma-separated event kinds that wake the supervisor)', labelKey: 'supervisor_loop_wake_kinds', hintKey: 'supervisor_loop_wake_kinds_hint', docsKey: 'supervisor_loop.wake.kinds', card: 'supervisor_wake', type: 'textarea' },
+    { key: 'autonomous.supervisor_loop.wake.coalesce_seconds', label: 'Wake quiet window (seconds during which further events fold into one pass, 0 = every event, default 30)', labelKey: 'supervisor_loop_wake_coalesce_seconds', hintKey: 'supervisor_loop_wake_coalesce_seconds_hint', docsKey: 'supervisor_loop.wake.coalesce_seconds', card: 'supervisor_wake', type: 'number', placeholder: '30', min: 0, max: 3600, step: 1, default: '30' },
+    { key: 'autonomous.supervisor_loop.wake.fallback_interval_minutes', label: 'Wake fallback interval (minutes between scheduled passes when no event wakes the supervisor, default 20)', labelKey: 'supervisor_loop_wake_fallback_interval_minutes', hintKey: 'supervisor_loop_wake_fallback_interval_minutes_hint', docsKey: 'supervisor_loop.wake.fallback_interval_minutes', card: 'supervisor_wake', type: 'number', placeholder: '20', min: 1, max: 1440, step: 1, default: '20' },
+    { type: 'supervisor_wake_card' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -20553,13 +20556,17 @@ function loadGeneralConfig() {
           // t() returning the key unchanged and fall back to f.label instead.
           const _tl = f.labelKey ? t(f.labelKey) : null;
           const fLabel = (_tl && _tl !== f.labelKey) ? _tl : f.label;
-          if (f.type === 'group') {
+          if (f.card === 'supervisor_wake') {
+            // Drawn by the supervisor wake card below its group heading.
+          } else if (f.type === 'group') {
             // Sub-heading row inside a card. Optional hintKey adds a one-line note.
             const _ghint = f.hintKey ? t(f.hintKey) : '';
             html += `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
               <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               ${_ghint && _ghint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(_ghint)}</div>` : ''}
             </div>`;
+          } else if (f.type === 'supervisor_wake_card') {
+            html += supervisorWakeCardHtml(cfg);
           } else if (f.type === 'rules_context_card') {
             html += '<div id="rulesContextCard"></div>';
           } else if (f.type === 'release_section') {
@@ -21067,6 +21074,7 @@ function loadGeneralConfig() {
           try { window.renderSelfConfigAuditRecent(el); } catch (_) { /* decorative; never block later sections */ }
         }
         if (document.getElementById('rulesContextCard')) loadRulesContextCard();
+        if (document.getElementById('supervisorWakeStatus')) loadSupervisorWakeStatus();
       }
       // Usage calculator card: refresh the auto-lanes status line and keep
       // it current while Settings is open — the loop moves caps hourly, so
@@ -32640,6 +32648,130 @@ window.platformContextCardHtml = function (pc, version) {
     </div>
     <div data-platform-context="state" data-state="${on ? 'enabled' : 'off'}" role="status" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(stateText)}</div>
   </div>`;
+};
+
+// ── Supervisor wake settings card ───────────────────────────────────────────
+// Settings > Automata > Supervisor wake. The switch, the kind list, the quiet
+// window and the fallback interval read the autonomous.supervisor_loop.wake
+// block of GET /api/config and save one key at a time through PUT /api/config.
+// The status line reads GET /api/supervisor-loop/wake: the last event, the last
+// scheduled check and their counts. The kind list is the lifecycle event kinds
+// a subscription may filter on (NOTIFY_EVENT_KINDS), plus any kind already
+// stored that the list does not know, so a stored kind is never hidden.
+const SUPERVISOR_WAKE_KEY = 'autonomous.supervisor_loop.wake.';
+const SUPERVISOR_WAKE_DOCS = 'howto/supervisor-loop.md#settings-and-defaults';
+const SUPERVISOR_WAKE_DEFAULTS = { enabled: false, kinds: [], coalesce_seconds: 30, fallback_interval_minutes: 20 };
+
+function _supervisorWakeHelp(name) {
+  const key = name === 'status' ? 'supervisor_wake_status_help' : 'supervisor_loop_wake_' + name + '_hint';
+  return settingsHelpLink({ helpDocs: SUPERVISOR_WAKE_DOCS, helpKey: key });
+}
+
+function _supervisorWakeKindList(selected) {
+  const out = NOTIFY_EVENT_KINDS.slice();
+  for (const k of selected) if (!out.includes(k)) out.push(k);
+  return out;
+}
+
+function _supervisorWakeNumberRow(name, label, value, min, max) {
+  return `<div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(label)}${_supervisorWakeHelp(name)}</div>
+      <input type="number" id="supervisorWake_${name}" class="form-input general-cfg-input" value="${escHtml(String(value))}" min="${min}" max="${max}" step="1"
+        onchange="saveSupervisorWakeNumber('${name}', this, ${min}, ${max})" />
+    </div>`;
+}
+
+window.supervisorWakeCardHtml = function (cfg) {
+  const blk = cfg && cfg.autonomous && cfg.autonomous.supervisor_loop && cfg.autonomous.supervisor_loop.wake;
+  const w = Object.assign({}, SUPERVISOR_WAKE_DEFAULTS, blk || {});
+  const selected = Array.isArray(w.kinds) ? w.kinds.map(String) : String(w.kinds || '').split(',').map(x => x.trim()).filter(Boolean);
+  const boxes = _supervisorWakeKindList(selected).map(k => `<label style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0;">
+        <input type="checkbox" class="supervisor-wake-kind" value="${escHtml(k)}"${selected.includes(k) ? ' checked' : ''} onchange="saveSupervisorWakeKinds()" />
+        <span style="overflow-wrap:anywhere;">${escHtml(k)}</span>
+      </label>`).join('');
+  return `<div class="supervisor-wake-card" data-supervisor-wake="card" data-source="${blk ? 'config' : 'default'}">
+    <div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(t('supervisor_loop_wake_enabled'))}${_supervisorWakeHelp('enabled')}</div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="supervisorWake_enabled"${w.enabled ? ' checked' : ''} onchange="saveGeneralField('${SUPERVISOR_WAKE_KEY}enabled', this.checked)" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+      <div class="settings-label">${escHtml(t('supervisor_loop_wake_kinds'))}${_supervisorWakeHelp('kinds')}</div>
+      <div id="supervisorWake_kinds" style="max-height:180px;overflow:auto;margin-top:4px;">${boxes}</div>
+    </div>
+    ${_supervisorWakeNumberRow('coalesce_seconds', t('supervisor_loop_wake_coalesce_seconds'), w.coalesce_seconds, 0, 3600)}
+    ${_supervisorWakeNumberRow('fallback_interval_minutes', t('supervisor_loop_wake_fallback_interval_minutes'), w.fallback_interval_minutes, 1, 1440)}
+    <div id="supervisorWakeStatus" data-supervisor-wake="status" role="status" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_wake_status_loading'))}${_supervisorWakeHelp('status')}</div>
+  </div>`;
+};
+
+window.saveSupervisorWakeKinds = function () {
+  const boxes = document.querySelectorAll('.supervisor-wake-kind');
+  const kinds = [];
+  boxes.forEach(b => { if (b.checked) kinds.push(b.value); });
+  saveGeneralField(SUPERVISOR_WAKE_KEY + 'kinds', kinds);
+};
+
+// saveSupervisorWakeNumber saves a whole number inside its range. A bad value
+// shows a message, puts the saved text back and sends nothing.
+window.saveSupervisorWakeNumber = function (name, el, min, max) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isInteger(n) || n < min || n > max) {
+    showToast(t('supervisor_wake_number_invalid', [min, max]), 'error');
+    if (el) el.value = String(el.defaultValue != null ? el.defaultValue : '');
+    return;
+  }
+  if (el) el.defaultValue = String(n);
+  saveGeneralField(SUPERVISOR_WAKE_KEY + name, n);
+};
+
+// supervisorWakeTimeText turns a wake time into text. The zero time means the
+// event has not happened yet.
+function supervisorWakeTimeText(ts) {
+  const d = ts ? new Date(ts) : null;
+  if (!d || isNaN(d.getTime()) || d.getUTCFullYear() <= 1) return t('supervisor_wake_status_never');
+  return d.toLocaleString();
+}
+
+window.supervisorWakeStatusText = function (v) {
+  v = v || {};
+  let text = t('supervisor_wake_status_line', [
+    supervisorWakeTimeText(v.last_event), Number(v.event_count) || 0,
+    supervisorWakeTimeText(v.last_scheduled_check), Number(v.scheduled_count) || 0]);
+  if (v.events_silent_for) text += ' ' + t('supervisor_wake_status_silent', [String(v.events_silent_for)]);
+  return text;
+};
+
+// supervisorWakeApplyView fills the controls from the wake view when the config
+// object did not report the wake block, so they show the settings in effect.
+window.supervisorWakeApplyView = function (v) {
+  if (!v) return;
+  const en = document.getElementById('supervisorWake_enabled');
+  if (en) en.checked = !!v.enabled;
+  const kinds = Array.isArray(v.kinds) ? v.kinds : [];
+  document.querySelectorAll('.supervisor-wake-kind').forEach(b => { b.checked = kinds.includes(b.value); });
+  for (const name of ['coalesce_seconds', 'fallback_interval_minutes']) {
+    const inp = document.getElementById('supervisorWake_' + name);
+    if (inp && v[name] != null) { inp.value = String(v[name]); inp.defaultValue = String(v[name]); }
+  }
+};
+
+window.loadSupervisorWakeStatus = function () {
+  const el = document.getElementById('supervisorWakeStatus');
+  if (!el) return Promise.resolve();
+  return fetch(_apiPath('/api/supervisor-loop/wake'), { headers: tokenHeader() })
+    .then(r => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
+    .then(v => {
+      el.innerHTML = escHtml(window.supervisorWakeStatusText(v)) + _supervisorWakeHelp('status');
+      const card = el.closest ? el.closest('.supervisor-wake-card') : null;
+      if (card && card.dataset && card.dataset.source === 'default') window.supervisorWakeApplyView(v);
+    })
+    .catch(() => {
+      el.innerHTML = escHtml(t('supervisor_wake_status_unavailable')) + _supervisorWakeHelp('status');
+    });
 };
 
 // ── Rules and context settings card ─────────────────────────────────────────
