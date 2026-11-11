@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 // DependencyUpdateOutcome is how a weekly run ended.
@@ -49,11 +50,11 @@ type DependencyUpdateRunState struct {
 
 // DependencyUpdateReport is the outcome of one run and its one-line summary.
 type DependencyUpdateReport struct {
-	Outcome DependencyUpdateOutcome
-	Summary string
-	Updated int
-	Dropped int // reverted plus failed
-	Skipped int
+	Outcome DependencyUpdateOutcome `json:"outcome"`
+	Summary string                  `json:"summary"`
+	Updated int                     `json:"updated"`
+	Dropped int                     `json:"dropped"` // reverted plus failed
+	Skipped int                     `json:"skipped"`
 }
 
 // DependencyUpdateReportFromResults reads the results file content and the
@@ -143,4 +144,12 @@ func (a *DependencyUpdateAlerter) Raise(runKey, runTitle string, r DependencyUpd
 	a.Alert(level, "Dependency update: "+runTitle+" — "+r.Summary,
 		fmt.Sprintf("The weekly dependency update Automaton %q finished with outcome %s (%s). Open it to review the change or answer its question.", runTitle, r.Outcome, r.Summary))
 	return true
+}
+
+// DependencyUpdateRunReport is one reported weekly run, as stored and as the
+// Events source reads it.
+type DependencyUpdateRunReport struct {
+	Title  string                 `json:"title"`
+	At     time.Time              `json:"at"`
+	Report DependencyUpdateReport `json:"report"`
 }

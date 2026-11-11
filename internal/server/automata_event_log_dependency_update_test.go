@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -49,5 +50,39 @@ func TestAutomataDependencyUpdateNilSource(t *testing.T) {
 	got, _ := AutomataEventsFromDependencyUpdate(func() []automataDependencyUpdateRun { return nil })
 	if len(got) != 0 {
 		t.Fatal("empty source must give no rows")
+	}
+}
+
+// depUpdateFake serves weekly run reports through the manager seam.
+type depUpdateFake struct {
+	eventLogFake
+	runs []autonomous.DependencyUpdateRunReport
+}
+
+func (f *depUpdateFake) DependencyUpdateReports() []autonomous.DependencyUpdateRunReport {
+	return f.runs
+}
+
+// The merged Events stream carries weekly run rows, and skips a run whose
+// outcome is nothing to update.
+func TestCollectAutomataEventsIncludesDependencyUpdate(t *testing.T) {
+	at := time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)
+	fake := &depUpdateFake{runs: []autonomous.DependencyUpdateRunReport{
+		{Title: "Weekly one", At: at, Report: autonomous.DependencyUpdateReport{Outcome: autonomous.DependencyUpdateUpdated, Summary: "2 updated, 0 dropped, 0 skipped"}},
+		{Title: "Weekly two", At: at.Add(time.Hour), Report: autonomous.DependencyUpdateReport{Outcome: autonomous.DependencyUpdateNothing, Summary: "0 updated, 0 dropped, 0 skipped"}},
+		{Title: "Weekly three", At: at.Add(2 * time.Hour), Report: autonomous.DependencyUpdateReport{Outcome: autonomous.DependencyUpdateNeedsAttention, Summary: "1 updated, 1 dropped, 0 skipped"}},
+	}}
+	evs, err := eventLogServer(fake).collectAutomataEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var titles []string
+	for _, e := range evs {
+		if strings.HasPrefix(e.ID, "dependency_update:") {
+			titles = append(titles, e.Summary)
+		}
+	}
+	if len(titles) != 2 {
+		t.Fatalf("want 2 dependency rows, got %v", titles)
 	}
 }

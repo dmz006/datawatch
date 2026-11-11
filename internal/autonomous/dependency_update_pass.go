@@ -48,7 +48,14 @@ type dependencyUpdateState struct {
 	Title string `json:"title,omitempty"`
 	// AutomatonID is that Automaton's id, kept to tell whether it finished.
 	AutomatonID string `json:"automaton_id,omitempty"`
+	// Reported is true once the finished run's outcome was recorded.
+	Reported bool `json:"reported,omitempty"`
+	// History holds the reported runs, newest last, capped.
+	History []DependencyUpdateRunReport `json:"history,omitempty"`
 }
+
+// dependencyUpdateHistoryLimit caps the stored reported runs.
+const dependencyUpdateHistoryLimit = 12
 
 // DependencyUpdateRunInfo is the read view of the pass for the status tool.
 type DependencyUpdateRunInfo struct {
@@ -131,6 +138,7 @@ func (c *Coordinator) dependencyUpdatePass() {
 		return
 	}
 	now := c.now()
+	c.dependencyUpdateReportPass(now)
 
 	c.mu.Lock()
 	if !c.dependencyUpdateLastPoll.IsZero() && now.Sub(c.dependencyUpdateLastPoll) < dependencyUpdateMinPollInterval {
@@ -185,7 +193,7 @@ func (c *Coordinator) dependencyUpdatePass() {
 	if title == "" {
 		title = TemplateDependencyUpdate
 	}
-	st.LastRun, st.Title, st.AutomatonID = now, title, prd.ID
+	st.LastRun, st.Title, st.AutomatonID, st.Reported = now, title, prd.ID, false
 	c.mu.Lock()
 	c.dependencyUpdateSkipNoted = false
 	c.mu.Unlock()

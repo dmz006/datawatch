@@ -53,6 +53,12 @@ type automataRawError struct {
 	Automation string
 }
 
+// dependencyUpdateReportReader is implemented by a manager that reports the
+// finished weekly dependency update runs.
+type dependencyUpdateReportReader interface {
+	DependencyUpdateReports() []autonomous.DependencyUpdateRunReport
+}
+
 // automataRawErrorsReader is implemented by a manager that records raw errors.
 // A manager without it has no error feed, so the error adapter is skipped.
 type automataRawErrorsReader interface {
@@ -101,6 +107,7 @@ type automataEventLogSources struct {
 	safe      automataSafeDeleteReportSource
 	cleanup   automataCleanupStatusSource
 	repoCI    automataRepoCIWatchStateSource
+	depUpdate automataDependencyUpdateSource
 	errors    automataRawErrorsSource
 }
 
@@ -141,6 +148,15 @@ func (s *Server) automataEventLogSourcesFor(ctx context.Context) automataEventLo
 	}
 	if rc, ok := mgr.(repoCIWatchReader); ok {
 		src.repoCI = rc.RepoCIWatchStatus
+	}
+	if dr, ok := mgr.(dependencyUpdateReportReader); ok {
+		src.depUpdate = func() []automataDependencyUpdateRun {
+			var runs []automataDependencyUpdateRun
+			for _, r := range dr.DependencyUpdateReports() {
+				runs = append(runs, automataDependencyUpdateRun{Title: r.Title, At: r.At, Report: r.Report})
+			}
+			return runs
+		}
 	}
 	if mgr != nil {
 		src.errors = func() []automataRawError {
@@ -234,6 +250,9 @@ func (s *Server) collectAutomataEvents(ctx context.Context) ([]AutomataEvent, er
 	}
 	if src.repoCI != nil {
 		steps = append(steps, func() ([]AutomataEvent, error) { return AutomataEventsFromRepoCIWatch(src.repoCI) })
+	}
+	if src.depUpdate != nil {
+		steps = append(steps, func() ([]AutomataEvent, error) { return AutomataEventsFromDependencyUpdate(src.depUpdate) })
 	}
 	if src.errors != nil {
 		steps = append(steps, func() ([]AutomataEvent, error) { return AutomataEventsFromRawErrors(src.errors) })
