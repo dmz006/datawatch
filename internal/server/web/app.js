@@ -3163,7 +3163,16 @@ function toggleProjectsShowEmpty(checked) {
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
   const events = [];
-  const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
+  // Only a missing weekly share matters, and only when the project has an arc
+  // or an unassigned Automaton that needs a share. Other empty fields are hidden
+  // and produce no Events entry.
+  const needsShare = !!roll && !rollErr && (
+    (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
+    (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
+  const unset = key => {
+    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    return '';
+  };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
   const showEmpty = _projectsShowEmpty();
   const emptyRow = key => (showEmpty ? row(key, t('projects_links_none')) : '');
