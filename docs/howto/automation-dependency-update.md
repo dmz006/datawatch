@@ -131,6 +131,34 @@ protected paths: the edit **raises the protected paths question and waits for
 your answer**. There is no bypass and the weekly run never authorises those
 paths in advance. See [Automaton protected paths](automaton-protected-paths.md).
 
+## Operator checklist: what only you can check
+
+Some parts of the change live outside this repository, so nothing in the
+repository can verify them. Check each once after the change lands:
+
+1. **The hosting setting.** In the repository's hosting settings (Settings,
+   Code security and analysis), **Dependabot security updates must stay
+   enabled**. `.github/dependabot.yml` limits version updates to zero but does
+   not turn security updates on. If that setting is off, advisories get no pull
+   request at all and nothing else will tell you.
+2. **The Automation is on and scheduled.** Run `dependency_update_status` (or
+   read the three settings with `datawatch config get`). It should show
+   `enabled` as true and a `next_run` in local time. An empty `next_run` means
+   the weekly run is off.
+3. **Leftover pull requests.** Version-update pull requests that Dependabot
+   opened before the change are not closed by it. Review the open ones and
+   close each that the weekly run now covers, so the same dependency is not
+   updated twice. Open security pull requests stay: merge those as usual.
+4. **The first run.** Read its change description, answer the protected paths
+   question when a pinned action needs a workflow file edit, and decide each
+   major from its upgrade note. A dropped update comes back next week, so a
+   repeated drop of the same dependency is yours to look at.
+5. **Mobile apps.** The Android and iPhone settings group, Events row and
+   alert are not built yet. They are tracked in
+   [the datawatch-app parity issue draft](../plans/parity-issues/weekly-dependency-update-settings.md),
+   which is not yet filed; until it ships, change the settings from the PWA,
+   chat, the CLI or the API.
+
 ## See also
 
 - [Repo CI watch](automation-repo-ci-watch.md): the standing watch over CI that

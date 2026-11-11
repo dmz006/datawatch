@@ -550,7 +550,7 @@ The per-topic design documents live alongside this file, named
 - Operator how-tos for the supervisor duties: [supervisor watch](../howto/automation-supervisor-watch.md) (daemon-side watch, shadow first),
   [repo CI watch](../howto/automation-repo-ci-watch.md),
   [security failure report](../howto/automation-security-failure.md),
-  [dependency update](../howto/automation-dependency-update.md) ([plan](2026-11-11-weekly-dependency-update.md))
+  [dependency update](../howto/automation-dependency-update.md) ([plan](2026-11-11-weekly-dependency-update.md), [mobile parity draft](parity-issues/weekly-dependency-update-settings.md))
 - Other: [LLM enhancements](2026-10-10-llm-enhancements.md),
   [plugin extension surfaces](2026-10-09-plugin-extension-surfaces.md),
   [PRD git workflow](2026-10-10-prd-git-workflow.md),

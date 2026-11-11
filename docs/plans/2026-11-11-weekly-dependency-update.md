@@ -20,8 +20,18 @@ Edits to workflow files raise the protected paths question and wait for the answ
 5. **Dependabot security-only** — Done. `open-pull-requests-limit: 0` on every ecosystem, held by a lint check.
 6. **Events row and alert** — Done. One `check` row per run; an alert only when the run needs the operator.
 7. **Status tool and comm configure** — Done. `dependency_update_status` and the chat `configure` keys.
-8. **Documentation** — Done. How-to, definitions entry, how-to index and this plan.
-9. **Mobile parity** — Planned. Tracked in the datawatch-app parity issue.
+8. **Documentation** — Done. How-to (with the operator checklist), definitions entry, how-to index and this plan.
+9. **Mobile parity** — Planned. Tracked in the datawatch-app parity issue draft, [weekly-dependency-update-settings.md](parity-issues/weekly-dependency-update-settings.md), which is not yet filed.
+
+## Still for the operator to review
+
+These cannot be checked from the repository. The how-to carries the same list as its [operator checklist](../howto/automation-dependency-update.md#operator-checklist-what-only-you-can-check).
+
+- [ ] "Dependabot security updates" is enabled in the repository's hosting settings; `.github/dependabot.yml` does not enable it.
+- [ ] `dependency_update_status` shows the Automation enabled with a `next_run`.
+- [ ] Open Dependabot version-update pull requests from before the change are reviewed and closed where the weekly run now covers them.
+- [ ] The first weekly run's change is reviewed: the protected paths question for workflow files is answered, and each major is accepted or skipped from its upgrade note.
+- [ ] The datawatch-app parity issue is filed and its number recorded in the draft.
 
 ## Parity surface
 
