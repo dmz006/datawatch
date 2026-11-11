@@ -3835,7 +3835,7 @@ type automationReq struct {
 	// AutoTags is the optional per-Automation override of the daemon-level
 	// autonomous.auto_tags block; omitted (or null) on an update keeps the
 	// stored setting.
-	AutoTags            *autonomous.AutoTagsOverride  `json:"auto_tags,omitempty"`
+	AutoTags *autonomous.AutoTagsOverride `json:"auto_tags,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -4317,12 +4317,12 @@ type automationControlReq struct {
 	Edge            string `json:"edge"`
 	// stages/rename: the member stage that is renamed (from) and the new name
 	// (to); both are required and must differ.
-	From string `json:"from"`
-	To   string `json:"to"`
-	OnComplete      string `json:"on_complete"`
-	OnBlocked       string `json:"on_blocked"`
-	OnFailed        string `json:"on_failed"`
-	Member          struct {
+	From       string `json:"from"`
+	To         string `json:"to"`
+	OnComplete string `json:"on_complete"`
+	OnBlocked  string `json:"on_blocked"`
+	OnFailed   string `json:"on_failed"`
+	Member     struct {
 		PRDID string `json:"prd_id"`
 		Name  string `json:"name"`
 		Stage string `json:"stage"` // optional stage label recorded on the inserted member
