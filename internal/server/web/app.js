@@ -3056,6 +3056,7 @@ function navigate(view, sessionId, fromPopstate) {
 // so a link reopens the same choice. Storage and history can be blocked
 // (private windows), so each touch is wrapped and the view still renders.
 const _PROJECTS_LAST_KEY = 'cs_projects_last';
+const _PROJECTS_SHOW_EMPTY_KEY = 'cs_projects_show_empty';
 const _PROJECTS_OVERVIEW = '';
 // rollup is the roll-up of the project named by rollupFor; rollupError is its
 // load failure. The page paints the roll-up only for the selected project.
@@ -3077,6 +3078,14 @@ function _projectsRememberLast(name) {
 }
 function _projectsRecallLast() {
   try { return localStorage.getItem(_PROJECTS_LAST_KEY) || ''; } catch (_) { return ''; }
+}
+// _projectsShowEmpty is the viewer's remembered show-empty preference: true only
+// when the stored value is '1'. It is a viewer preference, not a daemon setting.
+function _projectsShowEmpty() {
+  try { return localStorage.getItem(_PROJECTS_SHOW_EMPTY_KEY) === '1'; } catch (_) { return false; }
+}
+function _projectsSetShowEmpty(on) {
+  try { localStorage.setItem(_PROJECTS_SHOW_EMPTY_KEY, on ? '1' : '0'); } catch (_) { /* not remembered */ }
 }
 // _projectsHashParse returns the project named by a #projects hash ('' for
 // Overview), or null when the hash is not a projects route.
