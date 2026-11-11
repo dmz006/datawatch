@@ -86,10 +86,10 @@ func pendingUrgent(a *Automation, exceptID string) *PendingInsert {
 
 // subject names what a pending insert carries, for messages.
 func (p PendingInsert) subject() string {
-	if p.PendingItemID != "" {
-		return "pending item " + p.PendingItemID
+	if p.PRDID != "" {
+		return "Automaton " + p.PRDID
 	}
-	return "Automaton " + p.PRDID
+	return "pending item " + p.PendingItemID
 }
 
 func urgentCapError(a *Automation, existing *PendingInsert) error {
@@ -322,13 +322,15 @@ func checkPendingDuplicate(a *Automation, prdID, itemID string) error {
 }
 
 // newInsertedMember builds the member an insert lands: an Automaton member, or a
-// pending_item member (no prd_id) when itemID is set.
+// pending_item member (no prd_id) when only itemID is set. An insert that had an
+// Automaton attached while it was held carries both: it lands as an Automaton
+// member that keeps the pending item as provenance.
 func newInsertedMember(id, prdID, itemID, actor, reason string, at time.Time) AutomationMember {
-	mem := AutomationMember{ID: id, AddedAt: at, AddedBy: actor, AddedReason: reason, Status: MemberPending}
-	if itemID != "" {
-		mem.Kind, mem.PendingItemID = MemberKindPending, itemID
-	} else {
+	mem := AutomationMember{ID: id, AddedAt: at, AddedBy: actor, AddedReason: reason, Status: MemberPending, PendingItemID: itemID}
+	if prdID != "" {
 		mem.PRDID = prdID
+	} else if itemID != "" {
+		mem.Kind = MemberKindPending
 	}
 	return mem
 }
