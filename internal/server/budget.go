@@ -43,7 +43,7 @@ func (s *Server) budgetStatuses() []autonomous.BudgetStatus {
 		return []autonomous.BudgetStatus{}
 	}
 	if out := s.budgetLedger.StatusAll(); out != nil {
-		return out
+		return s.filterBudgetStatuses(out)
 	}
 	return []autonomous.BudgetStatus{}
 }
@@ -70,7 +70,7 @@ func (s *Server) handleBudget(w http.ResponseWriter, r *http.Request) {
 	}
 	if name := strings.TrimSpace(r.URL.Query().Get("llm")); name != "" {
 		st, ok := s.budgetLedger.Status(name)
-		if !ok {
+		if !ok || !s.budgetApplies(name) {
 			http.Error(w, "no budget for llm "+name, http.StatusNotFound)
 			return
 		}

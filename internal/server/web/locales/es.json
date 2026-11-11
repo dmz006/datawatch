@@ -4649,5 +4649,7 @@
   "billing_mode_option_api": "api",
   "billing_mode_option_allowance": "allowance",
   "billing_mode_option_local": "local",
-  "billing_mode_help": "api: cada llamada se factura por token. allowance: las llamadas consumen una asignación de plan fija. local: se ejecuta en tu propio hardware sin cargo por llamada. El informe de costes agrupa el gasto por esta palabra."
+  "billing_mode_help": "api: cada llamada se factura por token. allowance: las llamadas consumen una asignación de plan fija. local: se ejecuta en tu propio hardware sin cargo por llamada. El informe de costes agrupa el gasto por esta palabra.",
+  "usage_unit_dollars": "$ (dólares)",
+  "usage_unit_points": "pts (puntos)"
 }

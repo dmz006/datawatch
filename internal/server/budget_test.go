@@ -23,6 +23,7 @@ func budgetTestServer(t *testing.T, now time.Time) (*Server, *autonomous.BudgetL
 	for _, name := range []string{"claude", "plain"} {
 		l := &inference.LLM{Name: name, Kind: "ollama"}
 		if name == "claude" {
+			l.BillingMode = "api" // a dollar budget belongs to an api entry; local has none
 			l.Budget = &inference.BudgetWindow{CeilingUSD: 10, Hours: 5}
 		}
 		if err := s.inferenceReg.Add(l); err != nil {
