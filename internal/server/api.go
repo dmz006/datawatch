@@ -503,6 +503,8 @@ type Server struct {
 	// Wired from main.go; nil when autonomous is disabled. Handlers
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
+	// costReportLedger — spend ledger read by GET /api/cost/report.
+	costReportLedger spendLedgerReader
 
 	// Defect queue backend + intake decision log (defect_queue.go); nil until
 	// SetDefectQueue wires them, and the defect endpoints answer 503 then.

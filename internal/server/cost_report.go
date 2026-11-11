@@ -37,7 +37,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
-	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	"github.com/dmz006/datawatch/internal/trace"
 )
 
@@ -48,8 +48,11 @@ import (
 // shape the MCP cost_report tool uses, plus the ShippedSource method
 // (ShippedUnits) for group_by=release.
 type managerCostSource struct {
-	m     *session.Manager
-	owner map[string]costOwner
+	ledger spendLedgerReader
+	owner  map[string]costOwner
+	// ownerByAutomaton — automaton id → owner, so ledger entries of
+	// deleted sessions still resolve automation/release.
+	ownerByAutomaton map[string]costOwner
 	// auto — the daemon's autonomous manager for the shipped-state reads
 	// (nil when not wired: released grouping then reports only the
 	// "unreleased" row and rows are unattributed).
@@ -64,27 +67,58 @@ type costOwner struct {
 	release    string // release the owner shipped in ("" = unshipped)
 }
 
+// spendLedgerReader is the slice of spendledger.Ledger the source reads;
+// tests supply a fake.
+type spendLedgerReader interface {
+	Entries() []spendledger.Entry
+}
+
+// Records reads the spend ledger, not live session records, so spend of
+// sessions that were since deleted still counts. Ownership comes from the
+// entry's own automaton id (resolved to automation/release through the
+// PRD map); an entry with no automaton id falls back to the session→owner
+// map and otherwise stays unattributed. Ledger entries are this daemon's
+// own spend, so none is marked Peer; peer spend, when a peer source is
+// merged in, is flagged Record.Peer and filtered by the engine.
 func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport.SourceResult, error) {
 	res := &costreport.SourceResult{}
-	if src.m == nil {
+	if src.ledger == nil {
 		return res, nil
 	}
-	since, until := opts.Since, opts.Until
-	for _, sess := range src.m.ListSessions() {
-		if sess == nil || (sess.TokensIn == 0 && sess.TokensOut == 0) {
-			continue
+	for _, e := range src.ledger.Entries() {
+		at := e.EndedAt
+		if at.IsZero() {
+			at = e.StartedAt
 		}
-		if !inWindow(sess.UpdatedAt, since, until) {
+		if !inWindow(at, opts.Since, opts.Until) {
 			continue
 		}
 		rec := costreport.Record{
-			SessionID: sess.ID,
-			Backend:   sess.BackendFamily,
-			At:        sess.UpdatedAt,
-			TokensIn:  sess.TokensIn,
-			TokensOut: sess.TokensOut,
+			SessionID:     e.SessionID,
+			AutomatonID:   e.AutomatonID,
+			TaskID:        e.TaskID,
+			Role:          e.Role,
+			Backend:       e.Backend,
+			At:            at,
+			TokensIn:      int(e.TokensIn),
+			TokensOut:     int(e.TokensOut),
+			CacheRead:     int(e.CacheRead),
+			CacheCreation: int(e.CacheCreation),
+			ToolCalls:     int(e.ToolCalls),
+			FirstActivity: e.StartedAt,
+			LastActivity:  e.EndedAt,
+			ActiveSeconds: e.ActiveSeconds,
 		}
-		if o, ok := src.owner[sess.ID]; ok {
+		o, ok := costOwner{}, false
+		if e.AutomatonID != "" {
+			o, ok = src.ownerByAutomaton[e.AutomatonID]
+			if !ok {
+				o, ok = costOwner{automaton: e.AutomatonID}, true
+			}
+		} else {
+			o, ok = src.owner[e.SessionID]
+		}
+		if ok {
 			rec.AutomatonID = o.automaton
 			rec.AutomationID = o.automation
 			rec.Release = o.release
@@ -141,6 +175,15 @@ func inWindow(at, since, until time.Time) bool {
 		return false
 	}
 	return true
+}
+
+// SetCostReportLedger wires the spend ledger the cost report reads.
+func (s *Server) SetCostReportLedger(l *spendledger.Ledger) {
+	if l == nil {
+		s.costReportLedger = nil
+		return
+	}
+	s.costReportLedger = l
 }
 
 // costReportAutonomousManager returns the daemon's autonomous manager when
@@ -299,10 +342,18 @@ func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mgr := s.costReportAutonomousManager()
+	owners := s.costReportOwners(mgr)
+	byAutomaton := map[string]costOwner{}
+	for _, o := range owners {
+		if _, ok := byAutomaton[o.automaton]; !ok {
+			byAutomaton[o.automaton] = o
+		}
+	}
 	src := managerCostSource{
-		m:     s.manager,
-		owner: s.costReportOwners(mgr),
-		auto:  mgr,
+		ledger:           s.costReportLedger,
+		owner:            owners,
+		ownerByAutomaton: byAutomaton,
+		auto:             mgr,
 	}
 
 	cr := config.CostReportConfig{}

@@ -13,6 +13,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/spendledger"
 )
 
 // costReportSessionManager is a file-backed session manager (temp dir) that
@@ -49,14 +50,14 @@ func costReportSession(t *testing.T, sm *session.Manager, id, backend string, ti
 // three, the unowned one stays blank (the engine then keys it under
 // "unattributed", not a blank key).
 func TestCostReportSourceRecordsPopulateOwner(t *testing.T) {
-	sm := costReportSessionManager(t)
 	now := time.Now()
-	costReportSession(t, sm, "abcd1234", "claude-code", 1000, 500, now)
-	costReportSession(t, sm, "ef012345", "ollama", 100, 50, now)
-
+	led := fakeSpendLedger{
+		{SessionID: "abcd1234", Backend: "claude-code", StartedAt: now, TokensIn: 1000, TokensOut: 500},
+		{SessionID: "ef012345", Backend: "ollama", StartedAt: now, TokensIn: 100, TokensOut: 50},
+	}
 	src := managerCostSource{
-		m:     sm,
-		owner: map[string]costOwner{"abcd1234": {automaton: "prd-1", automation: "auto-1", release: "v1.2.0"}},
+		ledger: led,
+		owner:  map[string]costOwner{"abcd1234": {automaton: "prd-1", automation: "auto-1", release: "v1.2.0"}},
 	}
 	res, err := src.Records(costreport.SourceOptions{})
 	if err != nil {
@@ -89,14 +90,14 @@ func TestCostReportSourceRecordsPopulateOwner(t *testing.T) {
 // the explicit "unattributed" key (never a blank one) when the report is
 // assembled, alongside the owned key.
 func TestCostReportUnattributedRowViaEngine(t *testing.T) {
-	sm := costReportSessionManager(t)
 	now := time.Now()
-	costReportSession(t, sm, "abcd1234", "claude-code", 1000, 500, now)
-	costReportSession(t, sm, "ef012345", "ollama", 100, 50, now)
-
+	led := fakeSpendLedger{
+		{SessionID: "abcd1234", Backend: "claude-code", StartedAt: now, TokensIn: 1000, TokensOut: 500},
+		{SessionID: "ef012345", Backend: "ollama", StartedAt: now, TokensIn: 100, TokensOut: 50},
+	}
 	src := managerCostSource{
-		m:     sm,
-		owner: map[string]costOwner{"abcd1234": {automaton: "prd-1"}},
+		ledger: led,
+		owner:  map[string]costOwner{"abcd1234": {automaton: "prd-1"}},
 	}
 	rep, err := costreport.Build(
 		config.CostReportConfig{},
@@ -229,5 +230,47 @@ func TestEarliestShippedRelease(t *testing.T) {
 				t.Errorf("earliestShippedRelease = %q, want %q", got, tc.expected)
 			}
 		})
+	}
+}
+
+// fakeSpendLedger is a fixed in-memory spend ledger.
+type fakeSpendLedger []spendledger.Entry
+
+func (f fakeSpendLedger) Entries() []spendledger.Entry { return f }
+
+// TestCostReportLedgerCountsDeletedSessions — an Automaton whose sessions
+// no longer exist anywhere still gets a row from its ledger entries, and
+// "unattributed" holds only entries with no automaton id.
+func TestCostReportLedgerCountsDeletedSessions(t *testing.T) {
+	now := time.Now()
+	led := fakeSpendLedger{
+		{SessionID: "gone0001", AutomatonID: "prd-gone", TaskID: "t1", Role: spendledger.RoleWorker, Backend: "claude-code", StartedAt: now, EndedAt: now, TokensIn: 700, TokensOut: 300, CacheRead: 50, ToolCalls: 4},
+		{SessionID: "gone0002", AutomatonID: "prd-gone", TaskID: "t1", Role: spendledger.RoleVerification, Backend: "claude-code", StartedAt: now, EndedAt: now, TokensIn: 100, TokensOut: 20},
+		{SessionID: "loose001", Role: spendledger.RoleOther, Backend: "ollama", StartedAt: now, EndedAt: now, TokensIn: 10, TokensOut: 5},
+	}
+	src := managerCostSource{ledger: led}
+	rep, err := costreport.Build(config.CostReportConfig{},
+		costreport.Request{GroupBy: costreport.GroupByAutomaton, Until: now.Add(time.Second)},
+		src, nil, nil, nil, now)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	rows := map[string]costreport.Row{}
+	for _, r := range rep.Rows {
+		rows[r.Key] = r
+	}
+	gone, ok := rows["prd-gone"]
+	if !ok {
+		t.Fatalf("no row for the Automaton with deleted sessions; rows=%v", rows)
+	}
+	if gone.TokensIn != 800 || gone.TokensOut != 320 {
+		t.Errorf("prd-gone tokens = %d/%d, want 800/320", gone.TokensIn, gone.TokensOut)
+	}
+	un, ok := rows[costreport.UnattributedKey]
+	if !ok {
+		t.Fatalf("no unattributed row; rows=%v", rows)
+	}
+	if un.TokensIn != 10 || un.TokensOut != 5 {
+		t.Errorf("unattributed = %d/%d, want only the no-automaton entry 10/5", un.TokensIn, un.TokensOut)
 	}
 }

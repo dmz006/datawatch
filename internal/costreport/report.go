@@ -74,6 +74,8 @@ type Record struct {
 	SessionID    string
 	AutomatonID  string // owning automaton, if any (blank is unattributed)
 	AutomationID string // owning automation, if any (blank is unattributed)
+	TaskID       string // task the spend belongs to, from the spend ledger
+	Role         string // spend role (worker, verification, ...), from the spend ledger
 	// Release is the release the owning PRD / automation shipped in, for
 	// release groupings; blank means the work has not shipped (it falls
 	// under UnreleasedKey).

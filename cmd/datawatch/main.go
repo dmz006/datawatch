@@ -1100,6 +1100,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Session store writes are coalesced by a background writer; flush and
 	// stop it on every exit path.
 	defer func() { _ = mgr.Close() }()
+	// Spend ledger: sessions write to it; GET /api/cost/report reads it.
+	spendLedger, ledgerErr := spendledger.Open(expandHome(cfg.DataDir), nil)
+	if ledgerErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] spend ledger unavailable: %v\n", ledgerErr)
+	} else {
+		mgr.SetSpendLedger(spendLedger)
+	}
 	// Daemon-observed trace events for the ollama, openwebui and shell
 	// backends: register the recorder hooks against the trace store.
 	var traceObserver *observe.Observer
@@ -3503,6 +3510,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		server.Version = Version
+		if spendLedger != nil {
+			httpServer.SetCostReportLedger(spendLedger)
+		}
 		// BL334 T43a — wire derived key so file-persisted handlers encrypt
 		// discussion WAL, participants, and channel routing when --secure.
 		if encKey != nil {

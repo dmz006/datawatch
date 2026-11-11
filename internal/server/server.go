@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	"io"
 	"io/fs"
 	"net"
@@ -1239,6 +1240,11 @@ func (s *HTTPServer) SetPipelineAPI(api PipelineAPI) {
 // return 503).
 func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
+}
+
+// SetCostReportLedger wires the spend ledger GET /api/cost/report reads.
+func (s *HTTPServer) SetCostReportLedger(l *spendledger.Ledger) {
+	s.api.SetCostReportLedger(l)
 }
 
 // SetTagRegistry wires the shared Automata tag registry and the function that
