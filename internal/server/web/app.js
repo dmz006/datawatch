@@ -13053,6 +13053,13 @@ function buildLLMBudgetGroup(l) {
     <div style="${hint}">${escHtml(t('llm_budget_peers_hint')||'Federation peer spend is off for every peer unless the peer is listed here.')}</div>
     <label style="${lbl}">${escHtml(t('llm_billing_group_label')||'Billing group')}</label>
     <input id="fe_llm_billing_group" class="form-input" value="${escHtml(l.billing_group||'')}" title="Free-text label grouping LLM entries that share a billing account / plan" />
+    <label style="${lbl}">${escHtml(t('billing_mode_label')||'Billing mode')}${settingsHelpLink({ helpDocs: 'howto/cost-report.md', helpKey: 'billing_mode_help' })}</label>
+    <select id="fe_llm_billing_mode" class="form-select">
+      <option value=""${l.billing_mode ? '' : ' selected'}>—</option>
+      <option value="api"${l.billing_mode === 'api' ? ' selected' : ''}>${escHtml(t('billing_mode_option_api')||'api')}</option>
+      <option value="allowance"${l.billing_mode === 'allowance' ? ' selected' : ''}>${escHtml(t('billing_mode_option_allowance')||'allowance')}</option>
+      <option value="local"${l.billing_mode === 'local' ? ' selected' : ''}>${escHtml(t('billing_mode_option_local')||'local')}</option>
+    </select>
     </div>`;
 }
 // Reads the budget group back into the REST "budget" value. An empty
@@ -13133,6 +13140,8 @@ function collectLLMForm(originalRecord) {
   // empty value clears it (the daemon trims on save and omits it when blank).
   const billingGroup = String((document.getElementById('fe_llm_billing_group')||{}).value || '').trim();
   if (billingGroup) out.billing_group = billingGroup; else delete out.billing_group;
+  const billingMode = String((document.getElementById('fe_llm_billing_mode')||{}).value || '').trim();
+  if (billingMode) out.billing_mode = billingMode; else delete out.billing_mode;
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }

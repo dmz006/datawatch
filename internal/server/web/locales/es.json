@@ -4644,5 +4644,10 @@
   "settings.self_config_recent_loading": "Cargando…",
   "settings.self_config_recent_empty": "Aún no hay registros de auditoría self-config.",
   "settings.self_config_recent_more": "%1$d registro(s) anterior(es) no mostrado(s)",
-  "settings.self_config_recent_unavailable": "Registro de auditoría self-config no disponible"
+  "settings.self_config_recent_unavailable": "Registro de auditoría self-config no disponible",
+  "billing_mode_label": "Modo de facturación",
+  "billing_mode_option_api": "api",
+  "billing_mode_option_allowance": "allowance",
+  "billing_mode_option_local": "local",
+  "billing_mode_help": "api: cada llamada se factura por token. allowance: las llamadas consumen una asignación de plan fija. local: se ejecuta en tu propio hardware sin cargo por llamada. El informe de costes agrupa el gasto por esta palabra."
 }

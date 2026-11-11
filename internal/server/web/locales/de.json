@@ -4644,5 +4644,10 @@
   "settings.self_config_recent_loading": "Wird geladen …",
   "settings.self_config_recent_empty": "Noch keine self-config-Audit-Einträge.",
   "settings.self_config_recent_more": "%1$d ältere(r) Eintrag(e) nicht angezeigt",
-  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar"
+  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar",
+  "billing_mode_label": "Abrechnungsmodus",
+  "billing_mode_option_api": "api",
+  "billing_mode_option_allowance": "allowance",
+  "billing_mode_option_local": "local",
+  "billing_mode_help": "api: jeder Aufruf wird pro Token abgerechnet. allowance: Aufrufe verbrauchen ein pauschales Kontingent. local: läuft auf eigener Hardware ohne Kosten pro Aufruf. Der Kostenbericht gruppiert die Ausgaben nach diesem Wort."
 }
