@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.134.1 — Go toolchain 1.26.11
+
+- The Go toolchain moved to 1.26.11, the patch release that fixes a standard library `net/http` vulnerability (GO-2026-6859). The release vulnerability scan found it in 1.26.10 and stopped the release before any assets were published; with 1.26.11 the scan reports no vulnerabilities, so the release pipeline passes again. The `go` directive in `go.mod` and every pinned Go build image now use 1.26.11.
+
 ## v9.134.0 — Per-Automaton cost counts all of its spend
 
 ### Per-Automaton cost now counts all of its spend
