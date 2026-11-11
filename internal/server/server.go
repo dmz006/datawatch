@@ -1449,6 +1449,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	// The Claude lane history samples with the daemon and stops when ctx ends.
 	s.StartUsageLaneHistory(ctx)
 
+	// The observer pull collector starts with the daemon and stops with ctx.
+	s.api.StartObserverPull(ctx)
+
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).
 	if s.api.statsCollector != nil {

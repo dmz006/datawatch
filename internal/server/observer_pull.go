@@ -43,6 +43,26 @@ func NewObserverPullCollector(s *Server) *observer.PullCollector {
 	return op.col
 }
 
+// StartObserverPull builds the pull collector (once) and stops it when ctx
+// ends, the same lifetime as the daemon's other background workers. A second
+// call does nothing.
+func (s *Server) StartObserverPull(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.observerPullMu.Lock()
+	if s.observerPull != nil {
+		s.observerPullMu.Unlock()
+		return
+	}
+	col := NewObserverPullCollector(s)
+	s.observerPullMu.Unlock()
+	go func() {
+		<-ctx.Done()
+		col.Stop()
+	}()
+}
+
 // syncObserverPullTargets re-derives the collector's target set from the
 // current peer store. Called from the federation peer add/update/delete
 // handlers so a store change takes effect on the next reconciliation.
@@ -287,4 +307,14 @@ func (p *observerPull) Fetch(ctx context.Context, name string) (*observer.StatsR
 		return nil, fmt.Errorf("%w: %v", observer.ErrBadPayload, err)
 	}
 	return &out, nil
+}
+
+// observerPullCollector returns the wired collector, or nil.
+func (s *Server) observerPullCollector() *observer.PullCollector {
+	s.observerPullMu.Lock()
+	defer s.observerPullMu.Unlock()
+	if s.observerPull == nil {
+		return nil
+	}
+	return s.observerPull.col
 }

@@ -619,7 +619,8 @@ type Server struct {
 	// Observer pull protocol — the PullCollector wired to the federation
 	// peer store by NewObserverPullCollector. Nil until wired; while nil
 	// syncObserverPullTargets is a no-op.
-	observerPull *observerPull
+	observerPull   *observerPull
+	observerPullMu sync.Mutex // guards the one-time wiring in StartObserverPull
 
 	// Fingerprint exchange (docs/plans/2026-10-14-concurrency-and
 	// budget-design.md §3c) — the exporter behind
