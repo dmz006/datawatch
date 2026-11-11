@@ -16,10 +16,15 @@ const (
 	DimAutomaton Dimension = "automaton"
 	DimAgent     Dimension = "agent"
 	DimBackend   Dimension = "backend"
+	// DimPackName and DimPackVersion group by the installable pack that
+	// produced the event (see Event.PackName and Event.PackVersion).
+	DimPackName    Dimension = "pack_name"
+	DimPackVersion Dimension = "pack_version"
 )
 
-// Dimensions lists every roll-up dimension in a stable order.
-var Dimensions = []Dimension{DimSession, DimTask, DimStory, DimAutomaton, DimAgent, DimBackend}
+// Dimensions lists every roll-up dimension in a stable order. The pack
+// dimensions come last so the order of the original six is unchanged.
+var Dimensions = []Dimension{DimSession, DimTask, DimStory, DimAutomaton, DimAgent, DimBackend, DimPackName, DimPackVersion}
 
 // DefaultLoopThreshold is the repeat count at which the same tool with the
 // same argument summary is flagged as a repeated-call loop.
@@ -128,6 +133,10 @@ func GroupKey(ev Event, dim Dimension) string {
 		return ev.Agent
 	case DimBackend:
 		return ev.Backend
+	case DimPackName:
+		return ev.PackName
+	case DimPackVersion:
+		return ev.PackVersion
 	}
 	return ""
 }
