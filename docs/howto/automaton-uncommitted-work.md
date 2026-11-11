@@ -314,8 +314,8 @@ files. A file path that would leave the worktree is refused.
 button. It opens a window showing the diff from
 `GET /api/autonomous/uncommitted-work/diff?worktree=<path>`, a message field, and
 a submit that posts `{worktree, message}` to
-`POST /api/autonomous/uncommitted-work/commit`. The button stays disabled while
-the worktree is clean. There is no CLI verb, MCP tool or comm verb for the diff
+`POST /api/autonomous/uncommitted-work/commit`. The submit stays disabled until the
+diff has loaded, so a clean worktree (no diff) cannot be committed. There is no CLI verb, MCP tool or comm verb for the diff
 or commit. This is separate from the **commit** answer to a held-task question,
 which is unchanged.
 

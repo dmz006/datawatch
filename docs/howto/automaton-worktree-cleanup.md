@@ -340,8 +340,8 @@ link, and skips a path that is already gone. It reports how many entries it
 changed. It changes permissions only: it removes nothing, so the next cleanup
 pass still applies every check above before it deletes anything.
 
-**Run the fix.** On the **Housekeeping** sub-tab (Automata tab → Automation
-view), a permission problem that can be fixed shows its plain reason and a **Fix
+**Run the fix.** On the **Events** sub-tab (Automata tab → Automation
+view), inside the **Cleanup** card, a permission problem that can be fixed shows its plain reason and a **Fix
 permissions** button. The button posts the affected paths to
 `POST /api/autonomous/cleanup/fix-permissions`. A problem that is `hidden` is not
 shown. The PWA button and that REST route are the surfaces; there is no CLI verb,
