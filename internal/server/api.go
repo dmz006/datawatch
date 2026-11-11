@@ -6821,6 +6821,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// (Effective* accessors), so GET never emits a zero that reads
 				// a different default.
 				"repo_ci_watch": repoCIWatchSurface(s.cfg.Autonomous.Automation.RepoCIWatch),
+				// Effective, not raw: unset enabled reads true, an empty schedule
+				// reads the default, and unset max_majors reads its default.
+				"dependency_update": dependencyUpdateSurface(s.cfg.Autonomous.Automation.DependencyUpdate),
 				// Effective, not raw: an unset or empty mode reads shadow (the
 				// first-release default) via the Effective* accessor.
 				"security_failure": securityFailureSurface(s.cfg.Autonomous.Automation.SecurityFailure),
@@ -7342,6 +7345,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// alert/tag threshold, a hung threshold below 1) rejects the whole
 	// PUT rather than being skipped.
 	if verr := validateRepoCIWatchPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Dependency update (autonomous.automation.dependency_update.*): the
+	// merged block is run through the config package's Validate, so an
+	// invalid schedule or max_majors rejects the whole PUT with the
+	// allowed form.
+	if verr := validateDependencyUpdatePatch(s.cfg.Autonomous.Automation.DependencyUpdate, patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9917,6 +9928,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// check here is left unchanged.
 			applyRepoCIWatchValue(&cfg.Autonomous.Automation.RepoCIWatch,
 				strings.TrimPrefix(k, repoCIWatchKeyPrefix), v)
+		case dependencyUpdateKeyPrefix + "enabled",
+			dependencyUpdateKeyPrefix + "schedule",
+			dependencyUpdateKeyPrefix + "max_majors":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyDependencyUpdateValue(&cfg.Autonomous.Automation.DependencyUpdate,
+				strings.TrimPrefix(k, dependencyUpdateKeyPrefix), v)
 		case "autonomous.automation.security_failure.mode":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -11390,6 +11408,84 @@ func validateTriageAlertMinutes(v interface{}) error {
 		return fmt.Errorf("autonomous.automation.triage_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationTriageAlertMinutes)
 	}
 	return nil
+}
+
+// dependencyUpdateKeyPrefix — the REST key prefix for the dependency
+// update knobs (autonomous.automation.dependency_update.*).
+const dependencyUpdateKeyPrefix = "autonomous.automation.dependency_update."
+
+// dependencyUpdateSurface builds the GET /api/config surface for the
+// dependency update block, emitting effective values.
+func dependencyUpdateSurface(c config.DependencyUpdateConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":    c.EffectiveEnabled(),
+		"schedule":   c.EffectiveSchedule(),
+		"max_majors": c.EffectiveMaxMajors(),
+	}
+}
+
+// parseDependencyUpdateValue folds one patch value into a copy of the
+// block. It returns an error naming the key when the value has the wrong
+// type (a non-boolean enabled, a non-string schedule, a fractional or
+// non-numeric max_majors).
+func parseDependencyUpdateValue(c *config.DependencyUpdateConfig, field string, v interface{}) error {
+	switch field {
+	case "enabled":
+		b, ok := v.(bool)
+		if !ok {
+			return fmt.Errorf("%senabled: must be true or false", dependencyUpdateKeyPrefix)
+		}
+		c.Enabled = &b
+	case "schedule":
+		str, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("%sschedule: must be a string 'weekday HH:MM' (a weekday name monday..sunday followed by a 24-hour time, for example 'monday 05:00')", dependencyUpdateKeyPrefix)
+		}
+		c.Schedule = str
+	case "max_majors":
+		f, ok := v.(float64)
+		if i, isInt := v.(int); isInt {
+			f, ok = float64(i), true
+		}
+		if !ok || f != math.Trunc(f) {
+			return fmt.Errorf("%smax_majors: must be a whole number from 0 to %d (0 = no majors in a run, unset reads %d)",
+				dependencyUpdateKeyPrefix, config.DependencyUpdateMaxMajorsLimit, config.DependencyUpdateDefaultMaxMajors)
+		}
+		n := int(f)
+		c.MaxMajors = &n
+	}
+	return nil
+}
+
+// validateDependencyUpdatePatch applies every dependency_update key in the
+// patch to a copy of the stored block and runs the config package's
+// Validate on the result, so a bad value is refused before anything is
+// applied and on the same rules the config-load path uses.
+func validateDependencyUpdatePatch(cur config.DependencyUpdateConfig, patch map[string]interface{}) error {
+	touched := false
+	for _, field := range []string{"enabled", "schedule", "max_majors"} {
+		v, ok := patch[dependencyUpdateKeyPrefix+field]
+		if !ok {
+			continue
+		}
+		touched = true
+		if err := parseDependencyUpdateValue(&cur, field, v); err != nil {
+			return err
+		}
+	}
+	if !touched {
+		return nil
+	}
+	return cur.Validate()
+}
+
+// applyDependencyUpdateValue stores one validated value; a value that
+// fails to parse is left unchanged.
+func applyDependencyUpdateValue(c *config.DependencyUpdateConfig, field string, v interface{}) {
+	next := *c
+	if err := parseDependencyUpdateValue(&next, field, v); err == nil && next.Validate() == nil {
+		*c = next
+	}
 }
 
 // repoCIWatchKeyPrefix — the REST key prefix for the repo CI watch knobs
