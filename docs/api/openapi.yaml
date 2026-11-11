@@ -2604,6 +2604,195 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/unlanded-work:
+    get:
+      summary: Unlanded Automaton branches
+      description: |
+        The Housekeeping action list: archived Automata whose branch carries
+        commits that are not on the default branch, each with a recommendation
+        (`landed`, `superseded` or `needs_decision`) and the reason. Branches
+        the operator chose to keep are left out. `branches` is an empty list,
+        never null, when nothing is unlanded or no base repository is
+        configured. Read-only; a federated peer needs the autonomous read
+        capability.
+      operationId: autonomousUnlandedWork
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The unlanded branches
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [branches]
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        automaton_id: {type: string}
+                        branch: {type: string}
+                        title: {type: string}
+                        commits: {type: integer}
+                        last_activity: {type: string, format: date-time}
+                        recommendation: {type: string, enum: [landed, superseded, needs_decision]}
+                        reason: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work/keep:
+    post:
+      summary: Keep an unlanded branch
+      description: Records that the branch is to be left alone; it drops off the unlanded list. The branch must be on the list.
+      operationId: autonomousUnlandedKeep
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string}
+                note: {type: string}
+      responses:
+        "200": {description: "Kept: {branch, kept}"}
+        "400": {description: Branch missing, or no base repository configured}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The branch is not on the unlanded list}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work/archive-branch:
+    post:
+      summary: Archive an unlanded branch
+      description: Moves the branch under the archive refs (`refs/archive/<branch>`) and removes the branch name. The commits stay reachable. The branch must be on the unlanded list.
+      operationId: autonomousUnlandedArchiveBranch
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string}
+      responses:
+        "200": {description: "Archived: {branch, archive_ref}"}
+        "400": {description: Branch missing, or no base repository configured}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The branch is not on the unlanded list}
+        "405": {description: Method not allowed}
+        "409": {description: Git refused the archive}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work/delete-worktree:
+    post:
+      summary: Delete an unlanded worktree and branch
+      description: Writes and verifies a git bundle backup of the branch, then removes its worktree and branch. Nothing is removed if the backup fails. `confirm` must be true. The branch must be on the unlanded list.
+      operationId: autonomousUnlandedDeleteWorktree
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch, confirm]
+              properties:
+                branch: {type: string}
+                confirm: {type: boolean}
+      responses:
+        "200": {description: "Deleted: {branch, bundle_path, worktree_path}"}
+        "400": {description: Branch missing, confirm not true, or no base repository configured}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The branch is not on the unlanded list}
+        "405": {description: Method not allowed}
+        "409": {description: The backup or removal failed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/uncommitted-work/diff:
+    get:
+      summary: Diff of a worktree's uncommitted files
+      description: What a commit would record for one Automaton worktree, as a diff. The worktree must be inside the Automaton worktree base. `clean` is true and `diff` empty when nothing is uncommitted.
+      operationId: autonomousUncommittedWorkDiff
+      tags: [Autonomous]
+      parameters:
+        - name: worktree
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: "{worktree, diff, clean}"}
+        "400": {description: Worktree missing or outside the worktree base}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "409": {description: Git failed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/uncommitted-work/commit:
+    post:
+      summary: Commit a worktree's uncommitted files
+      description: Stages and commits exactly the files the uncommitted-work check lists, with the given message, and returns the new commit. An empty message, a worktree outside the worktree base and a clean worktree are rejected before anything is staged.
+      operationId: autonomousUncommittedWorkCommit
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worktree, message]
+              properties:
+                worktree: {type: string}
+                message: {type: string}
+      responses:
+        "200": {description: "Committed: {worktree, commit}"}
+        "400": {description: Worktree or message missing, outside the worktree base, or nothing to commit}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: The commit failed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/cleanup/fix-permissions:
+    post:
+      summary: Fix cleanup permission errors
+      description: Restores owner write permission (and owner read and search on folders) on the given paths and everything under them. Without `paths` it covers each folder directly under the worktree base. Only paths inside the worktree base are touched; links are never followed.
+      operationId: autonomousCleanupFixPermissions
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paths: {type: array, items: {type: string}}
+      responses:
+        "200": {description: "{changed}: the number of entries changed"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: A path was outside the worktree base or could not be changed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/uncommitted-work:
     get:
       summary: Automaton uncommitted-work status
