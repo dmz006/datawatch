@@ -178,11 +178,23 @@ Choose **Projects**, then `core-api`. From the top:
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with a link to the policy panel in Settings |
 | Merge pipeline | Read-only, with a link to the merge pipeline settings |
-| Events | The event stream filtered to this project, and a note for each section that is empty or off |
+| Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
 
 A row links to its Automaton view, and a session link opens the session. The
 **Overview** choice in the picker is the cross-project in-flight view, not a
 project.
+
+#### Empty lines are hidden by default
+
+The page shows only what has content. Empty header fields, the "none recorded"
+lines under an arc (plan documents, design documents, issues), an empty Arcs or
+Unassigned Automata section, an empty merge pipeline and an empty event stream
+are not drawn. To see them, tick **Show empty lines and sections** next to the
+project picker. The choice is remembered in this browser only (local storage key
+`cs_projects_show_empty`); it is not a daemon setting, so it has no REST, MCP,
+CLI, chat or YAML form, and a browser that blocks storage always starts hidden.
+Nothing is lost by hiding: a section that is needed still appears, and a missing
+weekly share is reported in Events whenever the project has work that needs one.
 
 ### 7. Read the history and the Gantt
 
