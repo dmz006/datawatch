@@ -2611,7 +2611,14 @@ key appears. Run it alone after editing the file.
 
 Operator review still needed: keep "Dependabot security updates" enabled in the
 hosting settings, confirm the weekly Automation is approved and active, and
-close any version-update pull requests that were open before the change. See
+close any version-update pull requests that were open before the change.
+
+The Automation is tuned with `autonomous.automation.dependency_update.enabled`
+(default `true`), `.schedule` (default `monday 05:00`, `weekday HH:MM` in the
+daemon's local time) and `.max_majors` (default 5, range 0-20). Set them in the
+PWA Settings, with `datawatch config set`, the chat `configure` verb, or MCP
+`config_set`; read status (settings, next run, last run and outcome) with the
+MCP tool `dependency_update_status`. See
 [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
 
 ---
