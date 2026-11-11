@@ -6339,6 +6339,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .dboard-card-span { display:none; font-size:9px; color:var(--text2); cursor:pointer; padding:1px 5px; border:1px solid var(--border); border-radius:3px; flex-shrink:0; user-select:none; }
 .dboard-editing .dboard-card-span { display:inline-block; }
 .dboard-editing .dboard-card-span:hover { color:var(--accent); border-color:var(--accent); }
+.dboard-card-purpose { padding:2px 8px; font-size:10px; line-height:1.4; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-shrink:0; border-bottom:1px solid var(--border); }
 .dboard-card-body { flex:1; min-height:0; overflow:hidden; position:relative; display:flex; flex-direction:column; }
 /* Edit mode */
 .dboard-editing .dboard-card { border-color:var(--accent); }
