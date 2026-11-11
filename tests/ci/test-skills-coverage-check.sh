@@ -6,7 +6,7 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CHECK="${SKILLS_COVERAGE_CHECK:-$REPO/.datawatch/verify/skills-coverage-check.sh}"
+CHECK="${SKILLS_COVERAGE_CHECK:-$REPO/scripts/skills-coverage-check.sh}"
 EXTRACT="$REPO/scripts/skills-coverage-extract.sh"
 
 WORK="$(mktemp -d)"
