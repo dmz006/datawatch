@@ -96,6 +96,10 @@ GET /api/autonomous/event-log?kind=watch,retry&project=datawatch&q=lane
 datawatch autonomous event-log --kind retry --limit 10
 ```
 
+## The weekly dependency update
+
+A weekly dependency update run that updated something, or needs attention, shows as one `check` row naming the run and a one-line summary such as "2 updated, 1 dropped, 0 skipped". A run with nothing to update writes no row. Only a run that needs attention raises an alert, once per run: a dropped or failed update, a major waiting on a protected paths decision, or a run that could not start. An updated run alerts only while its Automaton waits for you.
+
 ## The cards that moved here
 
 These cards now live in the Events stream instead of their own panels on the
