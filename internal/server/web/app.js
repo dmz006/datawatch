@@ -50144,38 +50144,36 @@ function _sessionPlacementSelActive(tag) {
   return sel.some(key => key === tag || ((_tagsState.byId || {})[key] && _tagsState.byId[key].name === tag));
 }
 
-// _sessionGroupHeaderHTML is one group's header: the tag, its session count
-// and a filter toggle.
-function _sessionGroupHeaderHTML(axis, tag, count, selActive) {
-  const countLabel = count === 1 ? (t('session_group_count_one') || '1 session') : (String(count) + ' ' + (t('session_group_count_other') || 'sessions'));
-  const countHtml = `<span style="font-size:11px;color:var(--text2);">${escHtml(countLabel)}</span>`;
+// _sessionGroupFilterButtonHTML is the tag-filter toggle at the right edge of a
+// session group header; the header itself is the shared _listGroupHeaderHTML.
+function _sessionGroupFilterButtonHTML(axis, tag, selActive) {
   const filterLabel = selActive ? (_tagT('session_group_filter_off', 'Show all sessions') || 'Show all sessions') : (_tagT('session_group_filter_on', 'Only this tag') || 'Only this tag');
-  return `<div class="sessions-group-header" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:color-mix(in srgb, var(--success,#10b981) 10%, transparent);border-left:3px solid var(--success,#10b981);border-radius:4px;"><span style="font-size:12px;font-weight:700;color:var(--text);">⚙️ ${escHtml(tag)}</span>${countHtml}<button type="button" class="${selActive ? 'btn-primary' : 'btn-secondary'}" style="margin-left:auto;font-size:11px;padding:2px 10px;border-radius:10px;" onclick="_sessionGroupTagClick('${escJsAttr(axis)}','${escJsAttr(tag)}')">${escHtml(filterLabel)}</button></div>`;
+  return `<button type="button" class="${selActive ? 'btn-primary' : 'btn-secondary'}" style="margin-left:auto;font-size:11px;padding:2px 10px;border-radius:10px;" onclick="_sessionGroupTagClick('${escJsAttr(axis)}','${escJsAttr(tag)}')">${escHtml(filterLabel)}</button>`;
 }
 
 // _sessionsGroupCards renders a flat session list grouped by the given
 // placement axis; sessions with no tag on that axis fall under an untagged
 // group (header only shown when the list also has tagged groups).
 function _sessionsGroupCards(sessions, axis) {
-  const groups = {};
-  const ungrouped = [];
-  for (const s of sessions) {
-    const tag = (_sessionPlacementTags(s) || []).find(n => _placementAxisOf(n) === axis);
-    if (tag) (groups[tag] = groups[tag] || []).push(s);
-    else ungrouped.push(s);
-  }
+  const ctx = Object.assign({}, _listCtx('session'), {
+    tags: (s) => { const tag = (_sessionPlacementTags(s) || []).find(n => _placementAxisOf(n) === axis); return tag ? [tag] : []; },
+  });
+  const grouped = _listGroupBy(sessions, 'tag', ctx);
+  const hasTagged = grouped.some(g => !g.ungrouped);
   let idx = 0;
   let html = '';
-  for (const tag of Object.keys(groups).sort((a, b) => a.localeCompare(b))) {
-    const g = groups[tag];
-    html += _sessionGroupHeaderHTML(axis, tag, g.length, _sessionPlacementSelActive(tag)) + g.map(s => sessionCard(s, idx++, sessions.length)).join('');
-  }
-  if (ungrouped.length) {
-    if (Object.keys(groups).length) {
-      html += `<div class="sessions-group-header" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:var(--bg3,rgba(120,120,140,0.12));border-left:3px solid var(--border);border-radius:4px;"><span style="font-size:12px;font-weight:600;color:var(--text2);">${escHtml(_tagT('sessions_group_untagged', 'No %1$s tag', [axis]))} <span style="font-size:11px;font-weight:400;">(${ungrouped.length})</span></div>`;
-    }
-    html += ungrouped.map(s => sessionCard(s, idx++, sessions.length)).join('');
-  }
+  grouped.forEach(g => {
+    if (g.ungrouped && !hasTagged) { html += g.items.map(s => sessionCard(s, idx++, sessions.length)).join(''); return; }
+    const filterBtn = g.ungrouped ? '' : _sessionGroupFilterButtonHTML(axis, g.key, _sessionPlacementSelActive(g.key));
+    html += _listGroupHeaderHTML('session', g, 'tag', {
+      icon: g.ungrouped ? '' : '⚙️',
+      label: g.ungrouped ? _tagT('sessions_group_untagged', 'No %1$s tag', [axis]) : g.key,
+      actionHtml: filterBtn,
+    });
+    if (_listIsCollapsed('session', g.key)) return;
+    const pg = _listPage(g.items, _listShownCount('session', g.key));
+    html += pg.items.map(s => sessionCard(s, idx++, sessions.length)).join('') + _listMoreHTML('session', g.key, pg);
+  });
   return html;
 }
 
@@ -51085,7 +51083,8 @@ function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
   const active = _tagBrowseActiveCount(scope);
   if (view === 'list' || active) {
     const note = active ? `<div class="tag-showing">${escHtml(t('tag_browse_showing', [items.length, base]))}</div>` : '';
-    return sw + note + _tileGridHTML(items.map(it => renderTile(it, '')).join(''));
+    const controls = (scope === 'automata' || scope === 'automation') ? _listControlsHTML(scope) : '';
+    return sw + controls + note + _listBodyHTML(scope, items, renderTile);
   }
   const tree = _tagBrowseTree(_tagsState.list);
   if (_tagBrowseLayout(_tileViewportWidth()) === 'drill') return sw + _tagDrillHTML(scope, items, tree, renderTile);
@@ -54743,19 +54742,275 @@ function _tileViewportWidth() {
 }
 
 // _tileGridHTML wraps tile markup in the grid for the current viewport.
-function _tileGridHTML(innerHTML) {
-  return `<div class="work-tile-grid" data-tile-mode="${_tileRowMode(_tileViewportWidth())}">${innerHTML}</div>`;
+// A scope with a remembered list mode on this device uses it; otherwise the
+// viewport decides, and a resize keeps following it.
+function _tileGridHTML(innerHTML, scope) {
+  const chosen = _listChosenTileMode(scope);
+  return `<div class="work-tile-grid" data-tile-mode="${chosen || _tileRowMode(_tileViewportWidth())}"${chosen ? ' data-tile-chosen="1"' : ''}>${innerHTML}</div>`;
 }
 
 // _tileSyncModes re-applies the row mode to every grid on screen after a
 // resize, so the layout follows the window without a re-render.
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
-  document.querySelectorAll('.work-tile-grid').forEach(el => { el.dataset.tileMode = mode; });
+  document.querySelectorAll('.work-tile-grid').forEach(el => { if (!el.dataset.tileChosen) el.dataset.tileMode = mode; });
 }
 if (typeof window !== 'undefined' && !window._tileResizeBound) {
   window._tileResizeBound = true;
   window.addEventListener('resize', () => { _tileSyncModes(); _tagBrowseOnResize(); });
+}
+
+// ---- Shared list modes: toggle, group-by, collapse memory, paging ----------
+// One helper set for the Sessions, Automata and Automation lists. Pure functions
+// take their storage and accessors as arguments so they can be tested alone.
+const LIST_MODES = ['list', 'tiles', 'compact'];
+const LIST_GROUP_PREFIXES = ['automation', 'stage', 'kind', 'compute', 'peer', 'backend', 'lane', 'role', 'project'];
+const LIST_PAGE_SIZE = 50;
+
+function _listStore() {
+  try { return (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_e) { return null; }
+}
+function _listStoreGet(key) {
+  try { const st = _listStore(); return st ? st.getItem(key) : null; } catch (_e) { return null; }
+}
+function _listStoreSet(key, val) {
+  try { const st = _listStore(); if (st) st.setItem(key, val); } catch (_e) {}
+}
+
+// _listModeDefault picks the mode for a viewport width: tiles on a wide screen,
+// compact on a medium one, list on a narrow one. Unknown width reads as wide.
+function _listModeDefault(width) {
+  const w = Number(width);
+  if (!(w > 0)) return 'tiles';
+  if (w >= 720) return 'tiles';
+  if (w >= 420) return 'compact';
+  return 'list';
+}
+
+// _listModeGet returns the remembered mode for a list scope on this device, or
+// the viewport default when none was chosen.
+function _listModeGet(scope, width) {
+  const v = _listStoreGet('dw_list_mode_' + scope);
+  return LIST_MODES.indexOf(v) >= 0 ? v : _listModeDefault(width);
+}
+
+// _listModeSet remembers the chosen mode; an unknown mode is ignored.
+function _listModeSet(scope, mode) {
+  if (LIST_MODES.indexOf(mode) < 0) return false;
+  _listStoreSet('dw_list_mode_' + scope, mode);
+  return true;
+}
+
+// _listGroupKeys returns the group keys one item falls under for a group-by.
+// by is 'none', 'tag' (every tag), 'prefix:<p>' (tags starting "<p>:"),
+// 'state', 'node' or 'project'. ctx gives tags(item), state(item), node(item)
+// and project(item); a missing accessor yields no key.
+function _listGroupKeys(item, by, ctx) {
+  const c = ctx || {};
+  const one = (fn) => { const v = fn ? fn(item) : ''; return v ? [String(v)] : []; };
+  if (by === 'tag') return ((c.tags && c.tags(item)) || []).map(String).filter(Boolean);
+  if (typeof by === 'string' && by.indexOf('prefix:') === 0) {
+    const p = by.slice(7) + ':';
+    const hit = ((c.tags && c.tags(item)) || []).map(String).find(tg => tg.indexOf(p) === 0);
+    return hit ? [hit] : [];
+  }
+  if (by === 'state') return one(c.state);
+  if (by === 'node') return one(c.node);
+  if (by === 'project') return one(c.project);
+  return [];
+}
+
+// _listStateMix counts items per state, as an object.
+function _listStateMix(items, stateOf) {
+  const mix = {};
+  (items || []).forEach(it => {
+    const st = String((stateOf && stateOf(it)) || 'unknown');
+    mix[st] = (mix[st] || 0) + 1;
+  });
+  return mix;
+}
+
+// _listStateMixText renders a mix as "running 3 · done 1", biggest first.
+function _listStateMixText(mix) {
+  return Object.keys(mix || {}).sort((a, b) => (mix[b] - mix[a]) || a.localeCompare(b)).map(k => k + ' ' + mix[k]).join(' · ');
+}
+
+// _listGroupBy splits items into groups: [{key, items, count, mix}], keys sorted,
+// then one trailing group with key '' for items that have no key. A multi-tag
+// 'tag' grouping lists an item in each of its groups. by 'none' gives one group.
+function _listGroupBy(items, by, ctx) {
+  const list = Array.isArray(items) ? items : [];
+  if (!by || by === 'none') {
+    return [{ key: '', items: list.slice(), count: list.length, mix: _listStateMix(list, ctx && ctx.state), ungrouped: true }];
+  }
+  const map = new Map();
+  const rest = [];
+  list.forEach(it => {
+    const keys = _listGroupKeys(it, by, ctx);
+    if (!keys.length) { rest.push(it); return; }
+    keys.forEach(k => { if (!map.has(k)) map.set(k, []); map.get(k).push(it); });
+  });
+  const out = [...map.keys()].sort((a, b) => a.localeCompare(b)).map(k => {
+    const g = map.get(k);
+    return { key: k, items: g, count: g.length, mix: _listStateMix(g, ctx && ctx.state) };
+  });
+  if (rest.length) out.push({ key: '', items: rest, count: rest.length, mix: _listStateMix(rest, ctx && ctx.state), ungrouped: true });
+  return out;
+}
+
+// Collapse memory: a JSON array of collapsed group keys per list scope.
+function _listCollapsedSet(scope) {
+  try {
+    const a = JSON.parse(_listStoreGet('dw_list_collapsed_' + scope) || '[]');
+    return new Set(Array.isArray(a) ? a.map(String) : []);
+  } catch (_e) { return new Set(); }
+}
+function _listIsCollapsed(scope, key) { return _listCollapsedSet(scope).has(String(key)); }
+function _listToggleCollapsed(scope, key) {
+  const set = _listCollapsedSet(scope);
+  const k = String(key);
+  if (set.has(k)) set.delete(k); else set.add(k);
+  _listStoreSet('dw_list_collapsed_' + scope, JSON.stringify([...set]));
+  return set.has(k);
+}
+
+// Paging: show-more for long lists. shown counts live in memory, per scope+group.
+const _listShown = {};
+function _listShownCount(scope, key, pageSize) {
+  const n = _listShown[scope + '|' + key];
+  return n > 0 ? n : (pageSize || LIST_PAGE_SIZE);
+}
+function _listShowMore(scope, key, pageSize) {
+  const k = scope + '|' + key;
+  _listShown[k] = _listShownCount(scope, key, pageSize) + (pageSize || LIST_PAGE_SIZE);
+  return _listShown[k];
+}
+function _listResetPaging(scope) {
+  Object.keys(_listShown).forEach(k => { if (k.indexOf(scope + '|') === 0) delete _listShown[k]; });
+}
+// _listPage returns {items, shown, total, remaining, hasMore} for the visible slice.
+function _listPage(items, shown) {
+  const list = Array.isArray(items) ? items : [];
+  const n = Math.max(0, Math.min(list.length, Number(shown) || 0));
+  return { items: list.slice(0, n), shown: n, total: list.length, remaining: list.length - n, hasMore: list.length > n };
+}
+
+// ---- Shared list modes: UI over the helpers above --------------------------
+// Group-by axis memory, accessors per list scope, the toolbar, group headers,
+// the show-more button and the body that Automata and Automation draw through.
+// Sessions draws its placement-tag groups through the same header and paging.
+
+// _listGroupValid accepts 'none', 'tag', 'state', 'node', 'project' and
+// 'prefix:<p>' for a p in LIST_GROUP_PREFIXES.
+function _listGroupValid(by) {
+  if (['none', 'tag', 'state', 'node', 'project'].indexOf(by) >= 0) return true;
+  return typeof by === 'string' && by.indexOf('prefix:') === 0 && LIST_GROUP_PREFIXES.indexOf(by.slice(7)) >= 0;
+}
+function _listGroupGet(scope) {
+  const v = _listStoreGet('dw_list_group_' + scope);
+  return _listGroupValid(v) ? v : 'none';
+}
+function _listGroupSet(scope, by) {
+  if (!_listGroupValid(by)) return false;
+  _listStoreSet('dw_list_group_' + scope, by);
+  return true;
+}
+
+// _listModeTile maps a list mode to the data-tile-mode the tile grid styles by.
+function _listModeTile(mode) {
+  return mode === 'compact' ? 'compact' : (mode === 'list' ? 'line' : 'tile');
+}
+// _listChosenTileMode is the grid mode the viewer picked on this device, or ''
+// while the viewport decides.
+function _listChosenTileMode(scope) {
+  const v = scope ? _listStoreGet('dw_list_mode_' + scope) : null;
+  return LIST_MODES.indexOf(v) >= 0 ? _listModeTile(v) : '';
+}
+
+// _listCtx gives the group-by accessors for a list scope. Tag names come from the
+// registry; an ID the registry does not hold is skipped.
+function _listCtx(scope) {
+  const byId = (typeof _tagsState !== 'undefined' && _tagsState.byId) || {};
+  const names = (ids) => (Array.isArray(ids) ? ids : []).map(id => (byId[id] && byId[id].name) || '').filter(Boolean);
+  if (scope === 'session') {
+    return {
+      tags: (s) => names((s && s.tags) || []).concat(typeof _sessionPlacementTags === 'function' ? (_sessionPlacementTags(s) || []) : []),
+      state: (s) => s && s.state,
+      node: (s) => s && (s.node || s.hostname),
+      project: (s) => s && (s.project_dir || s.project),
+    };
+  }
+  return {
+    tags: (it) => names(_tileTagIds(it)),
+    state: (it) => it && it.status,
+    node: (it) => it && (it.node || it.compute_node),
+    project: (it) => it && (it.project_dir || it.project),
+  };
+}
+
+function _listGroupLabel(by, key) {
+  if (key) return key;
+  if (by === 'tag' || String(by).indexOf('prefix:') === 0) return _tagT('list_group_untagged', 'No tag');
+  return _tagT('list_group_none', 'None');
+}
+
+// _listGroupHeaderHTML is one group's header: collapse toggle, name, count and
+// state mix. o.actionHtml adds a caller's own control at the right edge.
+function _listGroupHeaderHTML(scope, g, by, o) {
+  const opts = o || {};
+  const collapsed = _listIsCollapsed(scope, g.key);
+  const label = opts.label != null ? opts.label : _listGroupLabel(by, g.key);
+  const mix = _listStateMixText(g.mix);
+  const k = escJsAttr(String(g.key));
+  return `<div class="list-group-header" data-list-group="${escHtml(String(g.key))}" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:var(--bg3,rgba(120,120,140,0.12));border-left:3px solid var(--border);border-radius:4px;">` +
+    `<button type="button" class="list-group-toggle" aria-expanded="${!collapsed}" onclick="listToggleGroup('${escJsAttr(scope)}','${k}')" style="background:none;border:none;color:var(--text);cursor:pointer;padding:0;font-size:12px;font-weight:700;">${collapsed ? '▸' : '▾'} ${opts.icon ? escHtml(opts.icon) + ' ' : ''}${escHtml(label)}</button>` +
+    `<span class="list-group-count" style="font-size:11px;color:var(--text2);">${g.count}</span>` +
+    (mix ? `<span class="list-group-mix" style="font-size:11px;color:var(--text2);">${escHtml(mix)}</span>` : '') +
+    (opts.actionHtml || '') + `</div>`;
+}
+
+// _listMoreHTML is the show-more button under a page that has items left.
+function _listMoreHTML(scope, key, pg) {
+  if (!pg.hasMore) return '';
+  const step = Math.min(LIST_PAGE_SIZE, pg.remaining);
+  return `<div class="list-show-more" style="text-align:center;margin:8px;"><button type="button" class="btn-secondary" onclick="listShowMore('${escJsAttr(scope)}','${escJsAttr(String(key))}')">${escHtml(_tagT('list_show_more', 'Show more'))} (${step} / ${pg.remaining})</button></div>`;
+}
+
+// _listControlsHTML is the toolbar: the list/tiles/compact toggle and the group-by select.
+function _listControlsHTML(scope, o) {
+  const opts = o || {};
+  const mode = _listModeGet(scope, _tileViewportWidth());
+  const labels = { list: _tagT('list_mode_list', 'List'), tiles: _tagT('list_mode_tiles', 'Tiles'), compact: _tagT('list_mode_compact', 'Compact') };
+  const toggle = LIST_MODES.map(m => `<button type="button" class="tag-view-btn${mode === m ? ' active' : ''}" aria-pressed="${mode === m}" onclick="listSetMode('${escJsAttr(scope)}','${m}')">${escHtml(labels[m])}</button>`).join('');
+  const cur = _listGroupGet(scope);
+  const axes = ['none', 'tag', 'state', 'node', 'project'].concat(LIST_GROUP_PREFIXES.map(p => 'prefix:' + p));
+  const axisLabel = (a) => a === 'none' ? _tagT('list_group_by_none', 'No grouping') : (a.indexOf('prefix:') === 0 ? a.slice(7) + ':' : a);
+  const sel = `<select class="list-group-select" aria-label="${escHtml(_tagT('list_group_by', 'Group by'))}" onchange="listSetGroup('${escJsAttr(scope)}',this.value)">${axes.map(a => `<option value="${escHtml(a)}"${a === cur ? ' selected' : ''}>${escHtml(axisLabel(a))}</option>`).join('')}</select>`;
+  return `<div class="list-controls" data-list-scope="${escHtml(scope)}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;"><div class="tag-view-switch" role="group">${opts.noMode ? '' : toggle}</div>${sel}</div>`;
+}
+
+// _listBodyHTML draws a list's items in the chosen group-by: one grid per group,
+// each under its header, collapsed groups as a header only, long groups paged.
+function _listBodyHTML(scope, items, renderTile) {
+  const by = _listGroupGet(scope);
+  const grouped = by !== 'none';
+  return _listGroupBy(items, by, _listCtx(scope)).map(g => {
+    const head = grouped ? _listGroupHeaderHTML(scope, g, by) : '';
+    if (grouped && _listIsCollapsed(scope, g.key)) return head;
+    const pg = _listPage(g.items, _listShownCount(scope, g.key));
+    return head + _tileGridHTML(pg.items.map(it => renderTile(it, '')).join(''), scope) + _listMoreHTML(scope, g.key, pg);
+  }).join('');
+}
+
+function _listRepaint(scope) {
+  if (scope === 'session') { if (typeof renderSessionsView === 'function') renderSessionsView(); return; }
+  if (typeof _tagBrowseRepaint === 'function') _tagBrowseRepaint(scope);
+}
+if (typeof window !== 'undefined') {
+  window.listSetMode = function(scope, mode) { if (_listModeSet(scope, mode)) _listRepaint(scope); };
+  window.listSetGroup = function(scope, by) { if (_listGroupSet(scope, by)) { _listResetPaging(scope); _listRepaint(scope); } };
+  window.listToggleGroup = function(scope, key) { _listToggleCollapsed(scope, key); _listRepaint(scope); };
+  window.listShowMore = function(scope, key) { _listShowMore(scope, key); _listRepaint(scope); };
 }
 
 // _tileMenuItem is one entry in a tile's overflow menu. onclick is markup the
