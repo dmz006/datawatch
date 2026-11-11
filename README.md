@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.134.1 (2026-11-11).** The Go toolchain moved to 1.26.11, which fixes a standard library net/http vulnerability, so the release scan passes again. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.135.0 (2026-11-11).** Self-config is now a built-in capability group: the mcp.allow_self_config switch is its alias, every configuration write a session or peer attempts is audited, and the audit is readable from every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
