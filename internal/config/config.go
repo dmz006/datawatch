@@ -2277,6 +2277,16 @@ type MCPConfig struct {
 	// see also docs/howto/federation-cbac.md.
 	AllowSelfConfig *bool `yaml:"allow_self_config,omitempty"`
 
+	// AllowSensitiveWrites controls the sensitive write tool class of the
+	// MCP tool classification (tools that write secrets, credentials or
+	// other sensitive state). Tri-state: nil (the key absent from the
+	// YAML) and an explicit true both read as ENABLED — the default keeps
+	// today's behaviour, sensitive tools allowed; an explicit false
+	// disables the class. Use SensitiveWritesEnabled() rather than
+	// reading the field directly. No default-flip migration is applied:
+	// an absent key stays absent.
+	AllowSensitiveWrites *bool `yaml:"allow_sensitive_writes,omitempty"`
+
 	// SelfConfigAuditPath (BL110) is the file the self-modify audit
 	// stream writes to. Default <data_dir>/audit/config-self-modify.jsonl.
 	// Empty disables the file sink (events still go to stderr).
@@ -2304,6 +2314,15 @@ func (m MCPConfig) SelfConfigAuditDeniedOn() bool {
 // rather than dereferencing AllowSelfConfig directly.
 func (m MCPConfig) SelfConfigEnabled() bool {
 	return m.AllowSelfConfig == nil || *m.AllowSelfConfig
+}
+
+// SensitiveWritesEnabled resolves the allow_sensitive_writes setting: an
+// absent key (nil pointer) reads as ENABLED, so the default keeps today's
+// behaviour; an explicit false disables the sensitive write tool class.
+// All runtime gates should call this rather than dereferencing
+// AllowSensitiveWrites directly.
+func (m MCPConfig) SensitiveWritesEnabled() bool {
+	return m.AllowSensitiveWrites == nil || *m.AllowSensitiveWrites
 }
 
 // BoolPtr returns a pointer to b. Convenient for the tri-state bool
