@@ -558,6 +558,37 @@ processes that attempt had been waiting for.
 - **Leftover process cleanup:** the surviving work child processes are signalled with real kernel signals, with a short grace period in between, only while they remain the recorded ones — recycled process IDs are never touched. Which ended, and which survived, are recorded.
 - **If you want a different value:** `datawatch config set autonomous.descendant_stall_seconds 5400`. A value of `0` means “use the default 2700” — this setting can not be accidentally disabled.
 
+## Reading why a worker stalled
+
+When the daemon ends a stalled pi worker (idle, exit-silence or descendant-only
+stall), it records the runner's evidence and appends a short summary to the
+task's error, so the error says why the worker stopped without opening the
+session. The error still reads as a stalled worker, so retry and escalation
+handling is unchanged.
+
+The summary is one parenthesised tail, each part shown only when known:
+
+```
+worker stalled ... (pi exited with status 1; node gpu-box; model qwen3.8:27b; last: <final output line>)
+```
+
+- **`pi exited with status N`:** read from the `pi` exit marker in the worker's
+  output.
+- **`node` and `model`:** the compute node the session ran on (the host name
+  when no compute node was set) and the model it used.
+- **`last:`:** the last non-empty output line.
+- **Length:** the tail is cut at 300 characters.
+
+Where the evidence comes from: the live pane when it has content. A one-shot
+`pi` worker's pane is gone once the wrapper exits, so when the pane is empty
+the daemon reads the session's `output.log` instead (last 40 non-empty lines,
+terminal control sequences removed). A missing or unreadable log leaves only
+node and model. Either way the list of the runner's processes is attached.
+
+If the summary shows only node and model with no exit status and no last line,
+the pane and the log were both empty. Look at the session's own log and the
+node's health before you retry.
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the
