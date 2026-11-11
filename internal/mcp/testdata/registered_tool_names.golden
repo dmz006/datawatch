@@ -258,6 +258,9 @@ dashboard_card_update
 dashboard_cards_list
 dashboard_config_get
 dashboard_console_get
+dashboard_lane_pulse_get
+dashboard_series_get
+dashboard_work_map_get
 delete_session
 detection_config_get
 detection_config_set
