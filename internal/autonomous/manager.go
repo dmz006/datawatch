@@ -1722,6 +1722,12 @@ type Manager struct {
 	stuckRefireFn   func(prdID string) (started bool, err error)
 	stuckExecLiveFn func(prdID string) bool
 
+	// condActive records which condition events (lifecycle_emit_condition.go)
+	// currently hold, keyed by kind and Automaton, so a condition that stays
+	// true emits once. Guarded by condMu.
+	condMu     sync.Mutex
+	condActive map[string]bool
+
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
 	sessionContinueFn func(sessionID string) error

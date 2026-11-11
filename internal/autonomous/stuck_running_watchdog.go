@@ -67,6 +67,10 @@ func (m *Manager) sweepStuckRunning() {
 			m.readLocked(func() { terminal = prdAllTasksTerminal(prd) })
 		}
 		active := activePRD[id] || (liveFn != nil && liveFn(id))
+		m.noteCondition(KindAutomatonTasksDone, prd, running && m.tasksDoneOrCancelled(prd))
+		if !running || !terminal || active {
+			m.noteCondition(KindAutomatonStuckRunning, prd, false)
+		}
 
 		m.mu.Lock()
 		if m.stuckSeen == nil {
@@ -104,6 +108,7 @@ func (m *Manager) sweepStuckRunning() {
 		}
 		m.stuckSeen[id] = now // restart the timer
 		m.mu.Unlock()
+		m.noteCondition(KindAutomatonStuckRunning, prd, true)
 
 		if !refired {
 			note := fmt.Sprintf("running with every task terminal, no live session or executor for %s; re-firing the completion rollup once, then blocking if still stuck after another %s",

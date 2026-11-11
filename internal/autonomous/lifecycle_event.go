@@ -70,6 +70,18 @@ const (
 	// withdrawn before an answer. Non-status: QuestionID names the
 	// withdrawn question; AnswerID is empty.
 	KindQuestionWithdrawn = "question.withdrawn"
+	// KindAutomatonStuckRunning fires once when the stuck-running watchdog
+	// finds an Automaton running with every task finished and nothing live.
+	// It fires again only after the condition cleared. Opt-in.
+	KindAutomatonStuckRunning = "automaton.stuck_running"
+	// KindAutomatonMergeReady fires once when a finished Automaton's work
+	// branch is waiting to be merged. It fires again only after the
+	// condition cleared. Opt-in.
+	KindAutomatonMergeReady = "automaton.merge_ready"
+	// KindAutomatonTasksDone fires once when every task of a running
+	// Automaton is completed or cancelled. It fires again only after the
+	// condition cleared. Opt-in.
+	KindAutomatonTasksDone = "automaton.tasks_done_or_cancelled"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,

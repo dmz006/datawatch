@@ -13,7 +13,8 @@ func TestEventKindRegistryCoversEveryKnownKind(t *testing.T) {
 	want := []string{
 		KindTaskSessionStarted, KindTaskSessionCleared, KindScopeWarning,
 		KindGuardrailWarn, KindPRDUpdated, KindQuestionAnswered,
-		KindQuestionWithdrawn,
+		KindQuestionWithdrawn, KindAutomatonStuckRunning, KindAutomatonMergeReady,
+		KindAutomatonTasksDone,
 	}
 	for _, s := range []PRDStatus{
 		PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked,
