@@ -29813,10 +29813,11 @@ window.costReportRowHtml = function(row, opts) {
   const withShare = !!o.withShare;
   const withApi = !!o.withApi;
   const withUnits = !!o.withUnits;
+  const withDetail = !!o.withDetail;
   const key = (r.key === undefined || r.key === null || r.key === '')
     ? (t('cost_report_key_unknown') || '—') : r.key;
   const td = (style, inner) => `<td style="padding:3px 8px;border-bottom:1px solid var(--border);${style}">${inner}</td>`;
-  const dash = escHtml(t('cost_report_usd_none') || '—');
+  const dash = escHtml((r.spend_unknown ? t('cost_report_unknown') : t('cost_report_usd_none')) || '—');
   const cells = [
     td('color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
        `<span title="${escHtml(String(key))}">${escHtml(String(key))}</span>`),
@@ -29824,6 +29825,17 @@ window.costReportRowHtml = function(row, opts) {
     td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
        escHtml(t('cost_report_tokens_io', [Number(r.tokens_in) || 0, Number(r.tokens_out) || 0]) || 'tokens')),
   ];
+  if (withDetail) {
+    const unk = escHtml(t('cost_report_unknown') || 'unknown');
+    const num = v => (v !== undefined && v !== null && Number.isFinite(Number(v))) ? Number(v) : null;
+    const secs = v => { const x = num(v); if (x === null) return unk; const m = Math.floor(x / 60); return escHtml(m ? m + 'm ' + Math.round(x % 60) + 's' : Math.round(x) + 's'); };
+    const cr = num(r.cache_read), cc = num(r.cache_creation), tc = num(r.tool_calls);
+    const mono = 'color:var(--text2);text-align:right;font-family:monospace;white-space:nowrap;';
+    cells.push(td(mono, (cr === null || cc === null) ? unk : cr + ' / ' + cc));
+    cells.push(td(mono, tc === null ? unk : String(tc)));
+    cells.push(td(mono, secs(r.span_seconds)));
+    cells.push(td(mono, secs(r.active_seconds)));
+  }
   if (withBilling) {
     const label = (typeof r.billing_label === 'string' && r.billing_label) ? r.billing_label : '';
     const mode = (typeof r.billing_mode === 'string' && r.billing_mode) ? r.billing_mode : '';
@@ -29884,7 +29896,8 @@ window.costReportCardHtml = function(report, opts) {
   const withShare = window.costReportFieldHas(rows, 'share_of_monthly_price');
   const withApi = window.costReportFieldHas(rows, 'api_equivalent_usd');
   const withUnits = window.costReportFieldHas(rows, 'units');
-  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits };
+  const withDetail = rows.some(r => r && typeof r === 'object' && ['tool_calls', 'span_seconds', 'active_seconds', 'cache_read'].some(f => r[f] !== undefined));
+  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits, withDetail };
   const head = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
     <span style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(t('cost_report_card_title') || 'Cost report')}</span>
     ${window.costReportHelpLink()}
@@ -29900,6 +29913,9 @@ window.costReportCardHtml = function(report, opts) {
   if (rep.lifetime_fallback === true) {
     notes += `<div>${escHtml(t('cost_report_lifetime_fallback') || 'Some USD figures fall back to lifetime rates.')}</div>`;
   }
+  [rep.window_note, rep.unknown_spend_note].forEach(x => {
+    if (typeof x === 'string' && x.trim()) notes += `<div>${escHtml(x)}</div>`;
+  });
   notes += '</div>';
   if (!rows.length) {
     return head + notes +
@@ -29908,7 +29924,7 @@ window.costReportCardHtml = function(report, opts) {
   const thL = txt => `<th style="padding:2px 8px 2px 0;text-align:left;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   const thR = txt => `<th style="padding:2px 8px;text-align:right;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   let body = `<div style="overflow-x:auto;font-size:10px;"><table style="border-collapse:collapse;width:100%;">
-    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
+    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withDetail ? thR(t('cost_report_column_cache') || 'Cache read/created') + thR(t('cost_report_column_tool_calls') || 'Tool calls') + thR(t('cost_report_column_span') || 'Span') + thR(t('cost_report_column_active') || 'Active time') : ''}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
     <tbody>${rows.slice(0, maxRows).map(r => window.costReportRowHtml(r, rowOpts)).join('')}</tbody>
   </table></div>`;
   const hidden = rows.length - maxRows;
@@ -31803,6 +31819,39 @@ window._lifecycleSubOpenForm = _lifecycleSubOpenForm;
 window._lifecycleSubDelete = _lifecycleSubDelete;
 window._lifecycleSubTest = _lifecycleSubTest;
 
+// Per-Automaton cost block for the Overview tab. Dollar figures are
+// API-equivalent estimates, not a bill.
+function _renderDetailCost(prd) {
+  const c = prd && prd.cost;
+  if (!c) return '';
+  const unk = t('automata_detail_cost_unknown') || 'unknown';
+  const has = (v) => v !== undefined && v !== null && Number.isFinite(Number(v));
+  const n = (v) => has(v) ? Number(v).toLocaleString() : unk;
+  const dur = (sec) => {
+    if (!has(sec)) return unk;
+    sec = Math.round(Number(sec));
+    if (sec <= 0) return '0s';
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), r = sec % 60;
+    return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + r + 's';
+  };
+  const usd = c.api_equivalent_usd != null ? c.api_equivalent_usd : c.usd_estimate;
+  const rows = [
+    [t('automata_detail_cost_sessions') || 'Sessions', n(c.sessions)],
+    [t('automata_detail_cost_tokens') || 'Tokens in/out', `${n(c.tokens_in)} / ${n(c.tokens_out)}`],
+    [t('automata_detail_cost_cache') || 'Cache read/created', `${n(c.cache_read)} / ${n(c.cache_creation)}`],
+    [t('automata_detail_cost_tools') || 'Tool calls', n(c.tool_calls)],
+    [t('automata_detail_cost_span') || 'Elapsed', dur(c.span_seconds)],
+    [t('automata_detail_cost_active') || 'Active time', dur(c.active_seconds)],
+    [t('automata_detail_cost_usd') || 'API-equivalent cost', has(usd) ? '$' + Number(usd).toFixed(2) : unk],
+  ];
+  const notes = [c.window_note, c.report_window_note, c.spend_unknown ? c.spend_unknown_note : ''].filter(Boolean);
+  return `<div class="prd-detail-cost" style="margin-top:10px;">
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('automata_detail_cost') || 'Cost')}</div>
+    <dl class="prd-detail-meta">${rows.map(([k, v]) => `<dt>${escHtml(k)}</dt><dd>${escHtml(v)}</dd>`).join('')}</dl>
+    <div style="font-size:10px;color:var(--text2);">${escHtml(t('automata_detail_cost_note') || 'API-equivalent estimate, not a bill.')}${notes.map(x => ' ' + escHtml(x)).join('')}</div>
+  </div>`;
+}
+
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
@@ -31839,6 +31888,7 @@ function _renderDetailOverview(prd) {
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>
     </div>` : ''}
+    ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
