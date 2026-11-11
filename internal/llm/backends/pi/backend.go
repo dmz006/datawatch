@@ -269,6 +269,9 @@ func agentDirCleanup(agentDir string) string {
 // build. The directory is removed again if the launch fails; once the command
 // runs, its own cleanup removes it. Build errors carry label as a prefix.
 func sendLaunch(ctx context.Context, label, tmuxSession, nodeAddr, model string, build func(agentDir string) (string, error)) error {
+	if err := preflightBeforeLaunch(ctx, nodeAddr, model); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
 	agentDir, err := nodeAgentDir(nodeAddr, model, tmuxSession)
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
