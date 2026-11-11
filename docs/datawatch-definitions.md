@@ -2544,6 +2544,8 @@ The settings below are the six keys of the block. Each is set on every surface (
 
 **Branch retention (project)** — the days a project keeps finished Automaton branches, with the daemon-wide default `projects_defaults.branch_retention_days`. Stored and shown; the worktree cleanup does not read it yet.
 
+**Dependency update Automation** — the weekly Automation that applies every dependency version update (Go modules, Docker base images, GitHub Actions, build-argument image tags) in one Automaton. Dependabot no longer opens version pull requests; it is limited to security updates by `open-pull-requests-limit: 0` in `.github/dependabot.yml`, enforced by `make check-dependabot-security-only` inside `make lint`. See [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
+
 ---
 
 ## Core feature reference matrix
