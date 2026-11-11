@@ -186,8 +186,10 @@ func TestBillingProfile_RejectionAppliesNothing(t *testing.T) {
 func TestBillingProfile_DrivesCostReportBilling(t *testing.T) {
 	s := bl90Server(t)
 	now := time.Now()
-	costReportSession(t, s.manager, "abcd1234", "claude-code", 100000, 50000, now)
-	costReportSession(t, s.manager, "ef012345", "ollama", 100000, 50000, now)
+	s.costReportLedger = fakeSpendLedger{
+		{SessionID: "abcd1234", Backend: "claude-code", StartedAt: now, TokensIn: 100000, TokensOut: 50000},
+		{SessionID: "ef012345", Backend: "ollama", StartedAt: now, TokensIn: 100000, TokensOut: 50000},
+	}
 	body := `{
 		"usage.billing.claude-code.mode": "bundled_plan",
 		"usage.billing.claude-code.monthly_price": 200
