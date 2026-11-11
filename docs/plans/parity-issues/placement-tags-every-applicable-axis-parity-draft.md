@@ -10,6 +10,7 @@ full set of placement axes that apply to it.
 **Found:** 2026-11-08, from the operator's answer to the planner / supervisor
 tag question.
 **Related plan:** [placement auto-tags parity plan](../2026-11-03-placement-auto-tags-parity.md).
+**Start-hook half:** this draft covers the REST launch-fields half of the feature; the manager-level stamp that reaches every start *and* restart path is captured in [2026-11-09-placement-start-hook-tags-parity.md](2026-11-09-placement-start-hook-tags-parity.md).
 **Related story files:** `internal/server/session_launch_tags.go`,
 `internal/server/session_launch_tags_test.go`,
 `cmd/datawatch/launch_tags_test.go`, `internal/mcp/server.go`.
@@ -25,8 +26,8 @@ surfaces this work touches are the session start itself
 `datawatch session new`), the one-shot launch sites the daemon runs (decompose
 planner, verifier, guardrail judge and rejudge, supervisor loop, task worker and
 auto-fix), the tag sweep that re-stamps existing sessions, and the read surfaces
-that show the result: the session list, the tag browser and the placement-tag
-settings.
+that show the result: the session list, the tag browser, the session JSON's
+`system_tags`, and the placement-tag settings.
 
 The operator guidance for all of it now lives in
 [docs/howto/automata-tags.md](../../howto/automata-tags.md) (the axes table,
@@ -76,7 +77,12 @@ legacy derivation (role and kind from the session name, no node fallback) and
 is left unchanged rather than guessed at, and turning an axis off clears its
 tag on the next re-stamp instead of rewriting it. The manager's
 placement-start hook fires once per successful start, so the stamping rides the
-real start paths.
+real start paths, and a restarted session re-stamps from its record the same
+way a fresh start does — keeping the role, kind, stage and automaton axes its
+record holds, with no sweep needed after a restart and no tag change on a
+restart that fails. The sweep also runs on its own: once after a save under
+`autonomous.tags.placement.*`, and once at daemon startup after the lease
+backfill (again only when the block has changed since the last sweep).
 
 The gap this leaves is on the operator-facing clients. The app meets a wider
 tag vocabulary than it has met before: sessions that carried one or two tags
