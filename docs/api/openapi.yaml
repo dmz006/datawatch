@@ -8418,6 +8418,39 @@ paths:
         "403": {description: Caller lacks the config-read capability}
         "405": {description: Method not allowed (GET only)}
 
+  /api/git/hosts/stats:
+    get:
+      summary: Git host operation counters from the system stats
+      description: |
+        The `git_hosts` block of the system stats on its own: `configured`
+        (number of `git.hosts` entries), `window_seconds` (the window the
+        counts cover), `operations` (a map of kind — `push`,
+        `pull_request`, `merge`, `tag`, `ci_read` — to its count over the
+        window), `failed` (failed operations over the same window) and
+        `last_success_at` (zero time before any successful operation). With
+        no host configured, or before the first stats sample, the counts are
+        zero and `operations` is empty. Read only; authenticates with the
+        analytics-read capability, and a federated peer without it is
+        refused with 403.
+      operationId: gitHostsStats
+      tags: [Singletons]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [configured, window_seconds, operations, failed, last_success_at]
+                properties:
+                  configured: {type: integer}
+                  window_seconds: {type: integer, format: int64}
+                  operations: {type: object, additionalProperties: {type: integer}}
+                  failed: {type: integer}
+                  last_success_at: {type: string, format: date-time}
+        "403": {description: Caller lacks the analytics-read capability}
+        "405": {description: Method not allowed (GET only)}
+
   /api/git/hosts/{name}/test:
     post:
       summary: Test the connection to one configured git host

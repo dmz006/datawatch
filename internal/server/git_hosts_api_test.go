@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,9 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/secrets"
+	"github.com/dmz006/datawatch/internal/stats"
 )
 
 // vaultTokenValue is the secret value stored for the vault host. The tests
@@ -192,4 +195,72 @@ func TestGitHostStatusAPI_NoGHOnPath(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "gh command is not installed") {
 		t.Errorf("want missing-gh problem in body, got %s", rr.Body.String())
 	}
+}
+
+func TestGitHostStatsAPI(t *testing.T) {
+	col := stats.NewCollector(t.TempDir())
+	col.SetGitHostStatsFunc(func(s *stats.SystemStats) {
+		s.GitHosts = &stats.GitHostStats{
+			Configured:    2,
+			WindowSeconds: 3600,
+			Operations:    map[string]int{"push": 3, "merge": 1},
+			Failed:        1,
+			LastSuccessAt: time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC),
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go col.Start(ctx)
+	deadline := time.Now().Add(5 * time.Second)
+	for col.Latest().GitHosts == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("collector produced no sample")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	s := &Server{statsCollector: col}
+	mux := http.NewServeMux()
+	mux.HandleFunc(gitHostStatsPath, s.handleGitHostStats)
+
+	t.Run("shape", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, gitHostStatsPath, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+		}
+		var got map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		for _, k := range []string{"configured", "window_seconds", "operations", "failed", "last_success_at"} {
+			if _, ok := got[k]; !ok {
+				t.Errorf("missing key %q in %s", k, rr.Body.String())
+			}
+		}
+		if got["configured"].(float64) != 2 || got["failed"].(float64) != 1 || got["window_seconds"].(float64) != 3600 {
+			t.Errorf("unexpected values: %s", rr.Body.String())
+		}
+		if ops := got["operations"].(map[string]any); ops["push"].(float64) != 3 {
+			t.Errorf("operations: %v", ops)
+		}
+	})
+
+	t.Run("no collector gives empty block", func(t *testing.T) {
+		empty := &Server{}
+		rr := httptest.NewRecorder()
+		empty.handleGitHostStats(rr, httptest.NewRequest(http.MethodGet, gitHostStatsPath, nil))
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"operations":{}`) {
+			t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("other methods are 405", func(t *testing.T) {
+		for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, httptest.NewRequest(m, gitHostStatsPath, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s: status %d, want 405", m, rr.Code)
+			}
+		}
+	})
 }

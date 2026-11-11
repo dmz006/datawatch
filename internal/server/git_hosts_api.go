@@ -15,10 +15,14 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/stats"
 )
 
 // gitHostsPath is the collection route; actions live under gitHostsPath + "/{name}/test".
 const gitHostsPath = "/api/git/hosts"
+
+// gitHostStatsPath serves the git host counters from the system stats.
+const gitHostStatsPath = gitHostsPath + "/stats"
 
 // gitHostEntry is one row of GET /api/git/hosts.
 type gitHostEntry struct {
@@ -113,4 +117,29 @@ func (s *Server) handleGitHostAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(gitHostTestResponse{Host: name, ConnectionResult: res})
+}
+
+// handleGitHostStats serves GET /api/git/hosts/stats: the git host counter
+// block the system stats carry. With no collector, or no git host configured,
+// it answers a zeroed block with an empty operations map rather than an error.
+func (s *Server) handleGitHostStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, http.StatusText(http.StatusMethodNotAllowed))
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
+	out := stats.GitHostStats{Operations: map[string]int{}}
+	if s.statsCollector != nil {
+		if gh := s.statsCollector.Latest().GitHosts; gh != nil {
+			out = *gh
+			if out.Operations == nil {
+				out.Operations = map[string]int{}
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(out)
 }
