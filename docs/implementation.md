@@ -2340,6 +2340,16 @@ The daemon observes the in-flight model request of a worker or verifier session 
   - PWA merge badge and safe-to-delete card (`internal/server/web/app.js`), with the `merge_*`, `safe_delete_*` and `settings_automation_merge_pending_*` strings in the five locale bundles (en, de, es, fr, ja).
 - **Parity:** the REST/MCP/CLI/comm mapping is asserted by `internal/mcp/merge_tools_test.go`, `internal/router/merge_comm_test.go` and `cmd/datawatch/cli_merge_test.go`; mobile parity issue datawatch-app#304 (`docs/plans/parity-issues/2026-10-29-automation-merge-pending-parity.md`). Operator reference: *Merge-pending check* in `docs/operations.md`; data flow: `docs/flow/automation-merge-pending-flow.md`.
 
+## Dependency update (autonomous.automation.dependency_update)
+
+Settings for the weekly Automation that updates every dependency together. Defaults are applied only in the `Effective*` accessors in `internal/config/dependency_update.go`; `Validate` refuses a bad value on config load and on every write path.
+
+| Key | Type | Default | Allowed |
+|---|---|---|---|
+| `enabled` | bool | `true` (unset reads true) | true or false |
+| `schedule` | string | `monday 05:00` | `weekday HH:MM` in the daemon's local time: monday..sunday (case-insensitive) then a 24-hour time |
+| `max_majors` | integer | `5` | 0..20; 0 means no major updates in a run |
+
 ## Repo CI watch (autonomous.automation.repo_ci_watch)
 
 The coordinator watches the CI runs of repositories you name it to, on the
