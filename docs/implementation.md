@@ -2418,11 +2418,29 @@ steps (no model call) and three model jobs, each run recorded. See
   the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`),
   `validator_retries` (default 2), `escalate_after_failures` (default 2),
   `run_retention` (default 500), `archive_cancelled_after_minutes`
-  (default 60) and `lane_count.min` / `lane_count.max` (default
+  (default 60), `lane_count.min` / `lane_count.max` (default
   0; max 0 means no bounds, so the lane count step moves nothing; max must be at
-  least min). Over `PUT /api/config`, the CLI `config set` and the comm
+  least min), and the event wake block `wake.enabled` (default false),
+  `wake.kinds` (a list of lifecycle event kinds, default the eleven kinds in
+  `supervisorloop.DefaultWakeKinds`), `wake.coalesce_seconds` (0 to 3600,
+  default 30) and `wake.fallback_interval_minutes` (1 to 1440, default 20,
+  the scheduled check's interval). Over `PUT /api/config`, the CLI `config set` and the comm
   `configure` verb the key is `autonomous.supervisor_loop.<key>` without the
   second prefix.
+- **Wake settings:** `internal/supervisorloop/wake_settings.go` holds the
+  `WakeSettings` block (`Settings.Wake`), its keys, defaults, bounds and
+  `Wakes(kind)`. `wake.kinds` accepts a `[]string`, a JSON list, or a comma-,
+  newline- or space-separated string, so YAML, REST, the CLI, the comm channel
+  and the PWA textarea all reach the same list; blanks drop out, duplicates
+  and unknown kinds are refused, and the list may not be empty while the wake
+  is on. The kind check is injected: the package cannot import `autonomous`,
+  so `internal/autonomous/supervisor_loop_wake_kinds.go` installs
+  `IsKnownEventKind` through `supervisorloop.SetEventKindChecker` at start-up,
+  and with no checker only blanks are refused. `Settings.Get(key)` reads one
+  value as `Flat` lists it. Tests: `internal/supervisorloop/wake_settings_test.go`
+  (defaults, off by default, bounds, unknown-kind rejection, the accepted
+  list forms) and `internal/autonomous/supervisor_loop_wake_kinds_test.go`
+  (every default kind is a registered, subscribable kind).
 - **Engine:** `internal/supervisorloop` holds the engine, the validators, the
   model jobs (`jobs_model.go`), the eval harness (`eval.go`), the run store
   (`store.go`, `supervisor_loop_runs.jsonl` in the data directory, trimmed to

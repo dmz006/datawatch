@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -152,7 +153,8 @@ func TestSupervisorLoopRunUnknownJob404(t *testing.T) {
 func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 	// A non-default value for every key.
 	want := map[string]any{"enabled": false, "validator_retries": 4, "escalate_after_failures": 3,
-		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6}
+		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6,
+		"wake.enabled": true, "wake.kinds": []any{"task.failed", "prd.blocked"}, "wake.coalesce_seconds": 5, "wake.fallback_interval_minutes": 7}
 	for _, n := range supervisorloop.StepNames {
 		want[n+".enabled"] = false
 	}
@@ -170,11 +172,7 @@ func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 		if err := json.Unmarshal(got["supervisor_loop"], &surf); err != nil {
 			t.Fatal(err)
 		}
-		g, w := surf[key], val
-		if f, ok := g.(float64); ok {
-			g = int(f)
-		}
-		if g != w {
+		if g, w := loopSurfaceValue(surf[key]), loopSurfaceValue(val); g != w {
 			t.Errorf("%s: GET after PUT = %v, want %v", key, g, w)
 		}
 		// Every other key still reads its default.
@@ -183,11 +181,8 @@ func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 			if k == key {
 				continue
 			}
-			if f, ok := v.(float64); ok {
-				v = int(f)
-			}
-			if dv := def["supervisor_loop."+k]; dv != v {
-				t.Errorf("PUT %s moved %s: %v, want default %v", key, k, v, dv)
+			if dv, gv := loopSurfaceValue(def["supervisor_loop."+k]), loopSurfaceValue(v); dv != gv {
+				t.Errorf("PUT %s moved %s: %v, want default %v", key, k, gv, dv)
 			}
 		}
 	}
@@ -313,4 +308,22 @@ func TestSupervisorLoopStatsEndpoint(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST code %d", rr.Code)
 	}
+}
+
+// loopSurfaceValue folds a decoded config value into a comparable form: a
+// JSON number to int, a list (the wake kinds) to its joined text.
+func loopSurfaceValue(v any) any {
+	switch x := v.(type) {
+	case float64:
+		return int(x)
+	case []string:
+		return strings.Join(x, ",")
+	case []any:
+		parts := make([]string, len(x))
+		for i, e := range x {
+			parts[i] = fmt.Sprint(e)
+		}
+		return strings.Join(parts, ",")
+	}
+	return v
 }

@@ -77,6 +77,10 @@ the [definitions](../datawatch-definitions.md#supervisor-loop).
 | `archive_cancelled_after_minutes` | `60` | The grace, in minutes, before a cancelled Automaton is archived, measured from its most recent cancel. `0` archives it at once. |
 | `lane_count.min` | `0` | The lowest lane count the loop may set. |
 | `lane_count.max` | `0` | The highest lane count the loop may set. `0` means no bounds, so the lane count step moves nothing. |
+| `wake.enabled` | `false` | Turns the event wake on: a listed event starts a pass at once instead of waiting for the scheduled check, which stays as the fallback. Off by default, so nothing changes until you turn it on. |
+| `wake.kinds` | the default list | The event kinds that wake the supervisor: a blocked Automaton, a task needing review, a failed task or final gate, every judge verdict, all tasks done or cancelled, an Automaton stuck running, a long capacity wait and a burn guard rung change. Each must be a kind a subscription can filter on; written comma-separated over the CLI and the comm channel. |
+| `wake.coalesce_seconds` | `30` | The quiet window after a wake: events arriving within it fold into the same pass. `0` to `3600`; `0` wakes on every event. |
+| `wake.fallback_interval_minutes` | `20` | Minutes between scheduled passes when no event wakes the supervisor, `1` to `1440`. The default equals the scheduled check. |
 
 ## Access methods
 
