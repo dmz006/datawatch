@@ -76,6 +76,9 @@ jobs:
       - name: go toolchain pin floor check
         run: bash scripts/check-go-toolchain-pins.sh && bash scripts/check-go-toolchain-pins.sh --self-test
 
+      - name: trivy single version check
+        run: bash scripts/check-trivy-version-single.sh && bash scripts/tests/check-trivy-version-single_test.sh
+
       - name: dockerfile certifi floor check
         run: bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test
 
