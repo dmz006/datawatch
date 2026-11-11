@@ -310,11 +310,17 @@ wrong path can never reach another repository. Commit also refuses before
 staging anything when the message is empty, or the worktree has no uncommitted
 files. A file path that would leave the worktree is refused.
 
-**Review before relying on this.** The diff and commit are engine functions in
-this change. Their REST route, CLI verb, MCP tool, comm verb and PWA button
-(and the message the button proposes) are not described here because they are
-not part of this change; the operator must confirm them. This is separate from
-the **commit** answer to a held-task question, which is unchanged.
+**Where.** On the Housekeeping sub-tab each listed worktree has a **Commit**
+button. It opens a window showing the diff from
+`GET /api/autonomous/uncommitted-work/diff?worktree=<path>`, a message field, and
+a submit that posts `{worktree, message}` to
+`POST /api/autonomous/uncommitted-work/commit`. The button stays disabled while
+the worktree is clean. There is no CLI verb, MCP tool or comm verb for the diff
+or commit. This is separate from the **commit** answer to a held-task question,
+which is unchanged.
+
+**Review before relying on this.** The operator should confirm that a PWA-only
+(plus REST) surface is enough and that the message the button proposes is right.
 
 ## Where to see
 
