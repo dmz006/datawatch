@@ -150,7 +150,7 @@ func observerPullDefaults(s *Server) config.ObserverPullConfig {
 //	source           always "pull"
 //	shadow           true when the same name is ALSO push-registered
 //	stale            last fetch failed (or not yet fetched: false)
-//	stale_reason     none | timeout | error | forbidden | not_permitted | bad_payload | unknown
+//	stale_reason     none | collector not running | timeout | error | forbidden | not_permitted | bad_payload | unknown
 //	last_success_at  last successful fetch (null while none)
 //	interval_s       effective pull interval (entry value, else the global default)
 //	timeout_s        effective per-pull timeout (entry value, else the global default)
@@ -214,10 +214,17 @@ func (s *Server) pullStatusRows() []map[string]any {
 		if !globalOn {
 			row["reason"] = ObserverPullDisabledReason
 		}
+		down := s.pullCollectorDown(name)
+		if down {
+			row["stale"] = true
+			row["stale_reason"] = observer.ReasonCollectorNotRunning
+		}
 		if st, ok := s.pullStateFor(name); ok {
-			row["stale"] = st.Stale
-			if st.StaleReason != "" {
-				row["stale_reason"] = st.StaleReason
+			if !down {
+				row["stale"] = st.Stale
+				if st.StaleReason != "" {
+					row["stale_reason"] = st.StaleReason
+				}
 			}
 			if !st.LastSuccessAt.IsZero() {
 				t := st.LastSuccessAt

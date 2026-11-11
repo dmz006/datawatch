@@ -223,7 +223,7 @@ func (s *Server) handleObserverAgentList(_ context.Context, _ mcpsdk.CallToolReq
 // stale_reason, last_success_at) and the effective interval_s / timeout_s.
 func (s *Server) toolObserverPullStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("observer_pull_status",
-		mcpsdk.WithDescription("Observer pull (pull-mode) states: every peer in the pull target set with live state. Each row: name, source (\"pull\"), shadow (true when also push-registered), stale, stale_reason (none|timeout|error|forbidden|not_permitted|bad_payload|unknown), last_success_at, interval_s, timeout_s. Read-only."),
+		mcpsdk.WithDescription("Observer pull (pull-mode) states: every peer in the pull target set with live state. Each row: name, source (\"pull\"), shadow (true when also push-registered), stale, stale_reason (none|collector not running|timeout|error|forbidden|not_permitted|bad_payload|unknown), last_success_at, interval_s, timeout_s. Read-only."),
 	)
 }
 func (s *Server) handleObserverPullStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

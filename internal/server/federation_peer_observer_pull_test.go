@@ -113,8 +113,8 @@ func TestFedPeer_ObserverPull_PersistAndSurface(t *testing.T) {
 	if mine.TimeoutS != 7 {
 		t.Errorf("timeout_s = %d, want the per-peer 7 (not the server default)", mine.TimeoutS)
 	}
-	if mine.Stale || mine.StaleReason != "none" {
-		t.Errorf("stale = %v reason = %q, want false/none", mine.Stale, mine.StaleReason)
+	if !mine.Stale || mine.StaleReason != "collector not running" {
+		t.Errorf("stale = %v reason = %q, want true/collector not running (no collector)", mine.Stale, mine.StaleReason)
 	}
 
 	// The PWA's unchecked-box path: PUT observer_pull:false. The partial
