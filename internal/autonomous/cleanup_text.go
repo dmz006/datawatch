@@ -8,6 +8,7 @@ package autonomous
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -49,6 +50,38 @@ func cleanupDiskText(c *CleanupDiskCheck) string {
 	return c.Path + " (no reading)"
 }
 
+var cleanupReasonText = map[string]string{
+	cleanupSkipCommits:          "unlanded commits",
+	cleanupSkipDirty:            "uncommitted work",
+	cleanupSkipNotFinished:      "live Automaton",
+	cleanupSkipLiveSession:      "live session",
+	cleanupSkipLiveLease:        "live lease",
+	cleanupSkipRetained:         "inside retention window",
+	cleanupSkipPrimary:          "main checkout",
+	cleanupSkipNoBase:           "no base branch",
+	cleanupSkipHeld:             "held by safety report",
+	cleanupSkipOverLimit:        "over removal limit",
+	cleanupSkipPermissionDenied: "permission denied",
+}
+
+// cleanupSkippedText renders the reason groups in a stable order.
+func cleanupSkippedText(m map[string]int) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		label := cleanupReasonText[k]
+		if label == "" {
+			label = k
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", label, m[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
 func cleanupPassText(label string, ps CleanupPassStatus) string {
 	if ps.LastRun == nil {
 		return fmt.Sprintf("  %s pass: not run yet", label)
@@ -59,6 +92,9 @@ func cleanupPassText(label string, ps CleanupPassStatus) string {
 		ps.Removed, ps.WouldRemove, ps.Skipped, ps.Failed, ps.BytesFreed)
 	fmt.Fprintf(&b, "\n    owner vs net: %d/%d removed, %d/%d bytes freed",
 		ps.OwnerRemoved, ps.NetRemoved, ps.OwnerBytesFreed, ps.NetBytesFreed)
+	if len(ps.SkippedByReason) > 0 {
+		b.WriteString("\n    skipped by reason: " + cleanupSkippedText(ps.SkippedByReason))
+	}
 	if ps.LastError != "" {
 		b.WriteString("\n    last error: " + ps.LastError)
 	}
