@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // formatRunnerProcessLine renders one process for the runner evidence: the pid,
@@ -57,9 +58,18 @@ func runnerProcessLines(tmuxSession string) []string {
 }
 
 // newRunnerEvidence builds the evidence for a pane capture and the processes
-// under tmuxSession.
-func newRunnerEvidence(pane, tmuxSession string) *autonomouspkg.RunnerEvidence {
-	ev := autonomouspkg.RunnerEvidenceFrom(pane, runnerProcessLines(tmuxSession))
+// under tmuxSession. The pane stays preferred when it has content. When it is
+// empty (the pane is gone once the wrapper exited), the evidence comes from the
+// session output log at logPath, carrying node and model; the process list is
+// still attached either way.
+func newRunnerEvidence(pane, tmuxSession, logPath, node, model string) *autonomouspkg.RunnerEvidence {
+	procs := runnerProcessLines(tmuxSession)
+	if strings.TrimSpace(pane) == "" {
+		ev := autonomouspkg.RunnerEvidenceFromLog(logPath, node, model)
+		ev.Processes = procs
+		return &ev
+	}
+	ev := autonomouspkg.RunnerEvidenceFrom(pane, procs)
 	return &ev
 }
 
@@ -71,4 +81,13 @@ func withRunnerExitStatus(err error, ev *autonomouspkg.RunnerEvidence) error {
 		return err
 	}
 	return fmt.Errorf("%w (pi exited with status %d)", err, *ev.ExitStatus)
+}
+
+// sessionEvidenceNode names the node a session ran on: its compute node when
+// one is set, otherwise the host.
+func sessionEvidenceNode(s *session.Session) string {
+	if s.ComputeNodeRef != "" {
+		return s.ComputeNodeRef
+	}
+	return s.Hostname
 }
