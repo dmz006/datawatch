@@ -3140,7 +3140,17 @@ function _projectsPickerHTML(list, selected, err) {
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
       <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+        <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
+        ${escHtml(t('projects_show_empty') || 'Show empty')}
+      </label>
     </div>`;
+}
+
+// toggleProjectsShowEmpty remembers the viewer's show-empty choice and repaints.
+function toggleProjectsShowEmpty(checked) {
+  _projectsSetShowEmpty(!!checked);
+  _projectsPaint();
 }
 
 // The project page: the header fields, the ordered arcs with the Automata and
