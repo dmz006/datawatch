@@ -5,10 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
-
-	"github.com/dmz006/datawatch/internal/config"
 )
 
 func TestNormalizePacks(t *testing.T) {
@@ -68,42 +64,6 @@ func TestAutomationPacksOmittedWhenEmpty(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	if strings.Contains(string(raw), `"packs"`) {
-		t.Fatalf("empty packs should be omitted, got %s", raw)
-	}
-}
-
-func TestProjectPacksPersistAsYAMLAndJSON(t *testing.T) {
-	in := config.ProjectConfigEntry{
-		Dir:         "/work/p",
-		Description: "keep me",
-		Packs:       []string{"zeta", "alpha"},
-	}
-	raw, err := yaml.Marshal(in)
-	if err != nil {
-		t.Fatalf("yaml marshal: %v", err)
-	}
-	var back config.ProjectConfigEntry
-	if err := yaml.Unmarshal(raw, &back); err != nil {
-		t.Fatalf("yaml unmarshal: %v", err)
-	}
-	if !reflect.DeepEqual(back, in) {
-		t.Fatalf("yaml round-trip = %#v, want %#v", back, in)
-	}
-	jraw, err := json.Marshal(in)
-	if err != nil {
-		t.Fatalf("json marshal: %v", err)
-	}
-	if !strings.Contains(string(jraw), `"packs":["zeta","alpha"]`) {
-		t.Fatalf("packs not in project JSON: %s", jraw)
-	}
-}
-
-func TestProjectPacksOmittedWhenEmpty(t *testing.T) {
-	raw, err := yaml.Marshal(config.ProjectConfigEntry{Dir: "/work/p"})
-	if err != nil {
-		t.Fatalf("yaml marshal: %v", err)
-	}
-	if strings.Contains(string(raw), "packs") {
 		t.Fatalf("empty packs should be omitted, got %s", raw)
 	}
 }

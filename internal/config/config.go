@@ -6962,9 +6962,6 @@ type ProjectConfigEntry struct {
 	// Nil (key absent) = a plain project with no per-project overrides
 	// (see ProjectPolicy and ResolveProjectPolicy).
 	Policy *ProjectPolicy `yaml:"policy,omitempty" json:"policy,omitempty"`
-	// Packs names the template packs this project draws from, in the order
-	// configured (earlier packs take priority). Empty = no per-project list.
-	Packs []string `yaml:"packs,omitempty" json:"packs,omitempty"`
 }
 
 // SessionTemplateEntry (BL5) — reusable bundle of session start params.
