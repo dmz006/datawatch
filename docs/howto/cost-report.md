@@ -154,7 +154,7 @@ money as rows.
 
 ### What an Automaton's row counts
 
-An Automaton's row counts every session it launches, not just its worker sessions: workers, verifiers, rules-review, planner and decompose sessions, and retries. Each session records the Automaton and task it belongs to when it is launched, and the daemon keeps that in a spend ledger (`spend_ledger.json` in the data directory) keyed by session. The row's `sessions` and token columns therefore include planning, verification and retry spend, and the ledger also holds each session's active time and tool-call count (read from the Claude transcript).
+An Automaton's row counts every session it launches, not just its worker sessions: worker, verification, rules-review, decompose and guardrail sessions, including each retry session as its own entry. Each session records the Automaton and task it belongs to when it is launched, and the daemon keeps that in a spend ledger (`spend_ledger.json` in the data directory) keyed by session. The row's `sessions` and token columns therefore include planning, verification and retry spend, and the ledger also holds each session's active time and tool-call count (read from the Claude transcript).
 
 - **Deleting sessions does not lower the cost.** The ledger entry outlives the session, so deleting or cleaning up a session leaves the Automaton's cost unchanged until the entry ages out of the 31-day window.
 - **Older sessions stay uncounted.** Sessions that ran before this change carry no attribution and land under `unattributed`. Nothing is back-filled; new sessions count from the first launch after the upgrade.
@@ -167,7 +167,7 @@ The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an
 
 ### What is recorded per Automaton and role
 
-Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (worker, verifier, rules-review, planner, decompose or guardrail; a retry keeps the role of the session it retries), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so planning, verification and retries are part of its cost and not hidden under the worker.
+Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (`worker`, `decompose`, `rules_review`, `verification` or `guardrail`; a session launched with no role is recorded as `other`), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so decompose, verification, rules-review and retry sessions are part of its cost and not hidden under the worker.
 
 ### Reading the window: a missing row, partial rows and unknown spend
 
