@@ -182,7 +182,7 @@ func (c *configPutRecorder) harden() {
 		return
 	}
 	c.hardened = true
-	h := c.ResponseWriter.Header()
+	h := c.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	ct := strings.ToLower(strings.TrimSpace(h.Get("Content-Type")))
 	if ct == "" || strings.HasPrefix(ct, "text/html") || strings.HasPrefix(ct, "application/xhtml") {
