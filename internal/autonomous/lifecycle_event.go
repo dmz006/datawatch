@@ -82,6 +82,12 @@ const (
 	// Automaton is completed or cancelled. It fires again only after the
 	// condition cleared. Opt-in.
 	KindAutomatonTasksDone = "automaton.tasks_done_or_cancelled"
+	// KindCapacityWaitTooLong fires once per waiting episode when a task has
+	// waited for capacity longer than the threshold. Opt-in.
+	KindCapacityWaitTooLong = "task.capacity_wait_too_long"
+	// KindBurnGuardRungChanged fires when the burn guard's rung changes;
+	// OldStatus and NewStatus carry the old and new rung. Opt-in.
+	KindBurnGuardRungChanged = "burn_guard.rung_changed"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,

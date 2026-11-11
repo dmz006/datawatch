@@ -57,6 +57,8 @@ func OptInNotifyEvents() []string {
 		KindAutomatonStuckRunning,
 		KindAutomatonMergeReady,
 		KindAutomatonTasksDone,
+		KindCapacityWaitTooLong,
+		KindBurnGuardRungChanged,
 	}
 	sort.Strings(opt)
 	return opt

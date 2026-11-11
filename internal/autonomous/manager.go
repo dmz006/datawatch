@@ -1727,6 +1727,8 @@ type Manager struct {
 	// true emits once. Guarded by condMu.
 	condMu     sync.Mutex
 	condActive map[string]bool
+	// capWaits holds the current capacity-wait episodes (lifecycle_emit_capacity_burn.go), guarded by condMu.
+	capWaits map[string]*capacityWaitEpisode
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
@@ -6853,6 +6855,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
+			m.sweepCapacityWaits()
 			m.sweepPlatformContextMigration()
 		}
 	}

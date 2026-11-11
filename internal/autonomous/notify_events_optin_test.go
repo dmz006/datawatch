@@ -8,7 +8,7 @@ import (
 )
 
 func TestOptInNotifyEvents(t *testing.T) {
-	want := []string{KindAutomatonMergeReady, KindAutomatonStuckRunning, KindAutomatonTasksDone, KindGuardrailWarn, KindScopeWarning, KindTaskSessionCleared, KindTaskSessionStarted}
+	want := []string{KindAutomatonMergeReady, KindAutomatonStuckRunning, KindAutomatonTasksDone, KindBurnGuardRungChanged, KindGuardrailWarn, KindScopeWarning, KindCapacityWaitTooLong, KindTaskSessionCleared, KindTaskSessionStarted}
 	got := OptInNotifyEvents()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("OptInNotifyEvents() = %v; want %v", got, want)

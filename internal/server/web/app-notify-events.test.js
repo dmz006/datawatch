@@ -19,7 +19,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const APP_JS = path.join(__dirname, 'app.js');
 const LOCALES_DIR = path.join(__dirname, 'locales');
-const EXPECTED_KINDS = ['guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const EXPECTED_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 // 15 keys the notify-events surfaces reference (PRD settings modal, detail
 // line, guardrail profile panel). Must exist in every locale bundle.
 const NOTIFY_KEYS = [
@@ -182,7 +182,7 @@ test('_renderNotifyKindOptions: grouped checkboxes, default markers, inherit dis
   const markers = (html.match(/\(default\)/g) || []).length;
   assert.equal(markers, 5, 'one (default) marker per default kind');
   const optInMarkers = (html.match(/\(opt-in\)/g) || []).length;
-  assert.equal(optInMarkers, 4, 'one (opt-in) marker per opt-in kind (guardrail_warn, scope_warning, task.session_started, task.session_cleared)');
+  assert.equal(optInMarkers, 9, 'one (opt-in) marker per opt-in kind');
   assert.doesNotMatch(html, /default \/ opt-in|opt-in \/ default/, 'no kind may carry both markers');
   for (const k of ['scope_warning', 'guardrail_warn', 'task.session_started', 'task.session_cleared']) {
     const i = html.indexOf('value="' + k + '"');

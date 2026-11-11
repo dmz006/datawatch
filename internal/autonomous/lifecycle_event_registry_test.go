@@ -14,7 +14,7 @@ func TestEventKindRegistryCoversEveryKnownKind(t *testing.T) {
 		KindTaskSessionStarted, KindTaskSessionCleared, KindScopeWarning,
 		KindGuardrailWarn, KindPRDUpdated, KindQuestionAnswered,
 		KindQuestionWithdrawn, KindAutomatonStuckRunning, KindAutomatonMergeReady,
-		KindAutomatonTasksDone,
+		KindAutomatonTasksDone, KindCapacityWaitTooLong, KindBurnGuardRungChanged,
 	}
 	for _, s := range []PRDStatus{
 		PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked,
