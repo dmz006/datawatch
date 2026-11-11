@@ -4656,5 +4656,16 @@
   "settings.self_config_recent_loading": "Chargement…",
   "settings.self_config_recent_empty": "Aucun enregistrement d’audit self-config pour l’instant.",
   "settings.self_config_recent_more": "%1$d enregistrement(s) plus ancien(s) non affiché(s)",
-  "settings.self_config_recent_unavailable": "Journal d’audit self-config indisponible"
+  "settings.self_config_recent_unavailable": "Journal d’audit self-config indisponible",
+  "list_mode_toggle": "Mode d'affichage",
+  "list_mode_list": "Liste",
+  "list_mode_tiles": "Tuiles",
+  "list_mode_compact": "Compact",
+  "list_group_by": "Grouper par",
+  "list_group_by_none": "Aucun groupement",
+  "list_group_untagged": "Sans étiquette",
+  "list_group_none": "Aucun",
+  "list_state_mix": "Répartition des états",
+  "list_show_more": "Afficher plus",
+  "list_overflow_menu": "Plus d'actions"
 }

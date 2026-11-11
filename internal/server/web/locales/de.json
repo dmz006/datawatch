@@ -4656,5 +4656,16 @@
   "settings.self_config_recent_loading": "Wird geladen …",
   "settings.self_config_recent_empty": "Noch keine self-config-Audit-Einträge.",
   "settings.self_config_recent_more": "%1$d ältere(r) Eintrag(e) nicht angezeigt",
-  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar"
+  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar",
+  "list_mode_toggle": "Ansichtsmodus",
+  "list_mode_list": "Liste",
+  "list_mode_tiles": "Kacheln",
+  "list_mode_compact": "Kompakt",
+  "list_group_by": "Gruppieren nach",
+  "list_group_by_none": "Keine Gruppierung",
+  "list_group_untagged": "Kein Tag",
+  "list_group_none": "Keine",
+  "list_state_mix": "Statusmix",
+  "list_show_more": "Mehr anzeigen",
+  "list_overflow_menu": "Weitere Aktionen"
 }
