@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Per-Automaton cost now counts all of its spend
+
+An Automaton's cost now covers the tokens, time, sessions and tool calls of every session it launches, not just its worker sessions.
+
+- **What changed.** Each session records which Automaton and task it belongs to, stamped at every autonomous launcher (workers, verifiers, planner and decompose sessions). A new spend ledger keyed by session stores the tokens, time and tool calls, and the Claude usage reader now counts tool calls from the transcript.
+- **How it shows.** The per-Automaton cost totals include planning, verification and retry spend that was missing before, with the session and tool-call counts beside the tokens and time.
+- **Deleting sessions.** The ledger keeps the attribution after a session is deleted or cleaned up, so an Automaton's cost no longer drops when its sessions are removed.
+- **Migration.** None. Sessions that ran before this change have no attribution and stay uncounted; new sessions are counted from the first launch after the upgrade.
+
 ## v9.96.3 — Template tasks no longer fail decompose
 
 New Automata can plan again when the task template pack is on.
