@@ -380,6 +380,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL110 extension — single audit point for every MCP config-write
 	// tool (registered after panic recovery, wrapping every handler).
 	RegisterConfigWriteAudit(mcpSrv, s)
+	// Sensitive write gate — registered after the audit so it sits inside it
+	// (first registered runs outermost) and the audit records its denials.
+	RegisterSensitiveWriteGate(mcpSrv, s)
 
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
