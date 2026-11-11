@@ -43,6 +43,7 @@ type generatedArtefactState struct {
 	settings func() config.EffectiveGeneratedArtefactsSettings
 	bases    map[string]string                    // task id -> base ref
 	cmds     map[string][]changerecord.CommandRun // task id -> commands run
+	cost     changerecord.CostLedger              // spend ledger for the cost section; nil = none
 
 	// Test seams; nil means the production implementation.
 	headRef    func(ctx context.Context, dir string) string
@@ -210,6 +211,7 @@ func (m *Manager) writeGeneratedArtefacts(prd *PRD) {
 	}
 	merged := changerecord.Merge(recs...)
 	merged.AutomatonID = prd.ID
+	m.attachGeneratedCost(merged)
 	if s.ChangeRecord {
 		// Store the merged record under the Automaton id so the REST and MCP
 		// reads (and a later regenerate) work from the same record. A save
@@ -332,4 +334,8 @@ func parseTestCounts(out string) (pass, fail int) {
 		return pass, fail
 	}
 	return len(reGoPkgOK.FindAllString(out, -1)), len(reGoPkgFail.FindAllString(out, -1))
+}
+
+func logGeneratedCostErr(id string, err error) {
+	log.Printf("[autonomous] %s change record cost: %v", id, err)
 }
