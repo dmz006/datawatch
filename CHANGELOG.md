@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A task's merge that cannot land is now visible, retried on a timer, and holds the next task.** Per-task worktrees could fail to merge back into the Automaton branch without any sign: seven finished task branches stayed at merge state pending because a stale uncommitted edit in the Automaton worktree blocked the merge. Now the blocked merge shows on the task and on the Automaton card, with the reason (which files are uncommitted) and the action (commit or discard the edit), and it appears in the needs-attention Triage card until it merges. The daemon retries the merge on its own every `autonomous.parallel.merge_retry_seconds` (60 by default; `0` turns the retry off, shown in Settings as **Task merge retry interval**). While an earlier task's merge is pending, the next task waits, so nothing runs on top of work that has not landed. The new strings are in all five locale bundles. Migration: none; clear any stale uncommitted edit in an Automaton worktree that already shows a blocked merge, and the next retry merges it. How-to: [howto/automation-tab.md](docs/howto/automation-tab.md).
+
 ## v9.101.1 — Recovered back-off zone fix, task session names, question notify wait
 
 ### Fixed
