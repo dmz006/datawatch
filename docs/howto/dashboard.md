@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [dashboard, sessions, telemetry, constellation, guardrail]
+  topics: [dashboard, sessions, telemetry, network, lane-pulse, guardrail]
 ---
 # How-to: /dashboard Mission Control
 

@@ -227,16 +227,17 @@ sequenceDiagram
 
     User->>PWA: tap ⊞ Dashboard nav
     PWA->>PWA: renderDashboardView()
-    Note over PWA: mounts EKG canvas + SVG constellation
-    PWA->>API: GET /api/autonomous/prds (sprint pipeline data)
-    API-->>PWA: {prds: [...]}
-    PWA->>PWA: _dashInitNodes() — positions sessions in SVG
+    Note over PWA: mounts Network work map + Lane pulse cards
+    PWA->>API: GET /api/dashboard/work-map
+    API-->>PWA: {nodes: [...], edges: [...]}
+    PWA->>API: GET /api/dashboard/lane-pulse?window=6h
+    API-->>PWA: {series: [...], burn: {...}}
+    PWA->>PWA: _dashInitNodes() — positions sessions in the Network layout
     PWA->>PWA: requestAnimationFrame(_dashLoop)
 
     Note over WS: hook event arrives
     WS->>PWA: hook_update {session_id, board}
     PWA->>PWA: update _dash.nodes[sid] colour/health
-    PWA->>PWA: push EKG spike to _dash.ekg[]
 
     User->>PWA: click session node (or ⊞ on session card)
     PWA->>PWA: openDashExpand(sid)
