@@ -114,6 +114,7 @@ const (
 	// (console.enabled, console.show_*) flow through the existing configure
 	// command and path.
 	CmdDashboardConsole CommandType = "dashboard console"
+	CmdDashboardArc     CommandType = "dashboard arc"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -1370,6 +1371,9 @@ func Parse(text string) Command {
 	case lower == "dashboard console" || lower == "dashboard-console":
 		return Command{Type: CmdDashboardConsole}
 
+	case lower == "dashboard arc" || lower == "dashboard-arc":
+		return Command{Type: CmdDashboardArc}
+
 	case lower == "peers" || strings.HasPrefix(lower, "peers "):
 		// BL172 (S11) — federated observer peers over chat. Forms:
 		//   "peers"                       → list
@@ -1984,6 +1988,7 @@ stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 audit self-config [limit=N]      query self-config audit log: allowed + denied config-write attempts
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
+dashboard arc                    arc summary — stages, lanes, plan usage in points and tokens
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
@@ -2240,6 +2245,90 @@ func (r *Router) handleDashboardConsole() {
 		return
 	}
 	r.reply("dashboard console:", line)
+}
+
+// handleDashboardArc is the arc summary over chat: the same data as
+// GET /api/dashboard/arc (stages, blocked stage, lanes, plan usage in
+// points and tokens), sent back as one summary line. No dollars.
+func (r *Router) handleDashboardArc() {
+	body, err := r.commGet("/api/dashboard/arc", nil)
+	if err != nil {
+		r.reply("dashboard arc failed", err.Error())
+		return
+	}
+	line, err := dashboardArcOneLiner(body)
+	if err != nil {
+		r.reply("dashboard arc failed", err.Error())
+		return
+	}
+	r.reply("dashboard arc:", line)
+}
+
+func dashboardArcOneLiner(body string) (string, error) {
+	var a struct {
+		Available bool   `json:"available"`
+		Reason    string `json:"reason"`
+		Arc       struct {
+			Name   string `json:"name"`
+			Stages []struct {
+				Stage   string  `json:"stage"`
+				Total   int     `json:"total"`
+				Done    int     `json:"done"`
+				Running int     `json:"running"`
+				Blocked int     `json:"blocked"`
+				Percent float64 `json:"percent"`
+			} `json:"stages"`
+			BlockedStage *struct {
+				Stage  string `json:"stage"`
+				Reason string `json:"reason"`
+			} `json:"blocked_stage"`
+		} `json:"arc"`
+		Lanes struct {
+			Available bool `json:"available"`
+			Lanes     []struct {
+				Kind     string `json:"kind"`
+				InFlight int    `json:"in_flight"`
+				Cap      int    `json:"cap"`
+			} `json:"lanes"`
+		} `json:"lanes"`
+		Usage struct {
+			Available bool `json:"available"`
+			Points    *struct {
+				Used      float64 `json:"used"`
+				Allowance float64 `json:"allowance"`
+				Percent   float64 `json:"percent"`
+			} `json:"points"`
+			Tokens *struct {
+				Total int64 `json:"total"`
+			} `json:"tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(body), &a); err != nil {
+		return "", err
+	}
+	if !a.Available {
+		return "arc off (" + a.Reason + ")", nil
+	}
+	parts := []string{}
+	if a.Arc.Name != "" {
+		parts = append(parts, "arc "+a.Arc.Name)
+	}
+	for _, s := range a.Arc.Stages {
+		parts = append(parts, fmt.Sprintf("%s %d/%d done (%.1f%%), %d running, %d blocked", s.Stage, s.Done, s.Total, s.Percent, s.Running, s.Blocked))
+	}
+	if a.Arc.BlockedStage != nil {
+		parts = append(parts, "blocked: "+a.Arc.BlockedStage.Reason)
+	}
+	for _, l := range a.Lanes.Lanes {
+		parts = append(parts, fmt.Sprintf("%s lane %d/%d", l.Kind, l.InFlight, l.Cap))
+	}
+	if a.Usage.Points != nil {
+		parts = append(parts, fmt.Sprintf("%.1f of %.1f points (%.1f%%)", a.Usage.Points.Used, a.Usage.Points.Allowance, a.Usage.Points.Percent))
+	}
+	if a.Usage.Tokens != nil {
+		parts = append(parts, fmt.Sprintf("%d tokens", a.Usage.Tokens.Total))
+	}
+	return strings.Join(parts, " | "), nil
 }
 
 // dashboardConsoleSectionIDs is the endpoint's canonical section order.

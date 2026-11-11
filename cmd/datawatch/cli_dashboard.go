@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ func newDashboardCmd() *cobra.Command {
 	cmd.AddCommand(newDashboardCardCmd())
 	cmd.AddCommand(newDashboardLayoutCmd())
 	cmd.AddCommand(newDashboardConsoleCmd())
+	cmd.AddCommand(newDashboardArcCmd())
 	return cmd
 }
 
@@ -219,6 +221,121 @@ func renderDashboardConsole(body []byte) string {
 			continue
 		}
 		fmt.Fprintf(&b, "  %-18s %d    %s\n", id, s.Count, s.Summary)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// newDashboardArcCmd is the arc summary: the same GET the PWA arc view uses.
+// Points and tokens only, never dollars.
+//
+//	datawatch dashboard arc [--arc <id>]    — arc summary (GET /api/dashboard/arc)
+//	datawatch dashboard arc --json          — the raw endpoint JSON
+func newDashboardArcCmd() *cobra.Command {
+	var rawJSON bool
+	var arcID string
+	cmd := &cobra.Command{
+		Use:   "arc",
+		Short: "Arc summary: stages, lanes, plan usage in points and tokens (GET /api/dashboard/arc)",
+		RunE: func(*cobra.Command, []string) error {
+			path := "/api/dashboard/arc"
+			if arcID != "" {
+				path += "?arc=" + url.QueryEscape(arcID)
+			}
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if rawJSON {
+				prettyPrint(body)
+				return nil
+			}
+			fmt.Println(renderDashboardArc(body))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&rawJSON, "json", false, "print the raw endpoint JSON")
+	cmd.Flags().StringVar(&arcID, "arc", "", "arc (Automation) id; default arc when omitted")
+	return cmd
+}
+
+// renderDashboardArc is the human view of the arc endpoint JSON.
+func renderDashboardArc(body []byte) string {
+	var a struct {
+		GeneratedAt string `json:"generated_at"`
+		Available   bool   `json:"available"`
+		Reason      string `json:"reason"`
+		Arc         struct {
+			Name   string `json:"name"`
+			Stages []struct {
+				Stage   string  `json:"stage"`
+				Total   int     `json:"total"`
+				Done    int     `json:"done"`
+				Running int     `json:"running"`
+				Blocked int     `json:"blocked"`
+				Percent float64 `json:"percent"`
+			} `json:"stages"`
+			MaintenanceQueue *struct {
+				Total, Done, Running, Blocked int
+			} `json:"maintenance_queue"`
+			BlockedStage *struct {
+				Stage  string `json:"stage"`
+				Reason string `json:"reason"`
+			} `json:"blocked_stage"`
+		} `json:"arc"`
+		Lanes struct {
+			Available bool   `json:"available"`
+			Reason    string `json:"reason"`
+			Lanes     []struct {
+				Kind     string `json:"kind"`
+				InFlight int    `json:"in_flight"`
+				Cap      int    `json:"cap"`
+			} `json:"lanes"`
+		} `json:"lanes"`
+		Usage struct {
+			Available bool   `json:"available"`
+			Reason    string `json:"reason"`
+			Points    *struct {
+				Used      float64 `json:"used"`
+				Allowance float64 `json:"allowance"`
+				Remaining float64 `json:"remaining"`
+				Percent   float64 `json:"percent"`
+			} `json:"points"`
+			Tokens *struct {
+				In, Out, Total int64
+			} `json:"tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &a); err != nil {
+		return fmt.Sprintf("dashboard arc: unparseable response: %v", err)
+	}
+	if !a.Available {
+		return "Arc summary off: " + a.Reason
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Arc %s (%s)\n", a.Arc.Name, a.GeneratedAt)
+	for _, s := range a.Arc.Stages {
+		fmt.Fprintf(&b, "  %-9s %d/%d done (%.1f%%)  %d running  %d blocked\n", s.Stage, s.Done, s.Total, s.Percent, s.Running, s.Blocked)
+	}
+	if m := a.Arc.MaintenanceQueue; m != nil {
+		fmt.Fprintf(&b, "  maintenance: %d total, %d done, %d running, %d blocked\n", m.Total, m.Done, m.Running, m.Blocked)
+	}
+	if a.Arc.BlockedStage != nil {
+		fmt.Fprintf(&b, "  BLOCKED (%s): %s\n", a.Arc.BlockedStage.Stage, a.Arc.BlockedStage.Reason)
+	}
+	if !a.Lanes.Available {
+		fmt.Fprintf(&b, "  lanes: off (%s)\n", a.Lanes.Reason)
+	}
+	for _, l := range a.Lanes.Lanes {
+		fmt.Fprintf(&b, "  lane %-7s %d/%d in flight\n", l.Kind, l.InFlight, l.Cap)
+	}
+	if !a.Usage.Available {
+		fmt.Fprintf(&b, "  usage: off (%s)\n", a.Usage.Reason)
+	}
+	if p := a.Usage.Points; p != nil {
+		fmt.Fprintf(&b, "  points: %.1f of %.1f used (%.1f%%), %.1f remaining\n", p.Used, p.Allowance, p.Percent, p.Remaining)
+	}
+	if t := a.Usage.Tokens; t != nil {
+		fmt.Fprintf(&b, "  tokens: %d in, %d out, %d total\n", t.In, t.Out, t.Total)
 	}
 	return strings.TrimSpace(b.String())
 }
