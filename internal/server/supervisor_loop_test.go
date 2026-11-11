@@ -327,3 +327,74 @@ func loopSurfaceValue(v any) any {
 	}
 	return v
 }
+
+func TestSupervisorWakeStatusDefaults(t *testing.T) {
+	s, _ := newLoopServer(t)
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopWake(rr, httptest.NewRequest(http.MethodGet, "/api/supervisor-loop/wake", nil))
+	if rr.Code != 200 {
+		t.Fatalf("code %d", rr.Code)
+	}
+	var v supervisorWakeView
+	if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Enabled || v.CoalesceSeconds != 30 || v.FallbackIntervalMinutes != 20 || len(v.Kinds) == 0 {
+		t.Fatalf("defaults wrong: %+v", v)
+	}
+	if !v.LastEvent.IsZero() || !v.LastScheduledCheck.IsZero() {
+		t.Fatalf("times should be empty: %+v", v)
+	}
+}
+
+type wakeTestClock struct{ now time.Time }
+
+func (c wakeTestClock) Now() time.Time { return c.now }
+
+func TestSupervisorWakeStatusReportsRecord(t *testing.T) {
+	s, _ := newLoopServer(t)
+	clk := wakeTestClock{now: time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)}
+	rec := supervisorloop.NewWakeRecord(clk, 0)
+	rec.MarkEvent()
+	rec.MarkScheduledCheck()
+	s.SetSupervisorWake(rec)
+	s.cfg.Autonomous.SupervisorLoop = config.SupervisorLoopConfig{"supervisor_loop.wake.enabled": true}
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopWake(rr, httptest.NewRequest(http.MethodGet, "/api/supervisor-loop/wake", nil))
+	var v supervisorWakeView
+	if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if !v.Enabled || v.EventCount != 1 || v.ScheduledCount != 1 || !v.LastEvent.Equal(clk.now) || !v.LastScheduledCheck.Equal(clk.now) {
+		t.Fatalf("record not reported: %+v", v)
+	}
+}
+
+func TestSupervisorWakeStatusMethodNotAllowed(t *testing.T) {
+	s, _ := newLoopServer(t)
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopWake(rr, httptest.NewRequest(http.MethodPost, "/api/supervisor-loop/wake", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code %d", rr.Code)
+	}
+}
+
+func TestSupervisorWakeSettingsPatch(t *testing.T) {
+	cur := config.SupervisorLoopConfig{}
+	if err := validateSupervisorLoopPatch(cur, map[string]interface{}{"autonomous.supervisor_loop.wake.coalesce_seconds": 99999}); err == nil {
+		t.Fatal("out-of-range coalesce accepted")
+	}
+	if err := validateSupervisorLoopPatch(cur, map[string]interface{}{"autonomous.supervisor_loop.wake.kinds": []interface{}{"no.such.kind.xyz"}}); err != nil && !strings.Contains(err.Error(), "wake.kinds") {
+		t.Fatalf("error should name the key: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	patch := map[string]interface{}{"autonomous.supervisor_loop.wake.enabled": true, "autonomous.supervisor_loop.wake.coalesce_seconds": float64(45)}
+	if err := validateSupervisorLoopPatch(cfg.Autonomous.SupervisorLoop, patch); err != nil {
+		t.Fatal(err)
+	}
+	applySupervisorLoopPatch(cfg, patch)
+	surf := supervisorLoopConfigSurface(cfg.Autonomous.SupervisorLoop)
+	if surf["wake.enabled"] != true || surf["wake.coalesce_seconds"] != 45 {
+		t.Fatalf("surface %v", surf)
+	}
+}
