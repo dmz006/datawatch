@@ -74,4 +74,21 @@ type Event struct {
 	TokensIn    int64     `json:"tokens_in,omitempty"`
 	TokensOut   int64     `json:"tokens_out,omitempty"`
 	Timestamp   time.Time `json:"timestamp"`
+
+	// Pack attribution. These fields record which installable pack, unit,
+	// step and runner produced an event. All are optional and omitted from
+	// JSON when empty, so events written before they existed decode and
+	// re-encode unchanged.
+	PackName       string            `json:"pack_name,omitempty"`
+	PackVersion    string            `json:"pack_version,omitempty"`
+	Unit           string            `json:"unit,omitempty"`
+	Step           string            `json:"step,omitempty"`
+	Project        string            `json:"project,omitempty"`
+	Automation     string            `json:"automation,omitempty"`
+	Runner         string            `json:"runner,omitempty"` // "daemon" or "session"
+	Tier           string            `json:"tier,omitempty"`
+	Entry          string            `json:"entry,omitempty"`
+	Escalation     bool              `json:"escalation,omitempty"`
+	Cost           float64           `json:"cost,omitempty"`
+	ResolvedInputs map[string]string `json:"resolved_inputs,omitempty"`
 }
