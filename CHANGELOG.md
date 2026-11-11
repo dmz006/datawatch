@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.133.2 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 25 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.134.1 — Go toolchain 1.26.11
 
 - The Go toolchain moved to 1.26.11, the patch release that fixes a standard library `net/http` vulnerability (GO-2026-6859). The release vulnerability scan found it in 1.26.10 and stopped the release before any assets were published; with 1.26.11 the scan reports no vulnerabilities, so the release pipeline passes again. The `go` directive in `go.mod` and every pinned Go build image now use 1.26.11.
