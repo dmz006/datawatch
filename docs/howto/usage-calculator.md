@@ -255,7 +255,7 @@ Six ways to set it (a change is live the moment it is stored; no restart):
 |---|---|
 | **YAML** | The `usage.billing` block in `~/.datawatch/config.yaml`, as above. |
 | **CLI** | `datawatch config set usage.billing.claude-code.mode bundled_plan`, `datawatch config set usage.billing.claude-code.monthly_price 200`, and so on per field; read it back with `datawatch config get usage.billing`. |
-| **Web UI** | The billing profiles group on the Usage calculator card in Settings: provider key, mode, plan, monthly price, currency, reset and allowance unit per provider, with “assumed default” marked on a provider that has no profile. |
+| **Web UI** | The billing profiles group in the Usage calculator group in Settings: provider key, mode, plan, monthly price, currency, reset and allowance unit per provider, with “assumed default” marked on a provider that has no profile. |
 | **REST API** | `PUT /api/config` with one field per request, e.g. `{"usage.billing.claude-code.mode": "bundled_plan"}`; the block reads back under `usage.billing` on `GET /api/config`. |
 | **Comm channel** | `configure usage.billing.claude-code.mode=bundled_plan`. |
 | **MCP** | The `config_set` tool with `key: usage.billing.claude-code.mode` (or any other field) and the value, one field per call; the block reads back through `config` or on the surfaces below. |
@@ -278,20 +278,43 @@ are shared.
 - If the keeper cannot be reached, a peer shows **its last copy, marked as
   such** (stale), rather than failing or hiding the figures.
 
-## The three PWA variants
+## The usage page: a verdict and three cards
 
-`usage.calculator.variant` chooses what the PWA draws from the same advice:
+The PWA usage page no longer shows a calculator with controls. It shows
+**one sentence** and **three small cards of a fixed size**, all drawn from the
+same `GET /api/usage/advice` call.
 
-| Variant | Shows |
-|---|---|
-| `pace-gauge` | The pace line, where the burn leaves you at the reset, and the headroom. |
-| `lane-planner` | A row per lane count with its projected end of week and verdict. |
-| `burn-ledger` | The burn figure with the week average beside it, the extra credit and the finish line. |
-| `all` (default) | All three side by side. |
+- **The verdict sentence** says *Within budget* or *Over budget*, how much of the
+  allowance is used now and where the recent burn leads by the reset. With no
+  readings it says *No verdict yet: save another reading*.
+- **Weekly allowance** shows how many points are used out of the ceiling. The
+  ceiling is 100 plus any extra credit you bought.
+- **Pace line** compares your usage with the straight line that would use the
+  whole allowance exactly at the reset: ahead of the line, or the points of
+  headroom behind it, with the days since the reset and the days left.
+- **Burn per day** shows the points used each day, one bar per day since the
+  reset, with the recent figure and the week average. When the burn is over, it
+  names the lane count to try.
 
-Leave it on `all` and **compare for a full week, a Sunday-to-Sunday cycle**,
-before choosing one. The variant and the policy are independent: any variant can
-show any policy.
+Each card has a **state** line, a **why** line and a **next** line, and a
+**What is this?** help link that opens this guide. With no readings the page
+shows an empty state that points to Settings.
+
+The page has **no policy or lane controls**, only a **Refresh** button. Everything you used to set on it is in
+**Settings → General → Automata**: the reading and extra credit forms, the
+policy, the reset, the auto-lane fields and the billing profiles. The Burn
+guard card (with its **Run now** button) still follows the three cards on the page.
+
+The same three cards are also **dashboard cards** (`usage-allowance`,
+`usage-pace`, `usage-burn`, each 3 columns wide by default). Add them from the
+dashboard card picker, the REST card API or the MCP dashboard card tools; they
+draw the same way at the same size, from one advice read for the whole board.
+On the Automation view they sit in a row at the top of the **Resources**
+sub-tab (see [Automata resources](automata-resources.md)).
+
+`usage.calculator.variant` (`all`, `pace-gauge`, `lane-planner`, `burn-ledger`)
+is still accepted and stored, but the PWA no longer chooses a layout from it:
+it always draws the three cards. The key has no effect on the page.
 
 ## Where readings come from
 
@@ -306,7 +329,7 @@ changing the advice.
 |---|---|
 | **YAML** | `usage.calculator.*` in `~/.datawatch/config.yaml` (policy, variant, `safety_points`, `cost_per_task_points`, `baseline_per_24h`, `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone`, `keeper`, `auto_lanes`, `auto_lanes_max`, `auto_lanes_special_priority`) |
 | **CLI** | `datawatch usage advice [--lanes N]` (the what-if), `datawatch usage reading add --percent 42`, `datawatch usage reading list`, `datawatch usage reading delete <id>`, `datawatch usage extra-credit <points>`, `datawatch usage remaining-work <points\|clear>`; settings with `datawatch config set usage.calculator.<key> <value>` |
-| **Web UI** | The calculator card in the PWA and its Settings fields; see [parity status](../parity-status.md) for what has shipped. The reading form has no lanes input: each reading is stamped by the daemon. The card shows a **Claude lanes running now** line (or "not known" when no stamped reading says) and a **What if** stepper beside the policy. The stepper sets the lanes to run in the what-if only, is never saved, and never changes the lanes running. |
+| **Web UI** | The usage page (verdict and three cards) and the calculator's Settings fields; see [parity status](../parity-status.md) for what has shipped. The reading form has no lanes input: each reading is stamped by the daemon. The what-if lane count is no longer on the page; ask for it with `datawatch usage advice --lanes N`, `usage advice lanes=N`, `GET /api/usage/advice?lanes=N` or `usage_advice`. It is never saved and never changes the lanes running. |
 | **REST API** | `GET /api/usage/advice` (`lanes` is the what-if), `GET` and `POST /api/usage/readings` (`lanes` on the body is deprecated and ignored), `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT /api/usage/remaining-work`; settings with `PUT /api/config` |
 | **Comm channel** | `usage advice [lanes=N]` (the what-if), `usage reading <percent> [session=N]`, `usage extra <points>`, `usage work <points\|clear>`; settings with `configure usage.calculator.<key>=<value>` |
 
@@ -343,7 +366,7 @@ lighter profile would take, for example:
 
 | Where | What you see |
 |---|---|
-| PWA | The calculator card (see [parity status](../parity-status.md) for what has shipped). The usage reading and extra credit forms are also in **Settings → General → Automata → Usage reading and extra credit**, the same forms and endpoints |
+| PWA | The usage page (verdict sentence and three cards), the same three cards on the Resources sub-tab and as dashboard cards. The usage reading and extra credit forms, and every calculator setting, are in **Settings → General → Automata → Usage reading and extra credit** (see [parity status](../parity-status.md) for what has shipped) |
 | Android and iOS | Pending, tracked in [parity status](../parity-status.md) |
 | CLI | `datawatch usage advice` |
 | REST | `GET /api/usage/advice` |
@@ -414,7 +437,7 @@ is refused and the setting stays where it was.
 |---|---|---|
 | **YAML** | `auto_lanes`, `auto_lanes_max` and `auto_lanes_special_priority` under `usage.calculator` in `~/.datawatch/config.yaml` | the keys in `datawatch config get` or `GET /api/config` |
 | **CLI** | `datawatch usage auto-lanes set --on` (or `--off`) and `--max N` (1 to 8); or any of the three keys through `datawatch config set usage.calculator.<key> <value>` | `datawatch usage auto-lanes status` |
-| **Web UI** | the three "Auto-lanes" fields on the usage calculator card in Settings | the read-only status line under them: on or off, the current cap, and the last change |
+| **Web UI** | the three "Auto-lanes" fields in the usage calculator group in Settings | the read-only status line under them: on or off, the current cap, and the last change |
 | **REST API** | `PUT /api/config` with `{"usage.calculator.auto_lanes": true}` (or any of the three keys) | `GET /api/usage/autolanes` |
 | **Comm channel** | `configure usage.calculator.auto_lanes=true` (and the other two keys the same way) | `GET /api/usage/autolanes` — there is no comm verb for the status |
 
@@ -453,7 +476,7 @@ newest 500 decisions. Each entry says:
 The read surfaces show the newest 50 of those entries: `datawatch usage
 auto-lanes status` and `GET /api/usage/autolanes` carry them as
 `recent_changes` (newest first), and `last_change` is the newest entry that
-actually moved the cap. The PWA's status line on the calculator card shows the
+actually moved the cap. The PWA's status line under the Auto-lanes fields in Settings shows the
 same three things: on or off, the current cap, and the last change.
 
 ## See also
@@ -467,4 +490,4 @@ same three things: on or off, the current cap, and the last change.
 
 ## Burn guard
 
-The usage calculator view ends with a Burn guard card. It shows the guard's state and the rung in force, the projection at the reset against the pace line and margin, and the last decision, with **Run now** to evaluate once. The guard steps down a ladder of admission changes when the projected burn runs over the pace line, and never ends a running session. See [burn-guard.md](burn-guard.md) for the ladder, the settings, how to read an alert, how to step back, the effort ceiling and the Claude retry limit.
+The usage page ends with a Burn guard card. It shows the guard's state and the rung in force, the projection at the reset against the pace line and margin, and the last decision, with **Run now** to evaluate once. The guard steps down a ladder of admission changes when the projected burn runs over the pace line, and never ends a running session. See [burn-guard.md](burn-guard.md) for the ladder, the settings, how to read an alert, how to step back, the effort ceiling and the Claude retry limit.
