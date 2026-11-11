@@ -288,6 +288,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/config", api.handleConfig)
 	// git.hosts readiness: list every host, and run the connection test for one.
 	apiMux.HandleFunc(gitHostsPath, api.handleGitHosts)
+	apiMux.HandleFunc(gitHostStatsPath, api.handleGitHostStats)
 	apiMux.HandleFunc(gitHostsPath+"/", api.handleGitHostAction)
 	// F10 sprint 2 — Project + Cluster profile CRUD + smoke.
 	// Trailing slashes let the handler parse {name}[/smoke] subpaths.
