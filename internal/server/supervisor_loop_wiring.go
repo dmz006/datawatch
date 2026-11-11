@@ -151,3 +151,16 @@ func (l supervisorLaneControl) SetCount(n int) error {
 	l.mgr.SetConfig(cfg)
 	return nil
 }
+
+// RegisterSupervisorWake registers the built-in 'supervisor-wake' set from the
+// live supervisor_loop.wake settings. It returns nil, registering nothing,
+// while the wake path is off.
+func RegisterSupervisorWake(mgr *autonomous.Manager, settings supervisorloop.Settings, clock supervisorloop.WakeClock,
+	session func() string, send func(sessionID, text string) error, rec *supervisorloop.WakeRecord) *autonomous.SupervisorWakeSet {
+	if mgr == nil {
+		return nil
+	}
+	return autonomous.RegisterSupervisorWake(autonomous.SupervisorWakeConfig{
+		Subscriber: mgr, Settings: settings.Wake, Session: session, SendInput: send, Clock: clock, Record: rec,
+	})
+}
