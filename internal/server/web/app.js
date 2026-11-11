@@ -31803,6 +31803,36 @@ window._lifecycleSubOpenForm = _lifecycleSubOpenForm;
 window._lifecycleSubDelete = _lifecycleSubDelete;
 window._lifecycleSubTest = _lifecycleSubTest;
 
+// Per-Automaton cost block for the Overview tab. Dollar figures are
+// API-equivalent estimates, not a bill.
+function _renderDetailCost(prd) {
+  const c = prd && prd.cost;
+  if (!c) return '';
+  const n = (v) => Number(v || 0).toLocaleString();
+  const dur = (sec) => {
+    sec = Math.round(Number(sec || 0));
+    if (sec <= 0) return '0s';
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), r = sec % 60;
+    return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + r + 's';
+  };
+  const usd = c.api_equivalent_usd != null ? c.api_equivalent_usd : c.usd_estimate;
+  const rows = [
+    [t('automata_detail_cost_sessions') || 'Sessions', n(c.sessions)],
+    [t('automata_detail_cost_tokens') || 'Tokens in/out', `${n(c.tokens_in)} / ${n(c.tokens_out)}`],
+    [t('automata_detail_cost_cache') || 'Cache read/created', `${n(c.cache_read)} / ${n(c.cache_creation)}`],
+    [t('automata_detail_cost_tools') || 'Tool calls', n(c.tool_calls)],
+    [t('automata_detail_cost_span') || 'Elapsed', dur(c.span_seconds)],
+    [t('automata_detail_cost_active') || 'Active time', dur(c.active_seconds)],
+    [t('automata_detail_cost_usd') || 'API-equivalent cost', usd != null ? '$' + Number(usd).toFixed(2) : '-'],
+  ];
+  const notes = [c.window_note, c.report_window_note].filter(Boolean);
+  return `<div class="prd-detail-cost" style="margin-top:10px;">
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('automata_detail_cost') || 'Cost')}</div>
+    <dl class="prd-detail-meta">${rows.map(([k, v]) => `<dt>${escHtml(k)}</dt><dd>${escHtml(v)}</dd>`).join('')}</dl>
+    <div style="font-size:10px;color:var(--text2);">${escHtml(t('automata_detail_cost_note') || 'API-equivalent estimate, not a bill.')}${notes.map(x => ' ' + escHtml(x)).join('')}</div>
+  </div>`;
+}
+
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
@@ -31839,6 +31869,7 @@ function _renderDetailOverview(prd) {
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>
     </div>` : ''}
+    ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
