@@ -1684,6 +1684,8 @@ navigate from a telemetry task back to the Automata view.
 
 **Community registry** — the `dmz006/datawatch-community` GitHub repo. Pre-seeded as the first Skills + Plugins registry on every new installation. Contains categorized, community-contributed skills and plugins with mandatory `author`, `contributor_notes`, and `license` fields. Connect with `datawatch skills registry connect community`, then browse with `datawatch plugins browse-registry community`.
 
+**Skills coverage check** — `scripts/skills-coverage-check.sh`, a shell check that fails when `docs/skills/inventory.yaml` (every MCP tool, how-to, route, command and setting), `docs/skills/coverage-matrix.yaml` (which skills cover each entry) or the skill sources drift from the code. A skill named by a matrix row must exist in `docs/skills/staging/` or in `docs/skills/registry-skills.txt`, the list of published community skill names kept by hand. Its failure modes are tested by `tests/ci/test-skills-coverage-check.sh`. See [howto/skills-sync](howto/skills-sync.md).
+
 **Plugin install** — the ability to copy a plugin directory from a connected registry clone into the local plugins directory and reload it, via `datawatch plugins install <registry> <name>` or `POST /api/plugins/install`. The install resolves `<registry_clone_dir>/plugins/<name>/` → `<data_dir>/plugins/<name>/`, validates `manifest.yaml`, copies atomically, and calls the existing reload pipeline. No daemon restart required.
 
 **failed_task_buf** — a per-session buffer of the last 5 hook events

@@ -129,6 +129,26 @@ $EDITOR ~/.datawatch/profiles/projects/datawatch-dev.yaml
 6. Or attach skills to a Project Profile via Settings → Agents →
    Project Profiles → edit a profile → Skills field.
 
+## Check that the skills still cover every feature
+
+`docs/skills/inventory.yaml` lists every MCP tool, how-to, REST route, command and
+setting, and `docs/skills/coverage-matrix.yaml` maps each entry to the skills that
+cover it. A check script fails when either file drifts from the code:
+
+```sh
+bash scripts/skills-coverage-check.sh     # prints "ok: skills coverage" or one FAIL line per drift
+bash tests/ci/test-skills-coverage-check.sh   # the check's own failure-mode tests
+```
+
+It fails when a new tool or how-to is missing from the inventory, an inventory entry
+has no matrix row, a row names an unknown entry, or a row names a skill that is in
+neither `docs/skills/staging/` nor `docs/skills/registry-skills.txt`.
+
+`registry-skills.txt` is the list of published community skill names, one per line.
+When the connected registry gains or drops a skill, list it (MCP `skills_registry_available`
+or the Skills page) and replace the names in that file; the check then accepts matrix
+rows that name it.
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)
