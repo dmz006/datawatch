@@ -4,6 +4,7 @@
 //	GET  /api/supervisor-loop/runs            run records, newest first (job, outcome, limit filters)
 //	POST /api/supervisor-loop/jobs/{name}/run run one job now (404 for an unknown job)
 //	POST /api/supervisor-loop/eval            run a model job's eval cases against listed models
+//	GET  /api/supervisor-loop/wake            wake settings in effect, last event, last scheduled check
 //
 // The settings come from the supervisor_loop config block, read live.
 
@@ -461,4 +462,40 @@ func (s *Server) handleSupervisorLoopStats(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSONOK(w, s.SupervisorLoopStats())
+}
+
+// SetSupervisorWake wires the record GET /api/supervisor-loop/wake reads. Nil
+// leaves the times empty.
+func (s *Server) SetSupervisorWake(r *supervisorloop.WakeRecord) { s.supervisorWake = r }
+
+// supervisorWakeView is the GET /api/supervisor-loop/wake body.
+type supervisorWakeView struct {
+	Enabled                 bool     `json:"enabled"`
+	Kinds                   []string `json:"kinds"`
+	CoalesceSeconds         int      `json:"coalesce_seconds"`
+	FallbackIntervalMinutes int      `json:"fallback_interval_minutes"`
+	supervisorloop.WakeStatus
+}
+
+// handleSupervisorLoopWake implements GET /api/supervisor-loop/wake: the wake
+// settings in effect plus when the supervisor last woke for an event and last
+// ran a scheduled check. It is read-only and holds no secrets.
+func (s *Server) handleSupervisorLoopWake(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	wk := s.supervisorLoopSettings().Wake
+	v := supervisorWakeView{
+		Enabled: wk.Enabled, Kinds: append([]string{}, wk.Kinds...),
+		CoalesceSeconds: wk.CoalesceSeconds, FallbackIntervalMinutes: wk.FallbackIntervalMinutes,
+	}
+	if s.supervisorWake != nil {
+		v.WakeStatus = s.supervisorWake.Status()
+	}
+	writeJSONOK(w, v)
 }

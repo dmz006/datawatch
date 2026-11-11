@@ -1687,6 +1687,42 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
 
+  /api/supervisor-loop/wake:
+    get:
+      summary: Supervisor wake status
+      description: |
+        The supervisor wake settings in effect (`enabled`, `kinds`,
+        `coalesce_seconds`, `fallback_interval_minutes`) and when the supervisor
+        last woke for an event (`last_event`) and last ran a scheduled check
+        (`last_scheduled_check`), with the counts of each. `events_silent_for` is
+        set when the event path has been quiet longer than an hour. A time of
+        `0001-01-01T00:00:00Z` means it has not happened yet. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopWake
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor wake status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, kinds, coalesce_seconds, fallback_interval_minutes, last_event, last_scheduled_check, event_count, scheduled_count]
+                properties:
+                  enabled: {type: boolean}
+                  kinds: {type: array, items: {type: string}}
+                  coalesce_seconds: {type: integer}
+                  fallback_interval_minutes: {type: integer}
+                  last_event: {type: string, format: date-time}
+                  last_scheduled_check: {type: string, format: date-time}
+                  event_count: {type: integer}
+                  scheduled_count: {type: integer}
+                  events_silent_for: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
   /api/supervisor-loop/jobs/{name}/run:
     post:
       summary: Run one supervisor loop job now

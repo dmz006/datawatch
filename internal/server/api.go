@@ -65,6 +65,7 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/supervisorloop"
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 	"github.com/dmz006/datawatch/internal/vision"
@@ -606,6 +607,8 @@ type Server struct {
 	autonomousEvents PendingEventsAPI
 	// supervisorLoop serves the supervisor-loop run history and manual runs.
 	supervisorLoop SupervisorLoopControl
+	// supervisorWake is the record behind GET /api/supervisor-loop/wake.
+	supervisorWake *supervisorloop.WakeRecord
 	// BL427 phase 5 — receiving side of peer forwarding for
 	// /api/autonomous/events/forward; nil → 503.
 	autonomousFwd ForwardedEventsAPI
