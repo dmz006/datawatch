@@ -191,6 +191,7 @@ autonomous_triage
 autonomous_type_list
 autonomous_type_register
 autonomous_uncommitted_work
+autonomous_unlanded_work
 autonomous_unsubscribe
 backends_active
 backends_list
