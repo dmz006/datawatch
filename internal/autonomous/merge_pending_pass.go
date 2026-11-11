@@ -337,6 +337,7 @@ func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Ti
 		name = prd.ID
 	}
 	pending := cmp.State == MergeStatePending
+	c.m.noteCondition(KindAutomatonMergeReady, prd, pending)
 
 	if mode == config.MergePendingModeShadow {
 		wouldAlert := false

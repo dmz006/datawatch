@@ -96,6 +96,9 @@ func buildEventKindRegistry() []EventKindInfo {
 	add(KindTaskLooping, EventGroupTask, "A task's session appears to be repeating itself.")
 	add(KindScopeWarning, EventGroupTask, "A task touched files outside its allowed paths.")
 	add(KindGuardrailWarn, EventGroupTask, "A guardrail returned a warning for a task.")
+	add(KindAutomatonStuckRunning, EventGroupAutomaton, "An Automaton is running with every task finished and nothing live.")
+	add(KindAutomatonMergeReady, EventGroupAutomaton, "A finished Automaton has a work branch waiting to be merged.")
+	add(KindAutomatonTasksDone, EventGroupAutomaton, "Every task of an Automaton is completed or cancelled.")
 	add(KindQuestionAnswered, EventGroupReview, "An operator question was answered.")
 	add(KindQuestionWithdrawn, EventGroupReview, "An operator question was withdrawn.")
 

@@ -54,6 +54,9 @@ func OptInNotifyEvents() []string {
 		KindTaskSessionCleared,
 		KindScopeWarning,
 		KindGuardrailWarn,
+		KindAutomatonStuckRunning,
+		KindAutomatonMergeReady,
+		KindAutomatonTasksDone,
 	}
 	sort.Strings(opt)
 	return opt
