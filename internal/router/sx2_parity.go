@@ -1601,6 +1601,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleMergedMemberVerb(verb, args)
 	case "overlap":
 		r.handleOverlapVerb(verb, args)
+	case "branch-refresh", "branch_refresh":
+		r.handleBranchRefreshVerb(verb, args)
 	case "security-failure", "security_failure":
 		r.handleSecurityFailureVerb(verb, args)
 	case "tags", "tag-create", "tag_create", "tag-rename", "tag_rename",
