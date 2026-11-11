@@ -282,21 +282,28 @@ ask for. Use it to read what a pack would allow before you accept it.
 
 ### Pack attribution: traces, audit and cost
 
-Work that runs from a pack records which pack it came from, so you can see what each
-pack did after the fact. The attribution is recorded in three places:
+Pack attribution is the read side of a pack's name and version on trace events and
+audit entries. **Today nothing writes it on a running daemon**, so the filters and
+roll-ups below return no pack-attributed rows yet. The pieces are:
 
-- **Trace events** carry `pack_name` and `pack_version`. The trace roll-up can group by
-  them: `dimension=pack_name` or `dimension=pack_version` (REST `GET /api/trace/rollup`,
-  and the `trace_rollup` MCP tool). See [agent tracing](agent-tracing.md).
-- **Audit entries** carry a `pack_name` detail. The audit query accepts a `pack_name`
-  filter, an exact match, on REST, MCP, CLI and the comm channel.
-- **Cost report** rows can be broken down by pack name and version (one row per pack and
-  version, with events, tokens and cost). Events with no pack name fall into one
-  `unattributed` row.
+- **Trace events** have `pack_name` and `pack_version` fields. The trace roll-up can
+  group by them: `dimension=pack_name` or `dimension=pack_version` (REST
+  `GET /api/trace/rollup`, and the `trace_rollup` MCP tool). See
+  [agent tracing](agent-tracing.md). The helper that stamps the `builtin` pack onto a
+  trace event (`autonomous.StampBuiltinPack`) exists, but no production code calls it, so
+  the standard tasks' events are not stamped yet.
+- **Audit entries are read-only for `pack_name`.** The audit query accepts a `pack_name`
+  filter, an exact match, on REST, MCP, CLI and the comm channel, and it reads the
+  `pack_name` detail. No production code writes a `pack_name` detail on an audit entry,
+  so a `pack_name` filter returns nothing until a writer ships. Do not expect filtered
+  audit results from it yet.
+- **Cost report** rows can be broken down by pack name and version (`costreport`'s pack
+  breakdown: one row per pack and version, with events, tokens and cost). Events with no
+  pack name fall into one `unattributed` row. No surface calls the breakdown yet.
 
-The `builtin` pack records `pack_name: builtin` on the trace events of its standard
-tasks. Events from before this attribution existed have no pack name and show as
-unattributed.
+Events and entries written before attribution have no pack name and show as
+unattributed. Once a writer is wired, the `builtin` pack will record `pack_name: builtin`
+on the trace events of its standard tasks.
 
 The MCP tools `trace_session` and `trace_rollup` accept an optional `pack` argument. The
 MCP tool forwards it as `?pack=`, but **the REST trace routes do not read that parameter
