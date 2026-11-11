@@ -179,6 +179,45 @@ datawatch llm models add claude-code --model claude-opus-4-5
 datawatch llm models add claude-code --model claude-sonnet-5
 ```
 
+## Set the billing mode of an LLM
+
+Each LLM entry carries a `billing_mode` that says how it is paid for:
+
+| Value | Meaning |
+|---|---|
+| `api` | Metered: each call is billed per token. |
+| `allowance` | A flat plan allowance that resets on a schedule; calls draw on it. |
+| `local` | Local inference on your own hardware, no per-call charge. |
+
+Leave it empty and the daemon resolves it in this order: the entry's own
+value, then the `usage.billing` profile for the entry's kind (`bundled_plan`
+reads as `allowance`, `api_metered` as `api`, `free_local` as `local`), then the
+kind default (`claude-code` is `allowance`; `ollama`, `openwebui` and `shell`
+are `local`; everything else is `api`).
+
+On upgrade the daemon writes the resolved value onto every entry that has none,
+so nothing changes behavior. An entry that already has a value is never
+touched.
+
+```sh
+datawatch llm add claude-api --kind claude --billing-mode api
+datawatch llm update my-ollama --billing-mode local
+# Omitting --billing-mode keeps the stored value.
+datawatch config set llms.claude-api.billing_mode allowance
+```
+
+The same field is accepted by REST (`POST /api/llms`, `PUT /api/llms/{name}`,
+`PUT /api/config` with `llms.<name>.billing_mode`), MCP (`llm_add`,
+`llm_update`; read back with `llm_get` / `llm_list`), the comm channel
+(`llm add|update <name> billing_mode=<mode>`), `config.yaml` and the Settings →
+Compute → LLM edit form (**Billing mode**, in all five locales). Every path
+refuses an unknown value with the same message naming the allowed values.
+
+This field is separate from the per-provider `usage.billing` profile that the
+[cost report](cost-report.md#the-billing-profiles) reads; the profile remains
+the source of the cost report's labels. See
+[LLM billing mode](../operations.md#llm-billing-mode).
+
 ## Tag roles on LLMs
 
 A role is a workload label on a registry entry, such as `planning` or
