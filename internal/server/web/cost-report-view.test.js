@@ -107,15 +107,15 @@ test('the card shows the lifetime-fallback note only when the body says so', () 
 test('usd appears only where the report carried it, and only while the preference allows', () => {
   const noUsd = report({ rows: [ { key: 'a', sessions: 1, tokens_in: 10, tokens_out: 2, rate_configured: false } ] });
   const html = card(noUsd);
-  assert.ok(!html.includes('USD (est.)'), 'usd column must be absent when no row has usd_estimate');
+  assert.ok(!html.includes('API-equivalent USD'), 'usd column must be absent when no row has usd_estimate');
   assert.ok(!html.includes('$'), 'no usd figures at all');
   assert.ok(html.includes('10 in · 2 out'), 'tokens still shown first');
 
   // show_usd_estimates=false hides the column even where data exists.
   const off = card(report(), { showUsd: false });
-  assert.ok(!off.includes('USD (est.)'), 'preference off must drop the column');
+  assert.ok(!off.includes('API-equivalent USD'), 'preference off must drop the column');
   const on = card(report(), { showUsd: true });
-  assert.ok(on.includes('USD (est.)') && on.includes('$2.35'));
+  assert.ok(on.includes('API-equivalent USD') && on.includes('$2.35 API-equivalent'));
   // Row with no figure renders the placeholder, not zero dollars.
   assert.ok(on.includes('>—<') || on.includes('—'), 'absent figure placeholder missing');
   assert.ok(!on.includes('$0.00'), 'no fake $0.00 for a rateless group');

@@ -250,6 +250,11 @@ type Session struct {
 	TokensIn   int     `json:"tokens_in,omitempty"`
 	TokensOut  int     `json:"tokens_out,omitempty"`
 	EstCostUSD float64 `json:"est_cost_usd,omitempty"`
+	// CacheReadTokens / CacheWriteTokens are the prompt-cache tokens the
+	// session read and wrote, kept apart from TokensIn because they are
+	// priced at different rates.
+	CacheReadTokens  int `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
 
 	// v9.0.8 — usage-tracker checkpoints, persisted so a daemon restart
 	// doesn't re-report a session's entire historical usage on top of

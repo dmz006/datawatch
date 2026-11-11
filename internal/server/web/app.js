@@ -10313,6 +10313,7 @@ const DOCS_LINKS_BY_KEY = {
   dash_card_gantt: DOCS_DEFINITIONS + '#dashboard',
   dash_card_heatmap: DOCS_DEFINITIONS + '#dashboard',
   dash_card_work_map: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_cost_report: DOCS_DEFINITIONS + '#cost-report',
   dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
@@ -33319,6 +33320,8 @@ window.costReportRowHtml = function(row, opts) {
   const withShare = !!o.withShare;
   const withApi = !!o.withApi;
   const withUnits = !!o.withUnits;
+  const withCache = !!o.withCache;
+  const withLocal = !!o.withLocal;
   const key = (r.key === undefined || r.key === null || r.key === '')
     ? (t('cost_report_key_unknown') || '—') : r.key;
   const td = (style, inner) => `<td style="padding:3px 8px;border-bottom:1px solid var(--border);${style}">${inner}</td>`;
@@ -33330,6 +33333,14 @@ window.costReportRowHtml = function(row, opts) {
     td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
        escHtml(t('cost_report_tokens_io', [Number(r.tokens_in) || 0, Number(r.tokens_out) || 0]) || 'tokens')),
   ];
+  if (withCache) {
+    cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
+      escHtml(t('cost_report_cache_io', [Number(r.cache_read_tokens) || 0, Number(r.cache_write_tokens) || 0]) || 'cache')));
+  }
+  if (withLocal) {
+    cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
+      String(Number(r.local_tokens) || 0)));
+  }
   if (withBilling) {
     const label = (typeof r.billing_label === 'string' && r.billing_label) ? r.billing_label : '';
     const mode = (typeof r.billing_mode === 'string' && r.billing_mode) ? r.billing_mode : '';
@@ -33354,7 +33365,7 @@ window.costReportRowHtml = function(row, opts) {
     const n = Number(r.api_equivalent_usd);
     cells.push(td('color:var(--text2);text-align:right;font-family:monospace;white-space:nowrap;',
       Number.isFinite(n)
-        ? escHtml(t('cost_report_usd_value', [n.toFixed(2)]) || ('$' + n.toFixed(2)))
+        ? escHtml(t('cost_report_usd_api_value', [n.toFixed(2)]) || ('$' + n.toFixed(2) + ' API-equivalent'))
         : dash));
   }
   if (withUnits) {
@@ -33365,11 +33376,52 @@ window.costReportRowHtml = function(row, opts) {
   if (withUsd) {
     const hasUsd = r.usd_estimate !== undefined && r.usd_estimate !== null && Number.isFinite(Number(r.usd_estimate));
     const usd = hasUsd
-      ? escHtml(t('cost_report_usd_value', [Number(r.usd_estimate).toFixed(2)]) || ('$' + Number(r.usd_estimate).toFixed(2)))
+      ? escHtml(t('cost_report_usd_api_value', [Number(r.usd_estimate).toFixed(2)]) || ('$' + Number(r.usd_estimate).toFixed(2) + ' API-equivalent'))
       : escHtml(t('cost_report_usd_none') || '—');
     cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;', usd));
   }
   return `<tr class="cost-report-row">${cells.join('')}</tr>`;
+};
+
+// costReportTotalsHtml: one line with every row summed — in, out, cache
+// read, cache write and local-model tokens. Empty when the report carries no
+// totals.
+window.costReportTotalsHtml = function(totals) {
+  if (!totals || typeof totals !== 'object' || Array.isArray(totals)) return '';
+  const n = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const text = t('cost_report_totals', [n(totals.tokens_in), n(totals.tokens_out),
+    n(totals.cache_read_tokens), n(totals.cache_write_tokens), n(totals.local_tokens)]);
+  return `<div class="cost-report-totals" style="font-size:10px;color:var(--text);margin-bottom:4px;">${escHtml(text)}</div>`;
+};
+
+// costReportReconcileHtml: the report's API-equivalent dollars against the
+// usage readings — points used against the pace line, the implied dollars per
+// point and the burn per day. Empty when no readings back the report.
+window.costReportReconcileHtml = function(rc) {
+  if (!rc || typeof rc !== 'object' || Array.isArray(rc)) return '';
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const points = num(rc.points);
+  const pace = num(rc.pace_line);
+  if (points === null || pace === null) return '';
+  const fmt = v => String(Number(v.toFixed(1)));
+  const verdict = rc.ahead_of_pace ? t('cost_report_reconcile_ahead') : t('cost_report_reconcile_within');
+  let out = `<div class="cost-report-reconcile" style="margin-top:6px;font-size:10px;line-height:1.5;">
+    <div style="font-weight:600;color:var(--text);">${escHtml(t('cost_report_reconcile_title'))}</div>
+    <div style="color:${rc.ahead_of_pace ? 'var(--warning, #d9822b)' : 'var(--text)'};">${escHtml(t('cost_report_reconcile_points', [fmt(points), fmt(pace), verdict]))}</div>`;
+  const api = num(rc.api_equivalent_usd);
+  const per = num(rc.implied_usd_per_point);
+  if (api !== null && per !== null) {
+    out += `<div style="color:var(--text2);">${escHtml(t('cost_report_reconcile_implied', [api.toFixed(2), fmt(points), per.toFixed(2)]))}</div>`;
+  }
+  const days = Array.isArray(rc.days) ? rc.days : [];
+  for (const d of days.slice(0, 31)) {
+    if (!d || typeof d !== 'object') continue;
+    const dp = num(d.points);
+    const du = num(d.api_equivalent_usd);
+    if (dp === null || du === null) continue;
+    out += `<div style="color:var(--text2);font-family:monospace;">${escHtml(t('cost_report_reconcile_day', [String(d.date || ''), fmt(dp), du.toFixed(2)]))}</div>`;
+  }
+  return out + '</div>';
 };
 
 // costReportCardHtml renders the whole card body from a decoded
@@ -33390,7 +33442,11 @@ window.costReportCardHtml = function(report, opts) {
   const withShare = window.costReportFieldHas(rows, 'share_of_monthly_price');
   const withApi = window.costReportFieldHas(rows, 'api_equivalent_usd');
   const withUnits = window.costReportFieldHas(rows, 'units');
-  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits };
+  const withCache = window.costReportFieldHas(rows, 'cache_read_tokens') || window.costReportFieldHas(rows, 'cache_write_tokens');
+  const anyCache = rows.some(r => r && (Number(r.cache_read_tokens) > 0 || Number(r.cache_write_tokens) > 0));
+  const anyLocal = rows.some(r => r && Number(r.local_tokens) > 0);
+  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits,
+    withCache: withCache && anyCache, withLocal: anyLocal };
   const head = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
     <span style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(t('cost_report_card_title') || 'Cost report')}</span>
     ${window.costReportHelpLink()}
@@ -33414,14 +33470,14 @@ window.costReportCardHtml = function(report, opts) {
   const thL = txt => `<th style="padding:2px 8px 2px 0;text-align:left;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   const thR = txt => `<th style="padding:2px 8px;text-align:right;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   let body = `<div style="overflow-x:auto;font-size:10px;"><table style="border-collapse:collapse;width:100%;">
-    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
+    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${rowOpts.withCache ? thR(t('cost_report_column_cache') || 'Cache read / write') : ''}${rowOpts.withLocal ? thR(t('cost_report_column_local') || 'Local-model tokens') : ''}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
     <tbody>${rows.slice(0, maxRows).map(r => window.costReportRowHtml(r, rowOpts)).join('')}</tbody>
   </table></div>`;
   const hidden = rows.length - maxRows;
   if (hidden > 0) {
     body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
   }
-  return head + notes + body;
+  return head + window.costReportTotalsHtml(rep.totals) + notes + body + window.costReportReconcileHtml(rep.reconciliation);
 };
 
 // ── Automata progress card ───────────────────────────────────────────────────
@@ -45461,6 +45517,23 @@ const DASH_CARD_FEATURES = {
       return !!(d && d.enabled && (((d.summary || {}).providers) || []).length > 0);
     },
   },
+  // The cost report card is shown once the report has token usage, or once the
+  // operator has touched a control (so a window with no usage can be changed
+  // back). It stays off while the report is unread, empty or unavailable.
+  'cost-report': {
+    docsKey: 'dash_card_cost_report',
+    reasonKey: 'dash_card_off_cost_report_reason',
+    reasonDefault: 'No recorded sessions with token usage in this window — the card fills as sessions report usage.',
+    linkKey: 'dash_card_off_cost_report_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const c = _dash._costReport;
+      if (!c) return false;
+      if (c.userTouched) return true;
+      const r = c.report;
+      return !!(r && Array.isArray(r.rows) && r.rows.length > 0);
+    },
+  },
   'work-map': {
     docsKey: 'dash_card_work_map',
     reasonKey: 'dash_card_off_work_map_reason',
@@ -45532,6 +45605,7 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
   kick(_dashCardFeature('heatmap'), _dashFetchHeatmap);
   kick(_dashCardFeature('work-map'), _dashFetchWorkMap);
+  kick(_dashCardFeature('cost-report'), _dashFetchCostReport);
   kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.

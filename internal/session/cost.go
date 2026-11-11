@@ -103,6 +103,17 @@ func (m *Manager) AddUsageLinesRead(sessID string, tokensIn, tokensOut, linesRea
 	})
 }
 
+// AddCacheUsage adds prompt-cache tokens to the session's running totals.
+func (m *Manager) AddCacheUsage(sessID string, cacheRead, cacheWrite int) error {
+	sess, ok := m.GetSession(sessID)
+	if !ok {
+		return ErrSessionNotFound
+	}
+	sess.CacheReadTokens += cacheRead
+	sess.CacheWriteTokens += cacheWrite
+	return m.SaveSession(sess)
+}
+
 // AddUsageLastTotals is AddUsage plus persisting the usage-tracker's new
 // "last cumulative total seen" checkpoint in the same save, so a daemon
 // restart resumes the delta from here instead of diffing against zero

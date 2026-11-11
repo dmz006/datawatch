@@ -27,6 +27,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -37,8 +38,10 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/pilog"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/trace"
+	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
 // managerCostSource feeds costreport.Build with the daemon's recorded
@@ -71,27 +74,54 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 	}
 	since, until := opts.Since, opts.Until
 	for _, sess := range src.m.ListSessions() {
-		if sess == nil || (sess.TokensIn == 0 && sess.TokensOut == 0) {
+		if sess == nil {
 			continue
 		}
 		if !inWindow(sess.UpdatedAt, since, until) {
 			continue
 		}
 		rec := costreport.Record{
-			SessionID: sess.ID,
-			Backend:   sess.BackendFamily,
-			At:        sess.UpdatedAt,
-			TokensIn:  sess.TokensIn,
-			TokensOut: sess.TokensOut,
+			SessionID:        sess.ID,
+			Backend:          sess.BackendFamily,
+			At:               sess.UpdatedAt,
+			TokensIn:         sess.TokensIn,
+			TokensOut:        sess.TokensOut,
+			CacheReadTokens:  sess.CacheReadTokens,
+			CacheWriteTokens: sess.CacheWriteTokens,
+		}
+		// A pi session has no usage tracker of its own: its tokens come from
+		// its session log.
+		if session.IsPiBackendFamily(sess.BackendFamily) && sess.TokensIn == 0 && sess.TokensOut == 0 {
+			if u, ok := piLogUsage(sess); ok {
+				rec.TokensIn, rec.TokensOut = u.Input, u.Output
+				rec.CacheReadTokens, rec.CacheWriteTokens = u.CacheRead, u.CacheWrite
+			}
 		}
 		if o, ok := src.owner[sess.ID]; ok {
 			rec.AutomatonID = o.automaton
 			rec.AutomationID = o.automation
 			rec.Release = o.release
 		}
+		if rec.TokensIn == 0 && rec.TokensOut == 0 && rec.CacheReadTokens == 0 && rec.CacheWriteTokens == 0 {
+			continue
+		}
 		res.Records = append(res.Records, rec)
 	}
 	return res, nil
+}
+
+// piLogUsage reads a pi session's usage from its session log; ok is false
+// when no log can be found or read.
+func piLogUsage(sess *session.Session) (pilog.Usage, bool) {
+	logPath, err := pilog.LocateLogFor(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt, sess.Name)
+	if err != nil {
+		return pilog.Usage{}, false
+	}
+	u, err := pilog.ReadUsage(logPath)
+	if err != nil {
+		return pilog.Usage{}, false
+	}
+	return u, true
 }
 
 // ShippedUnits implements costreport.ShippedSource: every PRD and
@@ -314,6 +344,7 @@ func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	req.Usage = s.costReportUsageInput(r.Context(), time.Now())
 	rep, err := costreport.Build(cr, req, src, src, s.exposedRate, billing, time.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -363,4 +394,24 @@ func parseCostBound(v string) (time.Time, error) {
 		return t.UTC(), nil
 	}
 	return time.Time{}, fmt.Errorf("invalid bound %q: want RFC3339 or YYYY-MM-DD", raw)
+}
+
+// costReportUsageInput reads the usage readings the way GET /api/usage/advice
+// does and hands the report the burn per day and the pace line. It returns nil
+// when no calculator is wired, no readings exist or the series cannot be read,
+// so the report then carries no reconciliation.
+func (s *Server) costReportUsageInput(ctx context.Context, now time.Time) *costreport.UsageInput {
+	calc := s.UsageCalculator()
+	if calc == nil {
+		return nil
+	}
+	res, err := calc.Advice(ctx, usagecalc.Options{})
+	if err != nil || res == nil || len(res.Advice.Daily) == 0 {
+		return nil
+	}
+	in := &costreport.UsageInput{PaceLine: res.Advice.PaceLine}
+	for _, d := range res.Advice.Daily {
+		in.Days = append(in.Days, costreport.UsageDay{Start: d.Start, End: d.End, Points: d.Points})
+	}
+	return in
 }
