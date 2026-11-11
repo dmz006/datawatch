@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/session"
@@ -141,6 +142,11 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := config.ValidateBillingMode(strings.TrimSpace(l.BillingMode)); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		l.BillingMode = strings.TrimSpace(l.BillingMode)
 		if err := applyBudgetField(body, &l, nil); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -257,6 +263,11 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := config.ValidateBillingMode(strings.TrimSpace(l.BillingMode)); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		l.BillingMode = strings.TrimSpace(l.BillingMode)
 		if err := applyBudgetField(body, &l, prior); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

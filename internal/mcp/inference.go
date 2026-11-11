@@ -8,12 +8,13 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/config"
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
 func (s *Server) toolLLMList() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_list",
-		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it), and a budget object (ceiling_usd, hours, weekday, time, zone, allocation_pct, peer_window) when the LLM has a dollar budget. Each entry carries its roles list; status.role_warnings lists role-contention warnings."),
+		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it), billing_mode (api|allowance|local), and a budget object (ceiling_usd, hours, weekday, time, zone, allocation_pct, peer_window) when the LLM has a dollar budget. Each entry carries its roles list; status.role_warnings lists role-contention warnings."),
 	)
 }
 
@@ -55,6 +56,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("permission_mode", mcpsdk.Description("--permission-mode value: default|plan|acceptEdits|auto|bypassPermissions|dontAsk (claude-code only)")),
 		mcpsdk.WithString("default_effort", mcpsdk.Description("per-session effort hint: quick|normal|thorough (claude-code only)")),
 		mcpsdk.WithString("fallback_chain", mcpsdk.Description("comma-separated ordered profile fallback chain (claude-code only)")),
+		mcpsdk.WithString("billing_mode", mcpsdk.Description("how this LLM is paid for: api|allowance|local (empty = resolved from the usage billing profile)")),
 		mcpsdk.WithString("billing_group", mcpsdk.Description("operator-set label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group)")),
 	)
 }
@@ -90,6 +92,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("permission_mode", mcpsdk.Description("--permission-mode value (claude-code only)")),
 		mcpsdk.WithString("default_effort", mcpsdk.Description("per-session effort hint: quick|normal|thorough (claude-code only)")),
 		mcpsdk.WithString("fallback_chain", mcpsdk.Description("comma-separated ordered profile fallback chain (claude-code only)")),
+		mcpsdk.WithString("billing_mode", mcpsdk.Description("how this LLM is paid for: api|allowance|local (empty = resolved from the usage billing profile)")),
 		mcpsdk.WithString("billing_group", mcpsdk.Description("operator-set label grouping LLM entries that share one cloud/billing account across federated peers (empty = no group)")),
 	)
 }
@@ -127,6 +130,9 @@ func (s *Server) handleLLMGetMCP(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) handleLLMAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := llmBodyFromReq(req)
+	if err := config.ValidateBillingMode(strings.TrimSpace(optString(req, "billing_mode"))); err != nil {
+		return toolError("llm_add", err), nil
+	}
 	if err := attachBudget(body, req); err != nil {
 		return toolError("llm_add", err), nil
 	}
@@ -142,6 +148,9 @@ func (s *Server) handleLLMAddMCP(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) handleLLMUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := llmBodyFromReq(req)
+	if err := config.ValidateBillingMode(strings.TrimSpace(optString(req, "billing_mode"))); err != nil {
+		return toolError("llm_update", err), nil
+	}
 	if err := attachBudget(body, req); err != nil {
 		return toolError("llm_update", err), nil
 	}
@@ -234,6 +243,9 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	if v := optString(req, "verification_mode"); v != "" {
 		body["verification_mode"] = v
+	}
+	if v := optString(req, "billing_mode"); v != "" {
+		body["billing_mode"] = v
 	}
 	if v := optString(req, "billing_group"); v != "" {
 		body["billing_group"] = v
