@@ -69,6 +69,72 @@ test('the Resources and Housekeeping tabs keep their other cards', () => {
   }
 });
 
+// The safe-to-delete report and the cleanup status render again as cards, but
+// on the Automata Events sub-tab (card slots under the event stream), never on
+// Housekeeping. Their loaders are kept and poll only while Events is shown.
+function eventsPanelSandbox() {
+  const panel = { el: null };
+  const sandbox = buildSandbox({ byId: {}, localStorage: new Map() });
+  vm.createContext(sandbox);
+  loadScript(APP_JS, sandbox);
+  const stub = sandbox.document.getElementById('x');
+  panel.el = stub;
+  const orig = sandbox.document.getElementById;
+  sandbox.document.getElementById = id => (id === 'automataPanel' ? stub : orig(id));
+  return { sandbox, panel: stub };
+}
+
+test('the safe-to-delete report and the cleanup status are Events card slots in order', () => {
+  const sandbox = loadApp();
+  const slots = [...vm.runInContext("_automationSlotsOf('events').map(s => s.id)", sandbox)];
+  assert.deepEqual(slots, ['automationSafeDeleteCard', 'automationCleanupCard']);
+  const html = vm.runInContext("_automationSlotsHTML('events')", sandbox);
+  assert.ok(html.includes('id="automationSafeDeleteCard"'));
+  assert.ok(html.includes('id="automationCleanupCard"'));
+  assert.ok(!html.includes('display:none'), 'the two cards are visible slots, not hidden placeholders');
+});
+
+test('the Events panel renders both cards under the event stream', () => {
+  const { sandbox, panel } = eventsPanelSandbox();
+  vm.runInContext('window.listLoaderAll = () => {}; renderAutomataEventsPanel()', sandbox);
+  const html = panel.innerHTML;
+  const list = html.indexOf('id="automataEventsList"');
+  const cards = html.indexOf('id="automataEventsCards"');
+  assert.ok(list >= 0 && cards > list, 'cards sit under the stream');
+  assert.ok(html.indexOf('id="automationSafeDeleteCard"') > cards);
+  assert.ok(html.indexOf('id="automationCleanupCard"') > html.indexOf('id="automationSafeDeleteCard"'));
+});
+
+test('entering Events starts the two loaders and leaving Events stops them', () => {
+  const { sandbox } = eventsPanelSandbox();
+  const log = [];
+  sandbox._log = log;
+  vm.runInContext(`
+    _AUTOMATION_CARD_SLOTS.events.forEach(sl => {
+      sl.mount = () => _log.push('mount:' + sl.id);
+      sl.stop = () => _log.push('stop:' + sl.id);
+    });
+    renderAutomataEventsPanel();
+  `, sandbox);
+  assert.deepEqual(log, ['mount:automationSafeDeleteCard', 'mount:automationCleanupCard']);
+  vm.runInContext("state._autonomousEnabled = true; _automataState.tab = 'events'; switchAutomataTab('automata')", sandbox);
+  assert.deepEqual(log.slice(2), ['stop:automationSafeDeleteCard', 'stop:automationCleanupCard']);
+  vm.runInContext("switchAutomataTab('templates')", sandbox);
+  assert.equal(log.length, 4, 'leaving a tab other than Events stops nothing more');
+});
+
+test('the Events slots mount the real loaders and stop them by key', () => {
+  const sandbox = loadApp();
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const start = src.indexOf("registerAutomationCardSlot('events', {");
+  const end = src.indexOf('// The Supervisor loop card fills the Setup placeholder', start);
+  const block = src.slice(start, end);
+  assert.ok(block.includes('_automationSafeDeleteLoader()') && block.includes("_automationStopLoaders(['automation_safe_delete'])"));
+  assert.ok(block.includes('_automationCleanupLoader()') && block.includes("_automationStopLoaders(['automation_cleanup'])"));
+  const keys = [...vm.runInContext('Object.keys(_AUTOMATION_CARD_SLOTS)', sandbox)];
+  assert.ok(keys.includes('events'), 'the slot registry has an events tab');
+});
+
 test('the Resources and Housekeeping mount and stop no longer start or end the moved loaders', () => {
   const src = fs.readFileSync(APP_JS, 'utf8');
   const resourcesStart = src.indexOf("id: 'resources',");

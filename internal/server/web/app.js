@@ -27538,6 +27538,8 @@ function switchAutomataTab(tab) {
     try { localStorage.setItem(_AUTOMATA_TAB_STORE_KEY, tab); } catch (_) { /* storage blocked */ }
   }
   st.selected.clear();
+  // Leaving the Events sub-tab ends the polling of its card slots.
+  if (prev === 'events' && tab !== 'events') _automationSlotsStop('events');
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
@@ -27773,6 +27775,9 @@ function renderAutomataEventsPanel() {
       <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
       <span id="automataEventsMoreError" style="color:var(--error,#ef4444);font-size:12px;margin-left:8px;"></span>
     </div>
+    <div id="automataEventsCards" class="automata-events-cards" style="margin-top:12px;">
+      ${_automationSlotsHTML('events')}
+    </div>
   </div>`;
   const root = document.getElementById('automataEventsPanel');
   if (root && !root._eventsClickBound) {
@@ -27796,6 +27801,10 @@ function renderAutomataEventsPanel() {
     });
   }
   automataEventsReload();
+  // The cards registered for the Events sub-tab (the safe-to-delete report and
+  // the cleanup status) start their loaders now and end them when the tab is
+  // left (switchAutomataTab).
+  _automationSlotsMount('events');
 }
 
 // automataEventsHelpLink renders the '?' help anchor used by the Events tab,
@@ -32232,7 +32241,8 @@ window.safeDeleteCardHtml = function(report) {
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
-// bytes_freed, last_error, owner_removed, net_removed, ...}, disk_alert_percent,
+// skipped_by_reason: {reason: count}, bytes_freed, last_error, owner_removed,
+// net_removed, ...}, disk_alert_percent,
 // worktree_disk, temp_disk: {path, percent, alert}, disk_alert,
 // last_disk_alert_at }. It is read-only: the mode and limits are changed in the
 // Automata settings. A missing or malformed body reads as a status that has
@@ -32258,6 +32268,14 @@ function _cleanupPassHtml(title, pass) {
       _cleanupLine(t('cleanup_counts', [n('removed'), n('would_remove'), n('skipped'), n('failed')])),
       _cleanupLine(t('cleanup_bytes_freed', [_cleanupBytesT(p.bytes_freed)])),
     );
+    // The entries the pass left in place, grouped by skip reason (for example
+    // commits_not_on_base 3, held 2), most frequent first.
+    const byReason = (p.skipped_by_reason && typeof p.skipped_by_reason === 'object') ? p.skipped_by_reason : {};
+    const reasons = Object.keys(byReason).filter(k => Number(byReason[k]) > 0)
+      .sort((a, b) => (Number(byReason[b]) - Number(byReason[a])) || a.localeCompare(b));
+    if (reasons.length) {
+      lines.push(_cleanupLine(t('cleanup_skipped_by_reason', [reasons.map(k => k + ' ' + Number(byReason[k])).join(', ')])));
+    }
   }
   lines.push(_cleanupLine(t('cleanup_split', [n('owner_removed'), n('net_removed')])));
   lines.push(p.last_error
@@ -36162,6 +36180,9 @@ const _AUTOMATION_DEFAULT_SUBTAB = 'inbox';
 // the same tab again replaces the earlier slot.
 const _AUTOMATION_CARD_SLOTS = {
   inbox: [], automations: [], resources: [], progress: [], setup: [], housekeeping: [],
+  // 'events' is the Automata Events sub-tab, which renders its slots under the
+  // event stream (renderAutomataEventsPanel) and stops them when the tab is left.
+  events: [],
 };
 
 function registerAutomationCardSlot(tabId, slot) {
@@ -36222,6 +36243,24 @@ registerAutomationCardSlot('housekeeping', {
   html: _automationPlaceholderHTML('automationStaleWorktreesCard'),
   mount: () => listLoaderAll([_automationUnlandedWorkLoader()]),
   stop: () => _automationStopLoaders(['automation_unlanded_work']),
+});
+// The safe-to-delete report and the cleanup status render under the event
+// stream on the Automata Events sub-tab (the Housekeeping sub-tab keeps only
+// its action cards). Both keep their loaders and poll only while the Events
+// sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationSafeDeleteCard',
+  order: 100,
+  html: `<div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => listLoaderAll([_automationSafeDeleteLoader()]),
+  stop: () => _automationStopLoaders(['automation_safe_delete']),
+});
+registerAutomationCardSlot('events', {
+  id: 'automationCleanupCard',
+  order: 110,
+  html: `<div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => listLoaderAll([_automationCleanupLoader()]),
+  stop: () => _automationStopLoaders(['automation_cleanup']),
 });
 // The Supervisor loop card fills the Setup placeholder reserved above: it keeps
 // the slot id, order and hidden placeholder markup (it un-hides on the first read), and polls only
@@ -37148,8 +37187,8 @@ function _automationMergePipelineLoader() {
   });
 }
 
-// _automationSafeDeleteLoader reads the safe-to-delete report on the Housekeeping
-// sub-tab. The read runs git, so it polls slowly; its failed state is the list
+// _automationSafeDeleteLoader reads the safe-to-delete report on the Automata
+// Events sub-tab (its card slot sits under the event stream). The read runs git, so it polls slowly; its failed state is the list
 // loader's banner. The card is a report only and offers no action.
 function _automationSafeDeleteLoader() {
   return window._listLoaders.automation_safe_delete || listLoader({
@@ -37163,8 +37202,8 @@ function _automationSafeDeleteLoader() {
   });
 }
 
-// _automationCleanupLoader reads the cleanup status on the Housekeeping sub-tab,
-// beside the safe-to-delete report. The status is in memory on the server, so
+// _automationCleanupLoader reads the cleanup status on the Automata Events
+// sub-tab, beside the safe-to-delete report. The status is in memory on the server, so
 // it polls at a modest rate; its failed state is the list loader's banner. The
 // card is read-only and offers no action.
 function _automationCleanupLoader() {
@@ -37177,7 +37216,7 @@ function _automationCleanupLoader() {
 }
 
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
-// Housekeeping sub-tab, beside the cleanup card. The read is built from the stored
+// Housekeeping sub-tab. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
 // state is the list loader's banner. The card is read-only.
 function _automationUncommittedWorkLoader() {

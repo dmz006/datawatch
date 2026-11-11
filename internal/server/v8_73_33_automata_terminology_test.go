@@ -104,6 +104,7 @@ var pendingTranslationKeys = map[string]bool{
 	"cleanup_never_run":                                 true,
 	"cleanup_counts":                                    true,
 	"cleanup_bytes_freed":                               true,
+	"cleanup_skipped_by_reason":                         true,
 	"cleanup_split":                                     true,
 	"cleanup_last_error":                                true,
 	"cleanup_error_none":                                true,
