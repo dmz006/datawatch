@@ -9701,6 +9701,89 @@ paths:
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
 
+  /api/dashboard/lane-pulse:
+    get:
+      summary: Lane pulse
+      description: |
+        One series per lane and node over a window (default 6 hours, at most 168 hours).
+        A lane is the `llm:` pool a lease or queued request runs against; the node is the
+        compute node it was placed on (empty when none). Each series splits its window into
+        `busy` (a capacity lease held), `waiting` (a request queued for that lane and node;
+        it often overlaps busy because requests queue while a lane is full) and `idle`
+        (neither). Idle counts only from when the capacity ledger began keeping history, so
+        time before that is never shown as idle. The leases and waits come from the same
+        ledger as `GET /api/capacity`: closed intervals from its history plus those still
+        open at the time of the call.
+        The `burn` block is the usage level in points of the weekly allowance against the
+        pace line, read from the usage advice, with the readings in the window. It carries no
+        dollar values. When the usage calculator is not wired or cannot answer, `burn.available`
+        is false and `burn.reason` carries a code (not_wired, advice_unavailable, needs_percent,
+        needs_reading or needs_reset) that clients render from their locale keys; the series still stand.
+      operationId: dashboardLanePulse
+      tags: [Dashboard]
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: Length of the window ending now, as a Go duration such as `6h` or `90m`. Default 6h; from 1m to 168h.
+          schema: {type: string, default: 6h}
+      responses:
+        "200":
+          description: The lane pulse
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  window_from: {type: string, format: date-time}
+                  window_to: {type: string, format: date-time}
+                  window_seconds: {type: integer}
+                  recording_from: {type: string, format: date-time, description: When the capacity ledger began keeping history; omitted when it is not known}
+                  series:
+                    type: array
+                    description: One entry per lane and node that had a lease or a queued request in the window, sorted by lane then node.
+                    items:
+                      type: object
+                      properties:
+                        lane: {type: string}
+                        node: {type: string, description: Compute node the lease ran on; empty when none}
+                        busy_seconds: {type: number}
+                        waiting_seconds: {type: number}
+                        idle_seconds: {type: number}
+                        segments:
+                          type: array
+                          description: Busy, waiting and idle stretches in time order. Busy and waiting may overlap; idle does not overlap either.
+                          items:
+                            type: object
+                            properties:
+                              state: {type: string, enum: [busy, waiting, idle]}
+                              start: {type: string, format: date-time}
+                              end: {type: string, format: date-time}
+                  burn:
+                    type: object
+                    properties:
+                      available: {type: boolean}
+                      reason: {type: string, description: 'Code for why the burn is unavailable, when available is false (not_wired, advice_unavailable, needs_percent, needs_reading, needs_reset); clients map it to a lane_pulse_reason_* locale key'}
+                      stale: {type: boolean, description: True when the readings were served from a last copy because the keeper could not be reached}
+                      points: {type: number, description: Usage level in points of the weekly allowance (0 to 100 at the reset-week scale)}
+                      pace_line: {type: number, description: Where the pace line stands now, in the same points}
+                      ahead_of_pace: {type: boolean}
+                      burn_per_24h: {type: number, description: Recent burn in points per 24 hours}
+                      week_avg_burn_per_24h: {type: number, description: Average burn over the week so far, in points per 24 hours}
+                      readings:
+                        type: array
+                        description: Readings in the window, oldest first, each with its pace line at that moment.
+                        items:
+                          type: object
+                          properties:
+                            at: {type: string, format: date-time}
+                            points: {type: number}
+                            pace_line: {type: number}
+        "400":
+          description: The window is not a duration from 1m to 168h
+        "405":
+          description: Only GET is served
   /api/dashboard/work-map:
     get:
       summary: Work map

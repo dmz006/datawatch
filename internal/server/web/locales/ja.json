@@ -4663,5 +4663,10 @@
   "cost_report_reconcile_ahead": "ペースラインを超過",
   "cost_report_reconcile_within": "ペースライン内",
   "cost_report_reconcile_implied": "%2$s ポイントで $%1$s API換算、1ポイントあたり $%3$s API換算",
-  "cost_report_reconcile_day": "%1$s: %2$s ポイント · $%3$s API換算"
+  "cost_report_reconcile_day": "%1$s: %2$s ポイント · $%3$s API換算",
+  "lane_pulse_reason_not_wired": "The usage calculator is not wired on this daemon.",
+  "lane_pulse_reason_advice_unavailable": "Usage advice could not be read.",
+  "lane_pulse_reason_needs_percent": "A weekly percentage is needed before the usage advice can show numbers.",
+  "lane_pulse_reason_needs_reading": "Enter a weekly reading to see the usage advice.",
+  "lane_pulse_reason_needs_reset": "Set the weekly reset to see the usage advice."
 }
