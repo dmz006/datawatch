@@ -7331,6 +7331,21 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 /* Observer sections below System Statistics: fluid rows, wrapping text and
    40px tap targets at phone widths. The classes carry no rule above the
    breakpoint except the flex-row defaults, so 768px and wider is unchanged. */
+/* Usage page: a verdict sentence above small fixed-size cards. The cards never
+   stretch on a wide screen: fixed width and height, with max-width on narrow ones. */
+.usage-verdict-sentence { font-size: 14px; font-weight: 600; line-height: 1.4; max-width: 720px; }
+.usage-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.usage-card { box-sizing: border-box; width: 220px; height: 190px; max-width: 100%; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
+.usage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.usage-card-title { font-weight: 600; font-size: 13px; }
+.usage-card-state { font-weight: 600; }
+.usage-card-why, .usage-card-next { color: var(--text2); overflow: hidden; }
+.usage-card-chart { display: block; width: 100%; max-width: 196px; height: 32px; flex: none; }
+.usage-help-wrap { position: relative; display: inline-block; }
+.usage-help { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; cursor: pointer; color: var(--accent2, #60a5fa); background: none; border: 1px solid var(--accent2, #60a5fa); }
+.usage-help-pop { position: absolute; z-index: 20; top: 22px; right: 0; box-sizing: border-box; width: 240px; max-width: 80vw; padding: 8px 10px; font-size: 12px; font-weight: 400; background: var(--bg, #111); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+.usage-help-pop[hidden] { display: none; }
+
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
