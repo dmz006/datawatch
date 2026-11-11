@@ -5270,6 +5270,40 @@ paths:
         "400": {description: "Missing queue, or non-numeric since/limit"}
         "403": {description: "Caller lacks the autonomous:read capability"}
         "503": {description: "Pending events queue not wired"}
+  /api/autonomous/event-kinds:
+    get:
+      summary: List every lifecycle event kind, grouped
+      description: |
+        Returns every registered lifecycle event kind (built in and registered by
+        extensions) grouped by group, each with its description and whether the
+        kind is in the default set that wakes the supervisor. Requires the
+        `autonomous:read` capability.
+      operationId: autonomousEventKinds
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Event kinds by group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group: {type: string}
+                        kinds:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              kind: {type: string}
+                              description: {type: string}
+                              wake_default: {type: boolean}
+        "403": {description: "Caller lacks the autonomous:read capability"}
+        "405": {description: "Method not allowed"}
 
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:
