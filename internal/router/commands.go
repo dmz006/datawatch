@@ -214,6 +214,7 @@ const (
 	//   "observer envelopes"         → GET /api/observer/envelopes
 	//   "observer envelopes all-peers" → GET /api/observer/envelopes/all-peers
 	//   "observer envelope <id>"     → GET /api/observer/envelope/<id>
+	//   "observer pull status"      → GET /api/observer/pull
 	CmdObserver CommandType = "observer"
 
 	// BL220-G14 — analytics query over chat.

@@ -4551,6 +4551,20 @@ observer:
     # shorter than this never alert. The daemon's own row is skipped.
     silent_alert_minutes: 5
 
+  # Observer pull mode — the daemon pulls a peer's v2 stats on a
+  # schedule instead of the peer pushing them. Off by default; a peer
+  # is only pulled when this block is enabled AND that peer's
+  # federation entry has observer_pull: true (per-peer interval/timeout
+  # 0 = the defaults below). See docs/api/observer.md — Observer pull
+  # mode and docs/howto/federated-observer.md — Pull mode.
+  pull:
+    # Global gate for the pull collector.
+    enabled: false
+    # Per-peer fallback interval in seconds (minimum 5).
+    default_interval_s: 30
+    # Per-fetch timeout in seconds (>= 0).
+    default_timeout_s: 5
+
 # ── Secrets Manager (BL242 — v6.4.0+) ──
 # Centralized encrypted secrets store. All surfaces (REST, MCP, CLI, comm,
 # PWA) read/write via the same store. Secrets referenced in datawatch.yaml

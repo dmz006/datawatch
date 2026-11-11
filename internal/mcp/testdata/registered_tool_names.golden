@@ -397,6 +397,7 @@ observer_peer_stats
 observer_peers_by_node
 observer_peers_free
 observer_peers_list
+observer_pull_status
 observer_stats
 onboarding_report
 orchestrator_config_get

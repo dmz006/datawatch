@@ -248,8 +248,18 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		// self-peer fallback already treats body.Peer == s.hostname as
 		// always-valid (served live, no registration needed) — this check
 		// was inconsistent with that. Match it.
-		if s.peerRegistry != nil && body.Peer != s.hostname {
-			if _, ok := s.peerRegistry.Get(body.Peer); !ok {
+		//
+		// Pulled peers (federated, observer_pull on) are bindable exactly
+		// like pushed peers — they live in the federation peer store, not
+		// the push registry, so check both. Shadow peers (federated,
+		// observer_pull off, never pushed) carry no data to bind a node
+		// to — reject with 409 and say why.
+		if body.Peer != s.hostname {
+			if bindable, conflict := s.observerPeerAttachCheck(body.Peer); !bindable {
+				if conflict {
+					http.Error(w, "peer "+body.Peer+" has observer pull disabled (observer_pull is off) and has not pushed any stats, so there is no data to bind a compute node to. Enable observer pull for this peer, or let it push stats, then attach it again.", http.StatusConflict)
+					return
+				}
 				http.Error(w, "unknown observer peer: "+body.Peer, http.StatusBadRequest)
 				return
 			}

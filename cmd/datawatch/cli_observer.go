@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
@@ -40,6 +42,7 @@ Subcommands:
 		newObserverConfigSetCmd(),
 		newObserverPeerCmd(),
 		newObserverAgentCmd(),
+		newObserverPullCmd(),
 	)
 	return cmd
 }
@@ -92,11 +95,36 @@ Subcommands:
   register <name> [shape] [ver] Mint a token (only opportunity to capture it)
   delete <name>                 De-register; peer auto-re-registers next push`,
 	}
-	cmd.AddCommand(
-		&cobra.Command{
-			Use: "list", Short: "List registered peers",
-			RunE: func(*cobra.Command, []string) error { return daemonGet("/api/observer/peers") },
+	peerList := &cobra.Command{
+		Use:   "list",
+		Short: "List registered peers (push / pull / shadow) with source and staleness",
+		Long: `List observer peers — push-registered peers, pulled peers
+(source=pull) and shadow rows (federated peers with observer_pull off)
+— as a table. The SOURCE column is push, pull or shadow; STALE reflects
+the row's pull state (stale / ok when pull is enabled, "-" when the peer
+has no pull configured).
+
+Use --json to print the raw GET /api/observer/peers response instead.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if raw, _ := cmd.Flags().GetBool("json"); raw {
+				return daemonGet("/api/observer/peers")
+			}
+			body, err := daemonJSONBody(http.MethodGet, "/api/observer/peers", nil)
+			if err != nil {
+				return err
+			}
+			table, err := renderObserverPeersTable(body)
+			if err != nil {
+				// Not the expected JSON envelope — show the raw body
+				// rather than hiding the server response.
+				fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(body)))
+				return nil
+			}
+			fmt.Fprint(cmd.OutOrStdout(), table)
+			return nil
 		},
+	}
+	cmd.AddCommand(peerList,
 		&cobra.Command{
 			Use: "get <name>", Short: "Peer detail (TokenHash redacted)",
 			Args: cobra.ExactArgs(1),
@@ -134,7 +162,175 @@ Subcommands:
 			},
 		},
 	)
+	peerList.Flags().Bool("json", false, "print the raw JSON response instead of the table")
 	return cmd
+}
+
+// Observer pull protocol — read-only status surface. The per-peer pull
+// targets and their latest pull state come from GET /api/observer/pull
+// (same data as the observer_pull_status MCP tool). Configuration stays
+// on `datawatch config set observer.pull.*` and `federation peer
+// add/update --observer-pull*`.
+func newObserverPullCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pull",
+		Short: "Observer pull protocol",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "status",
+			Short: "Show per-peer observer pull status (GET /api/observer/pull)",
+			Long: `Show the observer pull protocol's current per-peer state: source,
+shadow (also push-registered), stale (+ reason: none / timeout / error /
+forbidden / not_permitted / bad_payload / unknown), last success and the
+effective interval/timeout in seconds.
+
+Use --json to print the raw GET /api/observer/pull response instead.`,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				if raw, _ := cmd.Flags().GetBool("json"); raw {
+					return daemonGet("/api/observer/pull")
+				}
+				body, err := daemonJSONBody(http.MethodGet, "/api/observer/pull", nil)
+				if err != nil {
+					return err
+				}
+				table, err := renderObserverPullStatusTable(body)
+				if err != nil {
+					// Not the expected JSON envelope — show the raw body
+					// rather than hiding the server response.
+					fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(body)))
+					return nil
+				}
+				fmt.Fprint(cmd.OutOrStdout(), table)
+				return nil
+			},
+		},
+	)
+	cmd.Commands()[0].Flags().Bool("json", false, "print the raw JSON response instead of the table")
+	return cmd
+}
+
+// ── Observer peer / pull table rendering ───────────────────────────────────
+// renderObserverPeersTable renders a GET /api/observer/peers response
+// ({"peers":[…]}) as a table with a SOURCE column (push / pull / shadow —
+// a shadow row is a federated peer with observer_pull off and no push
+// registration) and a STALE column (stale / ok when the row's pull is
+// enabled, "-" when the peer has no pull state).
+func renderObserverPeersTable(body []byte) (string, error) {
+	var payload struct {
+		Peers []map[string]any `json:"peers"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("decode /api/observer/peers: %w", err)
+	}
+	table := [][]string{{"NAME", "SHAPE", "VERSION", "SOURCE", "STALE", "LAST_PUSH"}}
+	for _, row := range payload.Peers {
+		table = append(table, []string{
+			cellString(row["name"]),
+			cellString(row["shape"]),
+			cellString(row["version"]),
+			observerPeersSourceCell(row),
+			observerPeersStaleCell(row),
+			cellString(row["last_push_at"]),
+		})
+	}
+	return renderCLITable(table), nil
+}
+
+// renderObserverPullStatusTable renders a GET /api/observer/pull response
+// ({"peers":[…]}) as a table.
+func renderObserverPullStatusTable(body []byte) (string, error) {
+	var payload struct {
+		Peers []map[string]any `json:"peers"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("decode /api/observer/pull: %w", err)
+	}
+	table := [][]string{{"NAME", "SOURCE", "SHADOW", "STALE", "STALE_REASON", "LAST_SUCCESS", "INTERVAL_S", "TIMEOUT_S"}}
+	for _, row := range payload.Peers {
+		table = append(table, []string{
+			cellString(row["name"]),
+			cellString(row["source"]),
+			cellString(row["shadow"]),
+			staleYesNoCell(row["stale"]),
+			cellString(row["stale_reason"]),
+			cellString(row["last_success_at"]),
+			cellString(row["interval_s"]),
+			cellString(row["timeout_s"]),
+		})
+	}
+	return renderCLITable(table), nil
+}
+
+// observerPeersSourceCell returns the SOURCE column value for one peer
+// row: "shadow" when the row is flagged shadow (federated, pull off),
+// otherwise the row's source (push or pull).
+func observerPeersSourceCell(row map[string]any) string {
+	if b, _ := row["shadow"].(bool); b {
+		return "shadow"
+	}
+	if s, _ := row["source"].(string); s != "" {
+		return s
+	}
+	return "-"
+}
+
+// observerPeersStaleCell returns the STALE column value for one peer
+// row: "stale" / "ok" when the row's pull object is enabled, "-" when the
+// peer has no pull configured (push-only or shadow).
+func observerPeersStaleCell(row map[string]any) string {
+	pull, ok := row["pull"].(map[string]any)
+	if !ok {
+		return "-"
+	}
+	if enabled, _ := pull["enabled"].(bool); !enabled {
+		return "-"
+	}
+	return staleYesNoCell(pull["stale"])
+}
+
+// staleYesNoCell renders a boolean stale field as "stale" / "ok".
+func staleYesNoCell(v any) string {
+	if b, _ := v.(bool); b {
+		return "stale"
+	}
+	return "ok"
+}
+
+// cellString renders one JSON cell for table output; missing/empty values
+// become "-".
+func cellString(v any) string {
+	switch s := v.(type) {
+	case nil:
+		return "-"
+	case string:
+		if s == "" {
+			return "-"
+		}
+		return s
+	case bool:
+		if s {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return strconv.FormatFloat(s, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(s)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// renderCLITable renders rows (header first) as a tab-aligned table.
+func renderCLITable(rows [][]string) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
+	for _, row := range rows {
+		_, _ = w.Write([]byte(strings.Join(row, "\t") + "\n"))
+	}
+	_ = w.Flush()
+	return b.String()
 }
 
 func newObserverStatsCmd() *cobra.Command {

@@ -2624,6 +2624,86 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "28b. Pulled peers bind to Compute Nodes like pushed peers; shadow peers 409"
+# A peer opted into observer pull attaches/detaches on a Compute Node
+# exactly like a pushed peer, leaves the free list while bound, and lands
+# in the by-node grouping. A shadow peer (federated, observer_pull off,
+# never pushed) has no data to bind and is rejected with a 409 whose body
+# says pull is disabled. Skipped when the peer registry is off (same 503
+# posture as section 27).
+PB_FREE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/observer/peers/free" 2>/dev/null || echo "000")
+case "$PB_FREE" in
+  200) PB_OK=1 ;;
+  *)   PB_OK=0; skip "peer registry disabled — pulled-peer attach/detach skipped" ;;
+esac
+if [[ "${PB_OK:-0}" == "1" ]]; then
+  PB_NODE="smoke-pullbind-$$"
+  PB_PULL="smoke-pullpeer-$$"
+  PB_SHADOW="smoke-shadowpeer-$$"
+  PB_NCODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/compute/nodes?probe=skip" -H "Content-Type: application/json" -d "{\"name\":\"$PB_NODE\",\"kind\":\"ollama\",\"address\":\"http://127.0.0.1:1\"}" 2>/dev/null || echo "000")
+  case "$PB_NCODE" in
+    200|201)
+      add_cleanup compute-node "$PB_NODE"
+      add_cleanup fedpeer "$PB_PULL"
+      add_cleanup fedpeer "$PB_SHADOW"
+      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"name\":\"$PB_PULL\",\"url\":\"http://127.0.0.1:1\",\"token\":\"smoke-pb-pull-token-$$\",\"enabled\":true,\"federated\":true,\"observer_pull\":true,\"observer_pull_interval_s\":30}" "$BASE/api/federation/peers" >/dev/null 2>&1
+      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"name\":\"$PB_SHADOW\",\"url\":\"http://127.0.0.1:1\",\"token\":\"smoke-pb-shadow-token-$$\",\"enabled\":true,\"federated\":true}" "$BASE/api/federation/peers" >/dev/null 2>&1
+
+      PB_ACODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"peer\":\"$PB_PULL\"}" "$BASE/api/compute/nodes/$PB_NODE/observer-peer" 2>/dev/null || echo "000")
+      case "$PB_ACODE" in
+        200) ok "attach pulled peer to Compute Node (200)" ;;
+        *)   ko "attach pulled peer to Compute Node = HTTP $PB_ACODE, want 200" ;;
+      esac
+
+      PB_SCODE=$(curl "${curl_args[@]}" -o /tmp/pb-shadow-$$ -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"peer\":\"$PB_SHADOW\"}" "$BASE/api/compute/nodes/$PB_NODE/observer-peer" 2>/dev/null || echo "000")
+      PB_SBODY=$(cat /tmp/pb-shadow-$$ 2>/dev/null || echo "")
+      case "$PB_SCODE" in
+        409)
+          if echo "$PB_SBODY" | grep -qi "pull disabled"; then
+            ok "shadow peer attach rejected 409 with \"pull disabled\" message"
+          else
+            ko "shadow peer attach 409 but body lacks the pull-disabled explanation: $PB_SBODY"
+          fi
+          ;;
+        *)   ko "shadow peer attach = HTTP $PB_SCODE, want 409" ;;
+      esac
+
+      PB_FREE=$(curl "${curl_args[@]}" "$BASE/api/observer/peers/free" 2>/dev/null || echo "")
+      echo "$PB_FREE" | grep -q "\"$PB_PULL\""   && PB_P=1 || PB_P=0
+      echo "$PB_FREE" | grep -q "\"$PB_SHADOW\"" && PB_S=1 || PB_S=0
+      [[ "$PB_P" == "0" ]] && ok "bound pulled peer excluded from /api/observer/peers/free" \
+        || ko "free list still contains the bound pulled peer $PB_PULL"
+      [[ "$PB_S" == "1" ]] && ok "shadow peer stays in /api/observer/peers/free (never auto-bound)" \
+        || ko "free list lost the shadow peer $PB_SHADOW"
+
+      PB_BN=$(curl "${curl_args[@]}" "$BASE/api/observer/peers/by-node" 2>/dev/null || echo "")
+      PB_BNG=$(echo "$PB_BN" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+g = d.get('by_node', {}) or {}
+row = next((r for r in g.get('$PB_NODE', []) if r.get('name') == '$PB_PULL'), None)
+unb = d.get('unbound', []) or []
+print('ok' if row is not None and any(r.get('name') == '$PB_SHADOW' for r in unb) else 'err')" 2>/dev/null || echo "err")
+      case "$PB_BNG" in
+        ok)  ok "by-node: pulled peer under node, shadow peer unbound" ;;
+        err) ko "by-node grouping wrong: pulled peer not under node or shadow peer not unbound" ;;
+      esac
+
+      PB_DCODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/compute/nodes/$PB_NODE/observer-peer" 2>/dev/null || echo "000")
+      case "$PB_DCODE" in
+        200) ok "detach pulled peer (200)" ;;
+        *)   ko "detach pulled peer = HTTP $PB_DCODE, want 200" ;;
+      esac
+      PB_FREE=$(curl "${curl_args[@]}" "$BASE/api/observer/peers/free" 2>/dev/null || echo "")
+      echo "$PB_FREE" | grep -q "\"$PB_PULL\"" && ok "detached pulled peer back in free list" \
+        || ko "free list lost the detached pulled peer $PB_PULL"
+      rm -f /tmp/pb-shadow-$$
+      ;;
+    *)   skip "could not create scratch compute node for pulled-peer binding (HTTP $PB_NCODE)" ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
 H "29. v7.0.0-alpha.24 — /api/observer/peers/by-node + /api/federation/meta-peers"
 BY_NODE_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/observer/peers/by-node" 2>/dev/null || echo "000")
 case "$BY_NODE_RESP" in

@@ -511,8 +511,9 @@ func (r *Router) handleDetection(_ Command) {
 //	observer envelopes                 → GET /api/observer/envelopes
 //	observer envelopes all-peers       → GET /api/observer/envelopes/all-peers
 //	observer envelope <id>             → GET /api/observer/envelope/<id>
+//	observer pull status               → GET /api/observer/pull
 func (r *Router) handleObserver(cmd Command) {
-	const help = "usage: observer [stats|config|envelopes [all-peers]|envelope <id>]"
+	const help = "usage: observer [stats|config|envelopes [all-peers]|envelope <id>|pull status]"
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
 
 	if len(args) == 0 {
@@ -566,6 +567,17 @@ func (r *Router) handleObserver(cmd Command) {
 			return
 		}
 		r.reply("observer envelope", prettyJSON(out))
+	case "pull":
+		if len(args) < 2 || !strings.EqualFold(args[1], "status") {
+			r.reply("observer pull failed", "usage: observer pull status")
+			return
+		}
+		out, err := r.commGet("/api/observer/pull", nil)
+		if err != nil {
+			r.reply("observer pull status failed", err.Error())
+			return
+		}
+		r.reply("observer pull status", prettyJSON(out))
 	default:
 		r.reply("observer", "unknown verb "+verb+"\n"+help)
 	}

@@ -701,6 +701,12 @@ type Server struct {
 	// Nil when not wired; group endpoints return builtin-only lists.
 	fedGroupStore *federation.GroupStore
 
+	// Observer pull protocol — the PullCollector wired to the federation
+	// peer store by NewObserverPullCollector. Nil until wired; while nil
+	// syncObserverPullTargets is a no-op.
+	observerPull   *observerPull
+	observerPullMu sync.Mutex // guards the one-time wiring in StartObserverPull
+
 	// Fingerprint exchange (docs/plans/2026-10-14-concurrency-and
 	// budget-design.md §3c) — the exporter behind
 	// GET /api/federation/fingerprints, wired from main.go when the
@@ -7012,6 +7018,18 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"results": map[string]interface{}{
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
 		},
+		// Observer pull protocol (pull mode) — global knobs; each key reads
+		// its code default while absent (default off, 30s interval, 5s
+		// timeout). Per-peer opt-in (observer_pull, observer_pull_interval_s,
+		// observer_pull_timeout_s) lives on /api/federation/peers entries;
+		// live per-peer state is on /api/observer/pull.
+		"observer": map[string]interface{}{
+			"pull": map[string]interface{}{
+				"enabled":            s.cfg.Observer.Pull.Enabled,
+				"default_interval_s": s.cfg.Observer.Pull.DefaultIntervalS,
+				"default_timeout_s":  s.cfg.Observer.Pull.DefaultTimeoutS,
+			},
+		},
 	}
 	// Model-to-node collisions: two different models configured on one
 	// ollama node. Omitted when there are none, so the PWA shows the banner
@@ -8064,6 +8082,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Same for the per-project rules/context names: resolution reads the
 	// installed snapshot, so this keeps planning in step without a restart.
 	autonomous.SetRulesContextConfig(s.cfg.Autonomous.RulesContext)
+	// observer.pull.* — the pull collector reads these globals when it
+	// derives targets (a per-peer interval/timeout of 0 falls back here),
+	// so after a PUT that touches them re-sync the target set; no restart
+	// needed.
+	for k := range patch {
+		if strings.HasPrefix(k, "observer.pull.") {
+			s.syncObserverPullTargets()
+			break
+		}
+	}
 	// The question lifecycle events follow the switch at runtime: a flip
 	// attaches (or drops) the store's event sink, so no restart is needed.
 	if _, ok := patch["autonomous.questions.enabled"]; ok && s.questionEventsSwitch != nil {
@@ -10830,6 +10858,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "observer.peers.listen_addr":
 			cfg.Observer.Peers.ListenAddr = toString(v)
+		// Observer pull protocol (pull mode) globals. A per-peer
+		// interval/timeout of 0 falls back to these defaults, so they read
+		// the code defaults (DefaultObserverPullIntervalS /
+		// DefaultObserverPullTimeoutS) while unset; an interval below the
+		// 5-second floor or a negative timeout is rejected (listed in
+		// "skipped") to match config.ValidateObserverPullConfig.
+		case "observer.pull.enabled":
+			cfg.Observer.Pull.Enabled = toBool(v)
+		case "observer.pull.default_interval_s":
+			if n, ok := toInt(v); ok && n >= config.ObserverPullMinIntervalS {
+				cfg.Observer.Pull.DefaultIntervalS = n
+			} else {
+				skipped = append(skipped, k)
+			}
+		case "observer.pull.default_timeout_s":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Pull.DefaultTimeoutS = n
+			} else {
+				skipped = append(skipped, k)
+			}
 		// v5.21.0 — fill in the missing whisper.* keys. Pre-v5.21.0
 		// only enabled/model/language/venv_path were patchable; the
 		// HTTP-shape backends (openai/openai_compat/openwebui/ollama)

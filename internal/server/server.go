@@ -532,6 +532,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// because the trailing path varies: "", "{name}", "{name}/stats").
 	apiMux.HandleFunc("/api/observer/peers", api.handleObserverPeers)
 	apiMux.HandleFunc("/api/observer/peers/", api.handleObserverPeers)
+	// Observer pull protocol (pull mode) — live per-peer pull state.
+	apiMux.HandleFunc("/api/observer/pull", api.handleObserverPull)
 	apiMux.HandleFunc("/api/federation/meta-peers", api.handleFederationMetaPeers)     // alpha.24 #231 — merged-by-ComputeNode view
 	apiMux.HandleFunc("/api/marketplace/ollama/catalog", api.handleMarketplaceCatalog) // alpha.33 #244 — embedded curated model catalog
 	apiMux.HandleFunc("/api/marketplace/ollama/tasks/", api.handleMarketplaceTask)     // alpha.33 #244 — pull progress poll
@@ -1572,6 +1574,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 	// The Claude lane history samples with the daemon and stops when ctx ends.
 	s.StartUsageLaneHistory(ctx)
+
+	// The observer pull collector starts with the daemon and stops with ctx.
+	s.api.StartObserverPull(ctx)
 
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).

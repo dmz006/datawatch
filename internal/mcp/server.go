@@ -1039,6 +1039,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolObserverConfigSet(), tracked(s.handleObserverConfigSet))
 	// BL172 (S11) — peer registry parity.
 	mcpSrv.AddTool(s.toolObserverPeersList(), tracked(s.handleObserverPeersList))
+	// Observer pull protocol (pull mode) — live per-peer pull state.
+	mcpSrv.AddTool(s.toolObserverPullStatus(), tracked(s.handleObserverPullStatus))
 	mcpSrv.AddTool(s.toolObserverPeerGet(), tracked(s.handleObserverPeerGet))
 	mcpSrv.AddTool(s.toolObserverPeerStats(), tracked(s.handleObserverPeerStats))
 	mcpSrv.AddTool(s.toolObserverPeerRegister(), tracked(s.handleObserverPeerRegister))

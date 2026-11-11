@@ -11723,6 +11723,12 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="Opt this peer into the resource-fingerprint exchange so matching resources surface as confirm/reject suggestions (off by default)"><input type="checkbox" id="fedPeerFormFingerprintSync" />${t('federation_fingerprint_sync_label')||'Resource fingerprint exchange'}</label></div>
+                <!-- Observer pull protocol: per-peer opt-in plus the two
+                     numeric overrides. A blank number field stays 0 on the
+                     wire, which the server maps to the global default. -->
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${escHtml(t('federation_observer_pull_label_title')||"Opt this peer into the observer pull protocol: the daemon fetches the peer's v2 stats on an interval instead of waiting for the peer to push them (off by default).")}"><input type="checkbox" id="fedPeerFormObserverPull" />${t('federation_observer_pull_label')||'Observer pull'}</label></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:var(--text2);white-space:nowrap;" title="${escHtml(t('federation_observer_pull_interval_title')||'Seconds between pull fetches for this peer; blank uses the server default.')}">${t('federation_observer_pull_interval')||'Pull interval (sec)'}</label><input type="number" id="fedPeerFormObserverPullInterval" class="form-input" min="1" step="1" style="flex:1;font-size:11px;" placeholder="${escHtml(t('federation_observer_pull_default_hint')||'default')}" /></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:var(--text2);white-space:nowrap;" title="${escHtml(t('federation_observer_pull_timeout_title')||'Per-fetch timeout in seconds for this peer; blank uses the server default.')}">${t('federation_observer_pull_timeout')||'Pull timeout (sec)'}</label><input type="number" id="fedPeerFormObserverPullTimeout" class="form-input" min="1" step="1" style="flex:1;font-size:11px;" placeholder="${escHtml(t('federation_observer_pull_default_hint')||'default')}" /></div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors" /></div>
               </div>
@@ -47592,7 +47598,17 @@ function loadFederationPeersPanel() {
   const el = document.getElementById('fedPeersList');
   if (!el) return;
   el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">${loadingEyeBlock()}</div>`;
-  apiFetch('/api/federation/peers').then(peers => {
+  // SOURCE badge + stale marker per row: the merged observer peer list
+  // (/api/observer/peers) carries, for every observable peer exactly once,
+  // its source ("push" | "pull"), the shadow flag (federated but observed
+  // neither way) and the pull stale state with its stable reason. The
+  // panel fetch degrades gracefully if that endpoint is unavailable.
+  apiFetch('/api/observer/peers').catch(() => null)
+    .then(obsRes => apiFetch('/api/federation/peers').then(peers => ({ peers, obsRes })))
+    .then(({ peers, obsRes }) => {
+    const obsBy = {};
+    const obsPeers = obsRes && Array.isArray(obsRes.peers) ? obsRes.peers : [];
+    for (const o of obsPeers) { if (o && o.name) obsBy[o.name] = o; }
     if (!Array.isArray(peers) || peers.length === 0) {
       el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">No federation peers registered.</div>`;
       return;
@@ -47605,17 +47621,40 @@ function loadFederationPeersPanel() {
       const safeName = escHtml(p.name);
       const safeURL = escHtml(p.url || '');
       const safeCaps = escHtml(caps);
+      // Source badge: shadow > push > pull, per the merged row's taxonomy.
+      // Falls back to the entry's own opt-in flag when the observer list
+      // didn't include this peer (endpoint disabled or not yet synced).
+      let src = '';
+      const row = p.name ? obsBy[p.name] : null;
+      const pullObj = row ? row.pull : null;
+      const stale = !!(pullObj && pullObj.stale);
+      const staleReason = (stale && pullObj && pullObj.stale_reason && pullObj.stale_reason !== 'none') ? pullObj.stale_reason : '';
+      if (row) {
+        if (row.shadow) src = 'shadow';
+        else if (row.source === 'push') src = 'push';
+        else src = 'pull';
+      } else if (p.observer_pull) {
+        src = 'pull';
+      }
+      const srcBadge = src
+        ? `<span style="font-size:10px;background:var(--bg3,#2d3148);padding:1px 6px;border-radius:10px;" title="${escHtml(t('federation_observer_pull_source')||'Source')}">${escHtml(t('federation_observer_pull_source_' + src) || src)}</span>`
+        : '';
+      const staleBadge = stale
+        ? `<span style="font-size:10px;background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:10px;" title="${escHtml((t('federation_observer_pull_stale')||'stale') + (staleReason ? ' — ' + staleReason : ''))}">⚠ ${escHtml(t('federation_observer_pull_stale')||'stale')}${staleReason ? escHtml(' · ' + staleReason) : ''}</span>`
+        : '';
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;">
         <span>${enabledDot}<strong>${safeName}</strong></span>
         <span style="color:var(--text2);font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;" title="${safeURL}">${safeURL}</span>
+        ${srcBadge}
+        ${staleBadge}
         <span style="font-size:10px;background:var(--bg3,#2d3148);padding:1px 6px;border-radius:10px;" title="${t('federation_cap_group_label')||'Capability Group'}">${safeCaps}</span>
         <button class="btn-secondary" style="font-size:10px;padding:2px 7px;" onclick="${escHtml(`testFedPeer(${JSON.stringify(p.name)})`)}">${t('federation_peer_test_btn')||'Test'}</button>
         <button class="btn-secondary" style="font-size:10px;padding:2px 7px;color:#ef4444;" onclick="${escHtml(`deleteFedPeer(${JSON.stringify(p.name)})`)}">${t('federation_peer_delete_btn')||'Delete'}</button>
       </div>`;
     }).join('');
-  }).catch(err => {
-    el.innerHTML = `<div style="color:#ef4444;font-size:12px;padding:4px 0;">Error: ${escHtml(String(err))}</div>`;
-  });
+    }).catch(err => {
+      el.innerHTML = `<div style="color:#ef4444;font-size:12px;padding:4px 0;">Error: ${escHtml(String(err))}</div>`;
+    });
 }
 window.loadFederationPeersPanel = loadFederationPeersPanel;
 
@@ -47713,6 +47752,15 @@ function showFedPeerForm(entry) {
   // DOM state from a previous edit can't carry over.
   const fpEl = document.getElementById('fedPeerFormFingerprintSync');
   if (fpEl) fpEl.checked = !!(entry && entry.fingerprint_sync);
+  // Observer pull protocol — same round-trip discipline as fingerprint_sync:
+  // edit pre-populates the saved values, new peer leaves everything off and
+  // the number fields blank (blank = 0 = "use the server default").
+  const opPullEl = document.getElementById('fedPeerFormObserverPull');
+  if (opPullEl) opPullEl.checked = !!(entry && entry.observer_pull);
+  const opIntEl = document.getElementById('fedPeerFormObserverPullInterval');
+  if (opIntEl) opIntEl.value = entry && entry.observer_pull_interval_s > 0 ? entry.observer_pull_interval_s : '';
+  const opTmoEl = document.getElementById('fedPeerFormObserverPullTimeout');
+  if (opTmoEl) opTmoEl.value = entry && entry.observer_pull_timeout_s > 0 ? entry.observer_pull_timeout_s : '';
   if (entry) {
     const nameEl = document.getElementById('fedPeerFormName');
     const urlEl = document.getElementById('fedPeerFormURL');
@@ -47749,13 +47797,26 @@ function submitFedPeerForm() {
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
   const fingerprintSync = !!(document.getElementById('fedPeerFormFingerprintSync') || {}).checked;
-
+  // Observer pull protocol. observer_pull is always sent explicitly on PUT
+  // (the server merge keeps existing values for omitted keys, so an
+  // unchecked box must transmit false to actually switch the peer off).
+  // When the box IS checked, both number fields always ride along: a blank
+  // field is parsed to 0, which the server maps to "use the global
+  // default" — this also lets a re-save blank out a previously saved
+  // per-peer override.
+  const observerPull = !!(document.getElementById('fedPeerFormObserverPull') || {}).checked;
+  const observerPullInterval = parseInt((document.getElementById('fedPeerFormObserverPullInterval') || {}).value, 10) || 0;
+  const observerPullTimeout = parseInt((document.getElementById('fedPeerFormObserverPullTimeout') || {}).value, 10) || 0;
   // Editing an existing peer — PUT the named fields to the peer's own path.
   // fingerprint_sync is always sent explicitly (a submit that didn't touch
   // the toggle still round-trips the saved value); the other fields are only
   // included when the operator typed something.
   if (window._fedPeerFormEntry) {
-    const editBody = { url, enabled: true, tls_skip_verify: tlsSkipVerify, fingerprint_sync: fingerprintSync };
+    const editBody = { url, enabled: true, tls_skip_verify: tlsSkipVerify, fingerprint_sync: fingerprintSync, observer_pull: observerPull };
+    if (observerPull) {
+      editBody.observer_pull_interval_s = observerPullInterval; // 0 = server default
+      editBody.observer_pull_timeout_s = observerPullTimeout;   // 0 = server default
+    }
     if (token) editBody.token = token;
     if (capsRaw.trim()) editBody.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
     if (channelIdentityRaw.trim()) editBody.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
@@ -47771,6 +47832,11 @@ function submitFedPeerForm() {
   // BL331 — serialize channel_identity as []string for the backend
   if (channelIdentityRaw.trim()) body.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
   if (fingerprintSync) body.fingerprint_sync = true; // off by default; opt in explicitly
+  if (observerPull) {
+    body.observer_pull = true; // off by default; opt in explicitly
+    body.observer_pull_interval_s = observerPullInterval; // 0 = server default
+    body.observer_pull_timeout_s = observerPullTimeout;   // 0 = server default
+  }
 
   // Proxy-aware (version-skew audit): _apiPath routes peer CRUD to the
   // selected peer (no-op for local/all) so create/edit/test/delete land

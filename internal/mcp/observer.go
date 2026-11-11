@@ -105,7 +105,7 @@ func (s *Server) handleObserverConfigSet(_ context.Context, req mcpsdk.CallToolR
 
 func (s *Server) toolObserverPeersList() mcpsdk.Tool {
 	return mcpsdk.NewTool("observer_peers_list",
-		mcpsdk.WithDescription("List Shape B / C peers registered with this datawatch (federated observer hosts). Returns name, shape, host_info, version, registered_at, last_push_at."),
+		mcpsdk.WithDescription("List Shape B / C peers registered with this datawatch (federated observer hosts). Returns name, shape, host_info, version, registered_at, last_push_at, plus source (\"push\" | \"pull\") and shadow (true when a push-registered peer is also pulled) and a pull block with live pull state."),
 	)
 }
 func (s *Server) handleObserverPeersList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -210,6 +210,24 @@ func (s *Server) toolObserverAgentList() mcpsdk.Tool {
 func (s *Server) handleObserverAgentList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	// Fetch the full peer list and filter shape=A in one shot.
 	out, err := s.proxyGet("/api/observer/peers", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// ── Observer pull protocol (pull mode) ────────────────────────────────────
+
+// toolObserverPullStatus — the MCP surface for GET /api/observer/pull:
+// the current pull target set with per-peer live state (stale,
+// stale_reason, last_success_at) and the effective interval_s / timeout_s.
+func (s *Server) toolObserverPullStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("observer_pull_status",
+		mcpsdk.WithDescription("Observer pull (pull-mode) states: every peer in the pull target set with live state. Each row: name, source (\"pull\"), shadow (true when also push-registered), stale, stale_reason (none|collector not running|timeout|error|forbidden|not_permitted|bad_payload|unknown), last_success_at, interval_s, timeout_s. Read-only."),
+	)
+}
+func (s *Server) handleObserverPullStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/observer/pull", nil)
 	if err != nil {
 		return nil, err
 	}

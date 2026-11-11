@@ -6765,6 +6765,13 @@ type ObserverConfig struct {
 	// Peers (BL172, v4.5.0; bridge added v5.21.0) — federated peer
 	// registry knobs.
 	Peers ObserverPeersConfig `yaml:"peers" json:"peers"`
+
+	// Pull is the observer pull protocol: instead of peers pushing
+	// envelopes, the daemon pulls from a peer's observer endpoint on
+	// a schedule. Off by default; per-peer overrides live on the
+	// multiserver registry entry (observer_pull, observer_pull_interval_s,
+	// observer_pull_timeout_s, where 0 = use these globals).
+	Pull ObserverPullConfig `yaml:"pull,omitempty" json:"pull,omitempty"`
 }
 
 // ObserverPeersConfig (v5.21.0 bridge) mirrors observer.PeersCfg.
@@ -6784,6 +6791,55 @@ type ObserverPeersConfig struct {
 	// alert is raised; default 5, 0 disables. No omitempty so an explicit
 	// 0 survives a YAML round trip instead of reverting to the default.
 	SilentAlertMinutes int `yaml:"silent_alert_minutes" json:"silent_alert_minutes"`
+}
+
+// ObserverPullMinIntervalS is the floor for observer.pull.default_interval_s
+// (and for any per-peer interval override): pulling faster than every 5
+// seconds hammers the peer for little benefit.
+const ObserverPullMinIntervalS = 5
+
+// ObserverPullConfig — the observer pull protocol globals. Enabled gates
+// the pull mode globally; per-peer opt-in lives on the multiserver
+// registry entry. DefaultIntervalS / DefaultTimeoutS are the fallbacks a
+// per-peer entry inherits when it leaves its own interval/timeout at 0.
+type ObserverPullConfig struct {
+	// Enabled turns on observer pull mode globally. Default: false.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// DefaultIntervalS is the default pull interval in seconds a peer
+	// entry inherits when its own is 0. Default: 30; must be at least
+	// ObserverPullMinIntervalS (5).
+	DefaultIntervalS int `yaml:"default_interval_s" json:"default_interval_s"`
+	// DefaultTimeoutS is the default per-pull request timeout in seconds
+	// a peer entry inherits when its own is 0. Default: 5; must be >= 0.
+	DefaultTimeoutS int `yaml:"default_timeout_s" json:"default_timeout_s"`
+}
+
+// DefaultObserverPullConfig returns the shipped observer.pull defaults:
+// disabled, 30s interval, 5s timeout. The single source of truth for the
+// block's defaults — a config that omits observer.pull entirely resolves
+// to this value.
+func DefaultObserverPullConfig() ObserverPullConfig {
+	return ObserverPullConfig{
+		Enabled:          false,
+		DefaultIntervalS: 30,
+		DefaultTimeoutS:  5,
+	}
+}
+
+// ValidateObserverPullConfig rejects an interval below the 5-second floor
+// (which also rejects a negative interval) and a negative timeout, naming
+// the offending observer.pull.* key in each error.
+func ValidateObserverPullConfig(p ObserverPullConfig) error {
+	if p.DefaultIntervalS < 0 {
+		return fmt.Errorf("observer.pull.default_interval_s: %d must be >= 0", p.DefaultIntervalS)
+	}
+	if p.DefaultIntervalS < ObserverPullMinIntervalS {
+		return fmt.Errorf("observer.pull.default_interval_s: %d is below the floor of %d seconds", p.DefaultIntervalS, ObserverPullMinIntervalS)
+	}
+	if p.DefaultTimeoutS < 0 {
+		return fmt.Errorf("observer.pull.default_timeout_s: %d must be >= 0", p.DefaultTimeoutS)
+	}
+	return nil
 }
 
 // ObserverOllamaTapConfig — BL180 Phase 1 — mirrors observer.OllamaTapCfg.
@@ -7500,6 +7556,7 @@ func DefaultConfig() *Config {
 				},
 			},
 		},
+		Observer:      ObserverConfig{Pull: DefaultObserverPullConfig()},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},
@@ -8025,6 +8082,14 @@ func validateLoaded(cfg *Config) error {
 	}
 	if err := ValidateMergeConflictPolicy(cfg.Autonomous.Parallel.MergeConflictPolicy); err != nil {
 		return err
+	}
+	// A fully-zero observer.pull block means "unset" (a zero-value Config
+	// or an empty block) and keeps the shipped defaults; an explicit value
+	// in the block is what ValidateObserverPullConfig checks.
+	if p := cfg.Observer.Pull; p != (ObserverPullConfig{}) {
+		if err := ValidateObserverPullConfig(p); err != nil {
+			return err
+		}
 	}
 	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
 		return err

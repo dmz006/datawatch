@@ -21,6 +21,10 @@ exec_steps:
     args:
       name: "{{params.name}}"
     read_only: true
+  - tool: observer_pull_status
+    description: Read per-peer observer pull states (pull mode; off by default)
+    args: {}
+    read_only: true
 ---
 # How-to: Federated observer
 
@@ -254,6 +258,86 @@ Ways to read or change the setting:
 | MCP | `config_set` with key `observer.peers.silent_alert_minutes`; read it back with `get_config` section `observer`. |
 | Comm channel | `configure observer.peers.silent_alert_minutes=<n>` |
 
+## Pull mode
+
+Push mode makes the **peer** send its stats to the primary. Pull mode is
+the other direction: the **primary's daemon fetches the peer's v2 stats
+on a schedule**, and the peer does nothing — no registration, no push
+token, no inbound registration gate on the peer. Pull mode is **off by
+default**: it needs the global `observer.pull` block enabled *and* the
+individual peer opted in (`observer_pull: true`).
+
+### Push vs pull
+
+| | Push mode | Pull mode |
+|---|---|---|
+| **Who initiates** | The peer daemon (or its `datawatch-stats` sidecar) pushes into the primary | The primary's daemon pulls `GET /api/observer/stats?v=2` from the peer |
+| **Credential** | A peer-minted registration token the peer presents on push (peer stores it in `push_to`) | The peer's bearer token stored in the primary's federation peer store; the primary sends it as `Authorization: Bearer …` on the outbound fetch, and the peer enforces the `observers:read` capability on it |
+| **Firewall direction** | Inbound to the primary (the peer must be able to reach it) | Outbound from the primary (the peer just needs its API reachable on the mesh) |
+| **Snapshot trigger** | The peer's own push cadence (`push_interval`) | The primary's per-peer ticker: `observer_pull_interval_s` per peer, else the global `observer.pull.default_interval_s` (default **30 s**, minimum **5 s**); each fetch is bounded by the per-peer timeout (`observer_pull_timeout_s`, else `observer.pull.default_timeout_s`, default **5 s**) |
+| **Staleness rules** | A peer with no push in >60 s goes stale (cog badge) | Per-peer `stale` flag plus a `stale_reason`: `none` \| `timeout` \| `error` \| `forbidden` (401/403) \| `not_permitted` (peer lacks the `observers:read` capability — no request is even issued) \| `bad_payload` (stats v2 decode failed) \| `unknown` |
+| **Shadow state** | A registered peer that never pushed shows as a shadow row: visible in the merged peer list but contributes no data and is excluded from the envelope aggregate | A federation peer with pull off and no push is a shadow row; a peer that is *also* pull-target shows `shadow: true` on its pull row, and appears **once** in the merged peer list |
+| **Compute-node binding** | Bindable; `Node.observer_peer` auto-sets by name-match on first push | A peer with pull configured is bindable through the same attach endpoint; a shadow peer (no push, no pull) is refused with `409` |
+| **On by default?** | Off until the peer is registered with `allow_register` open on the primary | **Off**: `observer.pull.enabled` defaults to `false` and every peer's `observer_pull` defaults to `false` |
+
+A slow or blocked peer never delays the others: each target pulls in its
+own goroutine with its own timeout, and a failed peer is simply marked
+stale with a reason until the next fetch succeeds.
+
+### Configuring pull
+
+Global defaults (primary side), `~/.datawatch/datawatch.yaml`:
+
+```yaml
+observer:
+  pull:
+    enabled: true              # off by default — global gate for the pull collector
+    default_interval_s: 30     # per-peer fallback (minimum 5)
+    default_timeout_s: 5       # per-fetch timeout fallback
+```
+
+Per peer (any access method), on the primary:
+
+```bash
+# CLI — opt the peer in; interval/timeout 0 = use the global defaults.
+datawatch federation peer add lab-west \
+  --url https://198.51.100.99:8443 --token <PEER_BEARER_TOKEN> \
+  --observer-pull --observer-pull-interval 30 --observer-pull-timeout 5
+
+# or flip an existing peer
+datawatch federation peer update lab-west --observer-pull
+```
+
+The Web UI's federation peer form has the **Observer pull** opt-in plus
+pull interval and pull timeout fields (blank = server default). The REST
+surface is `PUT /api/federation/peers/<name>` with `observer_pull`,
+`observer_pull_interval_s`, `observer_pull_timeout_s`, and the global
+defaults via `PUT /api/config` keys `observer.pull.enabled`,
+`observer.pull.default_interval_s`, `observer.pull.default_timeout_s`.
+
+The peer being pulled needs no operator work: it only serves
+`GET /api/observer/stats?v=2` (observer enabled) to a token that carries
+the `observers:read` capability.
+
+### Five access methods
+
+| Method | Configure pull | Read pull status |
+|---|---|---|
+| **YAML** | `observer.pull.{enabled,default_interval_s,default_timeout_s}` in `~/.datawatch/datawatch.yaml` + `datawatch reload` | — (status is live state, not config) |
+| **CLI** | `datawatch config set observer.pull.*`; `federation peer add/update --observer-pull [--observer-pull-interval N] [--observer-pull-timeout N]` | `datawatch observer pull status` (`--json` for the raw payload) |
+| **Web UI** | Federation peer form: **Observer pull** checkbox + interval/timeout fields | Peer rows show a **source** badge (push / pull / shadow) and a stale chip with the reason |
+| **REST API** | `PUT /api/config` (`observer.pull.*` keys); `POST`/`PUT /api/federation/peers[/name]` (`observer_pull*` fields) | `GET /api/observer/pull`; the merged `GET /api/observer/peers` rows carry `source`, `shadow` and a `pull` object |
+| **Comm channel** | `rest PUT /api/config …` / `rest PUT /api/federation/peers/<name> …` passthrough | `observer pull status` |
+
+### Where to see pull status
+
+| Surface | What you get |
+|---|---|
+| **Web UI** | Observer → Federated Peers: source badge per row (push / pull / shadow), stale chip with reason; the peer form's pull fields |
+| **REST API** | `GET /api/observer/pull` → `{peers: [{name, source: "pull", shadow, stale, stale_reason, last_success_at, interval_s, timeout_s}]}` (empty array when no peer is opted in; bearer tokens are never returned) |
+| **Comm channel** | `observer pull status` — the same rows, table-rendered |
+| **MCP** | `observer_pull_status` tool (read-only, `observers:read`) — same rows for an LLM or automation |
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)
@@ -314,6 +398,7 @@ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
 Tools: `observer_peers_list`, `observer_envelopes`,
 `observer_envelopes_all_peers`, `observer_peer_register`,
 `observer_peer_delete`, `observer_peers_free`, `observer_peers_by_node`,
+`observer_pull_status` (pull mode; see the Pull mode section above),
 `federation_meta_peers`, `compute_node_attach_observer`,
 `compute_node_detach_observer`.
 
@@ -334,6 +419,7 @@ to find unbound peers that can be attached to a new Compute Node.
 | `compute node observer-free` | List free (unbound) observer peers. |
 | `compute node observer-by-node` | List peers grouped by Compute Node. |
 | `compute node federation-meta-peers` | Cross-instance meta-peers view. |
+| `observer pull status` | Per-peer observer pull states (pull mode): source, shadow, stale + reason, last success, interval and timeout. |
 
 ### 5e. YAML
 

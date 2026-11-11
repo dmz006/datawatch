@@ -439,6 +439,14 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"federation_fingerprint_reject_btn",
 		"federation_fingerprint_kind_node",
 		"federation_fingerprint_kind_billing",
+		"federation_observer_pull_label",
+		"federation_observer_pull_interval",
+		"federation_observer_pull_timeout",
+		"federation_observer_pull_default_hint",
+		"federation_observer_pull_source_push",
+		"federation_observer_pull_source_pull",
+		"federation_observer_pull_source_shadow",
+		"federation_observer_pull_stale",
 		// Failure escalation — the held-task status chip shown in the Automaton
 		// task rows and the Automation strip.
 		"task_status_review_needed",
