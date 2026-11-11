@@ -4643,5 +4643,6 @@
   "dash_heatmap_total": "%1$d livrés · %2$d releases · %3$d derniers jours",
   "dash_card_off_gantt_reason": "Aucune tâche d'automates n'a tourné au cours des 6 dernières heures : sa barre apparaîtra ici dès qu'une démarre.",
   "dash_card_off_gantt_link": "Référence des cartes du tableau de bord",
-  "dash_card_events_purpose": "Événements les plus récents du travail en arrière-plan et des sessions."
+  "dash_card_events_purpose": "Événements les plus récents du travail en arrière-plan et des sessions.",
+  "dash_card_smoke_purpose": "Progression des exécutions de tests smoke de version et de bout en bout."
 }

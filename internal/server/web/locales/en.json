@@ -4643,5 +4643,6 @@
   "dash_heatmap_total": "%1$d shipped · %2$d releases · last %3$d days",
   "dash_card_off_gantt_reason": "No Automaton task has run in the last 6 hours — its bar appears here when one starts.",
   "dash_card_off_gantt_link": "Dashboard card reference",
-  "dash_card_events_purpose": "Newest Automata and session events."
+  "dash_card_events_purpose": "Newest Automata and session events.",
+  "dash_card_smoke_purpose": "Progress of release smoke and end-to-end test runs."
 }

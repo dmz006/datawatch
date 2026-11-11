@@ -4643,5 +4643,6 @@
   "dash_heatmap_total": "%1$d enviados · %2$d releases · últimos %3$d días",
   "dash_card_off_gantt_reason": "Ninguna tarea de autómatas se ha ejecutado en las últimas 6 horas: su barra aparecerá aquí cuando empiece una.",
   "dash_card_off_gantt_link": "Referencia de tarjetas del panel",
-  "dash_card_events_purpose": "Eventos más recientes del trabajo en segundo plano y de las sesiones."
+  "dash_card_events_purpose": "Eventos más recientes del trabajo en segundo plano y de las sesiones.",
+  "dash_card_smoke_purpose": "Progreso de las ejecuciones de pruebas smoke de versión y de extremo a extremo."
 }
