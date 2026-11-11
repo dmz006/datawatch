@@ -25,6 +25,8 @@ The checks that do decide a release are separate from the upload:
 - Waits of 60, 180 and 300 seconds before attempts 2, 3 and 4.
 - A warning on the final failure; the step does not fail the job.
 - The SARIF is kept as the `gosec-results` and `trivy-*-sarif` artifacts for 90 days, so a skipped upload can be redone by hand.
+- A run whose upload gave up has no new Code Scanning entry for that run. That is not a clean scan; look for the "failed on every attempt" warning on the upload steps, then download the artifact or re-run the workflow later.
+- The attempt count and waits are fixed in the workflow file, not in a daemon setting.
 
 ## Adding a new SARIF upload
 
@@ -39,3 +41,13 @@ bash tests/test-sarif-upload-nonblocking.sh
 make lint
 make test
 ```
+
+## For the operator to review
+
+- Decide whether an upload that fails all four attempts should raise an alert; today it is only a warning on the step.
+
+## See also
+
+- [operations.md](../operations.md#code-scanning-upload-in-the-release-workflow) for the guard rules.
+- [release-push-and-tag.md](release-push-and-tag.md#when-the-code-scanning-upload-fails) for what to do during a release.
+- [datawatch-definitions.md](../datawatch-definitions.md) for the "Code scanning upload" definition.
