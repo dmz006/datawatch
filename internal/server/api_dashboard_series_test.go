@@ -201,11 +201,14 @@ func TestVerifierHealth_WaitsAndRunsPerNode(t *testing.T) {
 		// A run that began before the window counts only from the window start.
 		{Kind: capacity.LaneIntervalBusy, Pools: verifierPools("n2"), Node: "n2", Start: seriesAt(-90), End: seriesAt(-55)}, // 5 min inside
 	}
-	nodes := buildVerifierNodes(ivs, from, now)
+	nodes := buildVerifierNodes(ivs, nil, from, now)
 	if len(nodes) != 2 || nodes[0].Node != "n1" || nodes[1].Node != "n2" {
 		t.Fatalf("nodes: %+v", nodes)
 	}
 	n1 := nodes[0]
+	if n1.PassRate != nil || n1.Outcomes != 0 {
+		t.Fatalf("no logged result must leave the pass rate null, got %+v", n1)
+	}
 	if n1.Runs != 2 || n1.Waits != 1 || !approx(n1.RunTotalSeconds, 15*60) || !approx(n1.RunAvgSeconds, 7.5*60) || !approx(n1.WaitAvgSeconds, 10*60) {
 		t.Fatalf("n1: %+v", n1)
 	}
@@ -215,14 +218,110 @@ func TestVerifierHealth_WaitsAndRunsPerNode(t *testing.T) {
 	}
 }
 
-func TestVerifierHealth_ResponseHasNoAllNodesPassRate(t *testing.T) {
-	raw, err := json.Marshal(verifierHealthResponse{Nodes: []verifierNodeHealth{{Node: "n1", Runs: 2}}})
-	if err != nil {
-		t.Fatal(err)
+func TestVerifierHealth_PassRateIsPerNode(t *testing.T) {
+	from, now := seriesAt(-60), seriesT0
+	ivs := []capacity.LaneInterval{
+		{Kind: capacity.LaneIntervalBusy, Pools: []string{capacity.VerifierPool("n1")}, Node: "n1", Start: seriesAt(-30), End: seriesAt(-20)},
+		{Kind: capacity.LaneIntervalBusy, Pools: []string{capacity.VerifierPool("n2")}, Node: "n2", Start: seriesAt(-30), End: seriesAt(-20)},
+		{Kind: capacity.LaneIntervalBusy, Pools: []string{capacity.VerifierPool("n3")}, Node: "n3", Start: seriesAt(-30), End: seriesAt(-20)},
 	}
-	if strings.Contains(string(raw), "pass_rate") || strings.Contains(string(raw), "outcomes") {
-		t.Fatalf("no pass rate may be reported without a per-node source: %s", raw)
+	outcomes := map[string]autonomous.VerifierNodePass{
+		"n1": {Outcomes: 4, Passes: 3},
+		"n2": {Outcomes: 2, Passes: 0},
+		"n4": {Outcomes: 1, Passes: 1}, // judged on a node with no verifier pool
 	}
+	nodes := buildVerifierNodes(ivs, outcomes, from, now)
+	if len(nodes) != 4 {
+		t.Fatalf("nodes: %+v", nodes)
+	}
+	by := map[string]verifierNodeHealth{}
+	for _, n := range nodes {
+		by[n.Node] = n
+	}
+	if r := by["n1"].PassRate; r == nil || !approx(*r, 0.75) || by["n1"].Outcomes != 4 || by["n1"].Passes != 3 {
+		t.Fatalf("n1 must show its own 3 of 4: %+v", by["n1"])
+	}
+	if r := by["n2"].PassRate; r == nil || *r != 0 {
+		t.Fatalf("n2 failed every result, so its rate is 0, not null: %+v", by["n2"])
+	}
+	if by["n3"].PassRate != nil {
+		t.Fatalf("n3 has no logged result, so its rate is null: %+v", by["n3"])
+	}
+	if r := by["n4"].PassRate; r == nil || *r != 1 || by["n4"].Runs != 0 {
+		t.Fatalf("n4 appears with its rate and no ledger runs: %+v", by["n4"])
+	}
+	raw, err := json.Marshal(by["n3"])
+	if err != nil || !strings.Contains(string(raw), `"pass_rate":null`) {
+		t.Fatalf("a node without results must carry an explicit null pass_rate: %s", raw)
+	}
+}
+
+func TestVerifierHealth_NodeOutcomesAreWindowedAndPerNode(t *testing.T) {
+	clk := seriesT0
+	st := autonomous.NewVerifierStats(func() time.Time { return clk })
+	st.RecordNodeOutcome("n1", autonomous.VerifierCatPass)
+	st.RecordNodeOutcome("n1", autonomous.VerifierCatContent)
+	st.RecordNodeOutcome("n2", autonomous.VerifierCatPass)
+	st.RecordNodeOutcome("", autonomous.VerifierCatPass) // no node: not attributable
+	clk = clk.Add(2 * time.Hour)
+	st.RecordNodeOutcome("n1", autonomous.VerifierCatInfra)
+	all := st.NodeOutcomes(seriesT0.Add(-time.Minute), clk)
+	if all["n1"] != (autonomous.VerifierNodePass{Outcomes: 3, Passes: 1}) || all["n2"] != (autonomous.VerifierNodePass{Outcomes: 1, Passes: 1}) || len(all) != 2 {
+		t.Fatalf("all: %+v", all)
+	}
+	recent := st.NodeOutcomes(seriesT0.Add(time.Hour), clk)
+	if recent["n1"] != (autonomous.VerifierNodePass{Outcomes: 1, Passes: 0}) || len(recent) != 1 {
+		t.Fatalf("a narrower window must leave out older results: %+v", recent)
+	}
+	if v := st.Snapshot(); v.Runs != 0 {
+		t.Fatalf("logging a node outcome must not count a run: %+v", v)
+	}
+}
+
+func TestVerifierHealth_NodeLogIsBounded(t *testing.T) {
+	clk := seriesT0
+	st := autonomous.NewVerifierStats(func() time.Time { return clk })
+	st.RecordNodeOutcome("n1", autonomous.VerifierCatPass)
+	clk = clk.Add(8 * 24 * time.Hour)
+	st.RecordNodeOutcome("n1", autonomous.VerifierCatContent)
+	got := st.NodeOutcomes(seriesT0.Add(-time.Hour), clk)
+	if got["n1"] != (autonomous.VerifierNodePass{Outcomes: 1, Passes: 0}) {
+		t.Fatalf("a result older than the longest window must be dropped: %+v", got)
+	}
+	for i := 0; i < 20010; i++ {
+		st.RecordNodeOutcome("n2", autonomous.VerifierCatPass)
+	}
+	if n := st.NodeOutcomes(seriesT0, clk.Add(time.Hour))["n2"].Outcomes; n != 20000 {
+		t.Fatalf("the log must keep at most 20000 results, kept %d", n)
+	}
+}
+
+func TestVerifierHealth_HandlerReportsLoggedNodeOutcome(t *testing.T) {
+	const node = "series-handler-node"
+	prev := seriesVerifierStats
+	seriesVerifierStats = autonomous.NewVerifierStats(nil)
+	t.Cleanup(func() { seriesVerifierStats = prev })
+	seriesVerifierStats.RecordNodeOutcome(node, autonomous.VerifierCatPass)
+	seriesVerifierStats.RecordNodeOutcome(node, autonomous.VerifierCatContent)
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	s.handleDashboardSeriesVerifierHealth(rec, httptest.NewRequest(http.MethodGet, "/api/dashboard/series/verifier-health", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var body verifierHealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, n := range body.Nodes {
+		if n.Node == node {
+			if n.Outcomes != 2 || n.Passes != 1 || n.PassRate == nil || !approx(*n.PassRate, 0.5) {
+				t.Fatalf("handler row: %+v", n)
+			}
+			return
+		}
+	}
+	t.Fatalf("the logged node is missing from the response: %s", rec.Body.String())
 }
 
 func TestVerifierHealth_EmptyWithoutLedgerAndRejectsBadWindow(t *testing.T) {

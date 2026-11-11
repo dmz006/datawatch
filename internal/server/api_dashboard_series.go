@@ -21,9 +21,11 @@
 //
 // Verifier health reports, per compute node, the verifier waits and runs seen
 // in the window. Verifier leases take the node-verify:<node> pool, so a verifier
-// is recognised by that pool name. No pass rate is reported: the ledger records
-// no verifier verdict on its intervals, and the process-wide verifier outcome
-// aggregate is not tied to a node, so neither can give a per-node pass rate.
+// is recognised by that pool name. The pass rate is per node too: the capacity
+// ledger's intervals carry no verdict, so each verifier result is logged with
+// the node whose lease judged it (autonomous.VerifierStats), and the rate is
+// the passing results over all results logged for that node in the window. It
+// is null for a node with no logged result, so a node is never shown as 0%.
 package server
 
 import (
@@ -47,6 +49,11 @@ const (
 	seriesVerifierMinWindow     = time.Minute
 	seriesMaxWindow             = 7 * 24 * time.Hour
 )
+
+// seriesVerifierStats is where verifier health reads the per-node verifier
+// results. It is the process-wide aggregate the verifier records into; tests
+// swap it for a private one.
+var seriesVerifierStats = autonomous.DefaultVerifierStats
 
 // seriesHourPoint is one clock hour of a lane's utilization. BusyFraction is
 // null when the hour began before the ledger kept history.
@@ -91,15 +98,19 @@ type throughputForecastResponse struct {
 	Points      []forecastPoint `json:"points"`
 }
 
-// verifierNodeHealth is one compute node's verifier waits and runs in the window.
+// verifierNodeHealth is one compute node's verifier waits, runs and pass rate
+// in the window. PassRate is null when no verifier result was logged for the node.
 type verifierNodeHealth struct {
-	Node             string  `json:"node"`
-	Runs             int     `json:"runs"`
-	Waits            int     `json:"waits"`
-	WaitTotalSeconds float64 `json:"wait_total_seconds"`
-	WaitAvgSeconds   float64 `json:"wait_avg_seconds"`
-	RunTotalSeconds  float64 `json:"run_total_seconds"`
-	RunAvgSeconds    float64 `json:"run_avg_seconds"`
+	Node             string   `json:"node"`
+	Runs             int      `json:"runs"`
+	Waits            int      `json:"waits"`
+	WaitTotalSeconds float64  `json:"wait_total_seconds"`
+	WaitAvgSeconds   float64  `json:"wait_avg_seconds"`
+	RunTotalSeconds  float64  `json:"run_total_seconds"`
+	RunAvgSeconds    float64  `json:"run_avg_seconds"`
+	Outcomes         int      `json:"outcomes"`
+	Passes           int      `json:"passes"`
+	PassRate         *float64 `json:"pass_rate"`
 }
 
 // verifierHealthResponse is the body of GET /api/dashboard/series/verifier-health.
@@ -257,9 +268,11 @@ func (s *Server) handleDashboardSeriesThroughputForecast(w http.ResponseWriter, 
 }
 
 // buildVerifierNodes sums the verifier waits and runs per node from the
-// intervals, clipped to [from, now]. An interval counts as a verifier when one
-// of its pools is node-verify:<node>.
-func buildVerifierNodes(ivs []capacity.LaneInterval, from, now time.Time) []verifierNodeHealth {
+// intervals, clipped to [from, now], and adds each node's pass rate from the
+// logged results. An interval counts as a verifier when one of its pools is
+// node-verify:<node>. A node with logged results but no verifier interval (no
+// verifier pool) still appears, with zero waits and runs.
+func buildVerifierNodes(ivs []capacity.LaneInterval, outcomes map[string]autonomous.VerifierNodePass, from, now time.Time) []verifierNodeHealth {
 	prefix := capacity.VerifierPool("")
 	byNode := map[string]*verifierNodeHealth{}
 	for _, iv := range ivs {
@@ -291,8 +304,18 @@ func buildVerifierNodes(ivs []capacity.LaneInterval, from, now time.Time) []veri
 			h.RunTotalSeconds += secs
 		}
 	}
+	for node := range outcomes {
+		if byNode[node] == nil {
+			byNode[node] = &verifierNodeHealth{Node: node}
+		}
+	}
 	out := make([]verifierNodeHealth, 0, len(byNode))
 	for _, h := range byNode {
+		if o, ok := outcomes[h.Node]; ok && o.Outcomes > 0 {
+			h.Outcomes, h.Passes = o.Outcomes, o.Passes
+			rate := float64(o.Passes) / float64(o.Outcomes)
+			h.PassRate = &rate
+		}
 		if h.Waits > 0 {
 			h.WaitAvgSeconds = h.WaitTotalSeconds / float64(h.Waits)
 		}
@@ -326,6 +349,6 @@ func (s *Server) handleDashboardSeriesVerifierHealth(w http.ResponseWriter, r *h
 	writeJSONOK(w, verifierHealthResponse{
 		GeneratedAt: now, WindowFrom: from, WindowTo: now,
 		WindowSeconds: int64(window / time.Second), RecordingFrom: recording,
-		Nodes: buildVerifierNodes(ivs, from, now),
+		Nodes: buildVerifierNodes(ivs, seriesVerifierStats.NodeOutcomes(from, now), from, now),
 	})
 }

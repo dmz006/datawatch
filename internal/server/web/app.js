@@ -44837,13 +44837,18 @@ function _dashRenderVerifier() {
     '<th ' + th + '>' + escHtml(t('dash_series_runs')) + '</th>' +
     '<th ' + th + '>' + escHtml(t('dash_series_waits')) + '</th>' +
     '<th ' + th + '>' + escHtml(t('dash_series_avg_wait')) + '</th>' +
-    '<th ' + th + '>' + escHtml(t('dash_series_avg_run')) + '</th></tr>';
+    '<th ' + th + '>' + escHtml(t('dash_series_avg_run')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_pass_rate')) + '</th></tr>';
+  // The pass rate is per node; a node with no logged result has a null rate
+  // and shows a dash, never 0%.
+  const rate = n => n.pass_rate == null ? '—' : Math.round(Number(n.pass_rate) * 100) + '%';
   const rows = d.nodes.map(n => '<tr>' +
     '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(n.node) + '</td>' +
     '<td style="padding:2px 6px;">' + (Number(n.runs) || 0) + '</td>' +
     '<td style="padding:2px 6px;">' + (Number(n.waits) || 0) + '</td>' +
     '<td style="padding:2px 6px;">' + secs(n.wait_avg_seconds) + '</td>' +
-    '<td style="padding:2px 6px;">' + secs(n.run_avg_seconds) + '</td></tr>').join('');
+    '<td style="padding:2px 6px;">' + secs(n.run_avg_seconds) + '</td>' +
+    '<td style="padding:2px 6px;" title="' + escHtml((Number(n.passes) || 0) + ' / ' + (Number(n.outcomes) || 0)) + '">' + rate(n) + '</td></tr>').join('');
   el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
 }
 

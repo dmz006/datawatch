@@ -9881,13 +9881,16 @@ paths:
           description: Only GET is served
   /api/dashboard/series/verifier-health:
     get:
-      summary: Verifier waits and runs per node
+      summary: Verifier waits, runs and pass rate per node
       description: |
         Verifier queue waits and runs per compute node over a window (default 24 hours, from 1 minute to
         168 hours). A verifier is recognised by its node verifier pool (`node-verify:<node>`), so only
         verifier work on a node that has a verifier pool is counted. Times are clipped to the window.
-        No pass rate is reported: the capacity ledger records no verifier verdict, and the process-wide
-        verifier outcome aggregate is not tied to a node, so neither gives a per-node pass rate.
+        The pass rate is per node. The capacity ledger's intervals carry no verdict, so each verifier
+        result is logged with the node whose lease judged it; `pass_rate` is the passing results over all
+        results logged for that node in the window, and is null for a node with none, so a node is never
+        shown as 0% for lack of data. A node that judged results but has no verifier pool appears with
+        zero waits and runs. The log is kept in memory, so it starts empty when the daemon starts.
       operationId: dashboardSeriesVerifierHealth
       tags: [Dashboard]
       parameters:
@@ -9898,7 +9901,7 @@ paths:
           schema: {type: string, default: 24h}
       responses:
         "200":
-          description: Verifier waits and runs per node
+          description: Verifier waits, runs and pass rate per node
           content:
             application/json:
               schema:
@@ -9922,6 +9925,9 @@ paths:
                         wait_avg_seconds: {type: number}
                         run_total_seconds: {type: number}
                         run_avg_seconds: {type: number}
+                        outcomes: {type: integer, description: Verifier results logged for this node in the window}
+                        passes: {type: integer, description: Those results that passed}
+                        pass_rate: {type: number, nullable: true, description: Passes over outcomes, 0 to 1; null when no result was logged for the node}
         "400":
           description: The window is not a duration from 1m to 168h
         "405":

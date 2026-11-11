@@ -1,6 +1,6 @@
 // Dashboard series cards — lane utilization (busy share per lane per hour),
 // throughput forecast (trend points with the completion range) and verifier
-// health (waits and runs per node, pass rate for all nodes). Covers the feature
+// health (waits, runs and pass rate per node). Covers the feature
 // gates that keep each card off until it has data, the render output for a
 // hatched unrecorded hour and a node table, the card definitions staying out of
 // the default layout, and the locale keys in all five bundles.
@@ -18,7 +18,7 @@ const SERIES_KEYS = [
   'dash_series_busy_share', 'dash_series_no_history', 'dash_series_none',
   'dash_series_date', 'dash_series_throughput', 'dash_series_range',
   'dash_series_node', 'dash_series_runs', 'dash_series_waits',
-  'dash_series_avg_wait', 'dash_series_avg_run',
+  'dash_series_avg_wait', 'dash_series_avg_run', 'dash_series_pass_rate',
   'dash_card_off_lane_util_reason', 'dash_card_off_forecast_reason',
   'dash_card_off_verifier_reason', 'dash_card_off_series_link',
 ];
@@ -132,17 +132,40 @@ test('render: the forecast table keeps a null completion bound as a dash', () =>
   assert.ok(html.includes('— – —'), 'a missing range shows dashes');
 });
 
-test('render: verifier health escapes node names and shows no pass rate', () => {
+test('render: verifier health escapes node names and shows a pass rate per node', () => {
   const sb = loadAppSandbox();
   setSeries(sb, '_seriesVerifier', {
-    nodes: [{ node: '<n1>', runs: 2, waits: 1, wait_avg_seconds: 30, run_avg_seconds: 120 }],
+    nodes: [
+      { node: '<n1>', runs: 2, waits: 1, wait_avg_seconds: 30, run_avg_seconds: 120, outcomes: 4, passes: 3, pass_rate: 0.75 },
+      { node: 'n2', runs: 1, waits: 0, wait_avg_seconds: 0, run_avg_seconds: 60, outcomes: 2, passes: 0, pass_rate: 0 },
+      { node: 'n3', runs: 1, waits: 0, wait_avg_seconds: 0, run_avg_seconds: 60, outcomes: 0, passes: 0, pass_rate: null },
+    ],
   });
   vm.runInContext('_dashRenderVerifier()', sb);
   const html = sb.__els.dashVerifierCard.innerHTML;
   assert.ok(html.includes('&lt;n1&gt;'), 'the node name is escaped');
   assert.ok(!html.includes('<n1>'), 'no raw node markup');
-  assert.ok(!/\d%/.test(html.replace('width:100%', '')), 'no pass rate is shown without a per-node source');
+  assert.ok(html.includes(bundle('en').dash_series_pass_rate), 'the pass rate column has a header');
+  const rows = html.split('<tr>').slice(1);
+  assert.equal(rows.length, 3);
+  assert.ok(rows[0].includes('75%') && rows[0].includes('title="3 / 4"'), 'n1 shows its own 3 of 4');
+  assert.ok(rows[1].includes('>0%<'), 'a node that failed every result shows 0%');
+  assert.ok(!/\d%/.test(rows[2]) && rows[2].includes('—'), 'a node without a result shows a dash, not 0%');
   assert.ok(html.includes('30s') && html.includes('120s'), 'average wait and run are shown in seconds');
+});
+
+test('render: the forecast column header says daily throughput and shows the per-day rate', () => {
+  const sb = loadAppSandbox();
+  setSeries(sb, '_seriesForecast', { points: [
+    { date: '2026-11-09', throughput_per_day: 1.5, completion_low_days: 2, completion_high_days: 4 },
+  ] });
+  vm.runInContext('_dashRenderForecast()', sb);
+  const html = sb.__els.dashForecastCard.innerHTML;
+  for (const lang of LANGS) {
+    assert.ok(!/3/.test(bundle(lang).dash_series_throughput), lang + ' header must not name a 3-day window');
+  }
+  assert.ok(/daily throughput/i.test(bundle('en').dash_series_throughput));
+  assert.ok(html.includes(bundle('en').dash_series_throughput) && html.includes('1.50'));
 });
 
 test('render: an empty payload shows the empty line, not a blank card', () => {
