@@ -541,7 +541,7 @@
   "dash_series_no_history": "キャパシティ台帳が履歴を保持し始める前",
   "dash_series_none": "この期間のデータはまだありません。",
   "dash_series_date": "日付",
-  "dash_series_throughput": "スループット（3日）",
+  "dash_series_throughput": "1日あたりのスループット（24時間）",
   "dash_series_range": "完了見込み（日）",
   "dash_series_node": "ノード",
   "dash_series_runs": "実行数",

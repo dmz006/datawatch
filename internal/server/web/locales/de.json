@@ -541,7 +541,7 @@
   "dash_series_no_history": "Vor Beginn der Verlaufsaufzeichnung der Kapazitätsliste",
   "dash_series_none": "In diesem Zeitraum noch keine Daten.",
   "dash_series_date": "Datum",
-  "dash_series_throughput": "Durchsatz (3 Tage)",
+  "dash_series_throughput": "Durchsatz pro Tag (24 h)",
   "dash_series_range": "Fertigstellung (Tage)",
   "dash_series_node": "Node",
   "dash_series_runs": "Läufe",

@@ -541,7 +541,7 @@
   "dash_series_no_history": "Antes de que el registro de capacidad guardara historial",
   "dash_series_none": "Aún no hay datos en este intervalo.",
   "dash_series_date": "Fecha",
-  "dash_series_throughput": "Rendimiento (3 días)",
+  "dash_series_throughput": "Rendimiento por día (24 h)",
   "dash_series_range": "Finalización (días)",
   "dash_series_node": "Nodo",
   "dash_series_runs": "Ejecuciones",

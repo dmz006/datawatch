@@ -521,7 +521,7 @@
   "dash_series_no_history": "Before the capacity ledger kept history",
   "dash_series_none": "No data in this window yet.",
   "dash_series_date": "Date",
-  "dash_series_throughput": "Throughput (3 days)",
+  "dash_series_throughput": "Throughput per day (24 h)",
   "dash_series_range": "Completion (days)",
   "dash_series_node": "Node",
   "dash_series_runs": "Runs",

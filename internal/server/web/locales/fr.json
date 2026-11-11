@@ -541,7 +541,7 @@
   "dash_series_no_history": "Avant que le registre de capacité ne conserve un historique",
   "dash_series_none": "Aucune donnée sur cette période pour l’instant.",
   "dash_series_date": "Date",
-  "dash_series_throughput": "Débit (3 jours)",
+  "dash_series_throughput": "Débit par jour (24 h)",
   "dash_series_range": "Achèvement (jours)",
   "dash_series_node": "Nœud",
   "dash_series_runs": "Exécutions",
