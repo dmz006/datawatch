@@ -692,7 +692,7 @@ entries:
   - scripts/skills-coverage-extract.sh commands + docs/commands.md
   - scripts/skills-coverage-extract.sh routes + docs/api-mcp-mapping.md
   - scripts/skills-coverage-extract.sh settings + docs/config-reference.yaml
-- id: compute
+- id: llm-backends-and-nodes
   area: LLM backends and compute nodes
   summary: LLM registry, backends, models, compute nodes, pulls and routing.
   tools:
