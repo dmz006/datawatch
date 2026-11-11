@@ -4649,5 +4649,7 @@
   "billing_mode_option_api": "api",
   "billing_mode_option_allowance": "allowance",
   "billing_mode_option_local": "local",
-  "billing_mode_help": "api : chaque appel est facturé au jeton. allowance : les appels puisent dans un forfait fixe. local : s'exécute sur votre propre matériel sans frais par appel. Le rapport de coûts regroupe les dépenses selon ce mot."
+  "billing_mode_help": "api : chaque appel est facturé au jeton. allowance : les appels puisent dans un forfait fixe. local : s'exécute sur votre propre matériel sans frais par appel. Le rapport de coûts regroupe les dépenses selon ce mot.",
+  "usage_unit_dollars": "$ (dollars)",
+  "usage_unit_points": "pts (points)"
 }

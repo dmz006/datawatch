@@ -4649,5 +4649,7 @@
   "billing_mode_option_api": "api",
   "billing_mode_option_allowance": "allowance",
   "billing_mode_option_local": "local",
-  "billing_mode_help": "api: jeder Aufruf wird pro Token abgerechnet. allowance: Aufrufe verbrauchen ein pauschales Kontingent. local: läuft auf eigener Hardware ohne Kosten pro Aufruf. Der Kostenbericht gruppiert die Ausgaben nach diesem Wort."
+  "billing_mode_help": "api: jeder Aufruf wird pro Token abgerechnet. allowance: Aufrufe verbrauchen ein pauschales Kontingent. local: läuft auf eigener Hardware ohne Kosten pro Aufruf. Der Kostenbericht gruppiert die Ausgaben nach diesem Wort.",
+  "usage_unit_dollars": "$ (Dollar)",
+  "usage_unit_points": "Pkt. (Punkte)"
 }

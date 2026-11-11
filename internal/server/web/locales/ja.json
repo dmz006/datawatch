@@ -4649,5 +4649,7 @@
   "billing_mode_option_api": "api",
   "billing_mode_option_allowance": "allowance",
   "billing_mode_option_local": "local",
-  "billing_mode_help": "api: 呼び出しごとにトークン単位で課金されます。allowance: 呼び出しは定額プランの枠を消費します。local: 自分のハードウェアで実行され、呼び出しごとの料金はありません。コストレポートはこの値ごとに支出をまとめます。"
+  "billing_mode_help": "api: 呼び出しごとにトークン単位で課金されます。allowance: 呼び出しは定額プランの枠を消費します。local: 自分のハードウェアで実行され、呼び出しごとの料金はありません。コストレポートはこの値ごとに支出をまとめます。",
+  "usage_unit_dollars": "$ (ドル)",
+  "usage_unit_points": "pt (ポイント)"
 }
