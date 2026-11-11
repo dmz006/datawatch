@@ -4946,6 +4946,12 @@ therefore covers all of an Automaton's sessions, and deleting a session does
 not remove its entry. Sessions that ran before this change have no
 attribution and stay under `unattributed`.
 
+The checks status also reports an `attribution` check: how many
+Automaton-launched ledger sessions carry no automaton id (`unattributed`, with
+their `session_ids`). Read it when an Automaton's cost looks low; a non-zero
+count means a launcher is not stamping its sessions. See
+[the howto](howto/cost-report.md#checking-for-unattributed-sessions).
+
 ### The allocation estimate
 
 Set `allocation_pct: true` on the budget to add an estimated

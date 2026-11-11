@@ -155,6 +155,10 @@ An Automaton's row counts every session it launches, not just its worker session
 - **Deleting sessions does not lower the cost.** The ledger entry outlives the session, so deleting or cleaning up a session leaves the Automaton's cost unchanged until the entry ages out of the 31-day window.
 - **Older sessions stay uncounted.** Sessions that ran before this change carry no attribution and land under `unattributed`. Nothing is back-filled; new sessions count from the first launch after the upgrade.
 
+### Checking for unattributed sessions
+
+The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `session_ids`, `ok` and a `note`. `ok` is true when none are missing. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
+
 ## The groupings
 
 | `group_by` | One row per |
