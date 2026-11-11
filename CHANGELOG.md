@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.139.1 — Idle verifier retry and per-task override admission
+
+### Fixed
+
+- A verifier that goes idle no longer counts against the worker: the executor records a verifier incident and retries on a fresh verifier session (up to 3 retries), leaving the task's attempts and escalation failures untouched; when the cap is used up the task is held for operator review.
+- Verifier no-progress watchdog failures now have an exported error type and classifier: `autonomous.VerifierIdleError` (built with the standard watchdog text by `NewVerifierIdleError`) and `autonomous.IsVerifierIdleError`, which recognizes a tripped-watchdog failure — the new type, or the one-shot no-output error carrying the watchdog text — anywhere in the error chain, so callers can tell a verifier that went idle apart from a worker failure (timeout, ended state).
+- **The worker you chose for a waiting task is the worker it gets.** Overriding a task's backend and model while it is held for capacity — `set_llm` with queued retargeting on, a review retry with a chosen worker, or a re-queue after an escalation hold — now stands at admission: the task is admitted on the pair you set, on that pair's pool, and its wait reason names that pool instead of the pool a stale earlier admission had recorded.
+- **A task waiting for a capacity slot can be reset to re-admit it.** `reset_task` (REST `POST /api/autonomous/prds/{id}/reset_task`, MCP `autonomous_prd_reset_task`) now also accepts a `waiting-for-capacity` task, without `force`. Its reset re-admits it straight away — same capacity-queue position, retargeted to the pool its worker resolves to now, fresh wait budget — and counts no retry or failure. How-to: [automata-capacity](docs/howto/automata-capacity.md), [autonomous recovery](docs/howto/autonomous-recovery.md).
+- **No migration.** A task already running keeps the worker it started with; both fixes apply from the next admission or reset. Nothing to reconfigure.
+
 ## v9.139.0 — The Housekeeping tab as an action list
 
 ### Added
