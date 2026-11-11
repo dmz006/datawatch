@@ -9784,6 +9784,153 @@ paths:
           description: The window is not a duration from 1m to 168h
         "405":
           description: Only GET is served
+  /api/dashboard/series/lane-utilization:
+    get:
+      summary: Lane utilization by hour
+      description: |
+        Busy share per lane per clock hour over a window (default 24 hours, from 1 hour to 168 hours).
+        A lane is the `llm:` pool a lease ran against. Each hour's `busy_fraction` is the share of that
+        hour in which at least one lease held the lane, so overlapping leases on several nodes count once.
+        Queued (waiting) requests are not counted. The leases come from the capacity ledger: closed history
+        plus leases still open at the call. An hour that began before the ledger kept history reports a
+        null `busy_fraction`, so it is never shown as idle. The current hour is measured over the time elapsed.
+      operationId: dashboardSeriesLaneUtilization
+      tags: [Dashboard]
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: Length of the window ending now, as a Go duration such as `24h`. Default 24h; from 1h to 168h.
+          schema: {type: string, default: 24h}
+      responses:
+        "200":
+          description: Hourly busy share per lane, oldest hour first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  window_from: {type: string, format: date-time, description: Start of the first hour in the window}
+                  window_to: {type: string, format: date-time}
+                  bucket_seconds: {type: integer, description: Always 3600}
+                  recording_from: {type: string, format: date-time, description: When the capacity ledger began keeping history; omitted when not known}
+                  lanes:
+                    type: array
+                    description: One entry per lane with a busy lease in the window, sorted by lane name.
+                    items:
+                      type: object
+                      properties:
+                        lane: {type: string}
+                        hours:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              start: {type: string, format: date-time}
+                              busy_fraction: {type: number, nullable: true, description: 'Share of the hour, 0 to 1; null before the ledger kept history'}
+        "400":
+          description: The window is not a duration from 1h to 168h
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/throughput-forecast:
+    get:
+      summary: Throughput and completion range by day
+      description: |
+        The saved progress snapshots reduced to one point per day for the last `days` days: the
+        completion range in days (low and high) and the throughput over the last three days. The
+        throughput is the trend's rolling three-day figure (`throughput_3d`), not a count for that
+        single day. Points come from the same snapshots as `GET /api/autonomous/progress/trend`. With
+        no snapshot, `points` is an empty array.
+      operationId: dashboardSeriesThroughputForecast
+      tags: [Dashboard]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Number of days of snapshots to read. Default 30; from 1 to 365.
+          schema: {type: integer, default: 30, minimum: 1, maximum: 365}
+      responses:
+        "200":
+          description: The forecast points, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  days: {type: integer}
+                  direction: {type: string, description: The trend's direction, as the progress trend reports it}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {type: string, description: Snapshot date, YYYY-MM-DD}
+                        throughput_3d: {type: number}
+                        completion_low_days: {type: number, nullable: true}
+                        completion_high_days: {type: number, nullable: true}
+                        known_tasks: {type: integer}
+                        estimated_tasks: {type: number}
+        "400":
+          description: days is not a whole number from 1 to 365
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/verifier-health:
+    get:
+      summary: Verifier waits and runs per node
+      description: |
+        Verifier queue waits and runs per compute node over a window (default 24 hours, from 1 minute to
+        168 hours). A verifier is recognised by its node verifier pool (`node-verify:<node>`), so only
+        verifier work on a node that has a verifier pool is counted. Times are clipped to the window.
+        `outcomes` is the verifier outcome aggregate for all nodes together since the daemon started:
+        `pass_rate` is the pass count over all runs, and it is null while no verifier has run. No pass
+        rate is given per node, because the ledger does not record outcomes per node.
+      operationId: dashboardSeriesVerifierHealth
+      tags: [Dashboard]
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: Length of the window ending now, as a Go duration such as `24h`. Default 24h; from 1m to 168h.
+          schema: {type: string, default: 24h}
+      responses:
+        "200":
+          description: Verifier waits and runs per node, and the overall outcomes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  window_from: {type: string, format: date-time}
+                  window_to: {type: string, format: date-time}
+                  window_seconds: {type: integer}
+                  recording_from: {type: string, format: date-time, description: When the capacity ledger began keeping history; omitted when not known}
+                  nodes:
+                    type: array
+                    description: One entry per node with verifier activity in the window, sorted by node name.
+                    items:
+                      type: object
+                      properties:
+                        node: {type: string}
+                        runs: {type: integer}
+                        waits: {type: integer}
+                        wait_total_seconds: {type: number}
+                        wait_avg_seconds: {type: number}
+                        run_total_seconds: {type: number}
+                        run_avg_seconds: {type: number}
+                  outcomes:
+                    type: object
+                    properties:
+                      runs: {type: integer, description: Verifier runs since the daemon started, all nodes}
+                      categories: {type: object, additionalProperties: {type: integer}}
+                      pass_rate: {type: number, nullable: true, description: Pass runs over all runs, 0 to 1; null with no runs}
+                      since: {type: string, format: date-time}
+        "400":
+          description: The window is not a duration from 1m to 168h
+        "405":
+          description: Only GET is served
   /api/dashboard/work-map:
     get:
       summary: Work map

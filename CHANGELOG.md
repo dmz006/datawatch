@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Dashboard series endpoints and cards.** Three bounded series for the dashboard: `GET /api/dashboard/series/lane-utilization?window=24h` (busy share of each clock hour per lane, from the capacity ledger), `GET /api/dashboard/series/throughput-forecast?days=30` (per-day trend points with the completion range in days) and `GET /api/dashboard/series/verifier-health?window=24h` (verifier waits and runs per node, with the pass rate for all nodes since start). Three opt-in cards, Lane utilization, Throughput forecast and Verifier health, come from Edit → Add Card and stay hidden until their data exists. Each documents its reason in one line when off. No new setting.
 - **Lane pulse data endpoint.** `GET /api/dashboard/lane-pulse?window=6h` returns one series per lane and node: busy, waiting and idle time with the stretches behind them, from the capacity ledger's lease and wait history (the same ledger behind `GET /api/capacity`). Idle counts only from when the ledger began keeping history. The usage burn block gives the level in points against the pace line from the usage advice, with no dollar values; when the usage calculator is not available the block carries a reason code (`not_wired`, `advice_unavailable`, `needs_*`), with the text in the locale bundles as `lane_pulse_reason_*` keys. The endpoint is documented in the OpenAPI spec. No setting is added. The dashboard card that draws it is not built yet.
 
 ### Changed

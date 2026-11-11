@@ -784,6 +784,10 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
 
+### Dashboard series cards
+
+The **Lane utilization**, **Throughput forecast** and **Verifier health** cards are opt-in: add them from Edit → Add Card. They read `GET /api/dashboard/series/lane-utilization?window=<duration>` (default `24h`, from `1h` to `168h`), `GET /api/dashboard/series/throughput-forecast?days=<n>` (default `30`, from `1` to `365`) and `GET /api/dashboard/series/verifier-health?window=<duration>` (default `24h`, from `1m` to `168h`). Anything outside those bounds is a `400`. The lane and verifier endpoints need `dashboard:read`; the forecast needs `autonomous:read`, as the progress trend does. All three are read-only. A card with no data stays hidden and says why in one line. None of them has a setting of its own.
+
 ### Dashboard work map and lane pulse
 
 The **Network** and **Work map** cards read `GET /api/dashboard/work-map`, and the **Lane pulse** card reads `GET /api/dashboard/lane-pulse?window=<duration>` (default `6h`, from `1m` to `168h`; anything else is a `400`). Both are read-only: they change no session, lane or usage state, and they need the `dashboard:read` scope. The work map answers `503` only on a daemon with neither a session store nor a trace store; with no trace store it still answers, and the card says so.

@@ -44739,6 +44739,117 @@ function _dashFetchLanePulse() {
     .finally(() => { _dash._lanePulseFetching = false; });
 }
 
+// Dashboard series cards: lane utilization (busy share per lane per hour),
+// throughput forecast (trend points with the completion range) and verifier
+// health (waits and runs per node). Each reads one GET under
+// /api/dashboard/series/ on the dashboard tick and stays off until it has data
+// (DASH_CARD_FEATURES).
+function _dashSeriesFetch(slot, url, ok, render) {
+  const flag = slot + 'Fetching';
+  if (_dash[flag]) return Promise.resolve(_dash[slot]);
+  _dash[flag] = true;
+  return apiFetch(url)
+    .then(d => { if (d && ok(d)) _dash[slot] = d; render(); return _dash[slot]; })
+    .catch(() => _dash[slot])
+    .finally(() => { _dash[flag] = false; });
+}
+
+function _dashSeriesEmpty(el) {
+  el.innerHTML = '<div style="padding:8px 6px;color:var(--text2);font-size:11px;">' + escHtml(t('dash_series_none')) + '</div>';
+}
+
+function _dashLaneUtilActive() {
+  const d = _dash._seriesLaneUtil;
+  return !!(d && Array.isArray(d.lanes) && d.lanes.some(l => (l.hours || []).some(h => (Number(h.busy_fraction) || 0) > 0)));
+}
+
+function _dashFetchLaneUtil() {
+  return _dashSeriesFetch('_seriesLaneUtil', '/api/dashboard/series/lane-utilization?window=24h',
+    d => Array.isArray(d.lanes), _dashRenderLaneUtil);
+}
+
+function _dashRenderLaneUtil() {
+  const el = document.getElementById('dashLaneUtilCard');
+  if (!el) return;
+  const d = _dash._seriesLaneUtil;
+  if (!d || !Array.isArray(d.lanes) || !d.lanes.length) { _dashSeriesEmpty(el); return; }
+  const hourOf = h => String(new Date(h.start).getHours()).padStart(2, '0') + ':00';
+  const cell = h => {
+    if (h.busy_fraction == null) {
+      return '<div title="' + escHtml(t('dash_series_no_history')) + '" style="flex:1;min-width:0;height:14px;background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,0.06) 3px 6px);"></div>';
+    }
+    const f = Math.max(0, Math.min(1, Number(h.busy_fraction) || 0));
+    return '<div title="' + hourOf(h) + ' ' + Math.round(f * 100) + '%" style="flex:1;min-width:0;height:14px;background:rgba(124,58,237,' + (0.06 + 0.94 * f).toFixed(2) + ');"></div>';
+  };
+  el.innerHTML = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_busy_share')) + '</div>' +
+    d.lanes.map(l => '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;">' +
+      '<div title="' + escHtml(l.lane) + '" style="width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:monospace;color:var(--text2);">' + escHtml(l.lane) + '</div>' +
+      '<div style="display:flex;gap:1px;flex:1;min-width:0;">' + (l.hours || []).map(cell).join('') + '</div></div>').join('');
+}
+
+function _dashForecastActive() {
+  const d = _dash._seriesForecast;
+  return !!(d && Array.isArray(d.points) && d.points.some(p => (Number(p.throughput_3d) || 0) > 0 || p.completion_low_days != null));
+}
+
+function _dashFetchForecast() {
+  return _dashSeriesFetch('_seriesForecast', '/api/dashboard/series/throughput-forecast?days=30',
+    d => Array.isArray(d.points), _dashRenderForecast);
+}
+
+function _dashRenderForecast() {
+  const el = document.getElementById('dashForecastCard');
+  if (!el) return;
+  const d = _dash._seriesForecast;
+  if (!d || !Array.isArray(d.points) || !d.points.length) { _dashSeriesEmpty(el); return; }
+  const num = v => (v == null ? '—' : (Number(v) || 0).toFixed(1));
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const head = '<tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_date')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_throughput')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_range')) + '</th></tr>';
+  const rows = d.points.slice(-14).map(p => '<tr>' +
+    '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.throughput_3d) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + num(p.completion_low_days) + ' – ' + num(p.completion_high_days) + '</td></tr>').join('');
+  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+}
+
+function _dashVerifierActive() {
+  const d = _dash._seriesVerifier;
+  return !!(d && Array.isArray(d.nodes) && d.nodes.some(n => (n.runs || 0) + (n.waits || 0) > 0));
+}
+
+function _dashFetchVerifier() {
+  return _dashSeriesFetch('_seriesVerifier', '/api/dashboard/series/verifier-health?window=24h',
+    d => Array.isArray(d.nodes), _dashRenderVerifier);
+}
+
+function _dashRenderVerifier() {
+  const el = document.getElementById('dashVerifierCard');
+  if (!el) return;
+  const d = _dash._seriesVerifier;
+  if (!d || !Array.isArray(d.nodes) || !d.nodes.length) { _dashSeriesEmpty(el); return; }
+  const secs = v => (Number(v) || 0).toFixed(0) + 's';
+  const pr = d.outcomes && d.outcomes.pass_rate;
+  const rate = pr == null ? '—' : Math.round(pr * 100) + '%';
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const head = '<tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_node')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_runs')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_waits')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_avg_wait')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_avg_run')) + '</th></tr>';
+  const rows = d.nodes.map(n => '<tr>' +
+    '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(n.node) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(n.runs) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(n.waits) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + secs(n.wait_avg_seconds) + '</td>' +
+    '<td style="padding:2px 6px;">' + secs(n.run_avg_seconds) + '</td></tr>').join('');
+  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>' +
+    '<div style="padding:4px 6px;font-size:10px;color:var(--text2);">' + escHtml(t('dash_series_pass_rate')) + ': ' + rate + '</div>';
+}
+
 function _renderSprintPipeline() {
   const pipeEl = document.getElementById('sprintPipeline');
   if (!pipeEl) return;
@@ -45542,6 +45653,15 @@ const DASH_CARD_DEFS = [
   // Data: GET /api/dashboard/work-map (trace roll-up + session placement tags).
   { id: 'work-map', label: 'Work map', labelKey: 'dash_work_map', icon: '🗺', defaultCs: 6,
     body: () => '<div id="dashWorkMapCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // Lane utilization, throughput forecast and verifier health: opt-in series
+  // cards (see DASH_CARD_FEATURES). Not in the default layout; each shows once
+  // its feature has data.
+  { id: 'lane-utilization', label: 'Lane utilization', labelKey: 'dash_lane_util', icon: '▦', defaultCs: 6,
+    body: () => '<div id="dashLaneUtilCard" style="height:100%;overflow-y:auto;padding:6px 0;font-size:11px;"></div>' },
+  { id: 'throughput-forecast', label: 'Throughput forecast', labelKey: 'dash_throughput_forecast', icon: '📈', defaultCs: 6,
+    body: () => '<div id="dashForecastCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  { id: 'verifier-health', label: 'Verifier health', labelKey: 'dash_verifier_health', icon: '✔', defaultCs: 6,
+    body: () => '<div id="dashVerifierCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
@@ -45587,6 +45707,32 @@ const DASH_CARD_FEATURES = {
     linkKey: 'dash_card_off_ekg_link',
     linkDefault: 'Dashboard card reference',
     active() { return _dashLanePulseActive(); },
+  },
+  // Lane utilization, throughput forecast and verifier health: the series
+  // cards from GET /api/dashboard/series/*. Each is off until it has data.
+  'lane-utilization': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_lane_util_reason',
+    reasonDefault: 'No lane has held a lease in the last 24 hours — this card fills as lanes run.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashLaneUtilActive(); },
+  },
+  'throughput-forecast': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_forecast_reason',
+    reasonDefault: 'No saved progress snapshot has a throughput or completion estimate yet — the forecast fills as Automata finish.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashForecastActive(); },
+  },
+  'verifier-health': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_verifier_reason',
+    reasonDefault: 'No verifier has run or waited on a node in this window — this card fills as verifiers run.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashVerifierActive(); },
   },
   'console-ci-release': {
     docsKey: 'dash_card_events',
@@ -45788,6 +45934,9 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('cost-report'), _dashFetchCostReport);
   kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
   kick(_dashCardFeature('ekg'), _dashFetchLanePulse);
+  kick(_dashCardFeature('lane-utilization'), _dashFetchLaneUtil);
+  kick(_dashCardFeature('throughput-forecast'), _dashFetchForecast);
+  kick(_dashCardFeature('verifier-health'), _dashFetchVerifier);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
   if (!jobs.length) return;
