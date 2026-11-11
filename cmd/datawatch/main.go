@@ -108,6 +108,7 @@ import (
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/dmz006/datawatch/internal/skills"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
 	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
@@ -1926,6 +1927,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// automatic commit stays staged to the same directories
 				// (auto-commit leak fix) instead of widening to `git add -A`.
 				WriteScope: sess.WriteScope,
+				// Retry/resume start keeps the original session's owner.
+				PRDID:       sess.PRDID,
+				TaskID:      sess.TaskID,
+				StoryID:     sess.StoryID,
+				AutomatonID: sess.AutomatonID,
+				SpendRole:   sess.SpendRole,
 			}
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {
@@ -4792,7 +4799,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// nothing stopped two PRDs sharing a project_dir from
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
-			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
+			return runOneShotJSONSessionAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model,
 				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
@@ -5076,6 +5083,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						OutputMode:    "log",
 						InputMode:     "none",
 						PRDID:         req.PRDID,
+						AutomatonID:   req.PRDID,
+						SpendRole:     spendledger.RoleWorker,
 						TaskID:        req.TaskID,
 						StoryID:       req.StoryID,
 					}
@@ -6337,7 +6346,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				specHash := sha256.Sum256([]byte(task.ID + "|" + prompt))
 				outputFile := filepath.Join(taskDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
 				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
-				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
+				content, serr := runOneShotJSONSessionWithEffortAttr(verifyAttr(prd.ID, task.ID), cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
 				if serr != nil {
@@ -6512,7 +6521,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 							outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 							sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
-							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
+							content, judgeID, serr := runOneShotJudgeSessionCaptureIDAttr(guardrailAttr(req), cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode)
 							if serr != nil {
@@ -18801,6 +18810,12 @@ func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *sessi
 	opts := &session.StartOptions{
 		Name:    sess.Name,
 		Backend: sess.BackendFamily,
+		// The restart keeps the original session's owner.
+		PRDID:       sess.PRDID,
+		TaskID:      sess.TaskID,
+		StoryID:     sess.StoryID,
+		AutomatonID: sess.AutomatonID,
+		SpendRole:   sess.SpendRole,
 	}
 	newSess, err := mgr.Start(ctx, sess.Task, sess.GroupID, sess.ProjectDir, opts)
 	if err != nil {
