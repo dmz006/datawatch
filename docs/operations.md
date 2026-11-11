@@ -4378,6 +4378,16 @@ when it finishes, so the mtime gate would report false stalls; the other
 signals still apply. `autonomous.session_idle_timeout_seconds` (above)
 covers a different case — a session that went idle instead of dying.
 
+**Stall evidence.** When a stalled pi worker is stopped, the stop is
+recorded with the runner's evidence and the task error carries a summary
+tail, for example `(pi exited with status 1; node gpu-box; model qwen3.8:27b;
+last: ...)`, capped at 300 characters. The evidence is taken from the pane;
+when the pane is empty (a one-shot `pi` run's pane is gone once it exits) it
+is taken from the session `output.log` (last 40 non-empty lines, control
+sequences removed). The task still matches the stalled error, so retries use
+the same budget. See
+[howto/autonomous-recovery.md](howto/autonomous-recovery.md#reading-why-a-worker-stalled).
+
 **Loop detection and rescue.** A worker that repeats one action over and
 over is caught at two levels, both from the same log:
 
