@@ -7222,8 +7222,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	// stopped together via ctx) so TokensIn/TokensOut/EstCostUSD
 	// actually populate instead of staying at zero forever.
 	if sess.BackendFamily == "claude-code" {
-		go trackClaudeCodeUsage(ctx, sess.FullID, sess.ProjectDir, sess.UsageLinesRead, 10*time.Second, func(sessID string, tokensIn, tokensOut, linesRead int) {
-			_ = m.AddUsageLinesRead(sessID, tokensIn, tokensOut, linesRead)
+		go trackClaudeCodeUsageDelta(ctx, sess.FullID, sess.ProjectDir, sess.UsageLinesRead, 10*time.Second, func(sessID string, d ClaudeUsageDelta) {
+			_ = m.AddClaudeUsage(sessID, d)
 		})
 	}
 
