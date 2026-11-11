@@ -6511,6 +6511,61 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "93. Deploy routes: documented status fields and the no-command refusal"
+# GET /api/autonomous/deploy: status and the documented fields. POST
+# /api/autonomous/deploy/run is called ONLY when the status shows that no
+# build, install or restart command is set, so the answer is the refusal
+# ("skipped"); it never builds, installs or restarts anything.
+
+D93_GET=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
+D93_CODE=$(echo "$D93_GET" | tail -n1)
+D93_BODY=$(echo "$D93_GET" | sed '$d')
+if [[ "$D93_CODE" == "503" ]]; then
+  skip "deploy routes: autonomous is disabled on this daemon (HTTP 503)"
+else
+  if [[ "$D93_CODE" == "200" ]]; then
+    ok "deploy routes: GET /api/autonomous/deploy answers HTTP 200"
+  else
+    ko "deploy routes: GET /api/autonomous/deploy answered HTTP $D93_CODE, expected 200"
+  fi
+
+  if echo "$D93_BODY" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+keys={"build_command","install_command","binary_path","restart_command","health_check","drain_timeout","health_timeout"}
+assert isinstance(d["running"],bool)
+assert set(d["settings"])>=keys
+assert d["settings"]["drain_timeout"] and d["settings"]["health_timeout"]
+assert "phase" not in d or isinstance(d["phase"],str)
+assert "outcome" not in d or isinstance(d["outcome"],str)
+' 2>/dev/null; then
+    ok "deploy routes: status carries running and the seven settings, timeouts defaulted"
+  else
+    ko "deploy routes: status lacks running or one of the seven documented settings"
+  fi
+
+  D93_EMPTY=$(echo "$D93_BODY" | python3 -c '
+import json,sys
+s=json.load(sys.stdin).get("settings",{})
+print(all(not s.get(k) for k in ("build_command","install_command","restart_command")))
+' 2>/dev/null || echo "")
+  if [[ "$D93_EMPTY" == "True" ]]; then
+    D93_POST=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST "$BASE/api/autonomous/deploy/run" 2>/dev/null || echo "000")
+    D93_PCODE=$(echo "$D93_POST" | tail -n1)
+    D93_PBODY=$(echo "$D93_POST" | sed '$d')
+    if [[ "$D93_PCODE" == "200" ]] && echo "$D93_PBODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["status"]=="skipped" and d["note"] and not d.get("error")' 2>/dev/null; then
+      ok "deploy routes: POST run with no command set answers skipped with a note"
+    elif [[ "$D93_PCODE" == "503" ]]; then
+      skip "deploy routes: no worktree base repo (HTTP 503); the run refusal is not checked"
+    else
+      ko "deploy routes: POST run with no command set answered HTTP $D93_PCODE, expected 200 skipped"
+    fi
+  else
+    skip "deploy routes: a deploy command is configured here; the run route is not called"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
