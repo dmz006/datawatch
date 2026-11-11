@@ -73,6 +73,9 @@ func (m *Manager) planInfraRetry(prd *PRD, t *Task, err error) (infraRetryPlan, 
 		return infraRetryPlan{}, false
 	}
 	class, ok := ClassifyInfraFailure(err)
+	if ok && class == InfraClassModelUnresponsive {
+		return m.planModelUnresponsiveRetry(cfg, t, err, "", "")
+	}
 	if !ok || !cfg.HasCategory(class) {
 		return infraRetryPlan{}, false
 	}
@@ -88,6 +91,38 @@ func (m *Manager) planInfraRetry(prd *PRD, t *Task, err error) (infraRetryPlan, 
 		Reason:   boundInfraReason(err.Error()),
 		Number:   n,
 		MaxTries: maxTries,
+		Delay:    infraBackoffDelay(cfg, n),
+	}, true
+}
+
+// maxModelUnresponsiveRetries bounds the requeues of one task after a
+// model-unresponsive failure; the backoff delays are the configured ones.
+const maxModelUnresponsiveRetries = 3
+
+// planModelUnresponsiveRetry plans the requeue of a task whose model did not
+// answer. It is bounded by the task's own ModelUnresponsiveRetries, never
+// InfraRetryCount, and puts the compute node and model in the reason. model
+// falls back to the task's resolved worker model when empty.
+func (m *Manager) planModelUnresponsiveRetry(cfg config.InfraRetryConfig, t *Task, err error, backend, model string) (infraRetryPlan, bool) {
+	var used int
+	var node string
+	m.store.WithLock(func() { used = t.ModelUnresponsiveRetries; node = t.ComputeNode })
+	if used >= maxModelUnresponsiveRetries {
+		return infraRetryPlan{}, false
+	}
+	if node == "" {
+		node = "unknown"
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	n := used + 1
+	return infraRetryPlan{
+		Class: InfraClassModelUnresponsive,
+		Reason: boundInfraReason(fmt.Sprintf("model unresponsive on node %s, model %s: %s",
+			node, model, err.Error())),
+		Number:   n,
+		MaxTries: maxModelUnresponsiveRetries,
 		Delay:    infraBackoffDelay(cfg, n),
 	}, true
 }
@@ -110,7 +145,11 @@ func boundInfraReason(text string) string {
 func (m *Manager) recordInfraRetry(prd *PRD, t *Task, plan infraRetryPlan) {
 	now := time.Now()
 	m.store.WithLock(func() {
-		t.InfraRetryCount++
+		if plan.Class == InfraClassModelUnresponsive {
+			t.ModelUnresponsiveRetries++
+		} else {
+			t.InfraRetryCount++
+		}
 		t.InfraRetries = append(t.InfraRetries, InfraRetryRecord{
 			Number:       plan.Number,
 			Class:        plan.Class,
@@ -181,5 +220,6 @@ func (m *Manager) waitInfraRetry(ctx context.Context, prd *PRD, t *Task, plan in
 func clearInfraRetryCount(t *Task) {
 	if t != nil {
 		t.InfraRetryCount = 0
+		t.ModelUnresponsiveRetries = 0
 	}
 }

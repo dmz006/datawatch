@@ -2563,7 +2563,14 @@ func (m *Manager) handleInfraFailure(ctx context.Context, prd *PRD, t *Task, run
 	if err == nil || ctx.Err() != nil {
 		return infraFailureNone, nil
 	}
-	if plan, ok := m.planInfraRetry(prd, t, err); ok {
+	plan, ok := m.planInfraRetry(prd, t, err)
+	if ok && plan.Class == InfraClassModelUnresponsive {
+		// Name the model in the reason; the node comes from the task.
+		if p2, ok2 := m.planModelUnresponsiveRetry(m.infraRetryConfig(), t, err, run.Backend, run.Model); ok2 {
+			plan = p2
+		}
+	}
+	if ok {
 		m.releaseCapacity(t.ID)
 		log.Printf("[autonomous] prd=%s task=%s: infrastructure failure (%s), retry %d of %d in %s: %v",
 			prd.ID, t.ID, plan.Class, plan.Number, plan.MaxTries, plan.Delay, err)

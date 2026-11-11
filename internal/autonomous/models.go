@@ -1254,6 +1254,11 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// ModelUnresponsiveRetries is the consecutive requeues of this task after
+	// a model-unresponsive failure. It has its own bounded backoff and never
+	// touches InfraRetryCount; it is reset with it when the task gets a fair
+	// attempt.
+	ModelUnresponsiveRetries int `json:"model_unresponsive_retries,omitempty"`
 	// SystemTags is the placement-derived tag set this task carries (its
 	// Automaton's project, Automation and Automaton, plus the stage the
 	// Automaton's member slot carries): derived by ObjectTagsForTask under
