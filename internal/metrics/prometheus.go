@@ -281,6 +281,18 @@ var (
 		Name: "datawatch_ui_prompt_dismissals_total",
 		Help: "Interstitial UI-prompt dismissals by kind and outcome (dismissed, not_cleared, refused)",
 	}, []string{"kind", "outcome"})
+	// Git host operations: every push, pull request, merge, tag and CI read
+	// the daemon makes against a git host. kind: push | pull_request | merge
+	// | tag | ci_read. outcome: ok | failed.
+	GitHostOperationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_git_host_operations_total",
+		Help: "Git host operations by kind (push, pull_request, merge, tag, ci_read) and outcome (ok, failed)",
+	}, []string{"kind", "outcome"})
+	// Unix time of the last successful git host operation (0 before any).
+	GitHostLastSuccessTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_git_host_last_success_timestamp_seconds",
+		Help: "Unix time of the last successful git host operation (0 before any)",
+	})
 	// Session result endpoint metrics (scheduled-job structured results).
 	// Posted = accepted and recorded; rejected = failed authz/identity/validation.
 	SessionResultsPosted = prometheus.NewCounter(prometheus.CounterOpts{
@@ -314,6 +326,7 @@ func Register() {
 			WebSearchQueriesTotal, WebSearchErrorsTotal,
 			AcmeCertExpirySeconds, AcmeRenewalsTotal,
 			WorkerQuestionsTotal,
+			GitHostOperationsTotal, GitHostLastSuccessTimestamp,
 			UIPromptDismissalsTotal,
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
 			SupervisorLoopRuns, SupervisorLoopJobsEnabled, SupervisorLoopLastRunAge,

@@ -11,6 +11,8 @@ package git
 import (
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/metrics"
 )
 
 // Host operation kinds reported by HostOpStatsSnapshot.
@@ -59,10 +61,14 @@ func RecordHostOp(kind string, ok bool) {
 	defer hostOpMu.Unlock()
 	pruneHostOpsLocked(now)
 	hostOpEvents = append(hostOpEvents, hostOpEvent{at: now, kind: kind, ok: ok})
+	outcome := "failed"
 	if ok {
+		outcome = "ok"
 		hostOpLastOK = now
 		hostOpLastSet = true
+		metrics.GitHostLastSuccessTimestamp.Set(float64(now.Unix()))
 	}
+	metrics.GitHostOperationsTotal.WithLabelValues(kind, outcome).Inc()
 }
 
 func pruneHostOpsLocked(now time.Time) {
