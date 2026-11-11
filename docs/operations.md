@@ -2595,6 +2595,33 @@ use `v0.73.0`. Unifying them is an operator decision. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
+### Code scanning upload in the Release workflow
+
+The Release workflow uploads three kinds of SARIF report to GitHub Code
+Scanning: the gosec report (category `gosec`) and the two Trivy container
+reports. The upload is a courtesy copy of results the scan steps have already
+judged; it is not a release gate.
+
+- **Not blocking.** A failed upload no longer fails the job or holds up
+  goreleaser. The gate is the scan step before it: the gosec baseline diff and
+  the Trivy HIGH/CRITICAL scan still fail the run on a net-new finding. The
+  workflow's `actions/upload-artifact` copies of the same SARIF files (90-day
+  retention for gosec) stay available when the upload fails.
+- **Retries on the rate limit.** When GitHub answers the upload with its rate
+  limit, the step waits and tries again instead of giving up on the first
+  answer. Other errors are not retried.
+- **Missing results.** A release whose upload gave up has no new Code Scanning
+  entry for that run. Download the SARIF artifact from the run, or re-run the
+  workflow later once the limit has lifted.
+
+**Operator review:** this section describes the intended behavior of the
+change to `.github/workflows/release.yaml`. Confirm that file carries the
+non-blocking and retry change before relying on it; at the time these docs were
+written the upload steps in the worktree still ran without it. The retry count
+and wait are set in the workflow, not in a daemon setting, so state them here
+once they are fixed. The same upload steps in `containers.yaml` and
+`image-refresh.yaml` are not covered by this change.
+
 ---
 
 ## 8. Web UI Features
