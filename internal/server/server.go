@@ -587,6 +587,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                // safe-to-delete report of finished Automaton branches and worktrees
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                     // uncommitted-work holds: policy, scope, held tasks and Automata
+	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                           // Housekeeping: unlanded branch list
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/keep", api.handleUnlandedAction("keep"))            // keep a branch
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/archive-branch", api.handleUnlandedAction("archive")) // archive a branch
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/delete-worktree", api.handleUnlandedAction("delete")) // back up and delete
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work/diff", api.handleUncommittedDiff)                // diff a worktree's uncommitted files
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work/commit", api.handleUncommittedCommit)            // commit a worktree's uncommitted files
+	apiMux.HandleFunc("/api/autonomous/cleanup/fix-permissions", api.handleFixPermissions)               // restore owner write permission
 	apiMux.HandleFunc("/api/autonomous/request-watch", api.handleRequestWatch)                           // request watch: state of the in-flight model request of watched worker and verifier sessions
 	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)                            // search before create: overlaps for a title and spec
 	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)                   // stored security failure reports with their run identity, newest first
