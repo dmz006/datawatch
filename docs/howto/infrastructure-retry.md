@@ -64,8 +64,37 @@ verifier failure, a task that failed on its content or its file scope, a worker
 that stalled after it had started, and a provider throttle. The classifier
 looks only at what kind of error it is, never at what the task was doing.
 
+A fifth class, `model_unresponsive`, is handled on its own track and is not in
+`autonomous.infra_retry.categories` (see
+[A stalled pi worker](#a-stalled-pi-worker-and-an-unresponsive-model)).
+
 A session that never started is not on this list either. It has its own start
 budget (see [Limits](#limits)).
+
+## A stalled pi worker and an unresponsive model
+
+A pi worker that stalls used to leave the attempt waiting out the silence limit
+with no reason on it. Now:
+
+- **The attempt fails as soon as the real failure is known.** When the session's
+  output log already holds a `DATAWATCH_PI_FAILED` line, the daemon ends the
+  session and fails the attempt at once, instead of waiting for the silence
+  limit. The attempt carries the runner evidence (node, model, process lines),
+  and an error-level "Task session failed" alert is raised. Spending stops
+  there.
+- **A model request timeout is classed `model_unresponsive`.** When the pi
+  failure text also shows `Request timed out`, the failure is not the task's
+  fault. The task is requeued after the configured back-off without using an
+  attempt and without touching `infra_retry_count`.
+- **It has its own bound.** A task is requeued at most 3 times in a row for this
+  class, counted in `model_unresponsive_retries` on the task and reset with the
+  retry count once the task gets a fair attempt. The reason names the compute
+  node and model: `model unresponsive on node <node>, model <model>: ...`.
+- **Repeats on one node raise an alert.** The daemon counts consecutive
+  unresponsive failures per compute node. At 3 in a row it raises one error
+  alert, "Compute node model unresponsive", naming the node and model. A task
+  that passes on that node resets the count. The count is held in memory and
+  starts again after a daemon restart.
 
 ## What happens
 
@@ -290,6 +319,9 @@ left out; add an Automaton id or a smaller limit to narrow the list.
   infrastructure failures on a task. A retry that works, or a reset of a
   dependent, ends it and starts the next incident from zero. The history of
   retries on the task stays, up to the newest 50.
+- **Model-unresponsive retries stop after 3.** After the third requeue the
+  failure follows the ordinary failure path. The `exhausted_action` setting does
+  not apply to this class.
 - **Throttling is not an infrastructure failure.** A throttle from the model
   provider has its own handling and is never retried by this feature.
 
