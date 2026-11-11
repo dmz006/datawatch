@@ -52,6 +52,18 @@ type ChecksStatus struct {
 	ProjectDir string           `json:"project_dir,omitempty"`
 	Policy     ChecksPolicyView `json:"policy"`
 	Findings   []StatusFinding  `json:"findings"`
+	// Attribution is the cost-report attribution check (Automaton-launched
+	// sessions lacking an automaton id); nil when no ledger is wired.
+	Attribution *AttributionStatus `json:"attribution,omitempty"`
+}
+
+// AttributionStatus mirrors costreport.AttributionCheck for the status body.
+type AttributionStatus struct {
+	AutomatonLaunched int      `json:"automaton_launched"`
+	Unattributed      int      `json:"unattributed"`
+	SessionIDs        []string `json:"session_ids"`
+	OK                bool     `json:"ok"`
+	Note              string   `json:"note"`
 }
 
 // ShipStatus is the body of the ship status read.
@@ -147,6 +159,9 @@ func RenderChecksStatusText(s ChecksStatus) string {
 	p := s.Policy
 	fmt.Fprintf(&sb, "checks: pre_start_verifier=%s block_when_missing=%t plan_rules=%s after_done=%s registry_readme=%s\n",
 		p.PreStartVerifier, p.BlockWhenMissing, p.PlanRules, p.AfterDone, p.RegistryReadme)
+	if a := s.Attribution; a != nil {
+		fmt.Fprintf(&sb, "%s\n", a.Note)
+	}
 	renderFindings(&sb, s.Findings)
 	return sb.String()
 }

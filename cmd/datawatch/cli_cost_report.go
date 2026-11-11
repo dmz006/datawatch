@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -84,6 +85,17 @@ type costReportWire struct {
 	RetentionDays    int             `json:"retention_days"`
 	LifetimeFallback bool            `json:"lifetime_fallback"`
 	RetentionNote    string          `json:"retention_note"`
+	WindowNote       string          `json:"window_note"`
+	Attribution      *costAttribWire `json:"attribution"`
+}
+
+// costAttribWire mirrors costreport.AttributionCheck.
+type costAttribWire struct {
+	AutomatonLaunched int      `json:"automaton_launched"`
+	Unattributed      int      `json:"unattributed"`
+	SessionIDs        []string `json:"session_ids"`
+	OK                bool     `json:"ok"`
+	Note              string   `json:"note"`
 }
 
 type costReportRow struct {
@@ -91,6 +103,12 @@ type costReportRow struct {
 	Sessions             int      `json:"sessions"`
 	TokensIn             int      `json:"tokens_in"`
 	TokensOut            int      `json:"tokens_out"`
+	CacheRead            int      `json:"cache_read"`
+	CacheCreation        int      `json:"cache_creation"`
+	ToolCalls            int      `json:"tool_calls"`
+	SpanSeconds          float64  `json:"span_seconds"`
+	ActiveSeconds        float64  `json:"active_seconds"`
+	WindowNote           string   `json:"window_note"`
 	USDEstimate          *float64 `json:"usd_estimate"`
 	APIEquivalentUSD     *float64 `json:"api_equivalent_usd"`
 	EstimatedUsagePoints *float64 `json:"estimated_usage_points"`
@@ -136,12 +154,17 @@ func printCostReport(body []byte) error {
 		anyUnits = true // ships the units column even when every count is 0
 	}
 
-	header := "key\tsessions\ttokens_in\ttokens_out"
+	header := "key\tsessions\ttokens_in\ttokens_out\tcache_read\tcache_creation\ttool_calls\tspan\tactive"
 	rowFns := []func(costReportRow) string{
 		func(r costReportRow) string { return r.Key },
 		func(r costReportRow) string { return strconv.Itoa(r.Sessions) },
 		func(r costReportRow) string { return strconv.Itoa(r.TokensIn) },
 		func(r costReportRow) string { return strconv.Itoa(r.TokensOut) },
+		func(r costReportRow) string { return strconv.Itoa(r.CacheRead) },
+		func(r costReportRow) string { return strconv.Itoa(r.CacheCreation) },
+		func(r costReportRow) string { return strconv.Itoa(r.ToolCalls) },
+		func(r costReportRow) string { return formatSeconds(r.SpanSeconds) },
+		func(r costReportRow) string { return formatSeconds(r.ActiveSeconds) },
 	}
 	if anyUSD {
 		header += "\tusd"
@@ -181,6 +204,20 @@ func printCostReport(body []byte) error {
 	//nolint:errcheck
 	w.Flush()
 
+	if anyAPI {
+		fmt.Println("api_equiv_usd is an API-equivalent estimate, not a bill")
+	}
+	for _, r := range rep.Rows {
+		if r.WindowNote != "" {
+			fmt.Printf("window note (%s): %s\n", r.Key, r.WindowNote)
+		}
+	}
+	if rep.WindowNote != "" {
+		fmt.Println("window note:", rep.WindowNote)
+	}
+	if line := attributionLine(rep.Attribution); line != "" {
+		fmt.Println(line)
+	}
 	if rep.RetentionNote != "" {
 		fmt.Println("retention:", rep.RetentionNote)
 	} else {
@@ -215,4 +252,65 @@ func shareOrDash(f *float64) string {
 		return "-"
 	}
 	return fmt.Sprintf("%.1f%%", *f*100)
+}
+
+// formatSeconds renders a duration in seconds as a compact h/m/s string.
+func formatSeconds(sec float64) string {
+	if sec <= 0 {
+		return "0s"
+	}
+	return (time.Duration(sec) * time.Second).String()
+}
+
+// attributionLine renders the attribution check: how many
+// Automaton-launched sessions had no automaton id.
+func attributionLine(a *costAttribWire) string {
+	if a == nil {
+		return ""
+	}
+	state := "ok"
+	if !a.OK {
+		state = "UNATTRIBUTED"
+	}
+	line := fmt.Sprintf("attribution check: %s — %d of %d Automaton-launched sessions unattributed", state, a.Unattributed, a.AutomatonLaunched)
+	if a.Note != "" {
+		line += " (" + a.Note + ")"
+	}
+	return line
+}
+
+// automatonCostLines renders the `cost` object of an Automaton detail
+// response for prd-get: sessions, tokens in/out/cache, tool calls, span,
+// active time, the API-equivalent estimate and the window note. Returns
+// nil when the response carries no cost.
+func automatonCostLines(prdJSON []byte) []string {
+	var v struct {
+		Cost *struct {
+			costReportRow
+			ReportWindowNote string `json:"report_window_note"`
+		} `json:"cost"`
+	}
+	if err := json.Unmarshal(prdJSON, &v); err != nil || v.Cost == nil {
+		return nil
+	}
+	c := v.Cost
+	lines := []string{
+		fmt.Sprintf("cost: %d sessions, tokens in/out/cache %d/%d/%d+%d, %d tool calls, span %s, active %s",
+			c.Sessions, c.TokensIn, c.TokensOut, c.CacheRead, c.CacheCreation, c.ToolCalls,
+			formatSeconds(c.SpanSeconds), formatSeconds(c.ActiveSeconds)),
+	}
+	est := c.APIEquivalentUSD
+	if est == nil {
+		est = c.USDEstimate
+	}
+	if est != nil {
+		lines = append(lines, "cost estimate: "+moneyOrDash(est)+" (API-equivalent, not a bill)")
+	}
+	if c.WindowNote != "" {
+		lines = append(lines, "cost window note: "+c.WindowNote)
+	}
+	if c.ReportWindowNote != "" {
+		lines = append(lines, "cost window note: "+c.ReportWindowNote)
+	}
+	return lines
 }

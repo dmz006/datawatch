@@ -134,6 +134,7 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 		return fmt.Errorf("save session: %w", err)
 	}
 
+	m.upsertLedger(sess)
 	m.recordEnd(sess, tracker, oldState, newState, why)
 	if oldState != newState {
 		if m.onStateChange != nil {

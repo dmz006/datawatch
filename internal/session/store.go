@@ -273,6 +273,12 @@ type Session struct {
 	UsageLastIn    int `json:"usage_last_in,omitempty"`
 	UsageLastOut   int `json:"usage_last_out,omitempty"`
 
+	// Cache and tool-call totals read from the claude-code transcript.
+	// They feed the spend ledger; TokensIn stays the non-cache input.
+	CacheReadTokens     int `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
+	ToolCalls           int `json:"tool_calls,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). It is metadata only: no backend
@@ -358,9 +364,13 @@ type Session struct {
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.
 	// StoryID added BL385 Phase 4 for memory scope routing.
-	PRDID   string `json:"prd_id,omitempty"`
-	TaskID  string `json:"task_id,omitempty"`
-	StoryID string `json:"story_id,omitempty"`
+	PRDID string `json:"prd_id,omitempty"`
+	// AutomatonID and SpendRole attribute the session's spend in the spend
+	// ledger. TaskID (above) is the owning task.
+	AutomatonID string `json:"automaton_id,omitempty"`
+	SpendRole   string `json:"spend_role,omitempty"`
+	TaskID      string `json:"task_id,omitempty"`
+	StoryID     string `json:"story_id,omitempty"`
 	// TaskTitle is the bare autonomous task title (no "autonomous:" prefix),
 	// so the completion commit can use it without parsing Name.
 	TaskTitle string `json:"task_title,omitempty"`

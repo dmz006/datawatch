@@ -108,6 +108,7 @@ import (
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/dmz006/datawatch/internal/skills"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
 	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
@@ -1120,6 +1121,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[shell] removed %d stale task file(s)\n", removed)
 		}
 	}
+	// Spend ledger: sessions write to it; GET /api/cost/report reads it.
+	spendLedger, ledgerErr := spendledger.Open(expandHome(cfg.DataDir), nil)
+	if ledgerErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] spend ledger unavailable: %v\n", ledgerErr)
+	} else {
+		mgr.SetSpendLedger(spendLedger)
+	}
 	// Daemon-observed trace events for the ollama, openwebui and shell
 	// backends: register the recorder hooks against the trace store.
 	var traceObserver *observe.Observer
@@ -1952,6 +1960,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// automatic commit stays staged to the same directories
 				// (auto-commit leak fix) instead of widening to `git add -A`.
 				WriteScope: sess.WriteScope,
+				// Retry/resume start keeps the original session's owner.
+				PRDID:       sess.PRDID,
+				TaskID:      sess.TaskID,
+				StoryID:     sess.StoryID,
+				AutomatonID: sess.AutomatonID,
+				SpendRole:   sess.SpendRole,
 			}
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {
@@ -3525,6 +3539,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		server.Version = Version
+		if spendLedger != nil {
+			httpServer.SetCostReportLedger(spendLedger)
+		}
 		// BL334 T43a — wire derived key so file-persisted handlers encrypt
 		// discussion WAL, participants, and channel routing when --secure.
 		if encKey != nil {
@@ -4849,7 +4866,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// nothing stopped two PRDs sharing a project_dir from
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
-			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
+			return runOneShotJSONSessionAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model,
 				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
 				launchTagsForDecompose(req.PRDID))
 		}
@@ -5134,6 +5151,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						OutputMode:    "log",
 						InputMode:     "none",
 						PRDID:         req.PRDID,
+						AutomatonID:   req.PRDID,
+						SpendRole:     spendledger.RoleWorker,
 						TaskID:        req.TaskID,
 						StoryID:       req.StoryID,
 					}
@@ -6436,7 +6455,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						if backend != vbackend {
 							node = ""
 						}
-						return runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, backend, model,
+						return runOneShotJSONSessionWithEffortAttr(verifyAttr(prd.ID, task.ID), cfg, prd.ID, taskDir, backend, model,
 							mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 							"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), node,
 							withSessionProfile(autonomousMgrRef, launchTagsForVerify(prd.ID, task.StoryID), "verifier", prd, task))
@@ -6643,7 +6662,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 									judgeTask, _ = autonomousMgrRef.Store().GetTask(req.UnitID)
 								}
 							}
-							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
+							content, judgeID, serr := runOneShotJudgeSessionCaptureIDAttr(guardrailAttr(req), cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
 								withSessionProfile(autonomousMgrRef, launchTagsForJudge(req.PRDID, req.Rejudge), "judge", judgePRD, judgeTask))
@@ -6821,6 +6840,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetGeneratedArtefacts(func() config.EffectiveGeneratedArtefactsSettings {
 				return cfg.Autonomous.EffectiveGeneratedArtefacts()
 			})
+			if spendLedger != nil {
+				amgr.SetGeneratedCostLedger(autonomouspkg.NewSpendLedgerCost(spendLedger,
+					func() config.CostReportConfig { return cfg.CostReport }, nil,
+					func(backend string) config.EffectiveBillingProfile { return cfg.Usage.EffectiveBillingProfile(backend) }))
+			}
 			// Classify-mode gate over guardrail findings: active only for a
 			// judge entry whose verification_mode is classify.
 			amgr.SetGuardrailClassify(verificationModeLookup(autonomousInferenceReg),
@@ -19315,6 +19339,12 @@ func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *sessi
 	opts := &session.StartOptions{
 		Name:    sess.Name,
 		Backend: sess.BackendFamily,
+		// The restart keeps the original session's owner.
+		PRDID:       sess.PRDID,
+		TaskID:      sess.TaskID,
+		StoryID:     sess.StoryID,
+		AutomatonID: sess.AutomatonID,
+		SpendRole:   sess.SpendRole,
 	}
 	newSess, err := mgr.Start(ctx, sess.Task, sess.GroupID, sess.ProjectDir, opts)
 	if err != nil {

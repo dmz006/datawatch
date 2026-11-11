@@ -166,6 +166,27 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	return content, err
 }
 
+// runOneShotJSONSessionAttr is runOneShotJSONSession with the session's owner
+// stamped at start (the decompose launcher).
+func runOneShotJSONSessionAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReaderAttr(attr, cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, "", launchTags)
+	return content, err
+}
+
+// runOneShotJSONSessionWithEffortAttr is runOneShotJSONSessionWithEffort with
+// the session's owner stamped at start (the verification launcher).
+func runOneShotJSONSessionWithEffortAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReaderAttr(attr, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, node, launchTags)
+	return content, err
+}
+
+// runOneShotJudgeSessionCaptureIDAttr is runOneShotJudgeSessionCaptureID with
+// the session's owner stamped at start (the guardrail, rules-review and
+// plan-review launcher).
+func runOneShotJudgeSessionCaptureIDAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReaderAttr(attr, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node, launchTags)
+}
+
 // runOneShotJSONSessionCaptureID is runOneShotJSONSessionWithEffort that also
 // returns the id of the session it spawned. sessionID is set as soon as the
 // start request succeeds and is returned on every later path (success,
@@ -357,6 +378,12 @@ var judgeLiveSession func(sessionName string) string
 // decides how the output file is read, and whether it is removed from the
 // project directory.
 func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReaderAttr(sessionAttr{}, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags)
+}
+
+// runOneShotJSONSessionWithReaderAttr is runOneShotJSONSessionWithReader that
+// stamps attr (Automaton id, task id, spend role) onto the session at start.
+func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
@@ -416,6 +443,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		if effort != "" {
 			startReq["effort"] = effort
 		}
+		attr.apply(startReq)
 		// A judge holding a node lease starts on that node, the same way a worker
 		// does. Absent when no node is held, so the session places itself as before.
 		if node != "" {

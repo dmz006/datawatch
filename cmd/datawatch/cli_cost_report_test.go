@@ -386,8 +386,8 @@ func TestCostReport_CLI_BillingColumns(t *testing.T) {
 		"claude-code", "ollama",
 		"api_equiv_usd", "usage_pts", "share_of_price", "billing", // headers
 		"$12.50", "25", "5.0%", // the bundled row's estimate, points, share
-		"API-equivalent, not billed", // the label, verbatim
-		"assumed", // the unprofiled row's label
+		"API-equivalent, not billed",             // the label, verbatim
+		"assumed",                                // the unprofiled row's label
 		"spend figures cover up to 31 days back", // the retention note in the footer
 	} {
 		if !strings.Contains(out, frag) {
@@ -430,5 +430,46 @@ func TestCostReport_CLI_ReleaseUnits(t *testing.T) {
 		if !strings.Contains(out, frag) {
 			t.Errorf("output misses %q:\n%s", frag, out)
 		}
+	}
+}
+
+func TestCostReport_ExtendedColumnsAndAttribution(t *testing.T) {
+	body := `{"group_by":"automaton","rows":[{"key":"a1","sessions":3,"tokens_in":10,"tokens_out":5,
+"cache_read":7,"cache_creation":2,"tool_calls":9,"span_seconds":3600,"active_seconds":90,
+"api_equivalent_usd":2.5,"window_note":"started mid-window"}],
+"window_note":"older than ledger","retention_days":31,
+"attribution":{"automaton_launched":4,"unattributed":1,"ok":false,"note":"check s9"}}`
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := printCostReport([]byte(body))
+	_ = w.Close()
+	os.Stdout = oldStdout
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r)
+	out := string(b)
+	for _, frag := range []string{"cache_read", "tool_calls", "1h0m0s", "1m30s", "API-equivalent estimate, not a bill",
+		"window note (a1): started mid-window", "window note: older than ledger",
+		"attribution check: UNATTRIBUTED — 1 of 4"} {
+		if !strings.Contains(out, frag) {
+			t.Errorf("missing %q:\n%s", frag, out)
+		}
+	}
+}
+
+func TestAutomatonCost_DetailLines(t *testing.T) {
+	body := []byte(`{"id":"x","cost":{"key":"x","sessions":2,"tokens_in":100,"tokens_out":50,"cache_read":30,"cache_creation":4,
+"tool_calls":12,"span_seconds":120,"active_seconds":60,"api_equivalent_usd":1.5,"window_note":"partial","report_window_note":"ledger 31d"}}`)
+	got := strings.Join(automatonCostLines(body), "\n")
+	for _, frag := range []string{"2 sessions", "100/50/30+4", "12 tool calls", "span 2m0s", "active 1m0s",
+		"$1.50 (API-equivalent, not a bill)", "cost window note: partial", "cost window note: ledger 31d"} {
+		if !strings.Contains(got, frag) {
+			t.Errorf("missing %q:\n%s", frag, got)
+		}
+	}
+	if automatonCostLines([]byte(`{"id":"x"}`)) != nil || automatonCostLines([]byte(`nope`)) != nil {
+		t.Error("expected nil without cost")
 	}
 }

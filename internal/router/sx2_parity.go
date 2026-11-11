@@ -214,6 +214,9 @@ func (r *Router) handleCostReportCmd(cmd Command) {
 		r.reply("cost report failed", err.Error())
 		return
 	}
+	if txt := formatCostReportText(body); txt != "" {
+		body = txt
+	}
 	r.reply("cost report", body)
 }
 
@@ -786,6 +789,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		if line := reviewStateStatusLine(out); line != "" {
 			reply += "\n" + line
+		}
+		if lines := automatonCostStatusLines(out); len(lines) > 0 {
+			reply += "\n" + strings.Join(lines, "\n")
 		}
 		// Counts-first line per task with a non-empty skipped_snapshot_paths
 		// ("left unstaged: <task> N (reason=count, ...)"); the detailed

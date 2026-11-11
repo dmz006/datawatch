@@ -267,7 +267,7 @@ func setPerDay(t *rollupThroughput, windowDays int) {
 // engine and keeps only the points figure. Automata with no point figure are absent.
 func (s *Server) costRollupPoints(mgr *autonomous.Manager, now time.Time, windowDays int) map[string]float64 {
 	points := map[string]float64{}
-	src := managerCostSource{m: s.manager, owner: s.costReportOwners(mgr), auto: mgr}
+	src := s.newManagerCostSource(mgr)
 	billing := func(backend string) config.EffectiveBillingProfile {
 		return s.cfg.Usage.EffectiveBillingProfile(backend)
 	}

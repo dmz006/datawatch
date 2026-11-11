@@ -92,6 +92,9 @@ func TestGateReportIsNumbersOnly(t *testing.T) {
 		t.Errorf("gate report carries free text:\n%s", got)
 	}
 	re := regexp.MustCompile(`^\| [A-Za-z ]+ \| \d+ \|$`)
+	if strings.Contains(got, "## Cost") {
+		t.Errorf("record without cost renders a cost section:\n%s", got)
+	}
 	for _, l := range strings.Split(got, "\n") {
 		if !strings.HasPrefix(l, "| ") || strings.HasPrefix(l, "| Count") {
 			continue
@@ -242,5 +245,30 @@ func TestDisabledKindWritesNothing(t *testing.T) {
 func TestWriteRejectsEscapingPath(t *testing.T) {
 	if _, err := Write(GateReport, "x", "../out.md", Options{Root: t.TempDir()}); err == nil {
 		t.Error("expected error")
+	}
+}
+
+func TestGateReportCostSection(t *testing.T) {
+	usd := 12.345
+	rec := fullRecord()
+	rec.Cost = &changerecord.CostSummary{Sessions: 4, SessionIDs: []string{"s-aa", "s-bb"}, TokensIn: 1000, TokensOut: 200, CacheRead: 5000,
+		CacheCreation: 300, ToolCalls: 42, SpanSeconds: 3725, APIEquivalentUSD: &usd,
+		WindowNote: "partial window", UnknownNote: "spend before the ledger horizon is unknown"}
+	got, _, err := Render(GateReport, rec, Options{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"## Cost", "Sessions: s-aa, s-bb", "| Sessions | 4 |", "| Tokens in | 1000 |", "| Tokens out | 200 |",
+		"| Cache read | 5000 |", "| Cache creation | 300 |", "| Tool calls | 42 |", "| Span | 1h2m5s |",
+		"| API-equivalent estimate, not billed | $12.35 |", "Window: partial window",
+		"Unknown spend: spend before the ledger horizon is unknown"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in:\n%s", w, got)
+		}
+	}
+	rec.Cost.APIEquivalentUSD = nil
+	got, _, _ = Render(GateReport, rec, Options{Root: t.TempDir()})
+	if strings.Contains(got, "$") {
+		t.Errorf("no estimate expected:\n%s", got)
 	}
 }

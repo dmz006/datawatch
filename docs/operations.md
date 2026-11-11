@@ -771,13 +771,13 @@ See [howto/agent-tracing.md](howto/agent-tracing.md).
 
 ### Cost report
 
-The cost report is a token-first report of the daemon's recorded sessions: for a window and a grouping it counts the sessions and shows tokens in/out first, and a USD estimate only where configured cost rates cover every backend in the group (tokens only, and `rate_configured` false, where a rate is missing). It estimates from rates you configure; it never bills, and where no rate covers a group there is no figure, not a zero. Where a provider has a `usage.billing` profile — e.g. a `bundled_plan` with a `monthly_price` — its rows are labeled **"bundled plan — API-equivalent, not billed"**: the money figure is the API-equivalent (an equivalence, not a charge), with the usage points it represents and its share of the monthly price; providers with no profile read back with the "(assumed)" label and an ordinary estimate. The groupings are `automaton` (the default), `automation`, `backend`, `release` (with `units` — shipped units — per row; work not yet shipped lands under `unreleased`) and `week` (weeks start at `week_start`, Monday or Sunday). An absent `until` is now; an absent `since` is `default_window_days` back (7). The figures rest on the 31-day ledger of recorded sessions — spend older than that is visible only through lifetime totals (`retention_days` and `lifetime_fallback` in the report body). With `include_peer_spend: false` (the default) the report shows your daemon's spend and not what federation peers report. Keys live under `cost_report.`: `default_group_by` (`automaton`), `default_window_days` (7), `show_usd_estimates` (true), `week_start` (`monday`), `include_peer_spend` (false); the billing profiles live under `usage.billing.<provider>.` (see [api/cost.md](api/cost.md#billing-profiles-usagebilling)). Settings apply without a restart; a bad value through a write surface is refused naming the key, and a bad value written by hand into the YAML reads the default. The operator guide is [howto/cost-report.md](howto/cost-report.md).
+The cost report is a token-first report of the daemon's recorded sessions: for a window and a grouping it counts the sessions and shows tokens in/out first, and a USD estimate only where configured cost rates cover every backend in the group (tokens only, and `rate_configured` false, where a rate is missing). It estimates from rates you configure; it never bills, and where no rate covers a group there is no figure, not a zero. Where a provider has a `usage.billing` profile — e.g. a `bundled_plan` with a `monthly_price` — its rows are labeled **"bundled plan — API-equivalent, not billed"**: the money figure is the API-equivalent (an equivalence, not a charge), with the usage points it represents and its share of the monthly price; providers with no profile read back with the "(assumed)" label and an ordinary estimate. The groupings are `automaton` (the default), `automation`, `backend`, `release` (with `units` — shipped units — per row; work not yet shipped lands under `unreleased`) and `week` (weeks start at `week_start`, Monday or Sunday). An absent `until` is now; an absent `since` is `default_window_days` back (7). The figures rest on the 31-day ledger of recorded sessions — spend older than that is visible only through lifetime totals (`retention_days` and `lifetime_fallback` in the report body). With `include_peer_spend: false` (the default) the report shows your daemon's spend and not what federation peers report. Keys live under `cost_report.`: `default_group_by` (`automaton`), `default_window_days` (7), `show_usd_estimates` (true), `week_start` (`monday`), `include_peer_spend` (false); the billing profiles live under `usage.billing.<provider>.` (see [api/cost.md](api/cost.md#billing-profiles-usagebilling)). Settings apply without a restart; a bad value through a write surface is refused naming the key, and a bad value written by hand into the YAML reads the default. An Automaton's row counts all of its sessions (worker, verification, rules-review, decompose and guardrail sessions, retries included) from a spend ledger that keeps attribution after sessions are deleted, with sessions, tool calls and time beside the tokens; the same row is `cost` on an Automaton read (`GET /api/autonomous/prds/{id}`). Sessions older than this change have no attribution and stay uncounted. The checks status carries an `attribution` object that flags Automaton-launched sessions missing the stamp. The ledger records each session's role (`worker`, `decompose`, `rules_review`, `verification`, `guardrail`, or `other`) and keeps 31 days; a missing row means no activity in the 7-day default window, not zero spend, and spend older than the ledger is reported as unknown. Cache tokens read beside in/out tokens, and on a bundled plan the dollar figure is labeled API-equivalent, not billed. The Automaton detail Overview (PWA) and the merge report show the same cost. The operator guide is [howto/cost-report.md](howto/cost-report.md).
 
 | Method | How |
 |--------|-----|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`; `datawatch config set cost_report.<key> <value>` |
-| **Web UI** | The **Cost report** card on the dashboard; Settings → Cost Report for the five keys |
+| **Web UI** | The **Cost report** card on the dashboard; the **Overview** of an Automaton's detail view (its tokens, time, sessions and tool calls); Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; `PUT /api/config` with `{"cost_report.<key>": value}`; the block reads back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
@@ -5519,6 +5519,20 @@ priced at the configured API rates, and keeps it in a ledger under
 `<data_dir>/autonomous/`. The ledger survives a daemon restart; entries
 older than 31 days are dropped. It counts this daemon's sessions only,
 unless peers are opted in (below).
+
+Every autonomous launcher (workers, verifiers, rules-review, planner and
+decompose sessions) stamps the session with its Automaton and task, and the
+ledger entry carries that attribution with the session's tokens, active time
+and tool calls. Per-Automaton cost in the [cost report](howto/cost-report.md)
+therefore covers all of an Automaton's sessions, and deleting a session does
+not remove its entry. Sessions that ran before this change have no
+attribution and stay under `unattributed`.
+
+The checks status also reports an `attribution` check: how many
+Automaton-launched ledger sessions carry no automaton id (`unattributed`, with
+their `session_ids`). Read it when an Automaton's cost looks low; a non-zero
+count means a launcher is not stamping its sessions. See
+[the howto](howto/cost-report.md#checking-for-unattributed-sessions).
 
 ### The allocation estimate
 

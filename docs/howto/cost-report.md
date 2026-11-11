@@ -76,6 +76,10 @@ absent (not zero) when the daemon does not have a figure to show:
 | `api_equivalent_usd` | bundled-plan rows only | The money the group would have cost at API rates — an **equivalence, not a charge**; the row's `usd_estimate` is absent on these rows by design. |
 | `estimated_usage_points` | bundled-plan rows, priced only | The usage points that amount represents against the allowance, from the profile's monthly price. An estimate. |
 | `share_of_monthly_price` | bundled-plan rows, priced only | The fraction of the plan's monthly price (0.05 is 5%). An estimate. |
+| `cache_read` / `cache_creation` | yes | Cache tokens the group used, beside the in/out tokens. |
+| `tool_calls` | yes | Tool calls the group's sessions made, counted from the Claude transcript. Zero for backends that do not report them. |
+| `first_activity` / `last_activity` / `span_seconds` / `active_seconds` | when the group has activity | When the group worked, the span between, and the active time. An Automaton's row carries all of these, so its tokens, time, sessions and tool calls read together. |
+| `window_partial` / `window_note` | when the window cuts the group off | Set when the window is older than the ledger or the group started mid-window. |
 | `units` | `release` rows only | The shipped units the release carries, from the daemon's shipped-unit state; blank when the record has none |
 
 The body also carries `retention_days`, `retention_note` and
@@ -147,6 +151,37 @@ The two read surfaces agree by construction: the calculator's point value
 comes from the same `monthly_price`, and the report's `api_equivalent_usd`,
 `estimated_usage_points` and `share_of_monthly_price` are the same profile's
 money as rows.
+
+### What an Automaton's row counts
+
+An Automaton's row counts every session it launches, not just its worker sessions: worker, verification, rules-review, decompose and guardrail sessions, including each retry session as its own entry. Each session records the Automaton and task it belongs to when it is launched, and the daemon keeps that in a spend ledger (`spend_ledger.json` in the data directory) keyed by session. The row's `sessions` and token columns therefore include planning, verification and retry spend, and the ledger also holds each session's active time and tool-call count (read from the Claude transcript).
+
+- **Deleting sessions does not lower the cost.** The ledger entry outlives the session, so deleting or cleaning up a session leaves the Automaton's cost unchanged until the entry ages out of the 31-day window.
+- **Older sessions stay uncounted.** Sessions that ran before this change carry no attribution and land under `unattributed`. Nothing is back-filled; new sessions count from the first launch after the upgrade.
+
+The same per-Automaton row (the whole ledger, not the window) appears as `cost` in `GET /api/autonomous/prds/{id}` (MCP `autonomous_prd_get`), so one Automaton's spend reads without running the report. An Automaton with no recorded spend gets a zero row; `cost` is absent only when no spend ledger is wired. The CLI and comm-channel cost report show the sessions, tool-call and time columns for Automaton rows, and the MCP `cost_report` tool returns them in every row.
+
+### Checking for unattributed sessions
+
+The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `session_ids`, `ok` and a `note`. `ok` is true when none are missing. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
+
+### What is recorded per Automaton and role
+
+Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (`worker`, `decompose`, `rules_review`, `verification` or `guardrail`; a session launched with no role is recorded as `other`), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so decompose, verification, rules-review and retry sessions are part of its cost and not hidden under the worker.
+
+### Reading the window: a missing row, partial rows and unknown spend
+
+- **A missing row is not zero spend.** The default window is 7 days (`cost_report.default_window_days`). An Automaton that does not appear had no activity in the window. Widen `since` to find it.
+- **Partial rows.** A row whose first activity is before the window start sets `window_partial` and a `window_note`: its figures cover the window only, not the Automaton's whole life. The report body carries a top-level `window_note` when any row is partial.
+- **Unknown spend older than the ledger.** When the window reaches before the 31-day horizon, the report carries `unknown_spend_note` and `unknown_before` (the horizon date), and the affected rows set `spend_unknown` with a `spend_unknown_note`. Spend before that date is **unknown**: it is not zero and is never backfilled.
+
+### Reading the cache tokens
+
+`cache_read` and `cache_creation` sit beside `tokens_in` and `tokens_out` and are counted separately from them. Cache creation is the prompt text written to the provider's cache, and cache read is the cached text reused on a later turn. A large `cache_read` beside a small `tokens_in` is a healthy, cache-heavy session. They are shown as tokens and are not priced separately on the row.
+
+### The API-equivalent label on a bundled plan
+
+On a bundled plan the dollar figure is `api_equivalent_usd`, labeled **“bundled plan — API-equivalent, not billed”**. It is what the same tokens would cost at API rates, shown so Automata can be compared with each other. It is not a charge: the plan is a flat monthly price, and `share_of_monthly_price` and `estimated_usage_points` show how much of the allowance the spend represents.
 
 ## The groupings
 
@@ -284,10 +319,14 @@ default.
 |---|---|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml`; see `docs/config-reference.yaml` |
 | **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default, JSON the raw body |
-| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); Settings → Cost Report for the five keys |
+| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; settings with `configure cost_report.<key>=<value>` |
+
+The merged change record (merge report) of an Automaton also carries a cost section, read from the same ledger through the same engine. It lists sessions, tokens in and out, cache read and creation tokens, tool calls, the span, the session ids, and a dollar figure only where a rate is configured (labelled as an API-equivalent on a bundled plan). It adds a window note when the figures cover only part of the Automaton's life, and an unknown-spend note when some spend could not be read. The section is left out when no spend ledger is wired.
+
+The **Overview** of an Automaton's detail view in the web UI shows the same row as `cost` on `GET /api/autonomous/prds/{id}`: sessions, tokens, tool calls and time together, with the same bundled-plan label.
 
 All five read methods answer from the same engine call over the daemon's
 recorded sessions, so the same window and grouping give the same rows.

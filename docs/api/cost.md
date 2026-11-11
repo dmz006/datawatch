@@ -155,6 +155,11 @@ Response fields:
 | `rows[].share_of_monthly_price` | Bundled rows: the fraction of the plan's monthly price (0.05 = 5%) |
 | `rows[].units` | `release` rows only: shipped units for that release (blank when the record has none) |
 | `startup_by_profile` / `startup_by_role` | Start-up tables: one row per worker profile (or role) with `key`, `attempts`, `avg_startup_tokens` (omitted when no attempt carries a size), and the estimated / reported / no-data counts. Unprofiled and no-role attempts land under their own keys. See [howto/cost-report.md](../howto/cost-report.md#the-start-up-tables) |
+| `rows[].cache_read` / `rows[].cache_creation` / `rows[].tool_calls` | Cache tokens and tool calls |
+| `rows[].first_activity` / `rows[].last_activity` / `rows[].span_seconds` / `rows[].active_seconds` | When the group worked, the span between, and the active time |
+| `rows[].window_partial` / `rows[].window_note` | Set when the window cuts the group off (older than the ledger, or started mid-window) |
+| `window_note` | Report-level note for the same |
+| `attribution` | Attribution check: `automaton_launched`, `unattributed`, `session_ids`, `ok`, `note` |
 | `retention_days` | The 31-day ledger the dollar figures rest on |
 | `retention_note` | A human sentence for the same fact |
 | `lifetime_fallback` | Whether some dollar figures rest on rates recorded outside that window |
@@ -164,6 +169,11 @@ owner has not shipped yet lands under the `unreleased` row, and a group that
 spans different releases carries `mixed` (`units` blank). Spend older than the
 ledger is visible only through lifetime totals — the retention fields above
 make that explicit.
+
+The Automaton detail response (`GET /api/autonomous/prds/{id}`, every `detail`
+level) carries a `cost` object: the same row the `group_by=automaton` report
+gives that Automaton, over the whole ledger, with a zero row when it has no
+spend.
 
 Errors: `400` for a bad `group_by`, a bad date, or a `since` after `until`
 (the message names the problem); `503` when autonomous mode is disabled.

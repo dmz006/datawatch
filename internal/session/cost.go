@@ -103,6 +103,18 @@ func (m *Manager) AddUsageLinesRead(sessID string, tokensIn, tokensOut, linesRea
 	})
 }
 
+// AddClaudeUsage is AddUsageLinesRead plus the cache and tool-call totals the
+// claude-code transcript reader returns. TokensIn stays the non-cache input;
+// the extra values only feed the session record and the spend ledger.
+func (m *Manager) AddClaudeUsage(sessID string, d ClaudeUsageDelta) error {
+	return m.addUsage(sessID, d.In, d.Out, CostRate{}, func(sess *Session) {
+		sess.UsageLinesRead = d.LinesRead
+		sess.CacheReadTokens += d.CacheRead
+		sess.CacheCreationTokens += d.CacheCreation
+		sess.ToolCalls += d.ToolCalls
+	})
+}
+
 // AddUsageLastTotals is AddUsage plus persisting the usage-tracker's new
 // "last cumulative total seen" checkpoint in the same save, so a daemon
 // restart resumes the delta from here instead of diffing against zero
@@ -167,6 +179,7 @@ func (m *Manager) addUsage(sessID string, tokensIn, tokensOut int, override Cost
 	if err := m.SaveSession(sess); err != nil {
 		return err
 	}
+	m.upsertLedger(sess)
 	if tokensIn != 0 || tokensOut != 0 {
 		m.emitUsageEvent(UsageEvent{
 			SessionID: sess.FullID,

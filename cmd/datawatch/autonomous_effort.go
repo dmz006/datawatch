@@ -126,6 +126,8 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 		// PRD-owned worker: keep its tmux commands off the production server.
 		"scrub_tmux_env": true,
 	}
+	// Owner stamped at start: Automaton, task and the worker role.
+	workerAttr(req).apply(sessionBody)
 	// Write scope (auto-commit leak fix): the task's effective write
 	// directories. The session manager uses them to stage only in-scope
 	// files for the automatic pre-session snapshot and completion commit

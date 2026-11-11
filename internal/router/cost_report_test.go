@@ -108,7 +108,7 @@ func TestCostReport_Command_Dispatch(t *testing.T) {
 	if got := q.Get("until"); got != "2026-01-08T00:00:00Z" {
 		t.Errorf("until = %q", got)
 	}
-	for _, frag := range []string{"cost report", `"group_by": "backend"`, "anthropic", "1.25", "retention_days"} {
+	for _, frag := range []string{"cost report", "anthropic: 4 sessions", "$1.25"} {
 		if !strings.Contains(out, frag) {
 			t.Errorf("reply misses %q:\n%s", frag, out)
 		}

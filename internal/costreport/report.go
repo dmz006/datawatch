@@ -99,6 +99,13 @@ type Record struct {
 	SessionID    string
 	AutomatonID  string // owning automaton, if any (blank is unattributed)
 	AutomationID string // owning automation, if any (blank is unattributed)
+	TaskID       string // task the spend belongs to, from the spend ledger
+	Role         string // spend role (worker, verification, ...), from the spend ledger
+	// FromLedger is true when the record is a spend-ledger entry;
+	// LedgerAutomatonID is that entry's own automaton id, before any
+	// session-owner fallback. The attribution check reads only these.
+	FromLedger        bool
+	LedgerAutomatonID string
 	// Release is the release the owning PRD / automation shipped in, for
 	// release groupings; blank means the work has not shipped (it falls
 	// under UnreleasedKey).
@@ -108,6 +115,15 @@ type Record struct {
 	At        time.Time
 	TokensIn  int
 	TokensOut int
+	// Extended usage, all optional (zero means unknown / none).
+	CacheRead     int
+	CacheCreation int
+	ToolCalls     int
+	// FirstActivity and LastActivity bound the session's wall-clock span.
+	FirstActivity time.Time
+	LastActivity  time.Time
+	// ActiveSeconds is the time the session was actually working.
+	ActiveSeconds float64
 }
 
 // SourceOptions is the query the report hands to a Source after normalizing
@@ -218,6 +234,20 @@ type Row struct {
 	// group; false when at least one backend has no rate, in which case
 	// usd_estimate is nil and absent from the JSON.
 	RateConfigured bool `json:"rate_configured"`
+	// CacheRead, CacheCreation and ToolCalls are summed over the group.
+	CacheRead     int `json:"cache_read"`
+	CacheCreation int `json:"cache_creation"`
+	ToolCalls     int `json:"tool_calls"`
+	// FirstActivity / LastActivity are the earliest and latest activity
+	// stamps in the group; SpanSeconds is the wall-clock span between
+	// them and ActiveSeconds the summed working time.
+	FirstActivity *time.Time `json:"first_activity,omitempty"`
+	LastActivity  *time.Time `json:"last_activity,omitempty"`
+	SpanSeconds   float64    `json:"span_seconds"`
+	ActiveSeconds float64    `json:"active_seconds"`
+	// USDLabel names what the dollar figure is: for bundled plans an
+	// API-equivalent estimate, never a charge. Absent without a figure.
+	USDLabel string `json:"usd_label,omitempty"`
 	// USDEstimate is the group's dollar estimate at the configured rates,
 	// present only when RateConfigured is true and USD display is enabled.
 	USDEstimate *float64 `json:"usd_estimate,omitempty"`
@@ -242,6 +272,19 @@ type Row struct {
 	// Units is the count of shipped PRDs / automations in the release;
 	// release groupings only.
 	Units int `json:"units,omitempty"`
+
+	// WindowPartial is true when the row's first activity precedes the
+	// window start: the row is the in-window slice of a longer life, so
+	// its figures are not the Automaton's whole spend.
+	WindowPartial bool `json:"window_partial,omitempty"`
+	// WindowNote says so plainly when WindowPartial is set.
+	WindowNote string `json:"window_note,omitempty"`
+	// SpendUnknown is true when the window reaches before the ledger
+	// horizon: spend before the horizon is unknown, never zero and never
+	// backfilled.
+	SpendUnknown bool `json:"spend_unknown,omitempty"`
+	// SpendUnknownNote explains SpendUnknown on the row.
+	SpendUnknownNote string `json:"spend_unknown_note,omitempty"`
 }
 
 // Report is the finished cost report.
@@ -273,6 +316,18 @@ type Report struct {
 	// in a key's no_data count, never in the average.
 	StartupByProfile []StartupRow `json:"startup_by_profile"`
 	StartupByRole    []StartupRow `json:"startup_by_role"`
+	// WindowNote is the top-level note, present when any row is a partial
+	// slice of a longer life. It names the default window and the ledger.
+	WindowNote string `json:"window_note,omitempty"`
+	// UnknownSpendNote is present when the window reaches before the
+	// ledger horizon.
+	UnknownSpendNote string `json:"unknown_spend_note,omitempty"`
+	// UnknownBefore is the ledger horizon: spend before it is unknown.
+	// Set only with UnknownSpendNote.
+	UnknownBefore *time.Time `json:"unknown_before,omitempty"`
+	// Attribution is the attribution check over the window's ledger
+	// records.
+	Attribution AttributionCheck `json:"attribution"`
 }
 
 // StartupRow is one row of Report.StartupByProfile / StartupByRole (see
@@ -303,12 +358,32 @@ type StartupRow struct {
 	NoData int `json:"no_data"`
 }
 
+// windowRowNote is the per-row text for a row that began before the window.
+func windowRowNote(since time.Time, defaultDays int) string {
+	return fmt.Sprintf("Activity began before this window (starts %s); figures cover the window only, not the whole life. The default window is %d days and the spend ledger keeps %d days. A missing row means no activity in the window, not zero spend.",
+		since.UTC().Format("2006-01-02"), defaultDays, RetentionDays)
+}
+
+// windowReportNote is the top-level text for partial rows.
+func windowReportNote(since time.Time, defaultDays, partial int) string {
+	return fmt.Sprintf("%d row(s) began before the window start (%s) and show only their in-window part. The default window is %d days and the spend ledger keeps %d days; widen the window to see more. An Automaton absent from the report had no activity in the window; that is not zero spend.",
+		partial, since.UTC().Format("2006-01-02"), defaultDays, RetentionDays)
+}
+
+// unknownSpendNote is the text for a window reaching before the ledger
+// horizon.
+func unknownSpendNote(horizon time.Time) string {
+	return fmt.Sprintf("Spend before %s is unknown: it is older than the %d-day ledger. It is not zero and is not backfilled.",
+		horizon.UTC().Format("2006-01-02"), RetentionDays)
+}
+
 // The billing-mode row labels, surfaced verbatim.
 const (
 	labelBundled  = "bundled plan — API-equivalent, not billed"
 	labelFree     = "free local inference — not billed, token usage only"
 	labelMetered  = "api_metered — billed per use"
 	labelAssumed  = "api_metered (assumed — no usage.billing entry)"
+	labelUSDEquiv = "API-equivalent estimate — bundled plan, not billed"
 	labelMixedUSD = "mixed billing modes — only the usd_estimate is unambiguous"
 )
 
@@ -420,6 +495,7 @@ func applyBilling(row *Row, backends []string, billing BillingFunc, est *float64
 		// The spend priced at API rates is an equivalence, not a charge:
 		// it leaves usd_estimate and moves to api_equivalent_usd.
 		row.APIEquivalentUSD = est
+		row.USDLabel = labelUSDEquiv
 		for _, b := range backends {
 			p := billing(b).Profile
 			if p.MonthlyPrice <= 0 || !finite(p.MonthlyPrice) {
@@ -545,11 +621,14 @@ func Build(
 	weekStart := time.Weekday(weekStartIndex(cfg.EffectiveWeekStart()))
 
 	type acc struct {
-		sessions  int
-		tin, tout int
-		usd       float64
-		allRate   bool
-		backends  []string
+		sessions              int
+		tin, tout             int
+		cread, ccreate, tools int
+		first, last           time.Time
+		active                float64
+		usd                   float64
+		allRate               bool
+		backends              []string
 	}
 	buckets := map[string]*acc{}
 	add := func(key string) *acc {
@@ -572,6 +651,23 @@ func Build(
 		a.sessions++
 		a.tin += r.TokensIn
 		a.tout += r.TokensOut
+		a.cread += r.CacheRead
+		a.ccreate += r.CacheCreation
+		a.tools += r.ToolCalls
+		a.active += r.ActiveSeconds
+		lo, hi := r.FirstActivity, r.LastActivity
+		if lo.IsZero() {
+			lo = r.At
+		}
+		if hi.IsZero() {
+			hi = r.At
+		}
+		if !lo.IsZero() && (a.first.IsZero() || lo.Before(a.first)) {
+			a.first = lo
+		}
+		if !hi.IsZero() && hi.After(a.last) {
+			a.last = hi
+		}
 		a.backends = append(a.backends, r.Backend)
 		if rateFor == nil {
 			a.allRate = false
@@ -587,7 +683,13 @@ func Build(
 
 	out := make([]Row, 0, len(buckets))
 	for key, a := range buckets {
-		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout}
+		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout,
+			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, ActiveSeconds: a.active}
+		if !a.first.IsZero() {
+			f, l := a.first, a.last
+			row.FirstActivity, row.LastActivity = &f, &l
+			row.SpanSeconds = l.Sub(f).Seconds()
+		}
 		var est *float64
 		if a.allRate && showUSD {
 			v := a.usd
@@ -621,7 +723,7 @@ func Build(
 		attempts = []Attempt{}
 	}
 
-	return &Report{
+	rep := &Report{
 		GroupBy:          req.GroupBy,
 		Since:            since,
 		Until:            until,
@@ -631,7 +733,39 @@ func Build(
 		RetentionNote:    retentionNote(lifetimeFallback),
 		StartupByProfile: StartupTable(attempts, ProfileKey),
 		StartupByRole:    StartupTable(attempts, RoleKey),
-	}, nil
+	}
+
+	rep.Attribution = CheckAttribution(res.Records, since, until, peer)
+
+	defDays := cfg.EffectiveWindowDays()
+	partial := 0
+	for i := range rep.Rows {
+		r := &rep.Rows[i]
+		if r.FirstActivity != nil && r.FirstActivity.Before(since) {
+			r.WindowPartial = true
+			r.WindowNote = windowRowNote(since, defDays)
+			partial++
+		}
+	}
+	if partial > 0 {
+		rep.WindowNote = windowReportNote(since, defDays, partial)
+	}
+	horizon := now.AddDate(0, 0, -RetentionDays)
+	if since.Before(horizon) {
+		rep.UnknownSpendNote = unknownSpendNote(horizon)
+		rep.UnknownBefore = &horizon
+		for i := range rep.Rows {
+			// Only rows with activity before the horizon (or with
+			// unknown activity times) carry unknown spend; rows wholly
+			// inside the ledger are known.
+			fa := rep.Rows[i].FirstActivity
+			if fa == nil || fa.Before(horizon) {
+				rep.Rows[i].SpendUnknown = true
+				rep.Rows[i].SpendUnknownNote = rep.UnknownSpendNote
+			}
+		}
+	}
+	return rep, nil
 }
 
 // ProfileKey is the StartupByProfile row key for an attempt: its

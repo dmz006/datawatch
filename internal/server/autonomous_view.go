@@ -233,6 +233,7 @@ func (s *Server) prdDetailCap(r *http.Request) int {
 // changed: the cap works on a copy. The tasks listing and the full record
 // carry model_request on every task that has a request-watch observation.
 func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int, tagSel autonomous.ObjectTagSelection) {
+	id := prdIDOf(prd)
 	switch detail {
 	case "summary", "tasks":
 		p, err := toPRD(prd)
@@ -243,17 +244,17 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 		if detail == "summary" {
 			view := autonomous.BuildSummaryView(p)
 			s.fillInheritedTags(&view)
-			writeJSONOK(w, view)
+			writeJSONOK(w, s.withAutomatonCost(view, id))
 			return
 		}
 		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
 		view = autonomous.FilterTasksView(view, tagSel)
 		s.fillInheritedTags(&view.SummaryView)
 		s.attachTaskObservations(&view)
-		writeJSONOK(w, view)
+		writeJSONOK(w, s.withAutomatonCost(view, id))
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.withInheritedTags(s.prdWithObservations(prd, prdIDOf(prd)), prdIDOf(prd)))
+			writeJSONOK(w, s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(prd, id), id), id))
 			return
 		}
 		p, err := toPRD(prd)
@@ -262,7 +263,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.withInheritedTags(s.prdWithObservations(capped, capped.ID), capped.ID))
+		writeJSONOK(w, s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(capped, capped.ID), capped.ID), capped.ID))
 	}
 }
 

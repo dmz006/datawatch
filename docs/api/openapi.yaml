@@ -4224,6 +4224,12 @@ paths:
         committed that are in neither the task's planned nor generated files
         (lines summed across retries). Absent when there are none. Enforcement
         is `autonomous.undeclared_edit_mode` (off|warn|block, default warn).
+        Every detail level also carries `cost`: that Automaton's spend over the
+        whole ledger, the same row `GET /api/cost/report?group_by=automaton`
+        returns for it (tokens, `cache_read`, `cache_creation`, `tool_calls`,
+        `sessions`, `span_seconds`, `active_seconds`, billing fields), plus
+        `report_window_note`. An Automaton with no recorded spend gets a zero
+        row. `cost` is absent when no spend ledger is wired.
         `detail` picks the response level: `full` (default) is the whole PRD;
         `tasks` is per-task rows (id, title, status, error, verification,
         session id) without specs or story text; `summary` is ids, titles,
@@ -7031,6 +7037,31 @@ paths:
         - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: backend, in: query, required: false, schema: {type: string}}
       responses: {"200": {description: OK}}
+  /api/cost/report:
+    get:
+      summary: Grouped token and cost report over the spend ledger
+      operationId: costReport
+      tags: [Cost]
+      description: |
+        Rows are grouped by `group_by`. Each row carries sessions, tokens in
+        and out, `cache_read`, `cache_creation`, `tool_calls`,
+        `first_activity`, `last_activity`, `span_seconds` (first to last
+        activity) and `active_seconds` (time a session was working). A row
+        whose window starts after the first spend, or before the ledger
+        horizon, carries `window_partial` and a `window_note`; the top-level
+        `window_note` says the same for the report. `unknown_spend_note` and
+        `unknown_before` name spend the ledger cannot see, and a row with
+        `spend_unknown` says so in `spend_unknown_note`.
+        `attribution` is the attribution check over the window:
+        `automaton_launched`, `unattributed`, `session_ids`, `ok`, `note`.
+      parameters:
+        - {name: group_by, in: query, required: false, schema: {type: string, enum: [automaton, automation, backend, release, week]}}
+        - {name: since, in: query, required: false, schema: {type: string}, description: RFC 3339 or YYYY-MM-DD}
+        - {name: until, in: query, required: false, schema: {type: string}, description: RFC 3339 or YYYY-MM-DD}
+      responses:
+        "200": {description: OK}
+        "400": {description: Bad group_by or bound}
+        "503": {description: Manager not available}
   /api/cost/usage:
     get:
       summary: Per-session usage + cost detail

@@ -390,3 +390,19 @@ test('an answer for an Automation the user already left is dropped', async () =>
   await flushAsync();
   assert.ok(!view.innerHTML.includes('automation-detail-title'));
 });
+
+test('the Automaton Cost card shows sessions, tokens, cache, tools, span, active time, API label and unknown marker', () => {
+  const sb = loadApp({}, { view: makeStubElement() });
+  const render = vm.runInContext('_renderDetailCost', sb);
+  const html = render({ cost: { sessions: 3, tokens_in: 1200, tokens_out: 300, cache_read: 5, cache_creation: 6,
+    tool_calls: 42, span_seconds: 3700, active_seconds: 90, api_equivalent_usd: 1.5, window_note: 'Partial window.' } });
+  for (const s of ['Sessions', 'Tokens in/out', 'Cache read/created', 'Tool calls', 'Elapsed', 'Active time',
+    'API-equivalent cost', '$1.50', '42', '1h 1m 40s', '1m 30s', 'Partial window.', 'not a bill']) {
+    assert.ok(html.includes(s), 'missing ' + s);
+  }
+  const unk = render({ cost: { sessions: 1, spend_unknown: true, spend_unknown_note: 'Before ledger.' } });
+  assert.ok(unk.includes('unknown'));
+  assert.ok(unk.includes('Before ledger.'));
+  assert.ok(!unk.includes('$0.00'));
+  assert.equal(render({}), '');
+});

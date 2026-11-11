@@ -198,11 +198,7 @@ func (s *Server) usageStartupProfiles() []usagecalc.StartupProfile {
 		return nil
 	}
 	mgr := s.costReportAutonomousManager()
-	src := managerCostSource{
-		m:     s.manager,
-		owner: s.costReportOwners(mgr),
-		auto:  mgr,
-	}
+	src := s.newManagerCostSource(mgr)
 	cr := config.CostReportConfig{}
 	if s.cfg != nil {
 		cr = s.cfg.CostReport

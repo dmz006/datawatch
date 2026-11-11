@@ -1005,6 +1005,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if line := prdParallelLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
+			for _, line := range automatonCostLines(body) {
+				_, _ = fmt.Fprintln(out, line)
+			}
 			for _, line := range prdTaskMergeLines(body) {
 				_, _ = fmt.Fprintln(out, line)
 			}

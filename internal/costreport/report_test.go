@@ -902,3 +902,164 @@ func TestCostReportStartupTablesEmptyWhenSourceReportsNoAttempts(t *testing.T) {
 		t.Fatalf("both empty tables must say 'no attempts', got %q", text)
 	}
 }
+
+func TestCostReportExtendedUsageSummedPerGroup(t *testing.T) {
+	t0 := fixedDay(time.October, 6, 10)
+	r1 := makeRecord("s1", "", "auto1", "claude-code", t0, 100, 50, false)
+	r1.CacheRead, r1.CacheCreation, r1.ToolCalls, r1.ActiveSeconds = 10, 20, 3, 60
+	r1.FirstActivity, r1.LastActivity = t0, t0.Add(time.Hour)
+	r2 := makeRecord("s2", "", "auto1", "claude-code", t0.Add(2*time.Hour), 1, 1, false)
+	r2.CacheRead, r2.CacheCreation, r2.ToolCalls, r2.ActiveSeconds = 5, 6, 4, 30
+	r2.FirstActivity, r2.LastActivity = t0.Add(time.Hour), t0.Add(3*time.Hour)
+	r3 := makeRecord("s3", "", "", "claude-code", t0, 1, 1, false)
+	src := &fakeSource{result: &SourceResult{Records: []Record{r1, r2, r3}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Rows) != 2 {
+		t.Fatalf("want 2 rows (auto1 + unattributed), got %+v", rep.Rows)
+	}
+	var row Row
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			row = r
+		}
+	}
+	if row.Sessions != 2 || row.CacheRead != 15 || row.CacheCreation != 26 || row.ToolCalls != 7 {
+		t.Fatalf("bad sums: %+v", row)
+	}
+	floatEq(t, row.ActiveSeconds, 90)
+	floatEq(t, row.SpanSeconds, (3 * time.Hour).Seconds())
+	if row.FirstActivity == nil || !row.FirstActivity.Equal(t0) || !row.LastActivity.Equal(t0.Add(3*time.Hour)) {
+		t.Fatalf("bad span: %+v", row)
+	}
+}
+
+func TestCostReportBundledUSDLabel(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "", "auto1", "claude-code", fixedDay(time.October, 6, 10), 1000, 1000, false),
+	}}}
+	billing := billingOf(map[string]config.BillingProfile{
+		"claude-code": {Mode: config.BillingModeBundledPlan, MonthlyPrice: 100},
+	})
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, billing, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := rep.Rows[0]
+	if row.APIEquivalentUSD == nil || !strings.Contains(row.USDLabel, "API-equivalent estimate") {
+		t.Fatalf("want API-equivalent label, got %+v", row)
+	}
+}
+
+func notesRecord(id string, first, at time.Time) Record {
+	r := makeRecord(id, "", id, "claude-code", at, 10, 5, false)
+	r.FirstActivity = first
+	r.LastActivity = at
+	return r
+}
+
+func TestCostReportWindowPartialRowNote(t *testing.T) {
+	since := fixedNow.Add(-7 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		notesRecord("old", since.Add(-3*day), since.Add(day)),
+		notesRecord("new", since.Add(day), since.Add(2*day)),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rep.Rows {
+		switch r.Key {
+		case "old":
+			if !r.WindowPartial || !strings.Contains(r.WindowNote, "7 days") || !strings.Contains(r.WindowNote, "31 days") {
+				t.Fatalf("old row note missing: %+v", r)
+			}
+		case "new":
+			if r.WindowPartial || r.WindowNote != "" {
+				t.Fatalf("new row must not be partial: %+v", r)
+			}
+		}
+	}
+	if !strings.Contains(rep.WindowNote, "1 row(s)") || !strings.Contains(rep.WindowNote, "not zero") {
+		t.Fatalf("top-level note: %q", rep.WindowNote)
+	}
+}
+
+func TestCostReportWindowNoteAbsentWhenNothingPartial(t *testing.T) {
+	since := fixedNow.Add(-7 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", since.Add(day), since.Add(2*day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.WindowNote != "" {
+		t.Fatalf("unexpected note %q", rep.WindowNote)
+	}
+}
+
+func TestCostReportUnknownSpendBeforeLedgerHorizon(t *testing.T) {
+	since := fixedNow.Add(-45 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", since.Add(day), since.Add(2*day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Since: since, Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.UnknownBefore == nil || !strings.Contains(rep.UnknownSpendNote, "unknown") || !strings.Contains(rep.UnknownSpendNote, "not zero") {
+		t.Fatalf("unknown note missing: %+v", rep)
+	}
+	for _, r := range rep.Rows {
+		if !r.SpendUnknown || r.SpendUnknownNote == "" {
+			t.Fatalf("row not marked unknown: %+v", r)
+		}
+	}
+	if len(rep.Rows) != 1 || rep.Rows[0].TokensIn != 10 {
+		t.Fatalf("recorded figures must be untouched, not backfilled: %+v", rep.Rows)
+	}
+}
+
+func TestCostReportUnknownAbsentInsideLedger(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", fixedNow.Add(-2*day), fixedNow.Add(-day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.UnknownSpendNote != "" || rep.UnknownBefore != nil || rep.Rows[0].SpendUnknown {
+		t.Fatalf("unexpected unknown marking: %+v", rep)
+	}
+}
+
+func TestCostReportPartialAndUnknownTogether(t *testing.T) {
+	since := fixedNow.Add(-40 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", since.Add(-5*day), since.Add(day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Since: since, Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rep.Rows[0]
+	if !r.WindowPartial || !r.SpendUnknown || rep.WindowNote == "" || rep.UnknownSpendNote == "" {
+		t.Fatalf("both notes expected: %+v / %+v", r, rep)
+	}
+}
+
+func TestCostReportUnknownOnlyForRowsBeforeHorizon(t *testing.T) {
+	since := fixedNow.Add(-45 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		notesRecord("old", since.Add(day), since.Add(2*day)),
+		notesRecord("new", fixedNow.Add(-3*day), fixedNow.Add(-day)),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Since: since, Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.UnknownBefore == nil || len(rep.Rows) != 2 {
+		t.Fatalf("unexpected report: %+v", rep)
+	}
+	for _, r := range rep.Rows {
+		want := r.Key == "old"
+		if r.SpendUnknown != want || (r.SpendUnknownNote != "") != want {
+			t.Fatalf("row %s SpendUnknown=%v want %v", r.Key, r.SpendUnknown, want)
+		}
+	}
+}
