@@ -51,9 +51,12 @@ const PLACEHOLDERS = {
   inbox: [],
   automations: ['automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationLaneUtilizationCard', 'automationVerifierSlotsCard'],
-  progress: ['automationAllProjectsGanttCard', 'automationCostBillingCard', 'automationCompletionForecastCard'],
+  progress: ['automationAllProjectsGanttCard'],
   housekeeping: ['automationStaleWorktreesCard'],
 };
+
+// The Progress tab's headline row holds two more cards, hidden until they have a value.
+const HEADLINE = { progress: ['automationCostBillingCard', 'automationCompletionForecastCard'] };
 
 // Every id="automation…Card"-style id and the filter bar/panel in a body, in
 // document order. Inner ids (history button, search field, bodies) are not cards.
@@ -124,7 +127,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
     sb.switchAutomationSubtab(id);
     assert.equal(subtabOf(sb), id);
     const ids = cardIds(bodyOf(out.view));
-    assert.deepEqual(ids, [...FIXED[id], ...PLACEHOLDERS[id]], id + ' card ids in order');
+    assert.deepEqual(ids, [...FIXED[id], ...PLACEHOLDERS[id], ...(HEADLINE[id] || [])], id + ' card ids in order');
     ids.forEach(c => {
       assert.ok(!seen.has(c), c + ' already owned by ' + seen.get(c) + ', also in ' + id);
       seen.set(c, id);
@@ -164,7 +167,7 @@ test('slots: a slot registered on resources appears only there, after the fixed 
       assert.match(body, new RegExp('<div id="' + p + '" class="prd-capacity-slot" style="display:none;[^"]*"></div>'), p + ' is a hidden empty placeholder on ' + tab);
     }
   }
-  assert.equal(Object.values(PLACEHOLDERS).flat().length, 8, 'eight placeholders');
+  assert.equal(Object.values(PLACEHOLDERS).flat().length, 6, 'six placeholders');
 });
 
 test('inbox badge: summed count from the existing routes, aria-label, hidden at zero, kept when another tab is shown', async () => {

@@ -4678,5 +4678,20 @@
   "usage_page_burn_next_ok": "Mantén los carriles actuales.",
   "dash_card_usage_allowance": "Weekly allowance",
   "dash_card_usage_pace": "Pace line",
-  "dash_card_usage_burn": "Burn per day"
+  "dash_card_usage_burn": "Burn per day",
+  "lane_fill_node": "Nodo: %1$s",
+  "lane_fill_node_none": "Nodo: sin informar",
+  "lane_fill_help_text": "Una fila por carril: su nodo, su estado y lo que ejecuta. La barra está llena si trabaja, a la mitad si espera a un verificador y vacía si está libre.",
+  "metric_trend_up": "Subiendo",
+  "metric_trend_down": "Bajando",
+  "metric_trend_flat": "Estable",
+  "metric_progress_title": "Progreso",
+  "metric_progress_unit": "tareas hechas de todas las tareas",
+  "metric_progress_help": "Tareas terminadas de todas las del trabajo abierto. La tendencia indica si la fecha estimada se ensancha o converge.",
+  "metric_cost_title": "Coste",
+  "metric_cost_unit": "dólares equivalentes de API",
+  "metric_cost_help": "Lo que costaría el trabajo a precios de API. No es lo que paga con un plan fijo.",
+  "metric_forecast_title": "Previsión",
+  "metric_forecast_unit": "días hasta terminar (bajo a alto)",
+  "metric_forecast_help": "El rango estimado de días hasta terminar el trabajo abierto."
 }
