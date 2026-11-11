@@ -2597,36 +2597,45 @@ use `v0.73.0`. Unifying them is an operator decision. Full write-up in
 
 ### Code scanning upload in the Release workflow
 
-In `.github/workflows/release.yaml` the gosec SARIF report (category `gosec`,
-in the `gosec baseline-diff` job) is uploaded to GitHub Code Scanning. The
-upload is a courtesy copy of a result the scan step has already judged; it is
-not a release gate.
+In `.github/workflows/release.yaml` three jobs upload a SARIF report to GitHub
+Code Scanning: `gosec baseline-diff` (category `gosec`) and the `build-base`
+and `build-agents` image jobs (Trivy reports, one per image). Each upload is a
+courtesy copy of a result a scan step has already judged; none is a release
+gate.
 
-- **Up to four attempts.** The upload is tried up to four times with waits
-  between attempts, which covers GitHub's rate-limit answer. The upload action
-  does not report why it failed, so a retry happens on any failure, not only on
-  that answer.
-- **Never blocking.** A failed attempt never fails the job or holds up
-  goreleaser. If every attempt fails, the step logs a warning and the run goes
-  on.
-- **Gate unchanged.** The blocking gosec baseline check still fails the run on
-  a net-new finding. The `actions/upload-artifact` copy of the SARIF file (90-day
-  retention) stays available when the upload fails.
-- **Missing results.** A release whose upload gave up has no new gosec entry in
-  Code Scanning for that run. Read the warning on the upload step, download the
-  SARIF artifact from the run, or re-run the workflow once the limit has lifted.
-- **Not covered.** The two Trivy SARIF upload steps (`build-base` and
-  `build-agents`) and the upload steps in `containers.yaml` and
-  `image-refresh.yaml` are not part of this change. The wait lengths and the
-  attempt count are fixed in the workflow file, not in a daemon setting.
+- **Up to four attempts.** Each upload is tried up to four times, waiting 60,
+  180 and 300 seconds between attempts, which covers GitHub's rate-limit
+  answer. The upload action does not report why it failed, so a retry happens
+  on any failure, not only on that answer.
+- **Never blocking.** Every attempt sets `continue-on-error`, so a failed
+  attempt never fails the job or holds up goreleaser or the image pushes. If
+  all four fail, a final step logs a warning ("upload failed on every
+  attempt") and the run goes on.
+- **Gates unchanged.** The gosec baseline check still fails the run on a
+  net-new finding, and the Trivy scan steps still fail the run on a net-new
+  HIGH/CRITICAL finding. The `actions/upload-artifact` copy of the gosec SARIF
+  file (90-day retention) stays available when the upload fails.
+- **Missing results.** A release whose upload gave up has no new entry in Code
+  Scanning for that run. That is not a clean scan. Read the warning on the
+  upload step, download the SARIF artifact from the run, or re-run the workflow
+  once the limit has lifted.
+- **Guard.** `scripts/check-sarif-upload-nonblocking.py` reads the workflow
+  files (it never changes them) and fails if any `upload-sarif` step is
+  blocking (R1), if a job has fewer than three upload steps (R2), if a
+  publishing job (goreleaser, an image push, or `gh release upload`) depends
+  on a job with a blocking upload (R3), or if the gosec baseline gate stops
+  being blocking in `release.yaml` (R4). Run it with `make check-sarif-upload`;
+  it is part of `make lint`. Its fixture test,
+  `tests/test-sarif-upload-nonblocking.sh`, is part of `make test`. Workflows
+  other than `release.yaml` currently have no SARIF upload steps.
+- **Not configurable.** The wait lengths and attempt count are fixed in the
+  workflow file, not in a daemon setting.
 
-**Operator review:** (1) this docs change describes the workflow change made by
-an earlier, operator-approved task; the copy of `release.yaml` in this task's
-tree does not contain that change (the edit to a protected path was reverted),
-so confirm the merged workflow matches the text above, including the exact wait
-lengths, which are not stated here. (2) Decide whether a gosec upload that fails
-all four attempts should raise an alert; today it is only a warning on the step.
-(3) Decide whether the two Trivy SARIF uploads should get the same retry.
+**Operator review:** (1) decide whether a SARIF upload that fails all four
+attempts should raise an alert; today it is only a warning on the step.
+(2) The guard's minimum is three upload steps per job while the workflow uses
+four; confirm that is the intended slack. (3) The guard needs Python 3 with
+PyYAML wherever `make lint` runs; it stops with an error if PyYAML is missing.
 
 ---
 
