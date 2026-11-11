@@ -1,6 +1,8 @@
 # The weekly dependency update settings, Events row and alert are missing from the Android and iPhone apps
 
-**Filed:** to be filed by the supervisor at merge.
+**Filed:** not yet. To be filed by the supervisor at merge; the operator checklist in
+`docs/howto/automation-dependency-update.md` lists this as an open item until the
+issue number is recorded under "Filing record".
 
 ## Affected area
 
