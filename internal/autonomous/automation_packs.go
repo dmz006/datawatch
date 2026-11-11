@@ -4,15 +4,23 @@ package autonomous
 
 import "strings"
 
-// normalizePacks trims each pack name, drops empty ones, and returns the rest
-// sorted and unique. It returns nil when no name remains so omitempty drops
-// the field.
+// normalizePacks trims each pack name, drops empty ones and later duplicates,
+// and returns the rest in the order given: the list is a priority order, so it
+// is never sorted. It returns nil when no name remains so omitempty drops the
+// field. The input slice is not modified.
 func normalizePacks(in []string) []string {
-	trimmed := make([]string, 0, len(in))
+	var out []string
+	seen := make(map[string]struct{}, len(in))
 	for _, p := range in {
-		if p = strings.TrimSpace(p); p != "" {
-			trimmed = append(trimmed, p)
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
 		}
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
 	}
-	return sortedUniqueStrings(trimmed)
+	return out
 }

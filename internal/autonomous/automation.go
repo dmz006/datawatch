@@ -118,9 +118,10 @@ type Automation struct {
 	// value, and the JSON clone keeps it.
 	Milestone bool `json:"milestone,omitempty"`
 
-	// Packs names the template packs this Automaton draws from. Kept canonical
-	// by normalizePacks (trimmed, non-empty, sorted, unique) and persisted with
-	// the Automaton like every other field.
+	// Packs names the template packs this Automaton draws from, in the order
+	// configured (earlier packs take priority). Kept canonical by
+	// normalizePacks (trimmed, non-empty, unique, first-seen order) and
+	// persisted with the Automaton like every other field.
 	Packs []string `json:"packs,omitempty"`
 
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
