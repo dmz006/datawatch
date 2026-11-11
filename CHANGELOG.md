@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.139.0 — The Housekeeping tab as an action list
+
+### Added
+
+- **The Housekeeping tab is now an action list.** A new **Unlanded work** card lists archived Automata whose branch has commits that never reached the default branch. Each row shows the title, the commit count, the last activity, a recommendation (already landed, superseded or needs a decision) with a one-line reason, and three buttons: **Keep** (records that the branch is left alone), **Archive branch** (moves it under `refs/archive/`, reversible) and **Delete worktree** (writes and verifies a git bundle backup first, removes nothing if the backup fails, and asks for confirmation). Running Automata are never listed, and the comparison is by commit content, so a merge that rewrote commits still counts as landed. The card is hidden until the list has a row and refreshes every 30 seconds.
+- **A Commit button on the uncommitted work card.** It opens a dialog with the diff of the held worktree and a message box, commits the changes, and shows the new commit id or the plain failure text.
+- **A permission problem is explained and fixable.** When a build or test leaves read-only files that stop cleanup from deleting a worktree, the Cleanup card on the Events tab shows one plain line instead of raw errors, a **Fix permissions** button restores owner write permission on those paths (inside the worktree base only, no links followed, nothing removed), and the card counts what cleanup left in place by reason (still running, live session, live lease, retained, dirty, commits not on the base branch, held, over the per-pass limit, permission denied).
+- **Surfaces for the unlanded work list.** REST `GET /api/autonomous/unlanded-work` with `POST .../keep`, `.../archive-branch` and `.../delete-worktree`; REST `GET /api/autonomous/uncommitted-work/diff` and `POST /api/autonomous/uncommitted-work/commit`; REST `POST /api/autonomous/cleanup/fix-permissions`; CLI `datawatch autonomous unlanded-work [--json]` with `keep`, `archive-branch` and `delete-worktree --confirm`; comm channel `autonomous unlanded-work` with the same three actions (delete needs the word `confirm`); MCP `autonomous_unlanded_work` (read-only). The Commit and the permission fix are REST and web app only. `scripts/branch-audit.py` prints the same branches as `UNLANDED`. There is no new configuration setting.
+- **Forty new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** `unlanded_work_*`, `uncommitted_work_commit_*` and `cleanup_permission_*`, plus `cleanup_skip_reason_*` for the skipped-by-reason counts.
+- **Operator documentation.** [Automaton worktree cleanup](docs/howto/automaton-worktree-cleanup.md) covers the unlanded work card, its three actions, the permission fix and every surface; [Automaton uncommitted work](docs/howto/automaton-uncommitted-work.md) covers the Commit button; the Automation tab how-to, the Automata events how-to, the definitions, the operations guide, the API and MCP mapping, the command list and the OpenAPI description are updated.
+
+### Changed
+
+- **The safe-to-delete report and the cleanup history render as cards under the event stream on the Events tab.** The Housekeeping tab keeps only its action cards (unlanded work, uncommitted work and protected paths). Their loaders poll only while the Events tab is shown.
+
 ## v9.138.1 — Fix three code scanning findings
 
 Three code scanning findings were fixed; no feature changed.

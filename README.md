@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.138.1 (2026-11-11).** Three code scanning findings were fixed: the self-config audit limit allocation, the config audit recorder content type, and merge plan store path checks. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.139.0 (2026-11-11).** The Housekeeping tab is now an action list: an Unlanded work card with Keep, Archive branch and Delete worktree, a Commit button on the uncommitted work card, and a Fix permissions button for cleanup. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
