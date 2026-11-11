@@ -4193,11 +4193,14 @@ type AutonomousAutomationConfig struct {
 	// than report|delete, a non-absolute repository path, a poll interval
 	// below 60, a negative alert/tag threshold, a hung threshold below 1)
 	// are refused on every write path.
-	RepoCIWatch              RepoCIWatchConfig `yaml:"repo_ci_watch" json:"repo_ci_watch"`
-	MergePendingMode         string            `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
-	MergePendingAlertMinutes *int              `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
-	MergedMemberPolicy       string            `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
-	AgentInsertPolicy        string            `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	RepoCIWatch RepoCIWatchConfig `yaml:"repo_ci_watch" json:"repo_ci_watch"`
+	// DependencyUpdate — the weekly dependency update Automation knobs
+	// (autonomous.automation.dependency_update.*). See DependencyUpdateConfig.
+	DependencyUpdate         DependencyUpdateConfig `yaml:"dependency_update" json:"dependency_update"`
+	MergePendingMode         string                 `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
+	MergePendingAlertMinutes *int                   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
+	MergedMemberPolicy       string                 `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
+	AgentInsertPolicy        string                 `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
 	// SecurityFailureConfig: the one default (an unset or empty mode reads
@@ -8062,6 +8065,9 @@ func validateLoaded(cfg *Config) error {
 			t, DefaultAutomationMergePendingAlertMinutes)
 	}
 	if err := validateRepoCIWatch(cfg.Autonomous.Automation.RepoCIWatch); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Automation.DependencyUpdate.Validate(); err != nil {
 		return err
 	}
 	if err := validatePluginServices(cfg.Plugins.Services, "plugins.services"); err != nil {
