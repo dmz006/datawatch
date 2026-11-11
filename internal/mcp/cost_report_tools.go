@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -106,7 +107,9 @@ func (s *Server) toolCostReport() mcpsdk.Tool {
 			"'API-equivalent, not billed', plus estimated_usage_points / share_of_monthly_price where the plan is priced; "+
 			"free_local → not billed; api_metered assumed when no profile is set), and the report carries a "+
 			"retention_note (the ledger's 31-day retention window, and whether this window's amounts fell back to "+
-			"per-session lifetime totals). group_by, since and until are all optional — the "+
+			"per-session lifetime totals). When the REST loopback is up the tool returns the GET /api/cost/report body unchanged, "+
+			"so every row also carries the per-Automaton columns (tokens, time, sessions, tool calls) and the report carries "+
+			"window_note and trace_usage; the same per-Automaton figures appear under cost in autonomous_prd_get. group_by, since and until are all optional — the "+
 			"grouping and window defaults come from the cost_report config section, not fixed literals."),
 		mcpsdk.WithString("group_by", mcpsdk.Description("Optional. One of automaton, automation, backend, week (release is REST/CLI-only). Defaults to the cost_report config.")),
 		mcpsdk.WithString("since", mcpsdk.Description("Optional lower bound, RFC3339 or YYYY-MM-DD. Defaults to the cost_report config window.")),
@@ -136,6 +139,21 @@ func (s *Server) handleCostReport(_ context.Context, req mcpsdk.CallToolRequest)
 			return mcpsdk.NewToolResultError("cost_report: until must be RFC3339 or YYYY-MM-DD"), nil
 		}
 		reportReq.Until = t
+	}
+
+	// Prefer the REST report: it reads the spend ledger, so rows carry the
+	// per-Automaton columns and notes. Fall back to the in-process engine
+	// when the loopback is unavailable.
+	if s.webPort != 0 {
+		q := url.Values{}
+		for _, k := range []string{"group_by", "since", "until"} {
+			if v := req.GetString(k, ""); v != "" {
+				q.Set(k, v)
+			}
+		}
+		if body, err := s.proxyGet("/api/cost/report", q); err == nil {
+			return textOK(string(body)), nil
+		}
 	}
 
 	rep, err := s.buildCostReport(reportReq)
