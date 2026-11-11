@@ -9932,6 +9932,168 @@ paths:
           description: The window is not a duration from 1m to 168h
         "405":
           description: Only GET is served
+  /api/dashboard/series/release-train:
+    get:
+      summary: Release train
+      description: |
+        Tags cut, CI state and deploy state over the last `days` days (default 14, from 1 to 90).
+        Tags and deploy state come from the ship status (push and tag outcomes recorded per Automaton);
+        `deploy.state` is the newest recorded push outcome (`ok`, `failed` or `none`). CI comes from the
+        repository CI watch: `ci` lists the watched runs updated in the window, `ci_state` is the worst
+        of them (`failing`, `pending`, `green` or `none`). When nothing is recorded, `empty` is true and
+        `empty_reason_key` is the locale key of the one line saying why the card is hidden.
+      operationId: dashboardSeriesReleaseTrain
+      tags: [Dashboard]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Window length in days, a whole number from 1 to 90. Default 14.
+          schema: {type: integer, default: 14, minimum: 1, maximum: 90}
+      responses:
+        "200":
+          description: Tags, CI runs and deploy state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  days: {type: integer}
+                  window_from: {type: string, format: date-time}
+                  tags:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: {type: string, format: date-time}
+                        prd_id: {type: string, description: Id of the Automaton that shipped}
+                        tag: {type: string}
+                        ok: {type: boolean}
+                  ci_state: {type: string, enum: [failing, pending, green, none]}
+                  ci:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        repo: {type: string}
+                        ref_kind: {type: string}
+                        ref_name: {type: string}
+                        workflow: {type: string}
+                        status: {type: string}
+                        updated_at: {type: string, format: date-time}
+                  deploy:
+                    type: object
+                    properties:
+                      state: {type: string, enum: [ok, failed, none]}
+                      at: {type: string, format: date-time}
+                      prd_id: {type: string}
+                  empty: {type: boolean}
+                  empty_reason_key: {type: string}
+        "400":
+          description: days is not a whole number from 1 to 90
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/review-backlog:
+    get:
+      summary: Review backlog
+      description: |
+        Plans waiting for a decision (the attention list: Automata in an attention status or holding a task
+        for review) and open held questions, each with its age, oldest first. Each list is cut to `limit`
+        entries (default 50, from 1 to 200); `plan_count` and `question_count` are the totals before the cut.
+        `oldest_age_seconds` is the age of the oldest entry returned. When nothing waits, `empty` is true and
+        `empty_reason_key` is the locale key of the one line saying why the card is hidden.
+      operationId: dashboardSeriesReviewBacklog
+      tags: [Dashboard]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Most entries per list, a whole number from 1 to 200. Default 50.
+          schema: {type: integer, default: 50, minimum: 1, maximum: 200}
+      responses:
+        "200":
+          description: Plans and held questions with their age
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  limit: {type: integer}
+                  plan_count: {type: integer}
+                  question_count: {type: integer}
+                  oldest_age_seconds: {type: integer}
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        since: {type: string, format: date-time}
+                        age_seconds: {type: integer}
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        question_id: {type: string}
+                        prd_id: {type: string}
+                        title: {type: string}
+                        state: {type: string, description: The held state the question holds in}
+                        since: {type: string, format: date-time}
+                        age_seconds: {type: integer}
+                  empty: {type: boolean}
+                  empty_reason_key: {type: string}
+        "400":
+          description: limit is not a whole number from 1 to 200
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/defects-per-day:
+    get:
+      summary: Defects found and fixed per day
+      description: |
+        One point per UTC day for the last `days` days (default 14, from 1 to 90), oldest first, from the
+        defect intake decision log. A defect is found on the day its intake record was written; it counts as
+        fixed that day when intake applied a tiny fix without error. Days with no records report zero. When
+        no defect was recorded in the window, `empty` is true and `empty_reason_key` is the locale key of the
+        one line saying why the card is hidden.
+      operationId: dashboardSeriesDefectsPerDay
+      tags: [Dashboard]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Window length in days, a whole number from 1 to 90. Default 14.
+          schema: {type: integer, default: 14, minimum: 1, maximum: 90}
+      responses:
+        "200":
+          description: Daily found and fixed counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  days: {type: integer}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {type: string, description: UTC day, YYYY-MM-DD}
+                        found: {type: integer}
+                        fixed: {type: integer}
+                  total_found: {type: integer}
+                  total_fixed: {type: integer}
+                  empty: {type: boolean}
+                  empty_reason_key: {type: string}
+        "400":
+          description: days is not a whole number from 1 to 90
+        "405":
+          description: Only GET is served
   /api/dashboard/work-map:
     get:
       summary: Work map

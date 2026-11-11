@@ -306,6 +306,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 
 	// Dashboard series cards: hourly lane utilization, throughput forecast, verifier health.
 	api.registerDashboardSeriesRoutes(apiMux)
+	api.registerDashboardSeriesMoreRoutes(apiMux)
 
 	// F10 sprint 3 — agent lifecycle routes.
 	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit)     // BL107
