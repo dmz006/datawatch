@@ -27549,6 +27549,7 @@ function switchAutomataTab(tab) {
     try { localStorage.setItem(_AUTOMATA_TAB_STORE_KEY, tab); } catch (_) { /* storage blocked */ }
   }
   st.selected.clear();
+  if (prev === 'events' && tab !== 'events') automataEventsStatusStop();
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
@@ -27779,6 +27780,7 @@ function renderAutomataEventsPanel() {
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
     <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
     ${automataEventsFilterHtml()}
+    ${automataEventsStatusHtml()}
     <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
     <div id="automataEventsMoreWrap" style="margin-top:8px;">
       <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
@@ -27807,6 +27809,37 @@ function renderAutomataEventsPanel() {
     });
   }
   automataEventsReload();
+  automataEventsStatusStart();
+}
+
+// The Events tab hosts the status the operator reads: supervisor loop runs and
+// counts, release readiness, request watch, the onboarding report and the
+// merge shadow. A card that is off, empty or 'never' stays hidden. The loop
+// card polls only while the Events tab is shown.
+const _AUTOMATA_EVENTS_STATUS_IDS = ['automationOnboardingReportCard', 'automationSupervisorLoopCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'];
+function automataEventsStatusHtml() {
+  const slots = _AUTOMATA_EVENTS_STATUS_IDS.map(id => `<div id="${id}" class="prd-capacity-slot" style="display:none;margin:6px 0 0;"></div>`).join('');
+  const link = `<div style="font-size:11px;margin-top:6px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(_automataEventsText('automata_events_config_in_settings', 'Automata configuration is in Settings under Automata'))}</a></div>`;
+  return `<div id="automataEventsStatus" style="margin-bottom:8px;">${slots}${link}</div>`;
+}
+// Show a slot only once its card drew content; hide it while it is empty.
+function automataEventsStatusPrune() {
+  _AUTOMATA_EVENTS_STATUS_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.innerHTML.trim() ? '' : 'none';
+  });
+}
+function automataEventsStatusStart() {
+  if (typeof listLoaderAll === 'function') {
+    try { listLoaderAll([_automationOnboardingReportLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]); } catch (_) { /* cards stay hidden */ }
+  }
+  if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
+  supervisorLoopStartPolling();
+  setTimeout(automataEventsStatusPrune, 1500);
+}
+function automataEventsStatusStop() {
+  supervisorLoopStopPolling();
+  _automationStopLoaders(['automation_onboarding_report', 'automation_release_readiness', 'automation_request_watch']);
 }
 
 // automataEventsHelpLink renders the '?' help anchor used by the Events tab,
@@ -36106,24 +36139,8 @@ function _automationPlaceholderHTML(id) {
   ['progress', 'automationAllProjectsGanttCard', 100],
   ['progress', 'automationCostBillingCard', 110],
   ['progress', 'automationCompletionForecastCard', 120],
-  ['setup', 'automationProjectPolicyCard', 100],
-  ['setup', 'automationDecomposeLintCard', 110],
-  ['setup', 'automationPriorityByKindCard', 120],
-  ['setup', 'automationGroupingTagsCard', 130],
-  ['setup', 'automationSupervisorLoopCard', 140],
   ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
-// The Supervisor loop card fills the Setup placeholder reserved above: it keeps
-// the slot id, order and hidden placeholder markup (it un-hides on the first read), and polls only
-// while the Setup sub-tab is shown.
-registerAutomationCardSlot('setup', {
-  id: 'automationSupervisorLoopCard',
-  order: 140,
-  html: _automationPlaceholderHTML('automationSupervisorLoopCard'),
-  mount: () => supervisorLoopStartPolling(),
-  stop: () => supervisorLoopStopPolling(),
-});
-
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,
 // security failures and open supervisor-watch findings. The counts live here
@@ -36295,27 +36312,6 @@ const _AUTOMATION_SUBTABS = [
     stop() { _automationSlotsStop('progress'); },
   },
   {
-    id: 'setup',
-    labelKey: 'automation_subtab_setup',
-    bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergeShadowCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationReleaseReadinessCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      ${_automationSlotsHTML('setup')}`,
-    mount() {
-      listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]);
-      // The merge shadow card is a plain one-shot read (no list chrome), so it
-      // has no loader entry; it renders nothing when the shadow is off or empty.
-      if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
-      _automationSlotsMount('setup');
-    },
-    stop() {
-      _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_request_watch']);
-      _automationSlotsStop('setup');
-    },
-  },
-  {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
     bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
@@ -36331,6 +36327,13 @@ const _AUTOMATION_SUBTABS = [
     },
   },
 ];
+
+// _automationNormalizeSubtab makes an unknown stored or deep-linked sub-tab id
+// (such as the removed 'setup') fall back to the default sub-tab.
+function _automationNormalizeSubtab() {
+  if (!_AUTOMATION_SUBTABS.some(s => s.id === _automationState.subtab)) _automationState.subtab = _AUTOMATION_DEFAULT_SUBTAB;
+  return _automationState.subtab;
+}
 
 // The second-row sub-tab bar: the fixed automation-subtabs classes and the
 // data-subtab attribute are the contract for the styles, the node tests and
@@ -36356,6 +36359,7 @@ function _automationSubtabsBarHTML() {
 // The Automation sub-tab's body: the second-row sub-tab bar first, then the
 // body of the sub-tab that is selected.
 function _automationBodyHTML() {
+  _automationNormalizeSubtab();
   const st = _automationState;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
     || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
@@ -36371,6 +36375,7 @@ function _automationMount() {
   // A fresh render has not loaded anything yet: the empty state waits for a
   // load that succeeds after this point.
   _automationState.loaded = false;
+  _automationNormalizeSubtab();
   const def = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab) || _AUTOMATION_SUBTABS[0];
   def.mount();
   // The Inbox count badge stays current behind the other sub-tabs.
@@ -36382,7 +36387,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -36415,6 +36420,7 @@ function _automationSubtabsReveal() {
 window._automationSubtabsReveal = _automationSubtabsReveal;
 
 function switchAutomationSubtab(id) {
+  _automationNormalizeSubtab();
   const def = _AUTOMATION_SUBTABS.find(s => s.id === id);
   if (!def) return;
   if (_automataNormalizeTab() !== 'automation') return;
@@ -37333,7 +37339,9 @@ function supervisorLoopCardHtml(jobsBody, runsBody) {
 function supervisorLoopRenderCard(jobsBody, runsBody) {
   const el = document.getElementById(SUPERVISOR_LOOP_CARD_ELEMENT_ID);
   if (!el) return;
-  const html = supervisorLoopCardHtml(jobsBody, runsBody);
+  const runs = runsBody && Array.isArray(runsBody.runs) ? runsBody.runs : [];
+  // A loop that is off or has never run is not shown.
+  const html = (jobsBody && jobsBody.enabled === false && !runs.length) || !runs.length ? null : supervisorLoopCardHtml(jobsBody, runsBody);
   if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.innerHTML = html;
   el.style.display = '';

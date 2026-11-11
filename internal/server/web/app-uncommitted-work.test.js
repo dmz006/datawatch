@@ -170,7 +170,7 @@ test('the Housekeeping sub-tab carries the slot and the stop-all list ends the l
   const sb = loadApp({});
   const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'housekeeping').bodyHTML()", sb);
   assert.ok(body.includes('id="automationUncommittedWorkCard"'), 'slot missing from the Housekeeping body');
-  for (const other of ['inbox', 'automations', 'resources', 'progress', 'setup']) {
+  for (const other of ['inbox', 'automations', 'resources', 'progress']) {
     const o = vm.runInContext(`_AUTOMATION_SUBTABS.find(s => s.id === '${other}').bodyHTML()`, sb);
     assert.ok(!o.includes('id="automationUncommittedWorkCard"'), 'no uncommitted-work slot on ' + other);
   }

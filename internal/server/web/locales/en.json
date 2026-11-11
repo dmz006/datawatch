@@ -4618,6 +4618,7 @@
   "automata_events_project": "Project",
   "automata_events_reason": "Reason",
   "automata_events_tab": "Events",
+  "automata_events_config_in_settings": "Automata configuration is in Settings under Automata",
   "automata_events_help_tip": "Open the Automata events howto — what each event kind means and how to act on it",
   "automata_events_help_filters": "Narrow the event list by kind, project or text. Kind chips toggle on and off.",
   "automata_events_help_card_supervisor_watch": "Supervisor watch — what the supervisor is watching right now and why",

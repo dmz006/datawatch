@@ -4618,6 +4618,7 @@
   "automata_events_project": "Proyecto",
   "automata_events_reason": "Motivo",
   "automata_events_tab": "Eventos",
+  "automata_events_config_in_settings": "La configuración de Automata está en Ajustes, en Automata",
   "automata_events_help_tip": "Abrir la guía de eventos — qué significa cada tipo de evento y cómo actuar",
   "automata_events_help_filters": "Reduce la lista de eventos por tipo, proyecto o texto. Los chips de tipo se activan y desactivan.",
   "automata_events_help_card_supervisor_watch": "Vigilancia del supervisor — qué está vigilando ahora el supervisor y por qué",
