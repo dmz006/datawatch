@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.139.1 (2026-11-11).** A verifier that goes idle is retried on a fresh session without counting against the worker, and a waiting task is admitted on the worker you set for it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.139.2 (2026-11-11).** A resumed Automaton task is leased from the backend its session really runs on, and a mismatched lease is released and retaken with an alert. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.139.2 — Boot-resume leases a resumed session from the backend it actually ran on
+
+### Fixed
+
+- **After a daemon restart, a resumed Automaton task is leased from the backend its session really runs.** Before, a task whose session was a pi session could be left holding a claude-code lease, because the lease followed the backend currently configured for the task instead of the session. This used up a claude-code lane slot while the work ran on pi. Now the lease comes from the session record. A lease that disagrees with the session's backend is released and taken again from the right one, and the operator sees the alert `Resumed session leased from a different backend`, raised once per task and session. No migration is needed. If you see the alert, check the task's configured backend against its session's; the steps are in [Leases after a daemon restart](docs/howto/automata-capacity.md#leases-after-a-daemon-restart).
+
 ## v9.139.1 — Idle verifier retry and per-task override admission
 
 ### Fixed
