@@ -670,44 +670,24 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 // capability system; operator answer 2026-11-01: cover only non-secret
 // settings).
 //
-// The classification is TWO-SIDED and complete: every registered MCP tool
-// appears in exactly one of configWriteTools or nonConfigWriteTools, and
-// TestIsConfigWriteTool_EveryRegisteredToolIsClassified (in
-// mcp_tool_caps_test.go) fails the build when a new registration in
-// internal/mcp/server.go lands in neither list. Adding a new MCP tool
-// requires adding it to exactly one list.
+// The classification has three classes and is complete: every registered MCP
+// tool appears in exactly one of configWriteTools, sensitiveWriteTools or
+// sensitiveWriteTools — high-impact tools the operator singled out
+// (decision 2026-11-11): secret_set, secret_delete and secret_get (it
+// returns the secret value, so it is gated although it only reads); the
+// identity writers set_identity, update_identity, configure_identity,
+// restore_identity and reset_identity; daemon control (restart_daemon,
+// reload); and plugin_install, plugin_run_subcommand, send_input,
+// start_session, tailscale_acl_push, tailscale_auth_key and acme_renew.
+// Listing secret names or checking that one exists is not sensitive.
 //
-// configWriteTools — the daemon settings writers plus the component registry
-// writers the operator's BL412 answer selected:
-//   - daemon settings: config_set; the named *_config_set tools (detection,
-//     dns channel, proxy, channel routing, council, orchestrator, autonomous,
-//     autonomous scan, smoke forward, observer); compute_pin_settings; the
-//     usage settings writers (usage_backoff_set, usage_extra_credit_set,
-//     usage_remaining_work_set, burn_guard_config_set); council_personas_set;
-//     the later settings writers autonomous_decompose_lint_config_set,
-//     planning_routing_set, rules_context_set and secret_scan_config_set
-//   - LLM registry: llm_add, llm_add_model, llm_delete, llm_disable,
-//     llm_enable, llm_refresh_models, llm_remove_model, llm_update
-//   - compute-node registry: compute_node_add, compute_node_attach_observer,
-//     compute_node_delete, compute_node_detach_observer, compute_node_pull_model,
-//     compute_node_remove_model, compute_node_update
-//   - observer-peer registry: observer_peer_register, observer_peer_delete
-//   - upstream-server registry (still gated by federation:write; the
-//     self-config group deliberately excludes the federation cap):
-//     server_add, server_delete, server_update
-//   - websearch provider registry: websearch_provider_add,
-//     websearch_provider_delete, websearch_provider_disable,
-//     websearch_provider_update
-//
-// nonConfigWriteTools — everything else, explicitly classified as
-// non-config-write in this task even where it persists operator files:
-// secrets (secret_*, secrets_vault_status), identity (set_identity,
-// update_identity, configure_identity, restore_identity, reset_identity),
-// daemon control (restart_daemon, reload), the session/agent/queue/result/
-// memory/comm/alert writes, the autonomous PRD and automation state tools,
-// and the profile/project/template/schedule/device/plugin/skill/dashboard/
-// filter/alert-rule surfaces. Moving any of those into the config-write side
-// later is a product decision for a follow-up PRD, not a code default.
+// nonConfigWriteTools — everything else: the ordinary operational writes
+// and reads. That covers the secret listing and status tools (secret_list,
+// secret_exists, secrets_vault_status, secret_scan_stats), the
+// session/agent/queue/result/memory/comm/alert writes, the autonomous PRD
+// and automation state tools, and the profile/project/template/schedule/
+// device/plugin/skill/dashboard/filter/alert-rule surfaces, plus all
+// read-only tools.
 var configWriteTools = map[string]bool{
 	"autonomous_config_set": true, "autonomous_scan_config_set": true, "burn_guard_config_set": true, "channel_routing_config_set": true,
 	"compute_node_add": true, "compute_node_attach_observer": true, "compute_node_delete": true, "compute_node_detach_observer": true,
@@ -723,8 +703,28 @@ var configWriteTools = map[string]bool{
 	"autonomous_decompose_lint_config_set": true, "planning_routing_set": true, "rules_context_set": true, "secret_scan_config_set": true,
 }
 
+var sensitiveWriteTools = map[string]bool{
+	"acme_renew":            true,
+	"configure_identity":    true,
+	"plugin_install":        true,
+	"plugin_run_subcommand": true,
+	"reload":                true,
+	"reset_identity":        true,
+	"restart_daemon":        true,
+	"restore_identity":      true,
+	"secret_delete":         true,
+	"secret_get":            true,
+	"secret_set":            true,
+	"send_input":            true,
+	"set_identity":          true,
+	"start_session":         true,
+	"tailscale_acl_push":    true,
+	"tailscale_auth_key":    true,
+	"update_identity":       true,
+}
+
 var nonConfigWriteTools = map[string]bool{
-	"acme_issuer_log": true, "acme_renew": true, "acme_status": true, "agent_audit": true,
+	"acme_issuer_log": true, "acme_status": true, "agent_audit": true,
 	"agent_get": true, "agent_list": true, "agent_logs": true, "agent_spawn": true,
 	"agent_terminate": true, "alert_rule_create": true, "alert_rule_delete": true, "alert_rule_disable": true,
 	"alert_rule_enable": true, "alert_rule_firings": true, "alert_rule_get": true, "alert_rule_list": true,
@@ -768,7 +768,7 @@ var nonConfigWriteTools = map[string]bool{
 	"burn_guard_status": true, "capacity_admission": true, "capacity_status": true, "channel_diagnostics": true,
 	"channel_info": true, "channel_routing_config_get": true, "claude_efforts": true, "claude_models": true,
 	"claude_permission_modes": true, "compute_node_detail": true, "compute_node_get": true, "compute_node_health": true,
-	"compute_node_list": true, "configure_identity": true, "cooldown_clear": true, "cooldown_set": true,
+	"compute_node_list": true, "cooldown_clear": true, "cooldown_set": true,
 	"cooldown_status": true, "cost_rates": true, "cost_report": true, "cost_summary": true,
 	"cost_usage": true, "council_config_get": true, "council_get_run": true, "council_list_runs": true,
 	"council_persona_draft_answer": true, "council_persona_draft_list": true, "council_persona_draft_purge": true, "council_persona_draft_refine": true,
@@ -811,36 +811,36 @@ var nonConfigWriteTools = map[string]bool{
 	"orchestrator_graph_get": true, "orchestrator_graph_list": true, "orchestrator_graph_plan": true, "orchestrator_graph_run": true,
 	"orchestrator_verdicts": true, "per_automaton_guardrails_set": true, "per_automaton_retry_policy_set": true, "pipeline_cancel": true,
 	"pipeline_list": true, "pipeline_start": true, "pipeline_status": true, "plugin_browse_registry": true,
-	"plugin_disable": true, "plugin_enable": true, "plugin_get": true, "plugin_install": true,
-	"plugin_run_subcommand": true, "plugin_test": true, "plugins_list": true, "plugins_reload": true,
+	"plugin_disable": true, "plugin_enable": true, "plugin_get": true,
+	"plugin_test": true, "plugins_list": true, "plugins_reload": true,
 	"post_result": true, "profile_create": true, "profile_delete": true, "profile_get": true,
 	"profile_list": true, "profile_set_agent_settings": true, "profile_smoke": true, "profile_update": true,
 	"project_alias_delete": true, "project_list": true, "project_summary": true, "project_upsert": true,
 	"proxy_config_get": true, "question_answer": true, "question_get": true, "question_list": true,
 	"question_quality": true, "question_raise": true, "question_stats": true, "question_withdraw": true,
 	"queue_claim": true, "queue_complete": true, "queue_fail": true, "queue_list": true,
-	"queue_push": true, "reload": true, "rename_session": true, "reply_to_parent": true,
-	"reset_identity": true, "restart_daemon": true, "restart_session": true, "restore_identity": true,
-	"result_delete": true, "result_get": true, "result_list": true, "result_put": true,
+	"queue_push": true, "rename_session": true, "reply_to_parent": true,
+	"restart_session": true,
+	"result_delete":   true, "result_get": true, "result_list": true, "result_put": true,
 	"retry_profile_create": true, "retry_profile_delete": true, "retry_profile_get": true, "retry_profile_list": true,
 	"retry_profile_update": true, "routing_rules_list": true, "routing_rules_test": true, "rtk_check": true,
 	"rtk_discover": true, "rtk_update": true, "rtk_version": true, "schedule_add": true,
 	"schedule_cancel": true, "schedule_list": true, "schedule_results_list": true, "schedule_spawn": true,
-	"secret_delete": true, "secret_exists": true, "secret_get": true, "secret_list": true,
-	"secret_set": true, "secrets_vault_status": true, "security_failure_list": true, "self_config_audit": true, "send_input": true,
+	"secret_exists": true, "secret_list": true,
+	"secrets_vault_status": true, "security_failure_list": true, "self_config_audit": true,
 	"send_saved_command": true, "server_get": true, "server_list": true, "server_test": true,
 	"session_bind_agent": true, "session_children": true, "session_guardrail_approve": true, "session_guardrail_run": true,
 	"session_import": true, "session_output": true, "session_reconcile": true, "session_rollback": true,
 	"session_set_state": true, "session_set_tags": true, "session_summarize": true, "session_timeline": true,
-	"sessions_stale": true, "set_identity": true, "set_session_priority": true, "skill_load": true,
+	"sessions_stale": true, "set_session_priority": true, "skill_load": true,
 	"skills_get": true, "skills_list": true, "skills_registry_add_default": true, "skills_registry_available": true,
 	"skills_registry_connect": true, "skills_registry_create": true, "skills_registry_delete": true, "skills_registry_get": true,
 	"skills_registry_list": true, "skills_registry_sync": true, "skills_registry_unsync": true, "skills_registry_update": true,
-	"smoke_forward_config_get": true, "splash_info": true, "start_session": true, "stop_all_sessions": true,
-	"supervisor_watch_list": true, "supervisor_watch_stats": true, "tailscale_acl_generate": true, "tailscale_acl_push": true,
-	"tailscale_auth_key": true, "tailscale_nodes": true, "tailscale_status": true, "telemetry_get": true,
+	"smoke_forward_config_get": true, "splash_info": true, "stop_all_sessions": true,
+	"supervisor_watch_list": true, "supervisor_watch_stats": true, "tailscale_acl_generate": true,
+	"tailscale_nodes": true, "tailscale_status": true, "telemetry_get": true,
 	"telemetry_list": true, "template_delete": true, "template_list": true, "template_upsert": true,
-	"tooling_cleanup": true, "tooling_gitignore": true, "tooling_status": true, "update_identity": true,
+	"tooling_cleanup": true, "tooling_gitignore": true, "tooling_status": true,
 	"usage_advice": true, "usage_backoff_clear": true, "usage_backoff_recheck": true, "usage_backoff_status": true,
 	"usage_reading_add": true, "usage_reading_delete": true, "usage_readings": true, "vision_describe": true,
 	"websearch_history": true, "websearch_provider_enable": true, "websearch_provider_get": true, "websearch_provider_test": true,
@@ -880,4 +880,11 @@ func IsConfigWriteTool(tool string) bool {
 // registered MCP tool.
 func IsNonConfigWriteTool(tool string) bool {
 	return nonConfigWriteTools[tool]
+}
+
+// IsSensitiveWriteTool reports whether tool is a high-impact call: secret
+// writes and reads of secret values, identity writes, daemon control and
+// the other tools listed in sensitiveWriteTools. Unknown names report false.
+func IsSensitiveWriteTool(tool string) bool {
+	return sensitiveWriteTools[tool]
 }
