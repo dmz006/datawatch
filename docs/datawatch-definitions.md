@@ -1789,18 +1789,34 @@ are CRUD-ed and persisted (`automations.jsonl`, managed via REST
 `/api/automations` and MCP `automation_*` tools) but no execution loop
 consumes the edges yet.
 
+**Event kind registry** — the one in-daemon list of every lifecycle event
+kind a subscription or notify set may name, each with a one-line
+description and a group (`automaton`, `task`, `review`, `capacity`,
+`budget`). The subscription validator, the notify-event validator and the
+PWA kind pickers derive from it. A plugin may register further kinds and
+sink types at start-up; they validate like the built-in ones. Full table:
+[api/autonomous.md](api/autonomous.md#lifecycle-event-kinds).
+
+**Supervisor event kinds** — the opt-in lifecycle event kinds that let an
+event-driven supervisor wake on a state instead of polling for it. The
+*condition* kinds `automaton.stuck_running`, `automaton.merge_ready` and
+`automaton.tasks_done_or_cancelled` are edge-triggered: sent once when the
+condition starts to hold and again only after it clears.
+`task.capacity_wait_too_long` is sent once per waiting episode when a task
+has waited for a lane longer than half of
+`autonomous.capacity_wait_timeout_seconds`. `burn_guard.rung_changed` is
+sent when the burn guard's rung changes and carries the old and new rung;
+it belongs to no Automaton, so only the global notify tier can allow it.
+`judge.verdict_block` / `judge.verdict_warn` / `judge.verdict_pass` are sent
+once when a judge verdict with that outcome is recorded, and
+`task.final_gate_failed` once when a final gate task fails. None of them
+changes a status, verdict or gate outcome.
+
 **Lifecycle event subscription** — a persisted rule that maps an Automaton
 lifecycle event (PRD/task status changes, `task.session_started` /
-`task.session_cleared`, `prd.updated`, and the opt-in warning kinds
-`scope_warning` and `guardrail_warn`, and the opt-in condition kinds
-`automaton.stuck_running`, `automaton.merge_ready` and
-`automaton.tasks_done_or_cancelled`, each sent once when the condition starts
-to hold and again only after it clears, plus `task.capacity_wait_too_long`, sent
-once per waiting episode once a task has waited for capacity longer than half of
-`autonomous.capacity_wait_timeout_seconds`, and `burn_guard.rung_changed`, sent
-when the burn guard rung changes, carrying the old and new rung, `judge.verdict_block`,
-`judge.verdict_warn` and `judge.verdict_pass`, each sent once when a judge verdict with that
-outcome is recorded, and `task.final_gate_failed`, sent once when a final gate task fails) to a delivery sink: a comm router,
+`task.session_cleared`, `prd.updated`, the question kinds, the opt-in
+warning kinds `scope_warning` and `guardrail_warn`, and the opt-in
+*supervisor event kinds* above) to a delivery sink: a comm router,
 a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
 tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:

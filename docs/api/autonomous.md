@@ -111,7 +111,7 @@ POST   /api/automations/{id}/stages/rename   rename every member stage named `fr
 
 # Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
 GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
-POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
+POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert | mcp_queue | webhook | peer, plus any sink type a plugin registered. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
 DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown) — also accepted as DELETE /api/autonomous/subscriptions?id={id}. One-shot subscriptions are also auto-deleted by the engine after their first delivery. Changes take effect live — the engine re-attaches on store changes, no restart
 ```
 
@@ -120,7 +120,9 @@ persisted lifecycle subscriptions (`<data_dir>/lifecycle_subscriptions.json`):
 `filter.kinds` picks event kinds from the known set (`prd.completed`,
 `task.completed`, … every PRD/task status-change kind plus
 `task.session_started`, `task.session_cleared`, `scope_warning`,
-`guardrail_warn`, `prd.updated`),
+`guardrail_warn`, `prd.updated`, the question kinds and the opt-in
+condition, capacity, budget and judge kinds — the full list is under
+*Lifecycle event kinds* below),
 `filter.level` narrows to `prd` or `task` events, and the `sink` is
 where matching events are delivered (`comm` = the notify pipeline, `session`
 = a datawatch-managed session, `topic` = the push-topic bus, `alert` = the
@@ -135,6 +137,51 @@ daemon runs the subscription engine; otherwise 503.
 
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.
+
+### Lifecycle event kinds
+
+Every event kind a subscription may filter on comes from one in-daemon
+**event kind registry** (`internal/autonomous/lifecycle_event_registry.go`).
+Each entry carries the kind, a one-line description and a group; the
+subscription validator, the notify-event validator and the PWA kind pickers
+all derive from it, so a kind exists in one place or not at all. The groups:
+
+| Group | Kinds |
+|---|---|
+| `automaton` | every Automaton status kind except `prd.needs_review` (`prd.draft`, `prd.planning`, `prd.approved`, `prd.revisions_asked`, `prd.active`, `prd.running`, `prd.completed`, `prd.rejected`, `prd.cancelled`, `prd.archived`, `prd.blocked`, `prd.failed`, `prd.paused`), `prd.updated`, and the condition kinds `automaton.stuck_running`, `automaton.merge_ready`, `automaton.tasks_done_or_cancelled` |
+| `task` | every task status kind except the three review/capacity ones below (`task.pending`, `task.queued`, `task.in_progress`, `task.running_tests`, `task.verifying`, `task.completed`, `task.failed`, `task.blocked`, `task.cancelled`), `task.session_started`, `task.session_cleared`, `task.looping`, `scope_warning`, `guardrail_warn` |
+| `review` | `prd.needs_review`, `task.awaiting_approval`, `task.review_needed`, `judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`, `task.final_gate_failed`, `question.answered`, `question.withdrawn` |
+| `capacity` | `task.waiting_capacity`, `task.capacity_wait_too_long` |
+| `budget` | `burn_guard.rung_changed` |
+
+`task.looping` is listed and emitted but is not accepted by a subscription
+filter (it was never part of the stored filter set). `prd.updated` is a
+subscription kind but never a notify kind.
+
+The kinds added for the event-driven supervisor are all **opt-in** (off by
+default; see *Notify events* below) and informational: emitting one never
+changes a status, a verdict or a gate outcome.
+
+| Kind | Level | When it fires | Payload beyond the ids |
+|---|---|---|---|
+| `automaton.stuck_running` | prd | The stuck-running watchdog finds an Automaton `running` with every task terminal, no live session and no executor. Edge-triggered: once when the condition starts to hold, again only after it cleared | — |
+| `automaton.merge_ready` | prd | The merge-pending pass finds a finished Automaton's work branch waiting to be merged. Edge-triggered as above | — |
+| `automaton.tasks_done_or_cancelled` | prd | A running Automaton has at least one task and every task is `completed` or `cancelled`. Edge-triggered as above | — |
+| `task.capacity_wait_too_long` | task | A task has waited for a worker lane longer than half of `autonomous.capacity_wait_timeout_seconds` (default wait 4 h, so the event fires after 2 h). Once per waiting episode; a new wait after the lease was granted or the wait ended can fire again | `details`: `waiting for capacity for <duration>` |
+| `burn_guard.rung_changed` | prd (no `prd_id`) | The burn guard's rung in force changed on a tick. Equal rungs emit nothing. With no Automaton to resolve, the **global** notify tier alone decides whether it is delivered, so list it in `autonomous.notify.default_events` | `old_status` / `new_status`: the old and new rung (empty = none applied); `details` |
+| `judge.verdict_block` / `judge.verdict_warn` / `judge.verdict_pass` | prd, or task when the verdict was on a task | A guardrail judge verdict with that outcome was recorded and saved. For a story-scoped verdict `story_id` is set with level `prd` | `guardrail`, `verdict` (outcome, summary, issues), `decision` — the same shape as `guardrail_warn` |
+| `task.final_gate_failed` | task | A final gate task finished without passing | `details`: `final gate failed: <reason>` |
+
+A plugin or another Go user of the package may **extend** the registry at
+start-up with `autonomous.RegisterEventKind` (kind name of lowercase
+dotted parts, one-line description ≤ 200 characters, an existing group;
+collisions with a built-in or earlier registration are refused) and accept
+its own sink type with `autonomous.RegisterSinkType` (an optional validator;
+a `secret_ref` is refused unless the validator accepts it; targets are capped
+at 512 characters). Registered kinds pass `filter.kinds` validation and
+appear in `ListEventKinds`; registered sinks pass `sink.type` validation.
+There is no REST, CLI or comm surface that lists the registry yet; the PWA
+pickers carry a copy of the built-in list.
 
 ### Notify events (`set_notify_events`)
 The set of lifecycle event kinds (the same known set as the subscription
