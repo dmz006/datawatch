@@ -83,7 +83,7 @@ test('the card shows both passes with mode, counts, bytes freed and last error',
 
 test('the worktrees pass lists the skipped worktrees by reason, most frequent first', () => {
   const html = card(status({ worktrees: pass({ skipped: 5, skipped_by_reason: { held: 2, commits_not_on_base: 3, zero: 0 } }) }));
-  assert.ok(html.includes('Automaton worktrees skipped by reason: commits_not_on_base 3, held 2'), 'skipped-by-reason line missing: ' + html);
+  assert.ok(html.includes('Automaton worktrees skipped by reason: Has commits not on the base branch 3, Held by the safe-to-delete check 2'), 'skipped-by-reason line missing: ' + html);
   assert.ok(!html.includes('zero 0'), 'a zero count is left out');
   const none = card(status({ worktrees: pass({ skipped_by_reason: {} }) }));
   assert.ok(!none.includes('skipped by reason'), 'no line when nothing was skipped by reason');
@@ -274,5 +274,27 @@ test('every t() key the card and loader use is in KEYS', () => {
   const end = src.indexOf('// ── Automata progress card');
   const used = new Set((src.slice(start, end) + src.slice(src.indexOf('function _automationCleanupLoader'), src.indexOf('function _automationCleanupLoader') + 500))
     .match(/'cleanup_[a-z_]+'/g).map(s => s.slice(1, -1)));
-  for (const k of used) assert.ok(KEYS.includes(k) || PERMISSION_KEYS.includes(k), 'key used by the card but not pinned: ' + k);
+  for (const k of used) assert.ok(KEYS.includes(k) || PERMISSION_KEYS.includes(k) || k === 'cleanup_skip_reason_', 'key used by the card but not pinned: ' + k);
+});
+
+// Each skip reason the cleanup pass can report has a label key in every locale;
+// the label is plain text, so it is pinned here without the Automaton wording check.
+const SKIP_REASONS = ['not_finished', 'live_session', 'live_lease', 'retained', 'primary', 'dirty', 'commits_not_on_base', 'no_base_branch', 'held', 'over_limit', 'permission_denied'];
+
+test('every skip reason has a label in every locale bundle, translated outside English', () => {
+  const en = bundle('en');
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const r of SKIP_REASONS) {
+      const k = 'cleanup_skip_reason_' + r;
+      assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' missing or empty ' + k);
+      assert.ok(!/\bPRDs?\b/.test(b[k]), lang + ' ' + k + ' must not say PRD');
+      if (lang !== 'en') assert.notEqual(b[k], en[k], lang + ' ' + k + ' is still the English text');
+    }
+  }
+});
+
+test('an unknown skip reason falls back to its raw name', () => {
+  const html = card(status({ worktrees: pass({ skipped: 1, skipped_by_reason: { some_new_reason: 1 } }) }));
+  assert.ok(html.includes('some_new_reason 1'), html);
 });

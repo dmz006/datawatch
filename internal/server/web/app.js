@@ -32274,7 +32274,7 @@ function _cleanupPassHtml(title, pass) {
     const reasons = Object.keys(byReason).filter(k => Number(byReason[k]) > 0)
       .sort((a, b) => (Number(byReason[b]) - Number(byReason[a])) || a.localeCompare(b));
     if (reasons.length) {
-      lines.push(_cleanupLine(t('cleanup_skipped_by_reason', [reasons.map(k => k + ' ' + Number(byReason[k])).join(', ')])));
+      lines.push(_cleanupLine(t('cleanup_skipped_by_reason', [reasons.map(k => _cleanupSkipReasonText(k) + ' ' + Number(byReason[k])).join(', ')])));
     }
   }
   lines.push(_cleanupLine(t('cleanup_split', [n('owner_removed'), n('net_removed')])));
@@ -32741,6 +32741,13 @@ function _automationUnlandedWorkLoader() {
   });
 }
 
+// _cleanupSkipReasonText names a skip reason in the operator's language and
+// falls back to the raw reason name when no label exists for it.
+function _cleanupSkipReasonText(reason) {
+  const key = 'cleanup_skip_reason_' + reason;
+  const text = t(key);
+  return (text && text !== key) ? text : String(reason);
+}
 // cleanupPermissionHtml shows one line of why and a Fix button for a
 // permission problem, and nothing for a harmless one.
 window.cleanupPermissionHtml = function(status) {

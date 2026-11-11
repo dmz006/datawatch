@@ -4670,5 +4670,16 @@
   "uncommitted_work_commit_failed": "Commit failed: %1$s",
   "cleanup_permission_fix": "Fix",
   "cleanup_permission_fixed": "Fixed permissions on %1$d folder(s).",
-  "cleanup_permission_fix_failed": "Could not fix permissions: %1$s"
+  "cleanup_permission_fix_failed": "Could not fix permissions: %1$s",
+  "cleanup_skip_reason_not_finished": "The Automaton is still running",
+  "cleanup_skip_reason_live_session": "A live session is using the worktree",
+  "cleanup_skip_reason_live_lease": "A live lease holds the worktree",
+  "cleanup_skip_reason_retained": "Kept until the retention time ends",
+  "cleanup_skip_reason_primary": "Main checkout, never removed",
+  "cleanup_skip_reason_dirty": "Has uncommitted changes",
+  "cleanup_skip_reason_commits_not_on_base": "Has commits not on the base branch",
+  "cleanup_skip_reason_no_base_branch": "The base branch could not be found",
+  "cleanup_skip_reason_held": "Held by the safe-to-delete check",
+  "cleanup_skip_reason_over_limit": "Per-pass removal limit reached",
+  "cleanup_skip_reason_permission_denied": "Permission denied"
 }
