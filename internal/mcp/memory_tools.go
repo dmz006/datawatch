@@ -980,6 +980,8 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Read them back with get_config section=autonomous, and see the built-in names and defaults with worker_profile_status. "+
 			"Read both session keys back with get_config section=session. "+
 			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120); read it back with get_config section=secrets. "+
+			"Branch refresh keys: autonomous.branch_refresh_enabled (true|false; default false — merge the base branch into an Automaton branch between tasks) and "+
+			"autonomous.branch_refresh_behind_limit (whole number >= 0; commits behind before a refresh, 0 reads as 5); read them back with get_config section=autonomous. "+
 			"A refused value returns the daemon's message and changes nothing."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),
