@@ -10237,7 +10237,7 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.request_watch.raise_question': DOCS_DEFINITIONS + '#autonomous-request-watch-raise-question',
   'autonomous.request_watch.remediation_options': DOCS_DEFINITIONS + '#autonomous-request-watch-remediation-options',
   settings_automata_decisions_enabled: DOCS_DEFINITIONS + '#decision-record-settings',
-  settings_automata_decisions_folder: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_folder: 'howto/automaton-decision-records.md',
   settings_automata_decisions_folder_glob: DOCS_DEFINITIONS + '#decision-record-settings',
   settings_automata_decisions_front_matter_delimiter: DOCS_DEFINITIONS + '#decision-record-settings',
   settings_automata_decisions_front_matter_separator: DOCS_DEFINITIONS + '#decision-record-settings',
@@ -31974,12 +31974,8 @@ function _decisionRecordFolderLine(folder) {
     .filter(p => p && typeof p === 'object' && (p.file || p.message));
   const issueBits = issues.map(p =>
     `${t('decision_record_folder_issue') || 'issue'} ${p.file || ''}${p.message ? ': ' + p.message : ''}`);
-  if (!folder.enabled) {
-    const bits = [t('decision_record_folder_off') || 'Folder watch is off'];
-    if (folder.path) bits.push(String(folder.path));
-    bits.push(...issueBits);
-    return `<div class="decision-record-folder decision-record-folder-off" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(bits.join(' · '))}</div>`;
-  }
+  // Folder watch off is shown in Settings only, never on the card.
+  if (!folder.enabled) return '';
   const bits = [];
   if (folder.path) bits.push(String(folder.path));
   bits.push(`${folder.files_seen || 0} ${t('decision_record_folder_files') || 'files read'}`);
@@ -31997,12 +31993,9 @@ window.decisionRecordCardHtml = function(view) {
     return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}<div class="decision-record-loading" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_loading') || 'Loading…')}</div></div>`;
   }
   const recs = Array.isArray(view.decision_records) ? view.decision_records : [];
-  let body;
-  if (recs.length === 0) {
-    body = `<div class="decision-record-empty" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_empty') || 'No decision records yet.')}</div>`;
-  } else {
-    body = recs.map(_decisionRecordRow).join('');
-  }
+  // No decision records: the card renders nothing.
+  if (recs.length === 0) return '';
+  const body = recs.map(_decisionRecordRow).join('');
   return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}${body}${_decisionRecordFolderLine(view.folder)}</div>`;
 };
 
