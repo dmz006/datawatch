@@ -81,14 +81,22 @@ Every subscription is **filter → sink → optional action**:
 | **Action** *(optional)* | `send_input` with text (max 4096 chars), only with a `session` sink — the text is typed into the target session on every match. |
 | **Flags** | `one_shot` (delete after first *successful* delivery), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
 
-Event kinds are a closed set: every PRD status kind (`prd.draft`,
-`prd.planning`, `prd.needs_review`, `prd.completed`, `prd.blocked`,
-…), every task status kind (`task.pending`, `task.queued`,
-`task.in_progress`, `task.completed`, `task.failed`, `task.blocked`,
-…), plus the non-status kinds `task.session_started`,
-`task.session_cleared` and `prd.updated`. The daemon rejects unknown
-kinds at creation (`"filter kind %q is not a known event kind"`), so a
-typo fails fast instead of silently never firing.
+Event kinds are a closed set held in one in-daemon **event kind
+registry**: every PRD status kind (`prd.draft`, `prd.planning`,
+`prd.needs_review`, `prd.completed`, `prd.blocked`, …), every task status
+kind (`task.pending`, `task.queued`, `task.in_progress`, `task.completed`,
+`task.failed`, `task.blocked`, …), the non-status kinds
+`task.session_started`, `task.session_cleared`, `prd.updated`,
+`question.answered` and `question.withdrawn`, the opt-in warning kinds
+`scope_warning` and `guardrail_warn`, and the opt-in supervisor kinds
+described under *Events for an event-driven supervisor* below. Each
+registry entry has a one-line description and a group (automaton, task,
+review, capacity, budget); the full table is in the
+[lifecycle reference](../api/autonomous.md#lifecycle-event-kinds). The
+daemon rejects unknown kinds at creation (`"filter kind %q is not a known
+event kind"`), so a typo fails fast instead of silently never firing. A
+plugin can register further kinds and sink types at start-up (see the
+reference); they validate like the built-in ones.
 
 Note: the CLI/comm shorthand `prd_updated` currently resolves to
 `task.prd_updated`, which is **not** in the known-kind set — use the
@@ -144,6 +152,50 @@ the whole configuration: anything you leave out is cleared, so pass
 everything you want to keep. Unlike `subscribe`, `--task` does not imply
 `--one-shot`.
 
+## Events for an event-driven supervisor
+
+A supervisor session or script used to poll for the states that need a
+decision: an Automaton that finished every task but never left `running`, a
+branch waiting to be merged, a task stuck waiting for a lane, a judge that
+blocked, a burn guard that stepped down. Each of those is now an event kind,
+so one subscription wakes the supervisor and the schedule becomes the
+fallback. All of them are **opt-in** (add them to the notify set, next
+section) and informational: none of them changes a status, a verdict or a
+gate outcome.
+
+| Kind | Fires when | Once per |
+|---|---|---|
+| `automaton.stuck_running` | the stuck-running watchdog sees an Automaton `running` with every task terminal, no live session and no executor | condition: once when it starts to hold, again only after it cleared |
+| `automaton.merge_ready` | a finished Automaton's work branch is waiting to be merged (the merge-pending pass) | condition, as above |
+| `automaton.tasks_done_or_cancelled` | a running Automaton has at least one task and every task is `completed` or `cancelled` | condition, as above |
+| `task.capacity_wait_too_long` | a task has waited for a worker lane longer than half of `autonomous.capacity_wait_timeout_seconds` (default wait 4 h, so after 2 h); `details` says how long | waiting episode: a later wait can fire again |
+| `burn_guard.rung_changed` | the burn guard's rung in force changed; `old_status` / `new_status` carry the rungs (empty = none applied) | change |
+| `judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass` | a guardrail judge verdict with that outcome was recorded; same payload as `guardrail_warn` (`guardrail`, `verdict`, `decision`) and the same level rule (task, story or Automaton) | verdict |
+| `task.final_gate_failed` | a final gate task finished without passing; `details` carries the reason | gate failure |
+
+`burn_guard.rung_changed` belongs to no Automaton, so only the global tier
+(`autonomous.notify.default_events`) can allow it.
+
+Worked example — wake a supervisor session on the states that need it:
+
+```sh
+# 1. allow the kinds globally (lowest tier; every Automaton inherits them)
+datawatch config set autonomous.notify.default_events \
+  "prd.needs_review,prd.blocked,prd.failed,prd.completed,prd.cancelled,automaton.stuck_running,automaton.merge_ready,judge.verdict_block,task.capacity_wait_too_long,burn_guard.rung_changed"
+
+# 2. one subscription types a wake-up line into the supervisor session
+datawatch autonomous subscribe \
+  --on automaton.stuck_running --on automaton.merge_ready \
+  --on judge.verdict_block --on task.capacity_wait_too_long \
+  --on burn_guard.rung_changed \
+  --send "A supervisor event arrived; read the Automata events and act." \
+  --sink session --target "$SUPERVISOR_SESSION" --one-shot=false --coalesce
+```
+
+The global default-events change applies at the next daemon start; the
+per-Automaton and profile tiers apply at once. A queue sink
+(`--sink mcp_queue`) works the same way for a supervisor that polls.
+
 ## Test a subscription before you rely on it
 
 A subscription that never fires is hard to tell from one that has
@@ -173,7 +225,8 @@ Open an Automaton in the PWA (**Automata** → the Automaton) and choose the
    Automaton ("all automata"). Each row shows the event kinds or level, the
    sink and target, and badges for one-shot, coalesce, expiry and owner.
 2. **Add.** Choose **Add subscription**. Tick at least one event kind (they
-   are grouped as Automaton status, Task status and Other) or pick a level.
+   are grouped as Automaton status, Task status, Other and Warnings (opt-in),
+   the last holding the warning and supervisor kinds) or pick a level.
    Choose the scope (this Automaton or all automata), an optional task id,
    the sink type and its target, and optionally send-input text (session
    sink only), one-shot, coalesce and an expiry in hours. The form checks
@@ -366,11 +419,15 @@ list means *inherit*, never *off*; only the global tier can resolve to
 names its **source**: `automaton`, `profile` or `global` — that is
 what the surfaces show as `notify_events_effective`.
 
-`task.session_started`, `task.session_cleared`, `scope_warning` and
-`guardrail_warn` are **opt-in** kinds and are not in the default set: a
-subscription on one of them fires only on Automata whose resolved set
+`task.session_started`, `task.session_cleared`, `scope_warning`,
+`guardrail_warn` and the supervisor kinds (`automaton.stuck_running`,
+`automaton.merge_ready`, `automaton.tasks_done_or_cancelled`,
+`task.capacity_wait_too_long`, `burn_guard.rung_changed`,
+`judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`,
+`task.final_gate_failed`) are **opt-in** kinds and are not in the default
+set: a subscription on one of them fires only on Automata whose resolved set
 includes that kind (add it to the per-Automaton, profile or global
-default list). `scope_warning` (a task touched files outside its declared
+default list). The PWA marks each of them *(opt-in)* in the kind pickers. `scope_warning` (a task touched files outside its declared
 scope; the event lists the files) and `guardrail_warn` (a guardrail
 returned a warn outcome; the event names the guardrail and carries the
 level: task, story or Automaton) are bare kind names with no `prd.` or
@@ -525,6 +582,11 @@ the resolved set came from after the change.
   wired (unit-test or stripped-down context); use a normal daemon.
 - **`filter kind "…" is not a known event kind`** — use the full kind
   (`prd.updated`, `task.session_started`); check the closed set above.
+- **A supervisor kind never fires** — it is opt-in: check
+  `notify_events_effective` on the Automaton includes it; for
+  `burn_guard.rung_changed` only the global `default_events` list counts.
+  The condition kinds fire once per episode — a condition that already
+  held when you subscribed fires again only after it clears.
 - **Session sink never fires** — the event kind or task scope doesn't
   match what actually happens (e.g. subscribed to
   `task.session_cleared` instead of `session_started`), or the
