@@ -29,7 +29,7 @@ where the operator acts on it:
 | `held_blocked` | Automata stuck in a failed or blocked triage state, plus uncommitted-work holds | the held questions / held state views |
 | `lanes` | Lane fill status and the capacity admission wait queue | the lanes view |
 | `usage` | The burn guard state and the usage calculator projection | the usage view |
-| `ci_release` | Repo CI watch records and the latest-release check | the releases view |
+| `ci_release` | The running and latest release, the ship policy, and the repo CI watch records (the failing and hung runs are listed on the card) | the releases view, the repo CI watch in Settings |
 
 The console is always readable: a section whose backing subsystem is not
 wired into this daemon reports itself unavailable with a reason, instead of
@@ -96,7 +96,7 @@ Operator console (2026-11-02T10:15:00Z)
   held_blocked       1    1 Automaton held
   lanes              1    1 lane filling
   usage              0    under the pace line
-  ci_release         2    1 failing run on main
+  ci_release         4    1 failing or hung, release up to date
 
 $ datawatch dashboard console --json    # the raw endpoint JSON
 
@@ -109,7 +109,10 @@ $ datawatch dashboard console set dashboard.console.show_lanes true
 The five console cards open the Dashboard view when its console is enabled
 — **Questions waiting**, **Held & blocked**, **Lanes**, **Usage**, **CI &
 release**. Each card jumps to the PWA anchor of the section's data, and its
-help link opens this document. When `dashboard.console.enabled` is false the
+help link opens this document. The **CI & release** card draws the
+[release and CI detail](#ci-and-release-detail) above: the running and latest
+release, the ship policy, a *repo CI watch off* line with its Settings link when
+the watch is off, and up to five failing or hung runs with an *Open run* link. When `dashboard.console.enabled` is false the
 cards are dropped from the board (a stored layout is rewritten once to add
 them back when you switch the console on again). The switches themselves are
 ordinary config keys — set them from Settings while you are in the PWA, or
@@ -135,9 +138,40 @@ $ curl -s "$DW_BASE/api/dashboard/console" | jq .
   "held_blocked":  { "available": true, "count": 1, "summary": "1 Automaton held", "link": "#held-questions" },
   "lanes":         { "available": true, "count": 1, "summary": "1 lane filling", "link": "#lanes" },
   "usage":         { "available": true, "count": 0, "summary": "under the pace line", "link": "#usage" },
-  "ci_release":    { "available": true, "count": 2, "summary": "1 failing run on main", "link": "#releases" }
+  "ci_release":    { "available": true, "count": 4, "summary": "4 CI run(s) under watch across 2 repo(s), 1 failing or hung (watch mode on); ship: push on, tag on, CI watch on; release: up to date (v10.0.0)", "link": "#releases",
+    "release": {
+      "current_version": "10.0.0",
+      "release_state": "up_to_date",
+      "watch_mode": "on",
+      "watch_off": false,
+      "watch_link": "#settings",
+      "ship_push": "on",
+      "ship_tag": "on",
+      "ship_ci_watch": "on",
+      "failing_runs": [
+        { "repo": "dmz006/datawatch", "workflow": "ci", "run_id": "1234567890", "status": "failing", "run_url": "https://github.com/dmz006/datawatch/actions/runs/1234567890" }
+      ]
+    } }
 }
 ```
+
+### CI and release detail
+
+The `ci_release` section carries a `release` object. It is set only on that
+section, and only while the section is available. The card draws it as
+follows:
+
+| Field | What the card shows |
+|---|---|
+| `current_version`, `latest_release` | The running version and, when the release check ran, the latest release. `latest_release` is omitted when there is no check result. The card reads *Latest release vX* when a newer one exists, and *Running vX — no newer release* when this daemon is current. |
+| `release_state` | `up_to_date`, `update_available`, `check_failed` (the latest-version check failed, with its error in the summary) or `not_wired` (no latest-version check is wired into this daemon). |
+| `ship_push`, `ship_tag`, `ship_ci_watch`, `ship_last_note` | The ship policy as the daemon reports it, and the newest ship note when there is one. |
+| `watch_mode`, `watch_off`, `watch_link` | The repo CI watch mode. When the watch is off (`watch_off` is `true`) the card says *repo CI watch off* and offers the next step, linking to Settings. The release and ship state stay filled in. |
+| `failing_runs` | The newest failing or hung runs, at most five, each with an *Open run* link. Listed only while the watch is on; an empty list reads *No failing or hung CI runs*. |
+
+The section's `count` is the number of CI runs under the watch, not the number
+failing. The failing or hung ones are counted in `summary`, which also carries
+the ship policy and the release state, one clause each.
 
 A section you switched off, or a subsystem this daemon does not run, comes
 back as
@@ -154,7 +188,7 @@ The route is read-only and gated on the `dashboard:read` capability
 ```console
 > dashboard console
 dashboard console:
-  questions_waiting 2 — 2 open (1 blocking) · held_blocked off (hidden by the dashboard.console.show_held_blocked switch — set it to true to show this section) · lanes 1 — 1 lane filling · usage 0 — under the pace line · ci_release 2 — 1 failing run on main
+  questions_waiting 2 — 2 open (1 blocking) · held_blocked off (hidden by the dashboard.console.show_held_blocked switch — set it to true to show this section) · lanes 1 — 1 lane filling · usage 0 — under the pace line · ci_release 4 — 1 failing or hung · release up to date
 ```
 
 One summary line, in the endpoint's section order; sections you switched off

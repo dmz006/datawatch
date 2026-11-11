@@ -814,7 +814,20 @@ Three-column overlay opened by clicking a constellation node or a session card's
 - **Main area** — session status board: hook health ring, current focus, test counts, git state.
 - **Right rail** — guardrail verdicts from the session's telemetry.
 
-**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, multi-session EKG overlay, smoke run progress.
+### Feature cards and their data
+
+Each feature card reads one live source. When it has nothing to draw it shows a one-line reason and a link here, and while `dashboard.hide_inactive_cards` is true (the default) it stays off the grid.
+
+- **Live Events** — the daemon's own event stream (`GET /api/autonomous/event-log`), the same feed as the Events tab. Not hook events.
+- **Timeline** — the 6-hour Gantt, drawn from each Automaton task's start and end timestamps (bounded to 960 px wide).
+- **30-Day Activity** — the 30-day heatmap, drawn from the daily progress trend, the shipped counts and the release tags. Each day's tooltip gives the Automata completed to date, the shipped count and any release.
+- **CI & release** — the operator console's `ci_release` section (see *Operator console*): the running and latest release, the ship policy, the repo CI watch and up to five failing or hung runs.
+- **Smoke Run** — release smoke and end-to-end run progress (`GET /api/smoke/progress`). A release smoke run against an external daemon (`DW_BASE`) posts its progress to that daemon; a default run's throwaway test daemon is not posted.
+- **Cost report** — see *Cost Report* below.
+- **Search Usage** — see *Web Search (multi-provider registry)* below.
+- **Work map** — a read-only graph from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link, plus a **Running now** list of the live sessions in an active state. With no trace store the card's header reads "placement only (no trace store)". Tasks are capped per Automaton (the overflow is `tasks_omitted`).
+
+**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, multi-session EKG overlay, smoke run progress, work map.
 
 **See also:**
 [howto/dashboard.md](howto/dashboard.md) ·
@@ -1115,7 +1128,7 @@ Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` direct
 | **opencode sessions** | `web_search` added to `extraMCPSpecs` → injected into `.datawatch/.mcp.json` at session start. |
 | **goose sessions** | `GOOSE_MCP__WEB_SEARCH__TYPE/CMD/ARGS` env vars set on the goose process. |
 | **Skill** | `web-search-guidance` skill written to `<projectDir>/.datawatch/skills/web-search-guidance/` with query guidance, engine availability notes, and result interpretation tips. |
-| **Dashboard** | "Search Usage" card: total/today/this week/this month + cache hits per provider and overall, a daily usage graph, and recent search history. |
+| **Dashboard** | "Search Usage" card: total/today/this week/this month + cache hits per provider and overall, a daily usage graph, recent search history, and searches **by caller** (session, Automaton task, MCP client, REST, CLI). |
 | **Monitor tab** | Web Search stat tile shows enabled state, active provider names, queries/errors counters, and last-query timestamp. |
 | **MCP tools** | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`. Legacy `web_search_stats` kept as a deprecated alias. |
 
@@ -1623,7 +1636,7 @@ Key terms used across the docs, API, and hook payloads.
 
 **review-needed (task status)** — a task held after its failed attempts reached the escalation limit. The status is `review_needed` in the API and reads "Held for review" in the web UI. It is not a failure and not finished: the task keeps its attempts and a report, the Automaton shows as blocked, and one error alert is raised. The operator retries it (optionally with a changed spec, worker or file list) or cancels it, from the web UI, the CLI, the REST API, MCP or the comm channel.
 
-**Operator console** — the dashboard's one-glance "what needs my attention right now" summary: five sections (`questions_waiting`, `held_blocked`, `lanes`, `usage`, `ci_release`), each reporting a count, a one-line summary and the PWA anchor where the operator acts on it. It is a read roll-up of the question channel, the held/blocked triage states and uncommitted-work holds, lane fill and the capacity queue, the burn guard and usage projection, and the repo CI watch; it never writes anything. A section switched off, or whose subsystem is not running, reports `available: false` with a reason instead of failing the whole read. Switches: `dashboard.console.enabled` and the five `dashboard.console.show_*` keys, each defaulting to true while absent. Read it on REST (`GET /api/dashboard/console`), MCP (`dashboard_console_get`), CLI (`datawatch dashboard console`, or `--json` for the raw body), the chat verb `dashboard console`, or the five console cards on the PWA Dashboard view. See [howto/dashboard-operator-console.md](howto/dashboard-operator-console.md).
+**Operator console** — the dashboard's one-glance "what needs my attention right now" summary: five sections (`questions_waiting`, `held_blocked`, `lanes`, `usage`, `ci_release`), each reporting a count, a one-line summary and the PWA anchor where the operator acts on it. It is a read roll-up of the question channel, the held/blocked triage states and uncommitted-work holds, lane fill and the capacity queue, the burn guard and usage projection, and the repo CI watch; it never writes anything. The **CI & release** section carries a `release` object while it is available: the running and latest release, the ship policy, the watch mode and its Settings link when the watch is off, and up to five failing or hung runs (its `count` is the number of CI runs under watch). A section switched off, or whose subsystem is not running, reports `available: false` with a reason instead of failing the whole read. Switches: `dashboard.console.enabled` and the five `dashboard.console.show_*` keys, each defaulting to true while absent. Read it on REST (`GET /api/dashboard/console`), MCP (`dashboard_console_get`), CLI (`datawatch dashboard console`, or `--json` for the raw body), the chat verb `dashboard console`, or the five console cards on the PWA Dashboard view. See [howto/dashboard-operator-console.md](howto/dashboard-operator-console.md).
 
 **Console card** — one of the five dashboard cards the operator console adds to the Dashboard view (Questions waiting, Held & blocked, Lanes, Usage, CI & release). A console card opens the PWA anchor of its console section; it carries a help link to the operator console how-to, and it disappears from the board and the Add-Card picker when `dashboard.console.enabled` is false (a stored layout is rewritten once to add the cards back when the console is switched on again). The console cards are separate from the feature cards (EKG, constellation, Gantt, …); see *Inactive card*.
 
