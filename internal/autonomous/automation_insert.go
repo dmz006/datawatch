@@ -1,5 +1,5 @@
-// Automation member insert and approve (BL431 Phase 3b). An insert adds one PRD
-// member to an Automation's chain. A draft takes a direct insert; an insert from
+// Automation member insert and approve (BL431 Phase 3b). An insert adds one
+// Automaton member, or one pending item, to an Automation's chain. A draft takes a direct insert; an insert from
 // an agent under agent_insert_policy=require_operator, and any insert into a
 // non-draft Automation, is held as a PendingInsert instead of editing the graph,
 // so the Automation keeps advancing until an operator approves it. An urgent
@@ -30,10 +30,12 @@ const (
 // operatorActor is the one actor that may approve a pending insert.
 const operatorActor = "operator"
 
-// InsertMemberInput is one request to insert a PRD member into an Automation.
+// InsertMemberInput is one request to insert a member into an Automation. It
+// names exactly one of an Automaton (PRDID) or a pending item (PendingItemID).
 type InsertMemberInput struct {
-	PRDID string // the member PRD to insert
-	Name  string // optional display name, kept on the pending record, decision and audit
+	PRDID         string // the member Automaton to insert
+	PendingItemID string // the pending item to insert instead; exclusive with PRDID
+	Name          string // optional display name, kept on the pending record, decision and audit
 	// AfterMemberID puts a normal insert directly after that member. Empty means
 	// the end of the chain. An urgent insert always takes the next slot, so it
 	// must leave this empty.
@@ -49,6 +51,7 @@ type InsertMemberInput struct {
 type PendingInsert struct {
 	ID            string       `json:"id"`
 	PRDID         string       `json:"prd_id"`
+	PendingItemID string       `json:"pending_item_id,omitempty"` // set, with an empty PRDID, for a pending item insert
 	Name          string       `json:"name,omitempty"`
 	Urgent        bool         `json:"urgent,omitempty"`
 	AfterMemberID string       `json:"after_member_id,omitempty"`
@@ -81,11 +84,19 @@ func pendingUrgent(a *Automation, exceptID string) *PendingInsert {
 	return nil
 }
 
-func urgentCapError(a *Automation, existing *PendingInsert) error {
-	return fmt.Errorf("409: automation %s already has a pending urgent insert %s (prd %s); only one urgent insert may be pending at a time", a.ID, existing.ID, existing.PRDID)
+// subject names what a pending insert carries, for messages.
+func (p PendingInsert) subject() string {
+	if p.PendingItemID != "" {
+		return "pending item " + p.PendingItemID
+	}
+	return "Automaton " + p.PRDID
 }
 
-// InsertMember inserts a PRD member. On a draft Automation the member lands in
+func urgentCapError(a *Automation, existing *PendingInsert) error {
+	return fmt.Errorf("409: automation %s already has a pending urgent insert %s (%s); only one urgent insert may be pending at a time", a.ID, existing.ID, existing.subject())
+}
+
+// InsertMember inserts an Automaton or a pending item member. On a draft Automation the member lands in
 // the graph at once, unless policy is require_operator and the actor is an agent,
 // when it is held. On an active, paused or blocked Automation the insert is
 // always held and needs a reason. A completed or cancelled Automation refuses it.
@@ -93,8 +104,9 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 	if in.Actor == "" {
 		in.Actor = operatorActor
 	}
-	if strings.TrimSpace(in.PRDID) == "" {
-		return nil, fmt.Errorf("insert needs a prd_id")
+	hasPRD, hasItem := strings.TrimSpace(in.PRDID) != "", strings.TrimSpace(in.PendingItemID) != ""
+	if hasPRD == hasItem {
+		return nil, fmt.Errorf("400: an insert needs exactly one of prd_id (an Automaton) or pending_item_id (a pending item)")
 	}
 	if in.Urgent && in.AfterMemberID != "" {
 		return nil, fmt.Errorf("an urgent insert takes the next slot; leave after_member_id empty")
@@ -107,13 +119,19 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 	if a.Status != AutomationDraft && strings.TrimSpace(in.Reason) == "" {
 		return nil, fmt.Errorf("an insert into a %s automation needs a reason", a.Status)
 	}
-	if err := m.checkInsertPRD(a, in.PRDID); err != nil {
+	if hasItem {
+		err = m.checkInsertPendingItem(a, in.PendingItemID)
+	} else {
+		err = m.checkInsertPRD(a, in.PRDID)
+	}
+	if err != nil {
 		return nil, err
 	}
 	hold := a.Status != AutomationDraft || (isAgentActor(in.Actor) && m.agentInsertPolicy() == PolicyRequireOperator)
 
 	var oldMembers []AutomationMember
 	var memberID string
+	itemTitle := m.pendingItemTitle(in.PendingItemID)
 	updated, err := m.automations.Update(id, in.ExpectedVersion, func(cur *Automation) error {
 		if err := checkControlStatus(cur, allowed); err != nil {
 			return err
@@ -126,7 +144,7 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 				return urgentCapError(cur, existing)
 			}
 		}
-		if err := checkPendingDuplicate(cur, in.PRDID); err != nil {
+		if err := checkPendingDuplicate(cur, in.PRDID, in.PendingItemID); err != nil {
 			return err
 		}
 		oldMembers = append([]AutomationMember(nil), cur.Members...)
@@ -134,21 +152,18 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 		memberID = newAutomationID()
 		if hold {
 			cur.PendingInserts = append(cur.PendingInserts, PendingInsert{
-				ID: memberID, PRDID: in.PRDID, Name: in.Name, Urgent: in.Urgent,
+				ID: memberID, PRDID: in.PRDID, PendingItemID: in.PendingItemID, Name: in.Name, Urgent: in.Urgent,
 				AfterMemberID: in.AfterMemberID, Actor: in.Actor, Reason: in.Reason,
 				AddedAt: now, Status: MemberPending,
 			})
-			controlDecision(cur, controlInsertMember, in.Actor, insertNote("held pending operator approval", memberID, in))
+			controlDecision(cur, controlInsertMember, in.Actor, insertNote("held pending operator approval", memberID, itemTitle, in))
 			return nil
 		}
-		mem := AutomationMember{
-			ID: memberID, PRDID: in.PRDID, AddedAt: now, AddedBy: in.Actor,
-			AddedReason: in.Reason, Status: MemberPending,
-		}
+		mem := newInsertedMember(memberID, in.PRDID, in.PendingItemID, in.Actor, in.Reason, now)
 		if err := spliceMember(cur, mem, in.Urgent, in.AfterMemberID); err != nil {
 			return err
 		}
-		controlDecision(cur, controlInsertMember, in.Actor, insertNote("inserted", memberID, in))
+		controlDecision(cur, controlInsertMember, in.Actor, insertNote("inserted", memberID, itemTitle, in))
 		return nil
 	})
 	if err != nil {
@@ -159,11 +174,13 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 			return nil, err
 		}
 	}
-	m.controlAudit(controlInsertMember, map[string]any{
+	details := map[string]any{
 		"automation_id": id, "actor": in.Actor, "member": memberID, "prd_id": in.PRDID,
 		"name": in.Name, "urgent": in.Urgent, "held": hold, "reason": in.Reason,
 		"version": updated.Version,
-	})
+	}
+	m.addItemDetails(details, in.PendingItemID)
+	m.controlAudit(controlInsertMember, details)
 	return updated, nil
 }
 
@@ -220,12 +237,19 @@ func (m *Manager) AssistInsertTriage(ctx context.Context, id, memberID string, c
 	return res, updated, nil
 }
 
-func insertNote(what, memberID string, in InsertMemberInput) string {
+func insertNote(what, memberID, title string, in InsertMemberInput) string {
 	kind := "normal"
 	if in.Urgent {
 		kind = "urgent"
 	}
-	note := fmt.Sprintf("%s %s insert of prd %s as member %s by %s", what, kind, in.PRDID, memberID, in.Actor)
+	subject := "Automaton " + in.PRDID
+	if in.PendingItemID != "" {
+		subject = "pending item " + in.PendingItemID
+		if title != "" {
+			subject += " (" + title + ")"
+		}
+	}
+	note := fmt.Sprintf("%s %s insert of %s as member %s by %s", what, kind, subject, memberID, in.Actor)
 	if in.Name != "" {
 		note += " (" + in.Name + ")"
 	}
@@ -244,21 +268,89 @@ func (m *Manager) checkInsertPRD(a *Automation, prdID string) error {
 	if owner := m.automations.OwnerOf(prdID); owner != "" && owner != a.ID {
 		return fmt.Errorf("409: prd %s already belongs to automation %s", prdID, owner)
 	}
-	return checkPendingDuplicate(a, prdID)
+	return checkPendingDuplicate(a, prdID, "")
 }
 
-func checkPendingDuplicate(a *Automation, prdID string) error {
+// checkInsertPendingItem refuses a pending item that does not exist (404), is not
+// waiting (409), or is already a member, or a pending insert, of a or of any
+// other non-terminal Automation (409).
+func (m *Manager) checkInsertPendingItem(a *Automation, itemID string) error {
+	item, err := m.GetPendingItem(itemID)
+	if err != nil {
+		return err
+	}
+	if item.State != PendingItemWaiting {
+		return fmt.Errorf("409: pending item %s is %s; only a waiting pending item can be inserted", itemID, item.State)
+	}
+	if owner := m.automations.PendingItemOwnerOf(itemID); owner != "" && owner != a.ID {
+		return fmt.Errorf("409: pending item %s already belongs to automation %s", itemID, owner)
+	}
+	for _, other := range m.automations.List() {
+		if other.ID == a.ID || other.Status == AutomationCompleted || other.Status == AutomationCancelled {
+			continue
+		}
+		for _, p := range other.PendingInserts {
+			if p.PendingItemID == itemID {
+				return fmt.Errorf("409: pending item %s already has pending insert %s in automation %s", itemID, p.ID, other.ID)
+			}
+		}
+	}
+	return checkPendingDuplicate(a, "", itemID)
+}
+
+// checkPendingDuplicate refuses an Automaton (prdID) or a pending item (itemID)
+// that is already a member, or already pending, of a. Pass "" for the one that
+// is not being inserted.
+func checkPendingDuplicate(a *Automation, prdID, itemID string) error {
 	for _, mem := range a.Members {
-		if mem.PRDID == prdID {
+		if prdID != "" && mem.PRDID == prdID {
 			return fmt.Errorf("409: prd %s is already a member of automation %s", prdID, a.ID)
+		}
+		if itemID != "" && mem.PendingItemID == itemID {
+			return fmt.Errorf("409: pending item %s is already a member of automation %s", itemID, a.ID)
 		}
 	}
 	for _, p := range a.PendingInserts {
-		if p.PRDID == prdID {
+		if prdID != "" && p.PRDID == prdID {
 			return fmt.Errorf("409: prd %s already has pending insert %s in automation %s", prdID, p.ID, a.ID)
+		}
+		if itemID != "" && p.PendingItemID == itemID {
+			return fmt.Errorf("409: pending item %s already has pending insert %s in automation %s", itemID, p.ID, a.ID)
 		}
 	}
 	return nil
+}
+
+// newInsertedMember builds the member an insert lands: an Automaton member, or a
+// pending_item member (no prd_id) when itemID is set.
+func newInsertedMember(id, prdID, itemID, actor, reason string, at time.Time) AutomationMember {
+	mem := AutomationMember{ID: id, AddedAt: at, AddedBy: actor, AddedReason: reason, Status: MemberPending}
+	if itemID != "" {
+		mem.Kind, mem.PendingItemID = MemberKindPending, itemID
+	} else {
+		mem.PRDID = prdID
+	}
+	return mem
+}
+
+// pendingItemTitle returns the title of item id, or "" when there is none.
+func (m *Manager) pendingItemTitle(id string) string {
+	if id == "" {
+		return ""
+	}
+	if item, err := m.GetPendingItem(id); err == nil {
+		return item.Title
+	}
+	return ""
+}
+
+// addItemDetails adds the item's id and title to audit details; no-op for "".
+func (m *Manager) addItemDetails(details map[string]any, itemID string) {
+	if itemID == "" {
+		return
+	}
+	details["pending_item_id"] = itemID
+	details["title"] = m.pendingItemTitle(itemID)
 }
 
 // ApproveInsertedMember promotes a pending insert, named by its pending ID (which
@@ -297,11 +389,14 @@ func (m *Manager) ApproveInsertedMember(id, pendingID, actor string, expectedVer
 			}
 		}
 		landed = *p
-		oldMembers = append([]AutomationMember(nil), cur.Members...)
-		mem := AutomationMember{
-			ID: landed.ID, PRDID: landed.PRDID, AddedAt: time.Now(), AddedBy: landed.Actor,
-			AddedReason: landed.Reason, Status: MemberPending,
+		landedSubject := landed.subject()
+		if landed.PendingItemID != "" {
+			if title := m.pendingItemTitle(landed.PendingItemID); title != "" {
+				landedSubject += " (" + title + ")"
+			}
 		}
+		oldMembers = append([]AutomationMember(nil), cur.Members...)
+		mem := newInsertedMember(landed.ID, landed.PRDID, landed.PendingItemID, landed.Actor, landed.Reason, time.Now())
 		if err := spliceMember(cur, mem, landed.Urgent, landed.AfterMemberID); err != nil {
 			return err
 		}
@@ -312,7 +407,7 @@ func (m *Manager) ApproveInsertedMember(id, pendingID, actor string, expectedVer
 			}
 		}
 		cur.PendingInserts = kept
-		controlDecision(cur, controlApproveInsert, actor, fmt.Sprintf("approved insert of prd %s as member %s requested by %s", landed.PRDID, landed.ID, landed.Actor))
+		controlDecision(cur, controlApproveInsert, actor, fmt.Sprintf("approved insert of %s as member %s requested by %s", landedSubject, landed.ID, landed.Actor))
 		return nil
 	})
 	if err != nil {
@@ -321,10 +416,12 @@ func (m *Manager) ApproveInsertedMember(id, pendingID, actor string, expectedVer
 	if err := m.syncAutomationMembership(id, oldMembers, updated.Members, false); err != nil {
 		return nil, err
 	}
-	m.controlAudit(controlApproveInsert, map[string]any{
+	details := map[string]any{
 		"automation_id": id, "actor": actor, "member": landed.ID, "prd_id": landed.PRDID,
 		"urgent": landed.Urgent, "requested_by": landed.Actor, "version": updated.Version,
-	})
+	}
+	m.addItemDetails(details, landed.PendingItemID)
+	m.controlAudit(controlApproveInsert, details)
 	return updated, nil
 }
 
