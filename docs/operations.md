@@ -4938,6 +4938,14 @@ priced at the configured API rates, and keeps it in a ledger under
 older than 31 days are dropped. It counts this daemon's sessions only,
 unless peers are opted in (below).
 
+Every autonomous launcher (workers, verifiers, rules-review, planner and
+decompose sessions) stamps the session with its Automaton and task, and the
+ledger entry carries that attribution with the session's tokens, active time
+and tool calls. Per-Automaton cost in the [cost report](howto/cost-report.md)
+therefore covers all of an Automaton's sessions, and deleting a session does
+not remove its entry. Sessions that ran before this change have no
+attribution and stay under `unattributed`.
+
 ### The allocation estimate
 
 Set `allocation_pct: true` on the budget to add an estimated
