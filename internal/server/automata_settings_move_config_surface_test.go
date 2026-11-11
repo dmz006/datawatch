@@ -169,6 +169,33 @@ var usageMoveCases = []struct {
 	{"usage.burn_guard.max_projection_gap_points", 10, float64(10)},
 }
 
+// usageMoveRejected lists declared burn guard keys that PUT /api/config
+// refuses on purpose because another tool owns them.
+var usageMoveRejected = []string{"usage.burn_guard.effort_ceiling"}
+
+// TestAutomataSettingsMoveUsageCasesCoverBurnGuardTags derives the key list
+// from the BurnGuardConfig json tags so a newly declared key must be added to
+// usageMoveCases.
+func TestAutomataSettingsMoveUsageCasesCoverBurnGuardTags(t *testing.T) {
+	have := map[string]bool{}
+	for _, c := range usageMoveCases {
+		have[c.key] = true
+	}
+	for _, k := range usageMoveRejected {
+		have[k] = true
+	}
+	rt := reflect.TypeOf(config.BurnGuardConfig{})
+	for i := 0; i < rt.NumField(); i++ {
+		name := strings.Split(rt.Field(i).Tag.Get("json"), ",")[0]
+		if name == "" || name == "-" {
+			continue
+		}
+		if !have["usage.burn_guard."+name] {
+			t.Errorf("usage.burn_guard.%s declared in BurnGuardConfig but missing from usageMoveCases", name)
+		}
+	}
+}
+
 // TestAutomataSettingsMoveUsageRoundTrip writes each moved usage key with
 // PUT /api/config and reads it back with GET /api/config.
 func TestAutomataSettingsMoveUsageRoundTrip(t *testing.T) {
@@ -185,6 +212,25 @@ func TestAutomataSettingsMoveUsageRoundTrip(t *testing.T) {
 				t.Fatalf("GET after PUT %s = %#v, want %#v", c.key, got, c.want)
 			}
 		})
+	}
+}
+
+// TestAutomataSettingsMoveUsageRejectedKey checks the declared key that is not
+// settable here still answers with its 400 and is not stored.
+func TestAutomataSettingsMoveUsageRejectedKey(t *testing.T) {
+	for _, k := range usageMoveRejected {
+		s, _, _ := newMaxConcurrentTasksServer(t)
+		parts := strings.SplitN(strings.TrimPrefix(k, "usage."), ".", 2)
+		before := getUsageConfigMap(t, s)[parts[0]][parts[1]]
+		b, _ := json.Marshal(map[string]any{k: map[string]any{"claude-code": "high"}})
+		rr := httptest.NewRecorder()
+		s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("PUT %s: want 400, got %d body=%s", k, rr.Code, rr.Body.String())
+		}
+		if after := getUsageConfigMap(t, s)[parts[0]][parts[1]]; !reflect.DeepEqual(after, before) {
+			t.Fatalf("%s changed after rejected PUT: %#v -> %#v", k, before, after)
+		}
 	}
 }
 
