@@ -3165,7 +3165,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const events = [];
   const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
-  const field = (key, val) => (val === undefined || val === null || val === '') ? unset(key) : row(key, val);
+  const showEmpty = _projectsShowEmpty();
+  const emptyRow = key => (showEmpty ? row(key, t('projects_links_none')) : '');
+  const field = (key, val) => (val === undefined || val === null || val === '') ? (unset(key), emptyRow(key)) : row(key, val);
   const pts = n => (Number(n) > 0 ? ` · ${Math.round(Number(n) * 10) / 10} ${escHtml(t('projects_page_points'))}` : '');
 
   const tgt = p.target || {};
@@ -3173,7 +3175,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const laneVal = [ld.lane, ld.backend, ld.model].filter(Boolean).join(' · ');
   const share = (p.weekly_share === undefined || p.weekly_share === null) ? '' : p.weekly_share + '%';
   const head = [
-    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : unset('projects_field_description'),
+    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : (unset('projects_field_description'), emptyRow('projects_field_description')),
     field('projects_field_dir', p.dir),
     field('projects_field_backend', p.default_backend),
     field('projects_page_owner', p.owner),
@@ -3308,11 +3310,19 @@ function _projectPolicyEffectiveHTML(pl, err) {
   } else {
     const pol = pl.policy && typeof pl.policy === 'object' ? pl.policy : {};
     const keys = Object.keys(pol);
-    inner = keys.length ? keys.map(k => {
+    const showEmpty = _projectsShowEmpty();
+    const optional = ['weekly_share_percent', 'branch_retention_days', 'major_trigger'];
+    const shown = keys.filter(k => {
       const e = pol[k] || {};
-      const val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      const none = e.value === undefined || e.value === null || e.value === '';
+      return showEmpty || !(none && optional.includes(k));
+    });
+    inner = shown.length ? shown.map(k => {
+      const e = pol[k] || {};
+      let val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      if (val === '' && optional.includes(k)) val = t('projects_links_none');
       return `<div class="project-policy-row" style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(k)}:</span> ${escHtml(val)} <span style="color:var(--text2);font-size:12px;">(${escHtml(e.source || '')})</span></div>`;
-    }).join('') : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>`;
+    }).join('') : (showEmpty ? `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>` : '');
   }
   return `<div class="project-policy-effective" style="margin-top:10px;">${head}${link}${inner}</div>`;
 }
@@ -3396,7 +3406,8 @@ function _projectArcDocsHTML(p, arc) {
     if (/^\d+$/.test(s)) return escHtml('datawatch-app #' + s);
     return link(s);
   };
-  const line = (key, items, fmt) => `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
+  const showEmpty = _projectsShowEmpty();
+  const line = (key, items, fmt) => (!items.length && !showEmpty) ? '' : `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
     (items.length ? items.map(fmt).join(', ') : `<span style="color:var(--text2);">${escHtml(t('projects_links_none'))}</span>`) + `</div>`;
   return `<div class="project-arc-docs" style="margin:4px 0 6px 12px;">` +
     line('projects_links_arc_plans', list(rec.plan_docs), link) +

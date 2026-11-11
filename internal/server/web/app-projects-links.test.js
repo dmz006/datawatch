@@ -127,6 +127,7 @@ test('an empty merge definition says so and an empty event list says so', async 
     '/merge-pipeline': { source: 'default', definition: null, reason: '' },
     '/autonomous/events': { events: [], next_cursor: 0, dropped: true },
   });
+  vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
   await selectAndLoad(sb, 'acme');
   const html = sb._projectLinksHTML({ name: 'acme' });
   assert.ok(html.includes('No policy values are set for this project.'));
@@ -155,6 +156,7 @@ test('an arc shows its plan and design links and its datawatch-app issues', () =
 
 test('an arc with no record links shows none recorded and never a javascript: link', () => {
   const { sb } = load();
+  vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
   const html = sb._projectArcDocsHTML({ name: 'acme', arcs: [] }, { automation_id: 'arc-b' });
   assert.ok(html.includes('none recorded'));
   assert.equal((html.match(/<a /g) || []).length, 0);
