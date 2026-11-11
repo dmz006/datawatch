@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.138.0 — Automata configuration moves into Settings and the usage page becomes small cards
+
+### Changed
+
+- **All Automata configuration is now edited in Settings, and the Automata pages hold none.** Settings → General → Automata carries the merge pipeline settings (`autonomous.merge_pipeline.*`, with the per-project overrides), the decision record settings (`autonomous.decisions.*`) and a new **Usage reading and extra credit** entry whose forms post to the same endpoints as the old usage page, so lane advice and the burn guard see a saved figure at once. Only the place moved: every setting keeps its key and default and stays on all six surfaces (YAML, web app, CLI, REST, MCP and the comm channel), and the old keys still work unchanged. No setting was added.
+- **The Setup and policy sub-tab of the Automation view is removed.** What it showed that is not configuration now sits on the Events tab as cards that stay hidden while they are off, empty or have never run: Onboarding report, Supervisor loop (recent runs and escalation counts, polled only while Events is open), Merge shadow, Release readiness and Model request watch. A line on Events points to Settings under Automata for configuration. The **Decision records** card on Events now shows only when at least one decision record exists.
+- **The usage calculator page is replaced by one sentence and three small cards of a fixed size.** The sentence says *Within budget*, *Over budget* or that there is no verdict yet. The cards are **Weekly allowance**, **Pace line** and **Burn per day**; each states what it is for, its state, why and what to do next, with a **?** help control that links to the usage calculator guide, and an empty state that links to Settings when there are no readings. All three come from the same `GET /api/usage/advice` call as before. The same three cards are dashboard card types and a row at the top of the Resources tab.
+- **The lanes card and the progress and cost cards on the Resources and Progress and cost tabs are redesigned to be readable.** The lane fill card shows one row per lane with its node (or *Node: not reported*), its state and what it runs, and the bar is full when the lane works, half when it waits on a verifier and empty when idle. Progress, Cost and Forecast are three metric cards, each with one number, its unit, a trend word (Rising, Falling or Steady) and a **?** button; the Cost card says it is API-equivalent dollars and not what a flat plan costs.
+
+### Added
+
+- **Forty-nine new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** `automata_events_config_in_settings`, `settings_usage_entry_*` (four), `usage_page_*` (the verdict, empty state, settings link and the three cards), `dash_card_usage_allowance`, `dash_card_usage_pace`, `dash_card_usage_burn`, `lane_fill_node`, `lane_fill_node_none`, `lane_fill_help_text`, `metric_trend_up`, `metric_trend_down`, `metric_trend_flat` and the `metric_progress_*`, `metric_cost_*` and `metric_forecast_*` title, unit and help keys.
+- **Operator documentation for the move.** New how-tos [Automata resources](docs/howto/automata-resources.md) and [Automata cost](docs/howto/automata-cost.md); [Automata events](docs/howto/automata-events.md) gains the status cards and the Settings pointer; the usage calculator, merge pipeline, burn guard, Automation tab, decision records, merge shadow and model request how-tos are rewritten for the new places; the definitions, operations and parity-status documents and the API reference are updated. A round-trip test proves every moved setting reads and writes under its old key on each surface, and web tests cover the removed tab, the Settings rows, the usage cards and the hidden Decision records card.
+
 ## v9.137.0 — Tile, compact and group modes for Automata and Automation lists
 
 ### Added
