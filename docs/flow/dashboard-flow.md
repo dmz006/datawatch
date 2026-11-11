@@ -85,6 +85,14 @@ Lane pulse card (and its burn panel)
        burn panel can read a level.
 ```
 
+Series cards (opt-in)
+  └─ GET /api/dashboard/series/<name>  (lane-utilization, throughput-forecast,
+       verifier-health, release-train, review-backlog, defects-per-day)
+       Each card's `active()` entry in DASH_CARD_FEATURES keeps it off the grid
+       until its series has data; the one-line reason is shown only when
+       dashboard.hide_inactive_cards is off. Every card's "?" link opens its
+       own section in howto/dashboard.md.
+
 The sprint pipeline strip no longer renders. Sprint and Automaton detail for a
 session appears in the expand panel's status board (`board.sprint`), not on the
 grid.

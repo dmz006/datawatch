@@ -644,6 +644,7 @@ event:
 ```
 GET /api/dashboard/work-map
 GET /api/dashboard/lane-pulse?window=6h
+GET /api/dashboard/series/<name>
 ```
 The work map returns `nodes` and `edges` for the Network card: projects,
 Automations, Automata, tasks and live sessions. It answers 503 only when the
@@ -651,7 +652,10 @@ daemon has neither a session store nor a trace store. The lane pulse returns
 per-lane `series` (busy, waiting, idle) and a `burn` object for the burn panel.
 The window defaults to 6h and is capped at 168h. The sprint pipeline strip no
 longer renders on the PWA dashboard, so `GET /api/autonomous/prds` is no longer
-needed for it.
+needed for it. The six series endpoints (`lane-utilization`, `verifier-health`,
+`throughput-forecast`, `release-train`, `review-backlog`, `defects-per-day`) feed
+the opt-in series cards; each returns `empty: true` with an `empty_reason_key` when
+there is nothing to show, and the card stays hidden. Details: `docs/howto/dashboard.md`.
 
 **Dashboard expand data (three-pane equivalent for mobile detail screens):**
 
