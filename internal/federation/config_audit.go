@@ -42,8 +42,9 @@ import (
 // ConfigAuditRecord is one line of the audit file / stderr sink.
 type ConfigAuditRecord struct {
 	Time    string            `json:"time"`
-	Surface string            `json:"surface"` // mcp | rest | comm
-	Tool    string            `json:"tool"`    // MCP tool name or "PUT /route"
+	Surface string            `json:"surface"`         // mcp | rest | comm
+	Tool    string            `json:"tool"`            // MCP tool name or "PUT /route"
+	Class   string            `json:"class,omitempty"` // tool class: config | sensitive (MCP only)
 	Keys    []string          `json:"keys,omitempty"`
 	Values  map[string]string `json:"values,omitempty"` // redacted for secret-like keys
 	Caller  string            `json:"caller,omitempty"` // session ID or peer name
@@ -105,6 +106,9 @@ func configAuditCEFEntry(rec ConfigAuditRecord) audit.Entry {
 	}
 	if rec.Reason != "" {
 		details["reason"] = rec.Reason
+	}
+	if rec.Class != "" {
+		details["class"] = rec.Class
 	}
 	return audit.Entry{
 		Timestamp: ts,
