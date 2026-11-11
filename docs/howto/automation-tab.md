@@ -49,7 +49,7 @@ datawatch starts the next Automaton by itself. See
 works behind the scenes.
 
 The bottom navigation has no Automation button of its own. Inside the Automata
-tab, the sub-tab bar reads **Automation**, **Automata**, **Templates**. The
+tab, the sub-tab bar reads **Automation**, **Automata**, **Events**, **Templates**. The
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
 
