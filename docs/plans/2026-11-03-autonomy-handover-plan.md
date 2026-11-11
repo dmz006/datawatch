@@ -288,3 +288,5 @@ Operator, 2026-11-11, quoted: "We need to aim for 200%, with a full reset tomorr
 Operator, 2026-11-11, quoted, on the docs-set task of the Code Scanning upload retry Automaton that rewrote release.yaml: "Reject it". Supervisor first rewrote the task spec so it documents the approved workflow change and edits no workflow file, then the rejection reverted the workflow edit and re-ran the task.
 
 Operator, 2026-11-11, quoted: "Yes" (approve the image-refresh workflow change that reads the Trivy version from scripts/trivy-version.txt).
+
+Operator reading, 2026-11-11 15:13: Claude session 62 percent, weekly 63 percent (58 percent at 14:28). Weekly rose 5 points in about 45 minutes while the session window rose from 23 to 62 percent, so one full session window is about 13 weekly points; at three lanes the session limit arrives in about half an hour. Supervisor lowered claude-code max in flight from 3 to 2 to stay under the session limit.
