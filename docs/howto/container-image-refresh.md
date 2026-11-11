@@ -70,16 +70,39 @@ PATH and exercises the success, the persistent-failure, and the
 missing-argument paths, asserting the error text, the exit code and the state
 left behind.
 
-**Migration status:** all eight "Install Trivy" steps now call the hardened
-installer, so the guarantees above hold in every workflow: two in
-`release.yaml` (`v0.73.0`), two in `containers.yaml` (`v0.70.0`) and four in
-`image-refresh.yaml` (the workflow's `TRIVY_VERSION`, `v0.73.0`). None of them
-fetches the installer from `main` any more.
+**One pin, one place.** The Trivy version is pinned in a single file,
+`scripts/trivy-version.txt`, which holds one `vX.Y.Z` tag (currently
+`v0.73.0`). Every workflow that installs Trivy reads that file and passes the
+tag to the installer:
 
-The pins were not changed by the migration. `containers.yaml` still pins
-`v0.70.0` while `release.yaml` and `image-refresh.yaml` pin `v0.73.0`, so a
-pin change that updates only one workflow would leave the others behind.
-Unifying the pin is a separate decision for the operator.
+```bash
+bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
+```
+
+No workflow carries a `TRIVY_VERSION:` value or a literal tag of its own, so
+`release.yaml`, `containers.yaml` and `image-refresh.yaml` can no longer drift
+apart (they used to pin `v0.73.0`, `v0.70.0` and `v0.73.0`). The kind smoke
+workflow installs helm the same way: pinned, with a retrying download.
+
+**To bump Trivy,** edit `scripts/trivy-version.txt` only. A scan that begins
+failing or passing after the bump is the new Trivy's doing, not drift.
+
+**The guard.** `bash scripts/check-trivy-version-single.sh` fails when the file
+is missing or does not hold exactly one `vX.Y.Z` line, when a workflow carries
+a `TRIVY_VERSION:` value or passes a literal tag to `ci-install-trivy.sh`, or
+when a workflow calls the installer without reading the version file. Its
+coverage is `bash scripts/tests/check-trivy-version-single_test.sh`, which runs
+it against fixture trees.
+
+**Operator review.**
+
+- `containers.yaml` moves from `v0.70.0` to `v0.73.0`. Its scans now run with
+  the newer Trivy and its database rules; confirm the next container build is
+  not newly red.
+- Confirm the guard is wired into `make lint` and `ci.yaml` in the merged
+  change; check by running `make lint` and reading `ci.yaml`.
+- The helm pin in the kind smoke workflow is its own version; this page
+  covers only the Trivy pin.
 
 ## Running it by hand
 

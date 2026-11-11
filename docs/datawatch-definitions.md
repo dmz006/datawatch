@@ -2779,3 +2779,7 @@ The **run stamp** is `.datawatch/reports/plans-tidy-last-run.json`, written on e
 ### Daily report
 
 The **daily report** is `.datawatch/reports/plans-tidy-daily-report.md`, written on every daily run: the counts and the names of the unclassified files. File names appear nowhere else.
+
+### Trivy version pin
+
+The **Trivy version pin** is `scripts/trivy-version.txt`, a file holding one `vX.Y.Z` tag. It is the only place the CI Trivy version is set: every workflow that installs Trivy reads it and passes it to `scripts/ci-install-trivy.sh`. `scripts/check-trivy-version-single.sh` fails when a workflow carries its own pin. See [howto/container-image-refresh.md](howto/container-image-refresh.md#how-ci-installs-trivy).
