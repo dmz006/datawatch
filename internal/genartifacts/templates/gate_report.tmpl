@@ -29,6 +29,10 @@
 {{- if .Cost.Estimate}}
 | {{.Cost.Label}} | {{.Cost.Estimate}} |
 {{- end}}
+{{- if .Cost.SessionIDs}}
+
+Sessions: {{range $i, $id := .Cost.SessionIDs}}{{if $i}}, {{end}}{{$id}}{{end}}
+{{- end}}
 {{- if .Cost.WindowNote}}
 
 Window: {{.Cost.WindowNote}}

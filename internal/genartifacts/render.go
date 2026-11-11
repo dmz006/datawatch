@@ -192,6 +192,7 @@ type view struct {
 type costView struct {
 	Sessions, TokensIn, TokensOut, CacheRead, CacheCreation, ToolCalls int
 	Span                                                               string
+	SessionIDs                                                         []string
 	Estimate, Label                                                    string
 	WindowNote, UnknownNote                                            string
 }
@@ -202,7 +203,7 @@ func costOf(c *changerecord.CostSummary) *costView {
 	}
 	v := &costView{Sessions: c.Sessions, TokensIn: c.TokensIn, TokensOut: c.TokensOut,
 		CacheRead: c.CacheRead, CacheCreation: c.CacheCreation, ToolCalls: c.ToolCalls,
-		Span: (time.Duration(c.SpanSeconds) * time.Second).String(), WindowNote: c.WindowNote, UnknownNote: c.UnknownNote}
+		SessionIDs: c.SessionIDs, Span: (time.Duration(c.SpanSeconds) * time.Second).String(), WindowNote: c.WindowNote, UnknownNote: c.UnknownNote}
 	if c.APIEquivalentUSD != nil {
 		v.Estimate = fmt.Sprintf("$%.2f", *c.APIEquivalentUSD)
 		v.Label = c.USDLabel

@@ -251,14 +251,14 @@ func TestWriteRejectsEscapingPath(t *testing.T) {
 func TestGateReportCostSection(t *testing.T) {
 	usd := 12.345
 	rec := fullRecord()
-	rec.Cost = &changerecord.CostSummary{Sessions: 4, TokensIn: 1000, TokensOut: 200, CacheRead: 5000,
+	rec.Cost = &changerecord.CostSummary{Sessions: 4, SessionIDs: []string{"s-aa", "s-bb"}, TokensIn: 1000, TokensOut: 200, CacheRead: 5000,
 		CacheCreation: 300, ToolCalls: 42, SpanSeconds: 3725, APIEquivalentUSD: &usd,
 		WindowNote: "partial window", UnknownNote: "spend before the ledger horizon is unknown"}
 	got, _, err := Render(GateReport, rec, Options{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{"## Cost", "| Sessions | 4 |", "| Tokens in | 1000 |", "| Tokens out | 200 |",
+	for _, w := range []string{"## Cost", "Sessions: s-aa, s-bb", "| Sessions | 4 |", "| Tokens in | 1000 |", "| Tokens out | 200 |",
 		"| Cache read | 5000 |", "| Cache creation | 300 |", "| Tool calls | 42 |", "| Span | 1h2m5s |",
 		"| API-equivalent estimate, not billed | $12.35 |", "Window: partial window",
 		"Unknown spend: spend before the ledger horizon is unknown"} {

@@ -54,6 +54,9 @@ func (m *Manager) GeneratedChangeRecord(prdID string) (*changerecord.ChangeRecor
 		return nil, ErrGeneratedPRDNotFound
 	}
 	if rec, err := changerecord.Load(m.dataDir, prd.ID); err == nil {
+		if rec.Cost == nil {
+			m.attachGeneratedCost(rec)
+		}
 		return rec, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -71,6 +74,7 @@ func (m *Manager) GeneratedChangeRecord(prdID string) (*changerecord.ChangeRecor
 	}
 	merged := changerecord.Merge(recs...)
 	merged.AutomatonID = prd.ID
+	m.attachGeneratedCost(merged)
 	return merged, nil
 }
 

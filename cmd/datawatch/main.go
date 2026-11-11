@@ -6702,6 +6702,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetGeneratedArtefacts(func() config.EffectiveGeneratedArtefactsSettings {
 				return cfg.Autonomous.EffectiveGeneratedArtefacts()
 			})
+			if spendLedger != nil {
+				amgr.SetGeneratedCostLedger(autonomouspkg.NewSpendLedgerCost(spendLedger,
+					func() config.CostReportConfig { return cfg.CostReport }, nil,
+					func(backend string) config.EffectiveBillingProfile { return cfg.Usage.EffectiveBillingProfile(backend) }))
+			}
 			// Classify-mode gate over guardrail findings: active only for a
 			// judge entry whose verification_mode is classify.
 			amgr.SetGuardrailClassify(verificationModeLookup(autonomousInferenceReg),

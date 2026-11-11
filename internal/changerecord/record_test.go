@@ -277,3 +277,16 @@ func TestAttachCostAndMerge(t *testing.T) {
 		t.Error("no automaton id must be a no-op")
 	}
 }
+
+func TestMergeSumsCostAcrossAutomatons(t *testing.T) {
+	u1, u2 := 1.5, 2.0
+	a := &ChangeRecord{Cost: &CostSummary{Sessions: 1, SessionIDs: []string{"s1"}, TokensIn: 10, ToolCalls: 2, SpanSeconds: 5, APIEquivalentUSD: &u1, USDLabel: "est"}}
+	b := &ChangeRecord{Cost: &CostSummary{Sessions: 1, SessionIDs: []string{"s2"}, TokensIn: 5, ToolCalls: 1, SpanSeconds: 3, APIEquivalentUSD: &u2, WindowNote: "w"}}
+	m := Merge(a, b)
+	if m.Cost == nil || m.Cost.Sessions != 2 || m.Cost.TokensIn != 15 || m.Cost.ToolCalls != 3 || m.Cost.SpanSeconds != 8 {
+		t.Fatalf("cost not summed: %+v", m.Cost)
+	}
+	if *m.Cost.APIEquivalentUSD != 3.5 || m.Cost.WindowNote != "w" || len(m.Cost.SessionIDs) != 2 {
+		t.Fatalf("estimate/notes/ids wrong: %+v", m.Cost)
+	}
+}

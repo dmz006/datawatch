@@ -87,13 +87,15 @@ type ChangeRecord struct {
 // CostSummary is the ledger view of one Automaton's spend. The dollar figure
 // is an API-equivalent estimate, never a charge.
 type CostSummary struct {
-	Sessions      int     `json:"sessions"`
-	TokensIn      int     `json:"tokens_in"`
-	TokensOut     int     `json:"tokens_out"`
-	CacheRead     int     `json:"cache_read"`
-	CacheCreation int     `json:"cache_creation"`
-	ToolCalls     int     `json:"tool_calls"`
-	SpanSeconds   float64 `json:"span_seconds"`
+	Sessions int `json:"sessions"`
+	// SessionIDs lists the Automaton's sessions found in the ledger.
+	SessionIDs    []string `json:"session_ids,omitempty"`
+	TokensIn      int      `json:"tokens_in"`
+	TokensOut     int      `json:"tokens_out"`
+	CacheRead     int      `json:"cache_read"`
+	CacheCreation int      `json:"cache_creation"`
+	ToolCalls     int      `json:"tool_calls"`
+	SpanSeconds   float64  `json:"span_seconds"`
 	// USDLabel names the dollar figure (for example "API-equivalent
 	// estimate, not billed"). Empty when there is no figure.
 	USDLabel         string   `json:"usd_label,omitempty"`
@@ -323,10 +325,7 @@ func Merge(records ...*ChangeRecord) *ChangeRecord {
 		ts = append(ts, r.TestsAdded...)
 		lk = append(lk, r.LocaleKeysAdded...)
 		out.Commands = append(out.Commands, r.Commands...)
-		if out.Cost == nil && r.Cost != nil {
-			c := *r.Cost
-			out.Cost = &c
-		}
+		out.Cost = mergeCost(out.Cost, r.Cost)
 	}
 	for p, s := range files {
 		out.Files = append(out.Files, FileChange{Path: p, Status: s})
@@ -457,4 +456,51 @@ func (g GitDiff) FileDiff(p string) (FileDiffData, error) {
 		d.After = string(after)
 	}
 	return d, nil
+}
+
+// mergeCost sums two cost summaries so records from different Automatons keep
+// all spend. Session ids are unioned; notes are joined without repeats.
+func mergeCost(a, b *CostSummary) *CostSummary {
+	if b == nil {
+		return a
+	}
+	c := *b
+	c.SessionIDs = append([]string(nil), b.SessionIDs...)
+	if a == nil {
+		return &c
+	}
+	o := *a
+	o.SessionIDs = uniqSorted(append(append([]string(nil), a.SessionIDs...), b.SessionIDs...))
+	if len(o.SessionIDs) > 0 && len(a.SessionIDs) == a.Sessions && len(b.SessionIDs) == b.Sessions {
+		o.Sessions = len(o.SessionIDs)
+	} else {
+		o.Sessions += b.Sessions
+	}
+	o.TokensIn += b.TokensIn
+	o.TokensOut += b.TokensOut
+	o.CacheRead += b.CacheRead
+	o.CacheCreation += b.CacheCreation
+	o.ToolCalls += b.ToolCalls
+	o.SpanSeconds += b.SpanSeconds
+	switch {
+	case a.APIEquivalentUSD != nil && b.APIEquivalentUSD != nil:
+		v := *a.APIEquivalentUSD + *b.APIEquivalentUSD
+		o.APIEquivalentUSD = &v
+	case a.APIEquivalentUSD == nil && b.APIEquivalentUSD != nil:
+		v := *b.APIEquivalentUSD
+		o.APIEquivalentUSD, o.USDLabel = &v, b.USDLabel
+	}
+	o.WindowNote = joinNote(a.WindowNote, b.WindowNote)
+	o.UnknownNote = joinNote(a.UnknownNote, b.UnknownNote)
+	return &o
+}
+
+func joinNote(a, b string) string {
+	if a == "" || a == b {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + " " + b
 }
