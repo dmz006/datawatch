@@ -259,7 +259,7 @@ test('the non-English bundles carry the English text until translations arrive',
 // The permission-fix keys belong to the Fix button the cleanup card carries;
 // they are plain action text, so they are pinned here without the
 // Automaton wording check.
-const PERMISSION_KEYS = ['cleanup_permission_fix', 'cleanup_permission_fixed', 'cleanup_permission_fix_failed'];
+const PERMISSION_KEYS = ['cleanup_permission_fix', 'cleanup_permission_fixed', 'cleanup_permission_fix_failed', 'cleanup_permission_help_link'];
 
 test('the permission-fix keys exist in every locale bundle', () => {
   for (const lang of LANGS) {

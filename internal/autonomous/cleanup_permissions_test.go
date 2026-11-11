@@ -44,9 +44,9 @@ func TestFixCleanupPermissions(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(wt, "link")); err != nil {
 		t.Fatal(err)
 	}
-	os.Chmod(f, 0o444)
-	os.Chmod(sub, 0o555)
-	t.Cleanup(func() { os.Chmod(sub, 0o755) })
+	_ = os.Chmod(f, 0o444)
+	_ = os.Chmod(sub, 0o555)
+	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) })
 
 	n, err := FixCleanupPermissions(base, []string{wt})
 	if err != nil || n != 2 {
