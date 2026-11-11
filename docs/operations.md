@@ -2613,8 +2613,9 @@ gate.
   attempt") and the run goes on.
 - **Gates unchanged.** The gosec baseline check still fails the run on a
   net-new finding, and the Trivy scan steps still fail the run on a net-new
-  HIGH/CRITICAL finding. The `actions/upload-artifact` copy of the gosec SARIF
-  file (90-day retention) stays available when the upload fails.
+  HIGH/CRITICAL finding. The `actions/upload-artifact` copies of the SARIF
+  files (`gosec-results`, and `trivy-<image>-sarif` for each image; 90-day
+  retention) stay available when the upload fails.
 - **Missing results.** A release whose upload gave up has no new entry in Code
   Scanning for that run. That is not a clean scan. Read the warning on the
   upload step, download the SARIF artifact from the run, or re-run the workflow

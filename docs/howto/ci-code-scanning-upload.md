@@ -45,6 +45,8 @@ make test
 ## For the operator to review
 
 - Decide whether an upload that fails all four attempts should raise an alert; today it is only a warning on the step.
+- The guard requires at least three upload steps per job while the workflow uses four; confirm that slack is intended.
+- The guard needs Python 3 with PyYAML wherever `make lint` runs; it stops with an error if PyYAML is missing.
 
 ## See also
 
