@@ -110,6 +110,7 @@ type Coordinator struct {
 	// dependencyUpdateSkipNoted: the Events note for the held run is written.
 	dependencyUpdateSkipNoted bool
 	dependencyUpdateLoc       *time.Location
+	dependencyUpdateAlert     *DependencyUpdateAlerter
 
 	// slSteps are the supervisor loop's mechanical steps the idle tick runs
 	// (supervisor_loop_steps.go); nil until the daemon registers them.
