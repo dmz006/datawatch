@@ -1,12 +1,16 @@
 ---
 docs:
   index: true
-  topics: [dashboard, operator console, one-glance summary, attention]
+  topics: [dashboard, operator console, one-glance summary, attention, arc, stages]
 exec_params:
   - {name: enabled, required: false, description: "dashboard.console.enabled to set: true (default) or false"}
 exec_steps:
   - tool: dashboard_console_get
     description: Read the operator console one-glance summary (open questions, held/blocked, lanes, usage, CI/release)
+    args: {}
+    read_only: true
+  - tool: dashboard_arc_get
+    description: Read the arc summary (stages in order, maintenance count, blocked stage, lanes, plan usage in points and tokens)
     args: {}
     read_only: true
   - tool: config_set
@@ -161,12 +165,40 @@ One summary line, in the endpoint's section order; sections you switched off
 show as `off (…)` with the key they name. The `dashboard-console` spelling
 parses the same verb.
 
+## Arc summary
+
+The **arc summary** shows one arc (an Automation) as its stages in the order
+they run: `bugs`, then `features`, then `final`. Each stage reports `total`,
+`done`, `running`, `blocked` and a `percent`. Maintenance work is a separate
+lane and reports counts only (`maintenance_queue`); it is never a stage. When a
+stage is blocked, `blocked_stage` names it with a plain-language reason. The
+body also carries the shared lane usage (Claude and pi lanes: in flight, cap,
+and queued work by priority) and the plan usage in **points and tokens**.
+No dollar figure appears: the plan is flat.
+
+```console
+> dashboard arc
+dashboard arc: arc Release 9.120 · bugs 3/3 done (100.0%), 0 running, 0 blocked · features 2/5 done (40.0%), 1 running, 0 blocked · final 0/1 done (0.0%), 0 running, 1 blocked · blocked: waiting on features · claude lane 1/1 · 41.0 of 100.0 points (41.0%) · 1200000 tokens
+```
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/dashboard/arc` (`dashboard:read`; optional `?arc=<automation id>`, default is the first arc with staged work) |
+| MCP | `dashboard_arc_get` (optional `arc`) |
+| CLI | `datawatch dashboard arc [--arc <id>] [--json]` |
+| Chat | `dashboard arc` (also `dashboard-arc`) |
+
+Like the console, the read never 5xxs: a part this daemon cannot read reports
+`available: false` with a `reason`, and `dashboard.console.enabled=false`
+hides the whole summary the same way.
+
 ## Where to see it
 
 | You want … | Where |
 |---|---|
 | The roll-up itself | the PWA Dashboard view (five console cards), `datawatch dashboard console`, `dashboard_console_get` (MCP), `GET /api/dashboard/console`, or the `dashboard console` chat verb |
 | The data behind one section | the section's PWA anchor — `#questions`, `#held-questions`, `#lanes`, `#usage`, `#releases` |
+| The arc summary | `datawatch dashboard arc`, `dashboard_arc_get` (MCP), `GET /api/dashboard/arc`, or the `dashboard arc` chat verb |
 | The switches | Settings → General (`dashboard.*` keys), YAML, `datawatch config set`, or `PUT /api/config` |
 
 ## Notes and limits
