@@ -120,14 +120,36 @@ are what you see in the Add-Card picker.
 
 ### Work map details
 
-- The graph is read-only. When the daemon has no trace store, the card's header
-  shows the note **placement only (no trace store)**. A daemon with neither a
-  session store nor a trace store returns 503.
+- The graph is read-only. When the daemon has no trace store, the note
+  **placement only (no trace store)** appears on the card's footer counts line,
+  after the node count (`nodes: N`). A daemon with neither a session store nor a
+  trace store returns 503.
 - Tasks are capped per Automaton, newest first. The overflow is counted in the
   Automaton node's `tasks_omitted`, so one long-lived Automaton cannot flood the
   card.
 - The **Running now** strip lists up to eight live sessions in an active state,
   newest first, and shows the total count beside its heading.
+
+## Open for operator review
+
+These points are documented from the code as it stands. The operator should
+confirm each before the wording is treated as final:
+
+- **CI & release count changed meaning.** `ci_release.count` is now the number
+  of CI runs under watch, not the number failing. The failing or hung runs are
+  in `summary` and on the card. Any client that read `count` as "failing" needs
+  updating.
+- **Work-map empty and no-trace wording.** The no-trace note sits on the footer
+  line, and the 503 for a daemon with no session or trace store is documented.
+  Confirm both are the intended operator-facing behaviour.
+- **Smoke Run for default runs.** A default run's throwaway test daemon is not
+  posted to the dashboard. Confirm that a card showing nothing for such a run is
+  acceptable, rather than a gap to close.
+- **Cost report USD label.** The card labels the column **API-equivalent USD
+  (unbilled)**. Confirm the wording with the operator before release notes repeat it.
+- **Locale text.** The empty-state sentences above are the English strings. The
+  de, es, fr and ja locale files were not changed by this docs pass, so those
+  translations may not match.
 
 ## Related how-tos
 
