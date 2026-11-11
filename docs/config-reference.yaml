@@ -508,6 +508,12 @@ mcp:
   # CLI `datawatch config set`, Web UI Settings → General → Self-config,
   # REST PUT /api/config) set it in either direction.
   allow_self_config: true
+  # Gate for the sensitive write tool class of the MCP tool classification
+  # (tools that write secrets, credentials or other sensitive state).
+  # Absent = ENABLED (the default keeps today's behaviour: sensitive tools
+  # allowed; the key is never added by a migration). An explicit `false`
+  # disables the class.
+  allow_sensitive_writes: true
   # Where the self-config audit file (JSONL) is written: one record per
   # configuration-write attempt from every session-facing surface
   # (mcp / rest / comm), allowed or refused — time, surface, tool, keys,
