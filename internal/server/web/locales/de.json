@@ -4073,8 +4073,8 @@
   "node_backend_below_minimum": "unter Minimum",
   "node_backend_versions_failed": "Backend-Versionen konnten nicht geladen werden: %1$s",
   "merge_blocked_status": "Merge blockiert",
-  "merge_blocked_card_title": "Automaton wartet auf den Merge",
-  "merge_blocked_what": "Dieser Automaton hat fertige Arbeit, die noch nicht gemergt werden kann, und wartet auf den Merge.",
+  "merge_blocked_card_title": "Automat wartet auf den Merge",
+  "merge_blocked_what": "Dieser Automat hat fertige Arbeit, die noch nicht gemergt werden kann, und wartet auf den Merge.",
   "merge_blocked_line": "Merge blockiert: %1$s. Nächster Schritt: %2$s",
   "merge_blocked_why": "Grund: %1$s",
   "merge_blocked_how_long": "Blockiert seit: %1$s",
@@ -4085,5 +4085,5 @@
   "merge_blocked_age_minutes": "%1$s Min.",
   "merge_blocked_age_hours": "%1$s Std.",
   "merge_blocked_age_days": "%1$s Tg.",
-  "merge_blocked_help_link": "Was bedeutet ein blockierter Merge? Hilfe zum Automaton-Merge öffnen"
+  "merge_blocked_help_link": "Was bedeutet ein blockierter Merge? Hilfe zum Automaten-Merge öffnen"
 }
