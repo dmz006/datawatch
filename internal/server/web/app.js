@@ -18263,8 +18263,8 @@ function loadGeneralConfig() {
           </div>`;
         }
         el.innerHTML = html;
-        if (sec.id === 'selfconfig') {
-          window.renderSelfConfigAuditRecent(el);
+        if (sec.id === 'selfconfig' && typeof el.querySelector === 'function') {
+          try { window.renderSelfConfigAuditRecent(el); } catch (_) { /* decorative; never block later sections */ }
         }
       }
     })
@@ -27484,7 +27484,7 @@ window.buildSelfConfigAuditRecentHtml = function(entries) {
 // the read-only REST view. Failures render a dimmed note — the audit
 // path is decorative here, not load-bearing.
 window.renderSelfConfigAuditRecent = function(card) {
-  if (!card) return;
+  if (!card || typeof card.querySelector !== 'function') return;
   const box = card.querySelector('#gcfg_selfconfig_recent');
   if (!box) return;
   apiFetch('/api/audit/self-config?limit=5').then(body => {
