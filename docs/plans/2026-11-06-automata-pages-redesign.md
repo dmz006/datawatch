@@ -254,9 +254,8 @@ useful work is recovered before anything is deleted. The review result is record
 
 Status (2026-11-11): built. The Housekeeping sub-tab now carries the **Unlanded work** card (recommendation plus Keep,
 Archive branch and Delete worktree per row; Delete worktree writes a verified backup bundle first), a **Commit**
-button with the diff and a message on the uncommitted work card, one-line reasons and a **Fix permissions** button for
-permission errors, and the skipped-by-reason counts. The safe-to-delete report and cleanup history moved to the Events
-tab. Surfaces: REST, CLI and comm channel for the list and its three actions, MCP read-only for the list, PWA for all
+button with the diff and a message on the uncommitted work card. The safe-to-delete report, cleanup history, one-line
+reasons, the **Fix permissions** button for permission errors and the skipped-by-reason counts are on the Events tab. Surfaces: REST, CLI and comm channel for the list and its three actions, MCP read-only for the list, PWA for all
 of it; the commit and the permission fix are REST and PWA only. `scripts/branch-audit.py` reports the same branches as
 `UNLANDED`. Documented in `docs/howto/automaton-worktree-cleanup.md` and `docs/howto/automation-tab.md`. Still open:
 whether a kept branch also suppresses the safe-to-delete report (operator to confirm), and mobile parity (tracked in
