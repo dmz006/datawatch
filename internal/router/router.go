@@ -1092,6 +1092,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleCapacityAdmission(cmd.Text)
 	case CmdProgress:
 		r.handleProgress(cmd.Text)
+	case CmdTimeline:
+		r.handleTimeline(cmd.Text)
 	case CmdConfigure:
 		r.handleConfigure(cmd)
 	case CmdCopy:
