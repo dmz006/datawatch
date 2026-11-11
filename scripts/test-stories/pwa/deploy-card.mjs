@@ -25,7 +25,7 @@ const view = {
     build_command: 'go build -o datawatch ./cmd/datawatch/',
     install_command: 'install -m 755 datawatch /usr/local/bin/datawatch',
     binary_path: '/usr/local/bin/datawatch',
-    restart_command: 'systemctl --user restart datawatch',
+    restart_command: 'systemctl --user restart datawatch', // service-scope-ok: fixture text only, the story never runs it
     health_check: 'curl -fsS http://127.0.0.1:8080/healthz',
     drain_timeout: '10m',
     health_timeout: '2m',
@@ -70,7 +70,7 @@ await runPerfStory(async (page) => {
       'Build command', 'go build -o datawatch ./cmd/datawatch/',
       'Install command', 'install -m 755 datawatch /usr/local/bin/datawatch',
       'Installed binary path', '/usr/local/bin/datawatch',
-      'Restart command', 'systemctl --user restart datawatch',
+      'Restart command', 'systemctl --user restart datawatch', // service-scope-ok: fixture text only, the story never runs it
       'Health check command', 'curl -fsS http://127.0.0.1:8080/healthz',
       'Drain timeout', '10m', 'Health timeout', '2m',
     ]) check(text.includes(needle), `Deploy card missing "${needle}" (got: ${text.slice(0, 600)})`);
