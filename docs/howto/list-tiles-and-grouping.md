@@ -96,6 +96,13 @@ browser, per list and per device. They are not stored on the daemon, so:
 - **Back to the defaults** — set **Group by** to **No grouping** and clear
   the browser's site data for the daemon address to forget the view mode.
 
+## Still to review
+
+- The mobile apps do not have these modes yet; parity is tracked in
+  datawatch-app.
+- The labels exist in all five locales (de, en, es, fr, ja); a native
+  speaker should check the German, French, Spanish and Japanese wording.
+
 ## Related
 
 - [Automata tags](automata-tags.md)
