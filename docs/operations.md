@@ -7239,3 +7239,7 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 ### Android / iPhone
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
+
+## Skills coverage check
+
+Run `bash scripts/skills-coverage-check.sh` before a release and after any change that adds or removes an MCP tool, how-to, route, command or setting. It prints `ok: skills coverage` or one `FAIL:` line per drift and exits non-zero. Fix a drift by updating `docs/skills/inventory.yaml` and `docs/skills/coverage-matrix.yaml`. `docs/skills/registry-skills.txt` is refreshed by hand from the connected registry's skill list. Its failure-mode tests run with `bash tests/ci/test-skills-coverage-check.sh`. Operator guide: [howto/skills-sync.md](howto/skills-sync.md).
