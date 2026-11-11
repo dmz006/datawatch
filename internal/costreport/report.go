@@ -83,6 +83,15 @@ type Record struct {
 	At        time.Time
 	TokensIn  int
 	TokensOut int
+	// Extended usage, all optional (zero means unknown / none).
+	CacheRead     int
+	CacheCreation int
+	ToolCalls     int
+	// FirstActivity and LastActivity bound the session's wall-clock span.
+	FirstActivity time.Time
+	LastActivity  time.Time
+	// ActiveSeconds is the time the session was actually working.
+	ActiveSeconds float64
 }
 
 // SourceOptions is the query the report hands to a Source after normalizing
@@ -165,6 +174,20 @@ type Row struct {
 	// group; false when at least one backend has no rate, in which case
 	// usd_estimate is nil and absent from the JSON.
 	RateConfigured bool `json:"rate_configured"`
+	// CacheRead, CacheCreation and ToolCalls are summed over the group.
+	CacheRead     int `json:"cache_read"`
+	CacheCreation int `json:"cache_creation"`
+	ToolCalls     int `json:"tool_calls"`
+	// FirstActivity / LastActivity are the earliest and latest activity
+	// stamps in the group; SpanSeconds is the wall-clock span between
+	// them and ActiveSeconds the summed working time.
+	FirstActivity *time.Time `json:"first_activity,omitempty"`
+	LastActivity  *time.Time `json:"last_activity,omitempty"`
+	SpanSeconds   float64    `json:"span_seconds"`
+	ActiveSeconds float64    `json:"active_seconds"`
+	// USDLabel names what the dollar figure is: for bundled plans an
+	// API-equivalent estimate, never a charge. Absent without a figure.
+	USDLabel string `json:"usd_label,omitempty"`
 	// USDEstimate is the group's dollar estimate at the configured rates,
 	// present only when RateConfigured is true and USD display is enabled.
 	USDEstimate *float64 `json:"usd_estimate,omitempty"`
@@ -217,6 +240,7 @@ const (
 	labelFree     = "free local inference — not billed, token usage only"
 	labelMetered  = "api_metered — billed per use"
 	labelAssumed  = "api_metered (assumed — no usage.billing entry)"
+	labelUSDEquiv = "API-equivalent estimate — bundled plan, not billed"
 	labelMixedUSD = "mixed billing modes — only the usd_estimate is unambiguous"
 )
 
@@ -328,6 +352,7 @@ func applyBilling(row *Row, backends []string, billing BillingFunc, est *float64
 		// The spend priced at API rates is an equivalence, not a charge:
 		// it leaves usd_estimate and moves to api_equivalent_usd.
 		row.APIEquivalentUSD = est
+		row.USDLabel = labelUSDEquiv
 		for _, b := range backends {
 			p := billing(b).Profile
 			if p.MonthlyPrice <= 0 || !finite(p.MonthlyPrice) {
@@ -450,11 +475,14 @@ func Build(
 	weekStart := time.Weekday(weekStartIndex(cfg.EffectiveWeekStart()))
 
 	type acc struct {
-		sessions  int
-		tin, tout int
-		usd       float64
-		allRate   bool
-		backends  []string
+		sessions              int
+		tin, tout             int
+		cread, ccreate, tools int
+		first, last           time.Time
+		active                float64
+		usd                   float64
+		allRate               bool
+		backends              []string
 	}
 	buckets := map[string]*acc{}
 	add := func(key string) *acc {
@@ -477,6 +505,23 @@ func Build(
 		a.sessions++
 		a.tin += r.TokensIn
 		a.tout += r.TokensOut
+		a.cread += r.CacheRead
+		a.ccreate += r.CacheCreation
+		a.tools += r.ToolCalls
+		a.active += r.ActiveSeconds
+		lo, hi := r.FirstActivity, r.LastActivity
+		if lo.IsZero() {
+			lo = r.At
+		}
+		if hi.IsZero() {
+			hi = r.At
+		}
+		if !lo.IsZero() && (a.first.IsZero() || lo.Before(a.first)) {
+			a.first = lo
+		}
+		if !hi.IsZero() && hi.After(a.last) {
+			a.last = hi
+		}
 		a.backends = append(a.backends, r.Backend)
 		if rateFor == nil {
 			a.allRate = false
@@ -492,7 +537,13 @@ func Build(
 
 	out := make([]Row, 0, len(buckets))
 	for key, a := range buckets {
-		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout}
+		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout,
+			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, ActiveSeconds: a.active}
+		if !a.first.IsZero() {
+			f, l := a.first, a.last
+			row.FirstActivity, row.LastActivity = &f, &l
+			row.SpanSeconds = l.Sub(f).Seconds()
+		}
 		var est *float64
 		if a.allRate && showUSD {
 			v := a.usd
