@@ -217,18 +217,45 @@ func TestIsConfigWriteTool_EveryRegisteredToolIsClassified(t *testing.T) {
 	if addToolCount < 300 {
 		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", addToolCount)
 	}
-	var unclassified []string
+	var unclassified, multi []string
 	for _, name := range names {
-		if federation.IsConfigWriteTool(name) || federation.IsNonConfigWriteTool(name) || federation.IsSensitiveWriteTool(name) {
-			continue
+		n := 0
+		for _, in := range []bool{federation.IsConfigWriteTool(name), federation.IsNonConfigWriteTool(name), federation.IsSensitiveWriteTool(name)} {
+			if in {
+				n++
+			}
 		}
-		unclassified = append(unclassified, name)
+		switch {
+		case n == 0:
+			unclassified = append(unclassified, name)
+		case n > 1:
+			multi = append(multi, name)
+		}
+	}
+	if len(multi) > 0 {
+		sort.Strings(multi)
+		t.Fatalf("tools in more than one classification list: %v", multi)
 	}
 	if len(unclassified) > 0 {
 		sort.Strings(unclassified)
 		t.Fatalf("every registered MCP tool must be classified as a config write or explicitly listed non-config-write; %d unclassified: %v\n"+
 			"Add each new tool to exactly one of the lists under IsConfigWriteTool in mcp_tool_caps.go.",
 			len(unclassified), unclassified)
+	}
+}
+
+// TestIsSensitiveWriteTool_Classification pins which tools are sensitive.
+func TestIsSensitiveWriteTool_Classification(t *testing.T) {
+	for _, name := range []string{"secret_set", "secret_get", "set_identity", "restart_daemon", "plugin_install",
+		"send_input", "start_session", "tailscale_acl_push", "tailscale_auth_key", "acme_renew"} {
+		if !federation.IsSensitiveWriteTool(name) {
+			t.Errorf("IsSensitiveWriteTool(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"secret_list", "secret_exists", "llm_list"} {
+		if federation.IsSensitiveWriteTool(name) {
+			t.Errorf("IsSensitiveWriteTool(%q) = true, want false", name)
+		}
 	}
 }
 
