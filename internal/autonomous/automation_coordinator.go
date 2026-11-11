@@ -313,6 +313,10 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 	if mem == nil {
 		return
 	}
+	if mem.PendingItemID != "" && end.edge == edgeOnComplete && end.success {
+		// The Automaton attached to a pending item completed: the item's work is done.
+		c.m.completeAttachedPendingItem(mem.PendingItemID, ev.PRDID)
+	}
 	c.advance(autoID, stepInput{memberID: mem.ID, end: end})
 }
 
