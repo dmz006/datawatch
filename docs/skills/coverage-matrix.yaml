@@ -1,0 +1,134 @@
+rows:
+- entry: sessions
+  skills: [sandbox-permissions]
+  status: partial
+  note: 'sandbox-permissions covers autonomous sessions reaching the CLI and API; no skill for general session start, steer, tag and cleanup.'
+- entry: projects
+  skills: []
+  status: none
+  note: 'No registry skill covers project registry, aliases or policy.'
+- entry: automata-core
+  skills: [sibling-runner]
+  status: partial
+  note: 'sibling-runner covers a per-sibling Automata task-queue pattern only; no skill for create, decompose, approve and cancel.'
+- entry: automata-config
+  skills: []
+  status: none
+  note: 'No registry skill covers per-Automaton LLM, verifier, budget, tags or templates.'
+- entry: orchestrator
+  skills: []
+  status: none
+  note: 'No registry skill covers graph orchestration or algorithm mode.'
+- entry: memory
+  skills: []
+  status: none
+  note: 'No registry skill covers remember, recall, scopes or handoff.'
+- entry: federation
+  skills: [polity-topology]
+  status: partial
+  note: 'polity-topology gives multi-instance topology awareness; no skill for peers, groups or fingerprints.'
+- entry: llm-backends-and-nodes
+  skills: []
+  status: none
+  note: 'No registry skill covers LLM registry, compute nodes or routing.'
+- entry: council
+  skills: []
+  status: none
+  note: 'No registry skill covers council runs or personas.'
+- entry: messaging
+  skills: [imap-mcp]
+  status: partial
+  note: 'imap-mcp covers email over IMAP via a separate MCP server, not datawatch channel routing, push, DNS or Matrix.'
+- entry: secrets
+  skills: []
+  status: none
+  note: 'No registry skill covers vault or secret handling.'
+- entry: alerts
+  skills: []
+  status: none
+  note: 'No registry skill covers alert rules or exit hooks.'
+- entry: observer
+  skills: []
+  status: none
+  note: 'No registry skill covers observer stats or envelopes.'
+- entry: schedules
+  skills: [sibling-runner]
+  status: partial
+  note: 'sibling-runner covers scheduled per-sibling sessions; no skill for general schedule add, cancel and results.'
+- entry: plugins
+  skills: []
+  status: none
+  note: 'No registry skill covers plugin registry, services or tokens.'
+- entry: skills
+  skills: []
+  status: none
+  note: 'No registry skill covers registry sync and loading.'
+- entry: settings
+  skills: []
+  status: none
+  note: 'No registry skill covers configuration, proxy or daemon operations.'
+- entry: security
+  skills: []
+  status: none
+  note: 'No registry skill covers audit, guardrails or encryption at rest.'
+- entry: reports-cost
+  skills: []
+  status: none
+  note: 'No registry skill covers cost, budget or usage reports.'
+- entry: devices
+  skills: []
+  status: none
+  note: 'No registry skill covers device registration or aliases.'
+- entry: questions
+  skills: []
+  status: none
+  note: 'No registry skill covers operator questions.'
+- entry: evals
+  skills: []
+  status: none
+  note: 'No registry skill covers evaluation suites or runs.'
+- entry: supervisor
+  skills: []
+  status: none
+  note: 'No registry skill covers supervisor loop jobs, runs or watches.'
+- entry: web-app
+  skills: [image-reviewer]
+  status: partial
+  note: 'image-reviewer reviews screenshots and UI images; no skill for operating the web app tabs, dashboard or console.'
+- entry: cli
+  skills: []
+  status: none
+  note: 'No registry skill covers the datawatch command line.'
+- entry: rest-and-mcp
+  skills: [sandbox-permissions]
+  status: partial
+  note: 'sandbox-permissions only unblocks API access from a sandbox; no skill for using the REST and MCP surface.'
+gaps:
+  none:
+  - projects
+  - automata-config
+  - orchestrator
+  - memory
+  - llm-backends-and-nodes
+  - council
+  - secrets
+  - alerts
+  - observer
+  - plugins
+  - skills
+  - settings
+  - security
+  - reports-cost
+  - devices
+  - questions
+  - evals
+  - supervisor
+  - cli
+  partial:
+  - sessions
+  - automata-core
+  - federation
+  - messaging
+  - schedules
+  - web-app
+  - rest-and-mcp
