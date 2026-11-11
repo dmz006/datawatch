@@ -12190,7 +12190,9 @@ func newConfigSetCmd() *cobra.Command {
 			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
 			"starts with worker_profile is refused as unknown.\n\n" +
-			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).",
+			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
+			"LLM billing mode key: llm.<name>.billing_mode (api, allowance or local; empty = resolve from the usage billing profile).\n" +
+			config.BillingModeHelp,
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -12236,6 +12238,19 @@ func parseVerifierRunCapValue(value string) (int, error) {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
+	if _, restKey, ok := config.LLMBillingModeConfigKey(key); ok {
+		// Same validator as the REST endpoint, so the error text matches.
+		value = strings.TrimSpace(value)
+		if err := config.ValidateBillingMode(value); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		b, _ := json.Marshal(map[string]any{restKey: value})
+		if err := putConfig(loopbackBaseURL(cfg)+"/api/config", cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
 	if isWorkerProfileConfigKeyFamily(key) {
 		return runWorkerProfileConfigSet(cfg, key, value)
 	}

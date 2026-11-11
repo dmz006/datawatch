@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/spf13/cobra"
 )
@@ -104,6 +105,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		planTier                                         string
 		verificationMode                                 string
 		billingGroup                                     string
+		billingMode                                      string
 		maxInflight                                      int
 		roles                                            []string
 	)
@@ -137,6 +139,15 @@ func newLLMAddCmd(update bool) *cobra.Command {
 					return fmt.Errorf("invalid --verification-mode %q (expected classify or generate; empty = generate)", verificationMode)
 				}
 				body["verification_mode"] = verificationMode
+			}
+			// billing_mode — validated with the shared validator so the error
+			// matches REST. Only sent when the flag is passed.
+			if rcmd.Flags().Changed("billing-mode") {
+				bm := strings.TrimSpace(billingMode)
+				if err := config.ValidateBillingMode(bm); err != nil {
+					return err
+				}
+				body["billing_mode"] = bm
 			}
 			// billing_group — operator label grouping LLM entries that share
 			// one cloud/billing account. Only sent when the operator passed
@@ -269,6 +280,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&fallbackChainCSV, "fallback-chain", "", "comma-separated profile fallback chain (claude-code only)")
 	cmd.Flags().StringVar(&planTier, "plan-tier", "", "subscription plan tier: pro | max_5x | max_20x | api (empty = unset; the daemon's autonomous.plan_tier_max_inflight table then caps this LLM's inflight unless --max-inflight > 0 wins)")
 	cmd.Flags().StringVar(&verificationMode, "verification-mode", "", "how this LLM judges when used as a verifier: classify | generate (default generate when unset)")
+	cmd.Flags().StringVar(&billingMode, "billing-mode", "", "how this LLM is paid for: api (metered pay-per-token) | allowance (bundled plan allowance that resets on a schedule) | local (local inference at zero marginal cost); empty = resolve from the usage billing profile")
 	cmd.Flags().StringVar(&billingGroup, "billing-group", "", "label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group; empty = clears on update)")
 	addLLMBudgetFlags(cmd)
 	cmd.Flags().StringArrayVar(&roles, "role", nil, "workload role this LLM serves (repeatable). On update, omitting --role keeps the stored roles; a single empty --role=\"\" clears them")
