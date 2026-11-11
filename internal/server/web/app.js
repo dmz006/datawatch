@@ -32290,7 +32290,8 @@ window.cleanupCardHtml = function(status) {
     _cleanupPassHtml(t('cleanup_pass_worktrees'), s.worktrees) +
     _cleanupPassHtml(t('cleanup_pass_temp'), s.temp) +
     `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;"><span style="font-weight:600;color:var(--text2);">${escHtml(t('cleanup_disk_heading'))}</span>${badge}</div>` +
-    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div></div>`;
+    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div>` +
+    window.cleanupPermissionHtml(s) + `</div>`;
 };
 
 // ── Automata protected-paths card ────────────────────────────────────────────
@@ -32550,12 +32551,14 @@ function _uncommittedWorkEntryHtml(e) {
   if (entry.reason) lines.push(_cleanupLine(t('uncommitted_work_reason', [String(entry.reason)])));
   if (held) lines.push(_cleanupLine(t('uncommitted_work_held_since', [held])));
   const open = _uncommittedWorkQuestionButton(entry.question_id);
+  const commit = entry.worktree
+    ? `<button type="button" class="btn-secondary uncommitted-work-commit" data-worktree="${escHtml(String(entry.worktree))}" style="font-size:11px;padding:3px 10px;" onclick="window.uncommittedWorkCommitOpen(this)">${escHtml(t('uncommitted_work_commit'))}</button>` : '';
   return `<div class="uncommitted-work-row" data-kind="${isTask ? 'task' : 'worktree'}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
     `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(heading)}</div>` +
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', outside, 'uncommitted-work-outside') +
     lines.join('') +
-    (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+    ((open || commit) ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${open}${commit}</div>` : '') + `</div>`;
 }
 
 window.uncommittedWorkCardHtml = function(status) {
@@ -32608,6 +32611,136 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', _uncommittedWorkStrings(h.outside_scope), 'uncommitted-work-outside') +
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+};
+
+// ── Housekeeping actions: commit, unlanded work, permission fix ─────────────
+// _housekeepingPost sends one action and reports a failure as one line.
+function _housekeepingPost(path, body) {
+  return apiFetch(path, { method: 'POST', body: JSON.stringify(body || {}) });
+}
+function _housekeepingRefresh(keys) {
+  keys.forEach(k => { const c = window._listLoaders && window._listLoaders[k]; if (c && c.load) c.load(); });
+}
+function _housekeepingErr(key, err) {
+  const msg = String((err && err.message) || err || '').trim();
+  if (typeof showToast === 'function') showToast(t(key, [msg]), 'error');
+}
+
+// uncommittedWorkCommitOpen shows what a commit would record and a message
+// field, and commits only when the operator confirms.
+window.uncommittedWorkCommitOpen = function(btn) {
+  const wt = btn && btn.getAttribute ? btn.getAttribute('data-worktree') : '';
+  if (!wt) return;
+  const existing = document.getElementById('uncommittedCommitModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'uncommittedCommitModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal" style="max-width:720px;width:92vw;min-width:0;">
+    <div style="font-weight:600;margin-bottom:6px;">${escHtml(t('uncommitted_work_commit_title'))}</div>
+    <div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-bottom:6px;"><code>${escHtml(wt)}</code></div>
+    <pre id="uncommittedCommitDiff" style="max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 8px;">${escHtml(t('uncommitted_work_commit_diff_loading'))}</pre>
+    <label for="uncommittedCommitMsg" style="font-size:12px;">${escHtml(t('uncommitted_work_commit_message'))}</label>
+    <textarea id="uncommittedCommitMsg" rows="3" style="width:100%;box-sizing:border-box;margin:4px 0 8px;"></textarea>
+    <div id="uncommittedCommitErr" style="color:var(--error,#c00);font-size:12px;overflow-wrap:anywhere;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" id="uncommittedCommitCancel" style="font-size:12px;padding:4px 16px;">${escHtml(t('uncommitted_work_commit_cancel'))}</button>
+      <button type="button" class="btn-stop" id="uncommittedCommitGo" disabled style="font-size:12px;padding:4px 16px;">${escHtml(t('uncommitted_work_commit_submit'))}</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.getElementById('uncommittedCommitCancel').onclick = close;
+  const go = document.getElementById('uncommittedCommitGo');
+  const err = document.getElementById('uncommittedCommitErr');
+  const pre = document.getElementById('uncommittedCommitDiff');
+  apiFetch('/api/autonomous/uncommitted-work/diff?worktree=' + encodeURIComponent(wt)).then(r => {
+    if (r && r.clean) { pre.textContent = t('uncommitted_work_commit_clean'); return; }
+    pre.textContent = String((r && r.diff) || '');
+    go.disabled = false;
+  }).catch(e => { pre.textContent = ''; err.textContent = t('uncommitted_work_commit_failed', [String((e && e.message) || e || '')]); });
+  go.onclick = () => {
+    go.disabled = true; err.textContent = '';
+    _housekeepingPost('/api/autonomous/uncommitted-work/commit', { worktree: wt, message: document.getElementById('uncommittedCommitMsg').value.trim() })
+      .then(() => { close(); _housekeepingRefresh(['automation_uncommitted_work', 'automation_unlanded_work']); })
+      .catch(e => { go.disabled = false; err.textContent = t('uncommitted_work_commit_failed', [String((e && e.message) || e || '')]); });
+  };
+};
+
+// ── Unlanded work card ───────────────────────────────────────────────────────
+// unlandedWorkCardHtml(data) draws GET /api/autonomous/unlanded-work:
+// { branches: [{automaton_id, branch, title, commits, last_activity,
+// recommendation, reason}] }. An empty list reads as nothing to show.
+const UNLANDED_WORK_RECS = { needs_decision: 'unlanded_work_rec_decide', decide: 'unlanded_work_rec_decide', superseded: 'unlanded_work_rec_superseded', landed: 'unlanded_work_rec_landed' };
+function _unlandedWorkBranches(data) {
+  const b = data && typeof data === 'object' ? data.branches : null;
+  return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
+}
+window.unlandedWorkCardHtml = function(data) {
+  const list = _unlandedWorkBranches(data);
+  if (!list.length) return '';
+  const btn = (act, key) => `<button type="button" class="btn-secondary unlanded-work-${act}" style="font-size:11px;padding:3px 10px;" onclick="window.unlandedWorkAct(this,'${act}')">${escHtml(t(key))}</button>`;
+  const rows = list.map(e => {
+    const recKey = UNLANDED_WORK_RECS[String(e.recommendation || '')];
+    const rec = recKey ? t(recKey) : String(e.recommendation || '');
+    const when = _triageTime(e.last_activity);
+    return `<div class="unlanded-work-row" data-branch="${escHtml(String(e.branch))}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(e.title || e.branch))}</div>` +
+      _cleanupLine(t('unlanded_work_purpose', [String(e.title || e.branch)])) +
+      _cleanupLine(t('unlanded_work_commits', [Number(e.commits) || 0])) +
+      (when ? _cleanupLine(t('unlanded_work_last_activity', [when])) : '') +
+      _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
+      `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
+  }).join('');
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}</div>${rows}</div>`;
+};
+
+window.unlandedWorkAct = function(btn, act) {
+  const row = btn && btn.closest ? btn.closest('.unlanded-work-row') : null;
+  const branch = row ? row.getAttribute('data-branch') : '';
+  if (!branch) return;
+  const paths = { keep: 'keep', archive: 'archive-branch', delete: 'delete-worktree' };
+  const run = () => {
+    btn.disabled = true;
+    _housekeepingPost('/api/autonomous/unlanded-work/' + paths[act], act === 'delete' ? { branch, confirm: true } : { branch })
+      .then(() => _housekeepingRefresh(['automation_unlanded_work']))
+      .catch(e => { btn.disabled = false; _housekeepingErr('unlanded_work_action_failed', e); });
+  };
+  if (act === 'delete') showConfirmModal(t('unlanded_work_delete_confirm', [branch]), run); else run();
+};
+
+function _automationUnlandedWorkLoader() {
+  return window._listLoaders.automation_unlanded_work || listLoader({
+    key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
+    failedText: msg => t('unlanded_work_failed', [msg]),
+    active: () => !!document.getElementById('automationStaleWorktreesCard'),
+    render: data => {
+      const h = window.unlandedWorkCardHtml(data);
+      const el = document.getElementById('automationStaleWorktreesCard');
+      if (el) el.style.display = h ? '' : 'none';
+      return h;
+    },
+  });
+}
+
+// cleanupPermissionHtml shows one line of why and a Fix button for a
+// permission problem, and nothing for a harmless one.
+window.cleanupPermissionHtml = function(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const w = (s.worktrees && typeof s.worktrees === 'object') ? s.worktrees : {};
+  const iss = s.permission_issue || w.permission_issue;
+  if (!iss || typeof iss !== 'object' || iss.hidden || !(Number(iss.count) > 0)) return '';
+  const fix = iss.fixable
+    ? ` <button type="button" class="btn-secondary cleanup-permission-fix" style="font-size:11px;padding:3px 10px;" data-paths="${escHtml(JSON.stringify(Array.isArray(iss.paths) ? iss.paths : []))}" onclick="window.cleanupPermissionFix(this)">${escHtml(t('cleanup_permission_fix'))}</button>` : '';
+  return `<div class="cleanup-permission" style="margin-top:8px;min-width:0;overflow-wrap:anywhere;">${escHtml(String(iss.why || ''))}${fix}</div>`;
+};
+window.cleanupPermissionFix = function(btn) {
+  let paths = [];
+  try { paths = JSON.parse(btn.getAttribute('data-paths') || '[]'); } catch (e) { paths = []; }
+  btn.disabled = true;
+  _housekeepingPost('/api/autonomous/cleanup/fix-permissions', { paths })
+    .then(() => _housekeepingRefresh(['automation_cleanup']))
+    .catch(e => { btn.disabled = false; _housekeepingErr('cleanup_permission_fix_failed', e); });
 };
 
 // ── Platform context settings card ──────────────────────────────────────────
@@ -36080,8 +36213,16 @@ function _automationPlaceholderHTML(id) {
   ['setup', 'automationPriorityByKindCard', 120],
   ['setup', 'automationGroupingTagsCard', 130],
   ['setup', 'automationSupervisorLoopCard', 140],
-  ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
+// The Unlanded work card fills the Housekeeping slot: hidden until the list
+// has a row, and polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationStaleWorktreesCard',
+  order: 100,
+  html: _automationPlaceholderHTML('automationStaleWorktreesCard'),
+  mount: () => listLoaderAll([_automationUnlandedWorkLoader()]),
+  stop: () => _automationStopLoaders(['automation_unlanded_work']),
+});
 // The Supervisor loop card fills the Setup placeholder reserved above: it keeps
 // the slot id, order and hidden placeholder markup (it un-hides on the first read), and polls only
 // while the Setup sub-tab is shown.
@@ -37044,7 +37185,13 @@ function _automationUncommittedWorkLoader() {
     key: 'automation_uncommitted_work', el: 'automationUncommittedWorkCard', url: '/api/autonomous/uncommitted-work', pollMs: 30000,
     failedText: msg => t('uncommitted_work_failed', [msg]),
     active: () => !!document.getElementById('automationUncommittedWorkCard'),
-    render: status => window.uncommittedWorkCardHtml(status),
+    render: status => {
+      const held = status && Array.isArray(status.held) ? status.held.length : 0;
+      const off = status && status.policy === 'off';
+      const el = document.getElementById('automationUncommittedWorkCard');
+      if (el) el.style.display = (held && !off) ? '' : 'none';
+      return (held && !off) ? window.uncommittedWorkCardHtml(status) : '';
+    },
   });
 }
 

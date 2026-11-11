@@ -130,6 +130,9 @@ type CleanupPassStatus struct {
 	// OwnerBytesFreed / NetBytesFreed are the same split for bytes.
 	OwnerBytesFreed int64 `json:"owner_bytes_freed"`
 	NetBytesFreed   int64 `json:"net_bytes_freed"`
+	// PermissionIssue is set when the last run had removals refused for
+	// permission; nil otherwise.
+	PermissionIssue *CleanupPermissionIssue `json:"permission_issue,omitempty"`
 }
 
 // CleanupDiskCheck is one disk reading. Percent is nil when statfs
@@ -278,6 +281,7 @@ func (r *cleanupStatusRecorder) RecordWorktree(res WorktreeCleanupResult, source
 	ps.Skipped = len(res.Skipped)
 	ps.Failed = len(res.Failed)
 	ps.SkippedByReason = skippedByReason(res)
+	ps.PermissionIssue = ClassifyCleanupPermissionErrors(res.Failed)
 	var bytes int64
 	for _, rm := range res.Removed {
 		bytes += rm.BytesFreed
