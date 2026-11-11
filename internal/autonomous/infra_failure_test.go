@@ -173,3 +173,26 @@ func TestInfraFailure_WithContextCause(t *testing.T) {
 		t.Fatal("nil error must stay nil")
 	}
 }
+
+func TestClassifyInfraTextModelUnresponsive(t *testing.T) {
+	cases := []struct {
+		name, text string
+		want       string
+		ok         bool
+	}{
+		{"marker and timeout", "DATAWATCH_PI_FAILED: pi exited with status 1\nError: Request timed out.", InfraClassModelUnresponsive, true},
+		{"mixed case", "datawatch_pi_failed: x REQUEST TIMED OUT", InfraClassModelUnresponsive, true},
+		{"marker only", "DATAWATCH_PI_FAILED: pi exited with status 1", "", false},
+		{"timeout only", "Request timed out", "", false},
+		{"other stall", "task stalled with no output", "", false},
+	}
+	for _, c := range cases {
+		got, ok := ClassifyInfraText(c.text)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: got (%q,%v), want (%q,%v)", c.name, got, ok, c.want, c.ok)
+		}
+	}
+	if got, ok := ClassifyInfraFailure(errors.New("stalled: DATAWATCH_PI_FAILED ... Request timed out")); !ok || got != InfraClassModelUnresponsive {
+		t.Errorf("ClassifyInfraFailure = (%q,%v)", got, ok)
+	}
+}
