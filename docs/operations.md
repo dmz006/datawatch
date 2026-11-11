@@ -2597,33 +2597,36 @@ use `v0.73.0`. Unifying them is an operator decision. Full write-up in
 
 ### Code scanning upload in the Release workflow
 
-`.github/workflows/release.yaml` uploads three SARIF reports to GitHub Code
-Scanning: the gosec report (category `gosec`, in the `gosec baseline-diff` job)
-and the Trivy container report (category `trivy-<image>`), which is uploaded
-by both container jobs, `build-base` (base images) and `build-agents` (agent
-images). The upload is a courtesy copy of results the scan steps have already
-judged; it is not a release gate.
+In `.github/workflows/release.yaml` the gosec SARIF report (category `gosec`,
+in the `gosec baseline-diff` job) is uploaded to GitHub Code Scanning. The
+upload is a courtesy copy of a result the scan step has already judged; it is
+not a release gate.
 
-- **Not blocking.** Each upload step is `continue-on-error`, so a failed upload
-  does not fail the job or hold up goreleaser. The gate is the scan step before
-  it: the gosec baseline diff and the Trivy HIGH/CRITICAL scan still fail the
-  run on a net-new finding. The `actions/upload-artifact` copies of the same
-  SARIF files (90-day retention for gosec) stay available when the upload fails.
-- **One retry after 60 seconds.** If the first upload fails, the workflow waits
-  60 seconds and uploads once more (the step named "... (retry)"). The upload
-  action does not report why it failed, so the retry runs on any failure, which
-  covers GitHub's rate-limit answer; it is not limited to that answer. If the
-  retry also fails, the run goes on and the step shows a warning.
-- **Missing results.** A release whose upload gave up has no new Code Scanning
-  entry for that run. Download the SARIF artifact from the run, or re-run the
-  workflow later once the limit has lifted.
-- **Not a setting.** The wait and the retry count are fixed in the workflow
-  file, not in a daemon setting. The same upload steps in `containers.yaml` and
-  `image-refresh.yaml` are not changed.
+- **Up to four attempts.** The upload is tried up to four times with waits
+  between attempts, which covers GitHub's rate-limit answer. The upload action
+  does not report why it failed, so a retry happens on any failure, not only on
+  that answer.
+- **Never blocking.** A failed attempt never fails the job or holds up
+  goreleaser. If every attempt fails, the step logs a warning and the run goes
+  on.
+- **Gate unchanged.** The blocking gosec baseline check still fails the run on
+  a net-new finding. The `actions/upload-artifact` copy of the SARIF file (90-day
+  retention) stays available when the upload fails.
+- **Missing results.** A release whose upload gave up has no new gosec entry in
+  Code Scanning for that run. Read the warning on the upload step, download the
+  SARIF artifact from the run, or re-run the workflow once the limit has lifted.
+- **Not covered.** The two Trivy SARIF upload steps (`build-base` and
+  `build-agents`) and the upload steps in `containers.yaml` and
+  `image-refresh.yaml` are not part of this change. The wait lengths and the
+  attempt count are fixed in the workflow file, not in a daemon setting.
 
-**Operator review:** decide whether a failed upload (both tries) should raise
-an alert; today it is only a warning on the step. Also decide whether one retry
-after 60 seconds is enough for your rate-limit windows.
+**Operator review:** (1) this docs change describes the workflow change made by
+an earlier, operator-approved task; the copy of `release.yaml` in this task's
+tree does not contain that change (the edit to a protected path was reverted),
+so confirm the merged workflow matches the text above, including the exact wait
+lengths, which are not stated here. (2) Decide whether a gosec upload that fails
+all four attempts should raise an alert; today it is only a warning on the step.
+(3) Decide whether the two Trivy SARIF uploads should get the same retry.
 
 ---
 
