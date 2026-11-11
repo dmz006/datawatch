@@ -4675,5 +4675,8 @@
   "usage_page_burn_state": "%1$s points per day (recent)",
   "usage_page_burn_why": "Week average %1$s points per day",
   "usage_page_burn_next_over": "Try %1$s lane(s) to stay inside the allowance.",
-  "usage_page_burn_next_ok": "Keep the current lanes."
+  "usage_page_burn_next_ok": "Keep the current lanes.",
+  "dash_card_usage_allowance": "Weekly allowance",
+  "dash_card_usage_pace": "Pace line",
+  "dash_card_usage_burn": "Burn per day"
 }
