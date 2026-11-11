@@ -3271,3 +3271,8 @@ requirements report" entries in `docs/operations.md`.
 
 - **Config:** `resource_limits.memory_share_percent` (1 to 100, default 50), `resource_limits.memory_floor_mb` and `resource_limits.memory_cap_mb` (whole MB, floor not above cap). Set them with `PUT /api/config`, `datawatch config set`, the chat command `configure <key>=<value>` (listed under `configure help` and `configure list`) or the `config_set` MCP tool.
 - **Status:** `GET /api/autonomous/status` and the `autonomous_status` MCP tool carry a `memory_ceiling` object: `effective_mb` (0 when none), `source` (`default`, `project`, `task_kind` or `none`), `enforcement_path` (`scope`, `watchdog` or `none`) and the `share_percent`, `floor_mb` and `cap_mb` it comes from. It describes a verification run with no project or task kind override; `source` is `none` while no ceiling settings are installed in the autonomous manager. Code: `internal/autonomous/memory_ceiling_status.go`.
+
+## Git host counters in system stats (`git_hosts`)
+
+- `internal/git/host_op_counters.go`: in-memory outcomes of host operations (push, pull request, merge, tag, CI read) over the last hour, plus the time of the last success. No store; reset on restart. Recorded in `PushToBranch`, `PushToDefaultBranch`, `OpenChangeRequest`, `CreateTagForHost` and `LatestRuns`. The merge kind is reserved and stays zero until a host merge call exists.
+- `internal/stats/collector.go`: `SystemStats.GitHosts` (`configured`, `window_seconds`, `operations`, `failed`, `last_success_at`), filled through `SetGitHostStatsFunc`; omitted when no `git.hosts` entry is configured.

@@ -138,6 +138,7 @@ func remoteHostName(remote string) string {
 // URL.
 func OpenChangeRequest(ctx context.Context, host GitHostConfig, opts PROptions) (HostResult, error) {
 	u, err := forgeFactory(host).OpenPR(ctx, opts)
+	RecordHostOp(HostOpPullRequest, err == nil)
 	if err == nil {
 		recordHostOperation(ctx, host, HostAuditMR, opts.Repo, opts.HeadBranch)
 	}

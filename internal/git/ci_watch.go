@@ -29,7 +29,8 @@ type CIRun struct {
 // queried with gh run list; GitLab hosts with glab api against the project's
 // pipelines. The call is bounded by a 15 second deadline derived from ctx.
 // It never returns a token.
-func LatestRuns(ctx context.Context, host GitHostConfig, repo, ref string) ([]CIRun, error) {
+func LatestRuns(ctx context.Context, host GitHostConfig, repo, ref string) (runs []CIRun, err error) {
+	defer func() { RecordHostOp(HostOpCIRead, err == nil) }()
 	repo = strings.TrimSpace(repo)
 	ref = strings.TrimSpace(ref)
 	if repo == "" {
