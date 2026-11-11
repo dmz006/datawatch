@@ -160,6 +160,12 @@ admission is never left restricted by a guard that is off.
 All settings are under `usage.burn_guard`. Each is applied to the next
 evaluation with no restart, and one invalid value rejects the whole change.
 
+In the web app the settings live in **Settings → General → Automata**, no longer
+on the usage page; the page keeps the Burn guard status and its **Run now**
+button. Only the place moved. The same keys are still read and written on all six
+surfaces (YAML, web app, CLI, REST, MCP and the comm channel), and every key name
+is unchanged, so a script or config file that used the old keys keeps working.
+
 | Setting | Meaning | Default |
 |---|---|---|
 | `enabled` | Guard on or off | `true` |
@@ -224,7 +230,7 @@ below, without a restart — the guard reads the current value every interval.
 | Surface | How |
 |---|---|
 | YAML (config file) | `usage.burn_guard.ask_on_change: true` under the `usage.burn_guard` key; see the [configuration reference](../config-reference.yaml) |
-| Web UI | Usage calculator view, **Burn guard** card: the settings under the status (**Ask instead of alerting** is `ask_on_change`), **Run now** to evaluate once; Settings > Usage burn guard for the same keys; the **Burn guard** stat card in the Monitor panel |
+| Web UI | the **Burn guard** card on the usage page, with **Run now** to evaluate once; the guard's settings (**Ask instead of alerting** is `ask_on_change`) are in **Settings → General → Automata**; the **Burn guard** stat card in the Monitor panel |
 | CLI | `datawatch config set usage.burn_guard.ask_on_change true` (switch it back with `false`); `datawatch usage burn-guard status`, `run`, `config [key=value ...]`; `datawatch automation set-effort-ceiling <id> docs=low ...` (or `--clear`) for the effort ceiling |
 | MCP | `config_set` with `key: usage.burn_guard.ask_on_change`, `value: true`; `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
 | Chat | `configure usage.burn_guard.ask_on_change=true` |
