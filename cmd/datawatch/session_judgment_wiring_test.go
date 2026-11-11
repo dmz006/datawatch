@@ -19,7 +19,7 @@ func TestB124_AutonomousVerify_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		{"passes session-kind check", "verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)"},
 		{"branches on useSession", "if useSession {"},
 		{"enforces the pi-family pinned-model guard (v9.10.19)", "guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)"},
-		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, backend, model,"},
+		{"spawns a real session", "runOneShotJSONSessionWithEffortAttr(verifyAttr(prd.ID, task.ID), cfg, prd.ID, taskDir, backend, model,"},
 		{"retries a run-cap end once through the retry helper", "runVerifierSessionWithRunCapHook("},
 		{"releases the lease and records the decision on a run-cap end", "verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)"},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, taskDir, outputFile)"},
@@ -38,7 +38,7 @@ func TestB124_AutonomousGuardrail_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		want string
 	}{
 		{"checks needsSessionJudgment before downgrading", "if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {"},
-		{"spawns a real session and captures its id", "runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
+		{"spawns a real session and captures its id", "runOneShotJudgeSessionCaptureIDAttr(guardrailAttr(req), cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
 		{"stamps the judge session onto its verdicts", "judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{"},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)"},
 		// The old unconditional downgrade must still exist as the

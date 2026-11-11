@@ -12,38 +12,8 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
-	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/spendledger"
 )
-
-// costReportSessionManager is a file-backed session manager (temp dir) that
-// the cost-report source adapter can read.
-func costReportSessionManager(t *testing.T) *session.Manager {
-	t.Helper()
-	sm, err := session.NewManager("test", t.TempDir(), "/bin/echo", 0)
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
-	}
-	sm.WithFakeTmux()
-	trackSessionManager(t, sm)
-	return sm
-}
-
-func costReportSession(t *testing.T, sm *session.Manager, id, backend string, tin, tout int, at time.Time) {
-	t.Helper()
-	if err := sm.SaveSession(&session.Session{
-		ID:            id,
-		FullID:        "test-" + id,
-		State:         session.StateComplete,
-		Hostname:      "test",
-		BackendFamily: backend,
-		TokensIn:      tin,
-		TokensOut:     tout,
-		UpdatedAt:     at,
-	}); err != nil {
-		t.Fatalf("SaveSession(%s): %v", id, err)
-	}
-}
 
 // TestCostReportSourceRecordsPopulateOwner — the session→owner map drives
 // Record.AutomatonID/AutomationID/Release: the owned session carries all
