@@ -4644,5 +4644,16 @@
   "settings.self_config_recent_loading": "Loading…",
   "settings.self_config_recent_empty": "No self-config audit records yet.",
   "settings.self_config_recent_more": "%1$d older record(s) not shown",
-  "settings.self_config_recent_unavailable": "Self-config audit log unavailable"
+  "settings.self_config_recent_unavailable": "Self-config audit log unavailable",
+  "list_mode_toggle": "View mode",
+  "list_mode_list": "List",
+  "list_mode_tiles": "Tiles",
+  "list_mode_compact": "Compact",
+  "list_group_by": "Group by",
+  "list_group_by_none": "No grouping",
+  "list_group_untagged": "No tag",
+  "list_group_none": "None",
+  "list_state_mix": "State mix",
+  "list_show_more": "Show more",
+  "list_overflow_menu": "More actions"
 }

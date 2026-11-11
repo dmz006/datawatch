@@ -4644,5 +4644,16 @@
   "settings.self_config_recent_loading": "Cargando…",
   "settings.self_config_recent_empty": "Aún no hay registros de auditoría self-config.",
   "settings.self_config_recent_more": "%1$d registro(s) anterior(es) no mostrado(s)",
-  "settings.self_config_recent_unavailable": "Registro de auditoría self-config no disponible"
+  "settings.self_config_recent_unavailable": "Registro de auditoría self-config no disponible",
+  "list_mode_toggle": "Modo de vista",
+  "list_mode_list": "Lista",
+  "list_mode_tiles": "Mosaicos",
+  "list_mode_compact": "Compacto",
+  "list_group_by": "Agrupar por",
+  "list_group_by_none": "Sin agrupar",
+  "list_group_untagged": "Sin etiqueta",
+  "list_group_none": "Ninguno",
+  "list_state_mix": "Mezcla de estados",
+  "list_show_more": "Mostrar más",
+  "list_overflow_menu": "Más acciones"
 }
