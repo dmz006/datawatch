@@ -9577,22 +9577,23 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:          alertStore,
-		SchedStore:          schedStore,
-		ExitHookStore:       exitHookStore,
-		QueueStore:          queueStore,          // BL357
-		SubStore:            discussionSubStore,  // BL358
-		ResultStore:         resultStore,         // BL360
-		ScheduleResultStore: scheduleResultStore, // result panel (GH#204)
-		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
-		CmdLib:              cmdLib,
-		AcmeManager:         acmeMgr, // BL397
-		Version:             Version,
-		LatestVersion:       fetchLatestVersion,
-		FallbackToken:       cfg.Server.Token, // SEC-002
-		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
-		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
-		ConfigAudit:         cfgAuditSink,     // BL110 — shared sink (same instance as REST + comm)
+		AlertStore:             alertStore,
+		SchedStore:             schedStore,
+		ExitHookStore:          exitHookStore,
+		QueueStore:             queueStore,          // BL357
+		SubStore:               discussionSubStore,  // BL358
+		ResultStore:            resultStore,         // BL360
+		ScheduleResultStore:    scheduleResultStore, // result panel (GH#204)
+		ResultHistoryLimit:     cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:                 cmdLib,
+		AcmeManager:            acmeMgr, // BL397
+		Version:                Version,
+		LatestVersion:          fetchLatestVersion,
+		FallbackToken:          cfg.Server.Token, // SEC-002
+		CostReportCfg:          cfg.CostReport,   // cost_report MCP tool (internal/costreport)
+		DependencyUpdateConfig: func() config.DependencyUpdateConfig { return cfg.Autonomous.Automation.DependencyUpdate },
+		UsageCfg:               cfg.Usage,    // usage.billing profiles → cost_report rows' billing fields
+		ConfigAudit:            cfgAuditSink, // BL110 — shared sink (same instance as REST + comm)
 		RestartFn: guardRestart(func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
@@ -15326,20 +15327,21 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:          mcpAlertStore,
-		SchedStore:          mcpSchedStore,
-		QueueStore:          mcpQueueStore,  // BL357
-		SubStore:            mcpSubStore,    // BL358
-		ResultStore:         mcpResultStore, // BL360
-		ScheduleResultStore: mcpScheduleResultStore,
-		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
-		CmdLib:              mcpCmdLib,
-		Version:             Version,
-		LatestVersion:       fetchLatestVersion,
-		FallbackToken:       cfg.Server.Token, // SEC-002
-		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
-		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
-		ConfigAudit:         configAuditSinkFor(cfg), // BL110 — shared sink
+		AlertStore:             mcpAlertStore,
+		SchedStore:             mcpSchedStore,
+		QueueStore:             mcpQueueStore,  // BL357
+		SubStore:               mcpSubStore,    // BL358
+		ResultStore:            mcpResultStore, // BL360
+		ScheduleResultStore:    mcpScheduleResultStore,
+		ResultHistoryLimit:     cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:                 mcpCmdLib,
+		Version:                Version,
+		LatestVersion:          fetchLatestVersion,
+		FallbackToken:          cfg.Server.Token, // SEC-002
+		CostReportCfg:          cfg.CostReport,   // cost_report MCP tool (internal/costreport)
+		DependencyUpdateConfig: func() config.DependencyUpdateConfig { return cfg.Autonomous.Automation.DependencyUpdate },
+		UsageCfg:               cfg.Usage,               // usage.billing profiles → cost_report rows' billing fields
+		ConfigAudit:            configAuditSinkFor(cfg), // BL110 — shared sink
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP
