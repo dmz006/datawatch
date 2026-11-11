@@ -307,7 +307,7 @@ func restoreBinary(snap, dst, wantHash string) error {
 	if err != nil {
 		return fmt.Errorf("snapshot is not readable: %w", err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	fi, err := in.Stat()
 	if err != nil {
 		return err

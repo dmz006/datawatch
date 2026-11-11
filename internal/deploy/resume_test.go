@@ -64,7 +64,7 @@ func newResumeEnv(t *testing.T, sess *fakeSessions) *resumeEnv {
 	cfg := config.DeployConfig{BinaryPath: bin, RestartCommand: tRestart, HealthCheck: tHealth, HealthTimeout: "4s"}
 	cmd := &fakeCmd{codes: map[string]int{}}
 	st := &memStore{}
-	st.Save(State{Phase: PhaseRestarting, SnapshotPath: snap,
+	_ = st.Save(State{Phase: PhaseRestarting, SnapshotPath: snap,
 		PreRestart: PreRestart{SessionIDs: []string{"s1", "s2"}, LeaseCount: 2}})
 	q, out := &fakeQuestions{}, &fakeOutcomes{}
 	return &resumeEnv{cmd: cmd, st: st, q: q, out: out, bin: bin, snap: snap,
@@ -195,7 +195,7 @@ func TestDeployRollbackSecondRestartFailure(t *testing.T) {
 
 func TestDeployResumeIgnoresOtherPhases(t *testing.T) {
 	e := newResumeEnv(t, &fakeSessions{})
-	e.st.Save(State{Phase: PhaseInstallFailed})
+	_ = e.st.Save(State{Phase: PhaseInstallFailed})
 	if res, _ := e.r.Resume(context.Background()); res.Acted || len(e.cmd.calls) != 0 {
 		t.Fatalf("res=%+v", res)
 	}
@@ -203,7 +203,7 @@ func TestDeployResumeIgnoresOtherPhases(t *testing.T) {
 
 func TestDeployDeferredStateIsRetried(t *testing.T) {
 	st := &memStore{}
-	st.Save(State{Phase: PhaseDeferred})
+	_ = st.Save(State{Phase: PhaseDeferred})
 	clock := &fakeClock{t: time.Unix(0, 0)}
 	calls := 0
 	retry := func(context.Context) (Result, error) {
@@ -211,7 +211,7 @@ func TestDeployDeferredStateIsRetried(t *testing.T) {
 		if calls == 1 {
 			return Result{Status: StatusDeferred}, nil
 		}
-		st.Save(State{Phase: PhaseRestarting})
+		_ = st.Save(State{Phase: PhaseRestarting})
 		return Result{Status: StatusRestarting}, nil
 	}
 	res, err := RetryDeferred(context.Background(), st, clock, retry)
@@ -226,7 +226,7 @@ func TestDeployDeferredStateIsRetried(t *testing.T) {
 
 func TestDeployRetryEntryPointRunsDeferredRunner(t *testing.T) {
 	r, cmd, drain, st := setup(t, config.DeployConfig{RestartCommand: tRestart})
-	st.Save(State{Phase: PhaseDeferred})
+	_ = st.Save(State{Phase: PhaseDeferred})
 	drain.n = 0
 	res, err := RetryDeferred(context.Background(), st, r.Clock, r.Retry)
 	if err != nil || res.Status != StatusRestarting || countOf(cmd.calls, tRestart) != 1 {

@@ -96,7 +96,7 @@ func TestDeployConfigRoundTripEveryKey(t *testing.T) {
 		"build_command":   "go build ./...",
 		"install_command": "cp datawatch /usr/local/bin/datawatch",
 		"binary_path":     "/usr/local/bin/datawatch",
-		"restart_command": "systemctl --user restart datawatch",
+		"restart_command": "systemctl --user restart datawatch", // service-scope-ok: test only asserts the configured command text, never runs it
 		"health_check":    "curl -fsk https://localhost:8443/healthz",
 		"drain_timeout":   "5m",
 		"health_timeout":  "30s",
