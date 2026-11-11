@@ -46,7 +46,7 @@ const GROUPS = {
 };
 
 // Scenarios outside the TS-*.mjs naming that the default run also discovers.
-const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs', 'automaton-detail-tabs-mobile.mjs'];
+const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs', 'automaton-detail-tabs-mobile.mjs', 'git-hosts-card.mjs'];
 
 let groupName = null;
 const groupIndex = argv.indexOf('--group');
