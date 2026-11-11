@@ -44614,104 +44614,129 @@ function _drawNetworkWorkMap() {
   _dashNetworkRotate();
 }
 
-function _drawMultiEKG() {
-  const canvas = document.getElementById('ekgCanvas');
-  if (!canvas) return;
+// Lane pulse card (replaces the Multi-EKG canvas). One trace per lane and
+// node from GET /api/dashboard/lane-pulse: busy and waiting bars over the
+// window, idle is the empty track. The burn panel shows usage in points
+// against the pace line. No dollar figure is drawn anywhere on this card.
+const LANE_PULSE_WINDOW = '6h';
+const LANE_PULSE_MAX_ROWS = 12;
+const LANE_PULSE_COLORS = { busy: '#10b981', waiting: '#f59e0b' };
 
-  // Issue #99 — EKG narrow mode: hide canvas, show burn-rate panel only
-  const ekgCardW = canvas.closest('[data-card-id="ekg"]') ? (canvas.closest('[data-card-id="ekg"]').clientWidth || 0) : (canvas.clientWidth || 0);
-  const ekgNarrow = ekgCardW < 280 && ekgCardW > 0;
-  canvas.style.display = ekgNarrow ? 'none' : '';
-  const burnRateEl = document.getElementById('dashBurnRate');
-  if (burnRateEl) {
-    if (ekgNarrow) {
-      burnRateEl.style.width = '100%';
-      burnRateEl.style.borderLeft = 'none';
-      burnRateEl.style.alignItems = 'center';
-    } else {
-      burnRateEl.style.width = '';
-      burnRateEl.style.borderLeft = '';
-      burnRateEl.style.alignItems = '';
-    }
-  }
-  if (ekgNarrow) return;
+// _lanePulseText: the locale text for a key, or '' when the bundle has no
+// entry (t() returns the key itself on a miss).
+function _lanePulseText(key) {
+  const s = t(key);
+  return s === key ? '' : s;
+}
 
-  const W = canvas.clientWidth || canvas.width;
-  const H = canvas.clientHeight || canvas.height;
-  if (canvas.width !== W) canvas.width = W;
-  if (canvas.height !== H) canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  const css = getComputedStyle(document.documentElement);
-  const bgColor = css.getPropertyValue('--bg').trim() || '#0f1117';
-  const borderColor = css.getPropertyValue('--border').trim() || '#2d3148';
-  const accentColor = css.getPropertyValue('--accent').trim() || '#7c3aed';
-  const text2Color = css.getPropertyValue('--text2').trim() || '#64748b';
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, W, H);
-  const activeSessions = (state.sessions || [])
-    .filter(s => s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input' || s.state === 'idle')
-    .slice(0, 6);
-  const LABEL_W = 72;
-  if (activeSessions.length === 0) {
-    if (_dash.ekg.length >= 2) {
-      const pts = _dash.ekg.slice(-W);
-      ctx.beginPath(); ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5;
-      let fp = true;
-      for (let i = 0; i < pts.length; i++) {
-        const x = W - pts.length + i;
-        const dec = Math.exp(-(pts.length - i) / 60);
-        const y = H / 2 - pts[i].dy * dec * (H * 0.38);
-        if (fp) { ctx.moveTo(x, y); fp = false; } else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+// _lanePulseRows: the rows to draw. Each row carries a label and its busy and
+// waiting bars as left/width percentages of the window. Pure: no DOM access.
+function _lanePulseRows(series, fromMs, toMs) {
+  const span = toMs - fromMs;
+  if (!Array.isArray(series) || !(span > 0)) return [];
+  const pct = (iso) => Math.min(100, Math.max(0, (Date.parse(iso) - fromMs) / span * 100));
+  return series.slice(0, LANE_PULSE_MAX_ROWS).map(s => {
+    const bars = [];
+    for (const seg of (s.segments || [])) {
+      if (seg.state !== 'busy' && seg.state !== 'waiting') continue;
+      const l = pct(seg.start), r = pct(seg.end);
+      if (!(r > l)) continue;
+      bars.push({ state: seg.state, left: l, width: r - l });
     }
-    return;
+    return { label: (s.lane || '?') + ' · ' + (s.node || '?'), bars };
+  });
+}
+
+// _lanePulseBurnLines: the usage readings as SVG polyline points in a 100x30
+// box, for the level and for the pace line, on one shared scale.
+function _lanePulseBurnLines(readings) {
+  const rs = Array.isArray(readings) ? readings : [];
+  if (rs.length < 2) return { points: '', pace: '' };
+  let max = 1;
+  for (const r of rs) max = Math.max(max, r.points || 0, r.pace_line || 0);
+  max *= 1.1;
+  const xy = (r, i, key) => {
+    const x = (i / (rs.length - 1)) * 100;
+    const y = 30 - Math.min(1, (r[key] || 0) / max) * 30;
+    return x.toFixed(2) + ',' + y.toFixed(2);
+  };
+  return {
+    points: rs.map((r, i) => xy(r, i, 'points')).join(' '),
+    pace: rs.map((r, i) => xy(r, i, 'pace_line')).join(' '),
+  };
+}
+
+// _dashLanePulseActive: the card is shown once a lane held a lease or waited
+// in the window, or the usage burn panel can read a level. Otherwise it is off.
+function _dashLanePulseActive() {
+  const d = _dash._lanePulse;
+  if (!d) return false;
+  if (d.burn && d.burn.available) return true;
+  return Array.isArray(d.series) && d.series.some(s => (s.busy_seconds || 0) + (s.waiting_seconds || 0) > 0);
+}
+
+function _lanePulseBurnHtml(b) {
+  if (!b || !b.available) {
+    const reason = b && b.reason ? _lanePulseText('lane_pulse_reason_' + b.reason) : '';
+    return '<div style="font-size:10px;color:var(--text2);line-height:1.5;">' + escHtml(reason) + '</div>';
   }
-  const channelH = H / activeSessions.length;
-  for (let ci = 0; ci < activeSessions.length; ci++) {
-    const sess = activeSessions[ci];
-    const sid = sess.full_id || sess.id;
-    const color = _dashNodeColor(sess.state);
-    const chanY = ci * channelH;
-    if (ci % 2 === 1) { ctx.fillStyle = 'rgba(255,255,255,0.015)'; ctx.fillRect(0, chanY, W, channelH); }
-    ctx.fillStyle = color; ctx.font = `bold 9px monospace`;
-    ctx.fillText((sess.name || sess.id || '?').slice(0, 9), 3, chanY + channelH * 0.5 + 3);
-    const board = _dash._boards[sid];
-    const hDot = !board ? '○' : board.hook_health === 'alive' ? '●' : '◐';
-    const hColor = !board ? text2Color : board.hook_health === 'alive' ? '#10b981' : '#f59e0b';
-    ctx.fillStyle = hColor; ctx.font = '8px monospace';
-    ctx.fillText(hDot, 3, chanY + channelH * 0.85);
-    const sessEvents = _dash.ekg.filter(e => !e.sid || e.sid === sid);
-    const barW = W - LABEL_W;
-    const pts = sessEvents.slice(-barW);
-    if (pts.length >= 2) {
-      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.2;
-      let fp = true;
-      for (let i = 0; i < pts.length; i++) {
-        const x = LABEL_W + barW - pts.length + i;
-        const dec = Math.exp(-(pts.length - i) / 50);
-        const mid = chanY + channelH / 2;
-        const y = mid - pts[i].dy * dec * (channelH * 0.38);
-        if (fp) { ctx.moveTo(x, y); fp = false; } else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+  const lines = _lanePulseBurnLines(b.readings);
+  const svg = lines.points
+    ? '<svg viewBox="0 0 100 30" preserveAspectRatio="none" style="width:100%;height:34px;display:block;margin-top:2px;">' +
+      '<polyline points="' + lines.pace + '" fill="none" stroke="var(--text2,#888)" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>' +
+      '<polyline points="' + lines.points + '" fill="none" stroke="var(--accent,#7c3aed)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>'
+    : '';
+  const pace = b.ahead_of_pace ? _lanePulseText('dash_lane_pulse_ahead') : _lanePulseText('dash_lane_pulse_on_pace');
+  const paceColor = b.ahead_of_pace ? '#f59e0b' : '#10b981';
+  const stale = b.stale ? ' · ' + escHtml(_lanePulseText('dash_lane_pulse_stale')) : '';
+  return '<div style="font-size:9px;color:var(--text2);text-transform:uppercase;">' + escHtml(_lanePulseText('dash_lane_pulse_usage')) + stale + '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--accent);">' + (Number(b.points) || 0).toFixed(1) +
+      ' <span style="font-size:9px;font-weight:400;">' + escHtml(_lanePulseText('dash_lane_pulse_points')) + '</span></div>' +
+    '<div style="font-size:9px;color:var(--text2);">' + escHtml(_lanePulseText('dash_lane_pulse_pace_line')) + ' ' + (Number(b.pace_line) || 0).toFixed(1) + '</div>' +
+    '<div style="font-size:9px;color:' + paceColor + ';">' + escHtml(pace) + '</div>' + svg;
+}
+
+function _dashRenderLanePulse() {
+  const traces = document.getElementById('dashLanePulseTraces');
+  const burnEl = document.getElementById('dashBurnRate');
+  if (!traces && !burnEl) return;
+  const d = _dash._lanePulse || {};
+  const fromMs = d.window_from ? Date.parse(d.window_from) : NaN;
+  const toMs = d.window_to ? Date.parse(d.window_to) : NaN;
+  if (traces) {
+    const rows = _lanePulseRows(d.series, fromMs, toMs);
+    if (!rows.length) {
+      traces.innerHTML = '<div style="padding:8px 6px;color:var(--text2);font-size:11px;">' + escHtml(_lanePulseText('dash_lane_pulse_none')) + '</div>';
     } else {
-      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.globalAlpha = 0.25;
-      ctx.moveTo(LABEL_W, chanY + channelH / 2); ctx.lineTo(W, chanY + channelH / 2); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    if (ci < activeSessions.length - 1) {
-      ctx.strokeStyle = borderColor; ctx.lineWidth = 0.5; ctx.setLineDash([2, 4]);
-      ctx.beginPath(); ctx.moveTo(0, chanY + channelH); ctx.lineTo(W, chanY + channelH); ctx.stroke();
-      ctx.setLineDash([]);
+      const legend = '<div style="display:flex;gap:10px;padding:0 6px 4px;font-size:9px;color:var(--text2);">' +
+        '<span><span style="color:' + LANE_PULSE_COLORS.busy + ';">■</span> ' + escHtml(_lanePulseText('dash_lane_pulse_busy')) + '</span>' +
+        '<span><span style="color:' + LANE_PULSE_COLORS.waiting + ';">■</span> ' + escHtml(_lanePulseText('dash_lane_pulse_waiting')) + '</span></div>';
+      traces.innerHTML = legend + rows.map(row => {
+        const bars = row.bars.map(b => {
+          const busy = b.state === 'busy';
+          const top = busy ? 0 : 62, h = busy ? 58 : 38;
+          return '<div style="position:absolute;left:' + b.left.toFixed(3) + '%;width:' + b.width.toFixed(3) + '%;top:' + top + '%;height:' + h + '%;background:' + LANE_PULSE_COLORS[b.state] + ';"></div>';
+        }).join('');
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;">' +
+          '<div title="' + escHtml(row.label) + '" style="width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:monospace;color:var(--text2);">' + escHtml(row.label) + '</div>' +
+          '<div style="position:relative;flex:1;min-width:0;height:14px;background:rgba(255,255,255,0.03);border-radius:2px;overflow:hidden;">' + bars + '</div></div>';
+      }).join('');
     }
   }
-  const grad = ctx.createLinearGradient(LABEL_W, 0, LABEL_W + 16, 0);
-  grad.addColorStop(0, bgColor); grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad; ctx.fillRect(LABEL_W, 0, 16, H);
-  ctx.strokeStyle = accentColor; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
-  ctx.beginPath(); ctx.moveTo(W - 1, 0); ctx.lineTo(W - 1, H); ctx.stroke();
-  ctx.setLineDash([]);
+  if (burnEl) burnEl.innerHTML = _lanePulseBurnHtml(d.burn);
+}
+
+// Lane pulse: one shared GET /api/dashboard/lane-pulse per ~30s tick; the card
+// renders from the cached payload and fetches on first paint.
+if (!_dash._lanePulse) _dash._lanePulse = null;
+
+function _dashFetchLanePulse() {
+  if (_dash._lanePulseFetching) return Promise.resolve(_dash._lanePulse);
+  _dash._lanePulseFetching = true;
+  return apiFetch('/api/dashboard/lane-pulse?window=' + LANE_PULSE_WINDOW)
+    .then(d => { if (d && Array.isArray(d.series)) _dash._lanePulse = d; _dashRenderLanePulse(); return _dash._lanePulse; })
+    .catch(() => _dash._lanePulse)
+    .finally(() => { _dash._lanePulseFetching = false; });
 }
 
 function _renderSprintPipeline() {
@@ -44853,9 +44878,6 @@ function _dashLoop(ts) {
   if (state.activeView !== 'dashboard') { _dash.rafId = null; return; }
   _dash._frameCount++;
 
-  // Canvas renders at full rate
-  _drawMultiEKG();
-
   // Network (work map) + Gantt at ~10fps
   if (_dash._frameCount % 6 === 0) {
     _drawNetworkWorkMap();
@@ -44868,12 +44890,12 @@ function _dashLoop(ts) {
     _drawHeatmap();
   }
 
-  // Stat bar + tree + event feed + burn rate + guardrails + smoke at ~5fps
+  // Stat bar + tree + event feed + lane pulse + guardrails + smoke at ~5fps
   if (_dash._frameCount % 12 === 0) {
     _dashUpdateStatBar();
     _dashRenderTree();
     _dashRenderEventFeed();
-    _dashRenderBurnRate();
+    _dashRenderLanePulse();
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
@@ -44910,6 +44932,11 @@ function _dashLoop(ts) {
   // all five console cards render from the cached _dash._console payload.
   if (_dashConsoleEnabled() && _dash._frameCount % 900 === 0 && !_dash._consoleFetching) {
     _dashFetchConsole();
+  }
+
+  // Lane pulse: one shared GET /api/dashboard/lane-pulse per ~30s tick.
+  if ((_dash._frameCount === 1 || _dash._frameCount % 900 === 0) && !_dash._lanePulseFetching) {
+    _dashFetchLanePulse();
   }
 
   // Work map: one shared GET /api/dashboard/work-map per ~30s tick; the card
@@ -45281,8 +45308,8 @@ function _dashDefLabel(def) {
 //     shows the session/automaton work map; console-lanes distills the same
 //     picture into one number + the #lanes link and stays on the default
 //     board;
-//   • usage — `ekg` (the Multi-EKG card, _drawMultiEKG plus its burn-rate
-//     side panel) already plots token throughput; console-usage promotes
+//   • usage — `ekg` (the lane pulse card, whose burn panel shows usage in
+//     points against the pace line); console-usage promotes
 //     the audit's "Claude usage against the pace line" question to its own
 //     number + the #usage link and stays on the default board.
 // One shared fetch feeds the whole group — GET /api/dashboard/console is
@@ -45496,8 +45523,12 @@ const DASH_CARD_DEFS = [
     </div>` },
   { id: 'guardrails', label: 'Guardrails',      icon: '🛡',  defaultCs: 3,
     body: () => '<div id="dashGuardrailsCard" style="height:100%;overflow-y:auto;padding:6px 8px;"></div>' },
-  { id: 'ekg',        label: 'Multi-EKG',       icon: '♡',  defaultCs: 6,
-    body: () => '<div style="height:100%;display:flex;"><canvas id="ekgCanvas" style="flex:1;min-width:0;height:100%;display:block;"></canvas><div id="dashBurnRate" style="width:72px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 6px;font-size:10px;font-family:monospace;color:var(--text2);"></div></div>' },
+  // Lane pulse — one trace per lane and node (busy, waiting, idle) over the
+  // window, with the usage burn panel in points against the pace line.
+  // Data: GET /api/dashboard/lane-pulse. Hidden until it has data (see
+  // DASH_CARD_FEATURES.ekg).
+  { id: 'ekg',        label: 'Lane pulse', labelKey: 'dash_lane_pulse', icon: '♡',  defaultCs: 6,
+    body: () => '<div style="height:100%;display:flex;flex-direction:column;min-height:0;"><div id="dashLanePulseTraces" style="flex:1;min-height:0;overflow-y:auto;padding:4px 0;font-size:10px;"></div><div id="dashBurnRate" style="flex-shrink:0;border-top:1px solid var(--border);padding:4px 8px;font-family:monospace;color:var(--text2);"></div></div>' },
   { id: 'smoke',      label: 'Smoke Run',       icon: '🔬', defaultCs: 6,
     body: () => '<div id="dashSmokeCard" style="height:100%;display:flex;flex-direction:column;font-size:11px;user-select:none;"></div>' },
   // BL387 Phase 3 — memory scope stats tile.
@@ -45515,7 +45546,7 @@ const DASH_CARD_DEFS = [
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
   // GET /api/cost/report; controls in the card: group select, window
-  // (days) input, Refresh button. Sits beside the EKG card's burn-rate USD.
+  // (days) input, Refresh button. Dollar figures here are API-equivalent cost, not plan spend.
   { id: 'cost-report', label: 'Cost report', labelKey: 'dash_cost_report', icon: '💲', defaultCs: 6,
     body: () => '<div id="dashCostReportCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 ];
@@ -45547,6 +45578,16 @@ const DASH_CARD_FEATURES = {
   // The CI & release console card is shown once the daemon has reported a
   // release check or ship policy. A repo CI watch that is off does not hide
   // it: the card still shows the release and ship state with the next action.
+  // The lane pulse card shows once a lane held a lease or waited in the
+  // window, or the usage burn panel can read a level; until then it is off.
+  ekg: {
+    docsKey: 'dash_card_events',
+    reasonKey: 'dash_card_off_ekg_reason',
+    reasonDefault: 'No lane has held or waited on a lease in this window yet, and no usage reading is available — this card fills as lanes run.',
+    linkKey: 'dash_card_off_ekg_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashLanePulseActive(); },
+  },
   'console-ci-release': {
     docsKey: 'dash_card_events',
     reasonKey: 'dash_card_off_ci_release_reason',
@@ -45746,6 +45787,7 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('orbital'), _dashFetchWorkMap);
   kick(_dashCardFeature('cost-report'), _dashFetchCostReport);
   kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
+  kick(_dashCardFeature('ekg'), _dashFetchLanePulse);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
   if (!jobs.length) return;
@@ -45883,7 +45925,7 @@ function _dashBuildGrid(layout) {
   _dashUpdateStatBar();
   _dashRenderTree();
   _dashRenderEventFeed();
-  _dashRenderBurnRate();
+  _dashRenderLanePulse();
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
@@ -47191,7 +47233,7 @@ function _dashFetchCost() {
     }
     // Sum each server's CostSummary into the same shape /api/cost
     // returns for a single server, so _dashUpdateStatBar/
-    // _dashRenderBurnRate don't need to know which mode produced it.
+    // _dashRenderLanePulse don't need to know which mode produced it.
     const list = Array.isArray(d) ? d : [];
     _dash._costToday = list.reduce((acc, c) => ({
       sessions: acc.sessions + (c.sessions || 0),
@@ -47364,7 +47406,7 @@ window.dashSetPlacementTag = function(v) {
   if (typeof _dashUpdateStatBar === 'function') _dashUpdateStatBar();
   if (typeof _dashRenderTree === 'function') _dashRenderTree();
   if (typeof _drawGantt === 'function') _drawGantt();
-  if (typeof _dashRenderBurnRate === 'function') _dashRenderBurnRate();
+  if (typeof _dashRenderLanePulse === 'function') _dashRenderLanePulse();
 };
 
 function _dashUpdateStatBar() {
@@ -47731,24 +47773,6 @@ function _drawSparklines() {
     }
     ctx.globalAlpha = 1;
   }
-}
-
-function _dashRenderBurnRate() {
-  const el = document.getElementById('dashBurnRate');
-  if (!el) return;
-  const sessions = (state.sessions || []).filter(s => s.state === 'running' || s.state === 'generating');
-  let html = '';
-  if (_dash._costToday) {
-    const c = _dash._costToday;
-    const tot = typeof c.total_usd === 'number' ? c.total_usd : 0;
-    if (tot > 0) {
-      html += `<div style="color:var(--success,#10b981);font-weight:700;">$${tot.toFixed(2)}</div><div style="font-size:8px;opacity:0.6;">today</div>`;
-    }
-  }
-  html += `<div style="margin-top:3px;color:var(--accent);font-size:9px;">${sessions.length} running</div>`;
-  const prds = _dashPlacedPrds();
-  if (prds.length > 0) html += `<div style="font-size:8px;color:var(--text2);">${prds.length} automata</div>`;
-  el.innerHTML = html;
 }
 
 window._dashToggleGanttRow = function(prdId) {

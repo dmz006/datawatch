@@ -222,3 +222,44 @@ func TestLanePulse_NoDollarValues(t *testing.T) {
 		}
 	}
 }
+
+// The lane pulse card in the PWA reads these fields by name. A rename or a
+// dropped key would blank the card silently, so the wire shape is pinned here:
+// window bounds, the series array, and the burn block with its points, pace
+// line, pace flag, readings and reason code.
+func TestLanePulse_ResponseCarriesCardFields(t *testing.T) {
+	s := &Server{}
+	rec, _ := getLanePulse(t, s, "?window=6h")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, k := range []string{"window_from", "window_to", "window_seconds", "series", "burn"} {
+		if _, ok := raw[k]; !ok {
+			t.Fatalf("response lacks %q", k)
+		}
+	}
+	if _, ok := raw["series"].([]any); !ok {
+		t.Fatalf("series is not an array: %T", raw["series"])
+	}
+	burn, ok := raw["burn"].(map[string]any)
+	if !ok {
+		t.Fatalf("burn is not an object: %T", raw["burn"])
+	}
+	for _, k := range []string{"available", "points", "pace_line", "ahead_of_pace", "burn_per_24h", "readings"} {
+		if _, ok := burn[k]; !ok {
+			t.Fatalf("burn lacks %q", k)
+		}
+	}
+	// readings is null when no usage advice could be read; the card guards
+	// with Array.isArray, so null and an array are both valid here.
+	if _, isArr := burn["readings"].([]any); !isArr && burn["readings"] != nil {
+		t.Fatalf("burn.readings is neither null nor an array: %T", burn["readings"])
+	}
+	if burn["reason"] == nil || burn["reason"] == "" {
+		t.Fatalf("unavailable burn carries no reason code: %v", burn)
+	}
+}
