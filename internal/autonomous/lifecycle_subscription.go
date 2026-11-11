@@ -79,7 +79,7 @@ var KnownEventKinds = func() map[string]bool {
 
 // IsKnownEventKind reports whether k is a kind a subscription may
 // filter on.
-func IsKnownEventKind(k string) bool { return KnownEventKinds[k] }
+func IsKnownEventKind(k string) bool { return KnownEventKinds[k] || isExtensionEventKind(k) }
 
 // SubscriptionSink is where a matching event is delivered.
 type SubscriptionSink struct {
@@ -179,10 +179,17 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 			return err
 		}
 	default:
+		found, err := validateExtensionSink(sub.Sink)
+		if err != nil {
+			return err
+		}
+		if found {
+			break
+		}
 		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q, %q, %q)",
 			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue, SinkWebhook, SinkPeer)
 	}
-	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" {
+	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" && !isExtensionSink(sub.Sink.Type) {
 		return fmt.Errorf("sink secret_ref is only valid with a webhook sink (got %q)", sub.Sink.Type)
 	}
 	if strings.TrimSpace(sub.Sink.Target) == "" {

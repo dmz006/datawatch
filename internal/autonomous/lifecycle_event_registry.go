@@ -113,5 +113,12 @@ func buildEventKindRegistry() []EventKindInfo {
 func ListEventKinds() []EventKindInfo {
 	out := make([]EventKindInfo, len(eventKindRegistry))
 	copy(out, eventKindRegistry)
+	out = append(out, extensionEventKinds()...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Group != out[j].Group {
+			return out[i].Group < out[j].Group
+		}
+		return out[i].Kind < out[j].Kind
+	})
 	return out
 }
