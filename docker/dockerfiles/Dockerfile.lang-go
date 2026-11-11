@@ -9,7 +9,7 @@ ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 # Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
 ARG DW_USER=datawatch
-ARG GO_VERSION=1.26.10
+ARG GO_VERSION=1.26.11
 ARG GOPLS_VERSION=v0.20.0
 ARG GOLANGCI_LINT_VERSION=v2.6.1
 ARG DELVE_VERSION=v1.26.1
