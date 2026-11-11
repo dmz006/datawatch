@@ -44815,6 +44815,104 @@ function _dashRenderForecast() {
   el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
 }
 
+// Release train, review backlog and defects per day: the series cards from
+// GET /api/dashboard/series/{release-train,review-backlog,defects-per-day}.
+// Each stays off (DASH_CARD_FEATURES) until the window holds something to show.
+function _dashReleaseTrainActive() {
+  const d = _dash._seriesReleaseTrain;
+  return !!(d && ((d.tags || []).length || (d.ci || []).length || (d.deploy && d.deploy.state && d.deploy.state !== 'none')));
+}
+
+function _dashFetchReleaseTrain() {
+  return _dashSeriesFetch('_seriesReleaseTrain', '/api/dashboard/series/release-train?days=14',
+    d => Array.isArray(d.tags) && Array.isArray(d.ci), _dashRenderReleaseTrain);
+}
+
+// CI and deploy states from the release-train payload, each with a literal locale key.
+const _DASH_SERIES_STATE_KEYS = {
+  failing: 'dash_series_state_failing', pending: 'dash_series_state_pending', green: 'dash_series_state_green',
+  ok: 'dash_series_state_ok', failed: 'dash_series_state_failed', none: 'dash_series_state_none',
+};
+function _dashSeriesState(s) {
+  return t(_DASH_SERIES_STATE_KEYS[s] || 'dash_series_state_none');
+}
+
+function _dashRenderReleaseTrain() {
+  const el = document.getElementById('dashReleaseTrainCard');
+  if (!el) return;
+  const d = _dash._seriesReleaseTrain;
+  if (!_dashReleaseTrainActive()) { _dashSeriesEmpty(el); return; }
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const row = (k, v) => '<div style="display:flex;gap:6px;padding:2px 6px;"><span style="width:90px;flex-shrink:0;color:var(--text2);">' + escHtml(k) + '</span><span>' + v + '</span></div>';
+  const tags = (d.tags || []).map(g => '<span title="' + escHtml(g.prd_id || '') + '" style="font-family:monospace;margin-right:6px;">' + escHtml(g.tag) + '</span>').join('');
+  const ci = (d.ci || []).length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_repo')) + '</th><th ' + th + '>' + escHtml(t('dash_series_status')) + '</th></tr>' +
+    d.ci.map(r => '<tr><td style="padding:2px 6px;font-family:monospace;">' + escHtml(r.repo + ' ' + (r.workflow || '')) + '</td>' +
+      '<td style="padding:2px 6px;">' + escHtml(_dashSeriesState(r.status)) + '</td></tr>').join('') + '</table>' : '';
+  el.innerHTML = row(t('dash_series_tags'), tags || escHtml(t('dash_series_state_none'))) +
+    row(t('dash_series_ci_state'), escHtml(_dashSeriesState(d.ci_state))) +
+    row(t('dash_series_deploy_state'), escHtml(_dashSeriesState(d.deploy && d.deploy.state))) + ci;
+}
+
+function _dashReviewBacklogActive() {
+  const d = _dash._seriesReviewBacklog;
+  return !!(d && ((Number(d.plan_count) || 0) + (Number(d.question_count) || 0)) > 0);
+}
+
+function _dashFetchReviewBacklog() {
+  return _dashSeriesFetch('_seriesReviewBacklog', '/api/dashboard/series/review-backlog?limit=50',
+    d => Array.isArray(d.plans) && Array.isArray(d.questions), _dashRenderReviewBacklog);
+}
+
+function _dashAgeLabel(sec) {
+  return t('dash_series_age_hours', [Math.floor((Number(sec) || 0) / 3600)]);
+}
+
+function _dashRenderReviewBacklog() {
+  const el = document.getElementById('dashReviewBacklogCard');
+  if (!el) return;
+  const d = _dash._seriesReviewBacklog;
+  if (!_dashReviewBacklogActive()) { _dashSeriesEmpty(el); return; }
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const table = (head, rows) => '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text2);text-align:left;">' +
+    head.map(h => '<th ' + th + '>' + escHtml(h) + '</th>').join('') + '</tr>' + rows.join('') + '</table>';
+  const cell = v => '<td style="padding:2px 6px;">' + v + '</td>';
+  const plans = (d.plans || []).length ? table([t('dash_series_plans'), t('dash_series_age')],
+    d.plans.map(p => '<tr>' + cell(escHtml(p.title || p.id)) + cell(_dashAgeLabel(p.age_seconds)) + '</tr>')) : '';
+  const qs = (d.questions || []).length ? table([t('dash_series_questions'), t('dash_series_age')],
+    d.questions.map(q => '<tr>' + cell(escHtml(q.title || q.question_id)) + cell(_dashAgeLabel(q.age_seconds)) + '</tr>')) : '';
+  el.innerHTML = plans + qs;
+}
+
+function _dashDefectsActive() {
+  const d = _dash._seriesDefects;
+  return !!(d && ((Number(d.total_found) || 0) > 0 || (Number(d.total_fixed) || 0) > 0));
+}
+
+function _dashFetchDefects() {
+  return _dashSeriesFetch('_seriesDefects', '/api/dashboard/series/defects-per-day?days=14',
+    d => Array.isArray(d.points), _dashRenderDefects);
+}
+
+function _dashRenderDefects() {
+  const el = document.getElementById('dashDefectsCard');
+  if (!el) return;
+  const d = _dash._seriesDefects;
+  if (!_dashDefectsActive()) { _dashSeriesEmpty(el); return; }
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const head = '<tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_date')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_found')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_fixed')) + '</th></tr>';
+  const rows = (d.points || []).slice(-14).map(p => '<tr>' +
+    '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.found) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.fixed) || 0) + '</td></tr>').join('');
+  el.innerHTML = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_total')) + ': ' +
+    (Number(d.total_found) || 0) + ' / ' + (Number(d.total_fixed) || 0) + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+}
+
 function _dashVerifierActive() {
   const d = _dash._seriesVerifier;
   return !!(d && Array.isArray(d.nodes) && d.nodes.some(n => (n.runs || 0) + (n.waits || 0) > 0));
@@ -45664,6 +45762,14 @@ const DASH_CARD_DEFS = [
     body: () => '<div id="dashForecastCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   { id: 'verifier-health', label: 'Verifier health', labelKey: 'dash_verifier_health', icon: '✔', defaultCs: 6,
     body: () => '<div id="dashVerifierCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // Release train, review backlog and defects per day: opt-in series cards
+  // (see DASH_CARD_FEATURES). Not in the default layout; each shows once it has data.
+  { id: 'release-train', label: 'Release train', labelKey: 'dash_release_train', icon: '🚂', defaultCs: 6,
+    body: () => '<div id="dashReleaseTrainCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  { id: 'review-backlog', label: 'Review backlog', labelKey: 'dash_review_backlog', icon: '📋', defaultCs: 6,
+    body: () => '<div id="dashReviewBacklogCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  { id: 'defects-per-day', label: 'Defects per day', labelKey: 'dash_defects_per_day', icon: '🐞', defaultCs: 6,
+    body: () => '<div id="dashDefectsCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
@@ -45735,6 +45841,32 @@ const DASH_CARD_FEATURES = {
     linkKey: 'dash_card_off_series_link',
     linkDefault: 'Dashboard card reference',
     active() { return _dashVerifierActive(); },
+  },
+  // Release train, review backlog and defects per day: each is off until its
+  // window holds a tag or CI run, a waiting plan or question, or a defect.
+  'release-train': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_release_train_reason',
+    reasonDefault: 'No tags, CI runs or deploy state in this window yet — this card fills after the first release or ship.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashReleaseTrainActive(); },
+  },
+  'review-backlog': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_review_backlog_reason',
+    reasonDefault: 'No plans or held questions are waiting for a decision — this card fills when one waits.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashReviewBacklogActive(); },
+  },
+  'defects-per-day': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_defects_reason',
+    reasonDefault: 'No defects were found or fixed in this window — this card fills as defects are recorded.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashDefectsActive(); },
   },
   'console-ci-release': {
     docsKey: 'dash_card_events',
@@ -45939,6 +46071,9 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('lane-utilization'), _dashFetchLaneUtil);
   kick(_dashCardFeature('throughput-forecast'), _dashFetchForecast);
   kick(_dashCardFeature('verifier-health'), _dashFetchVerifier);
+  kick(_dashCardFeature('release-train'), _dashFetchReleaseTrain);
+  kick(_dashCardFeature('review-backlog'), _dashFetchReviewBacklog);
+  kick(_dashCardFeature('defects-per-day'), _dashFetchDefects);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
   if (!jobs.length) return;
