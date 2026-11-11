@@ -10201,6 +10201,10 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  // Housekeeping tab cards and actions.
+  unlanded_work_card: 'howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch',
+  uncommitted_work_commit: 'howto/automaton-uncommitted-work.md',
+  cleanup_permission_fix: 'howto/automaton-worktree-cleanup.md#skipped-by-reason-permission-errors-and-the-fix',
   // Checks and ship status cards (Automation Overview) and their Settings groups.
   checks_findings_card: DOCS_DEFINITIONS + '#checks',
   ship_status_card: DOCS_DEFINITIONS + '#ship-steps',
@@ -32655,7 +32659,7 @@ window.uncommittedWorkCommitOpen = function(btn) {
   modal.id = 'uncommittedCommitModal';
   modal.className = 'confirm-modal-overlay';
   modal.innerHTML = `<div class="confirm-modal" style="max-width:720px;width:92vw;min-width:0;">
-    <div style="font-weight:600;margin-bottom:6px;">${escHtml(t('uncommitted_work_commit_title'))}</div>
+    <div style="font-weight:600;margin-bottom:6px;">${escHtml(t('uncommitted_work_commit_title'))}${_housekeepingHelpLink('uncommitted_work_commit', 'uncommitted_work_commit_help_link')}</div>
     <div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-bottom:6px;"><code>${escHtml(wt)}</code></div>
     <pre id="uncommittedCommitDiff" style="max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 8px;">${escHtml(t('uncommitted_work_commit_diff_loading'))}</pre>
     <label for="uncommittedCommitMsg" style="font-size:12px;">${escHtml(t('uncommitted_work_commit_message'))}</label>
@@ -32685,6 +32689,17 @@ window.uncommittedWorkCommitOpen = function(btn) {
   };
 };
 
+// _housekeepingHelpLink is the small '?' help link on a Housekeeping card or
+// action. It resolves through docsLinkForKey and follows the Settings
+// "show inline doc links" preference.
+function _housekeepingHelpLink(key, labelKey) {
+  const target = docsLinkForKey(key);
+  if (!target) return '';
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t(labelKey);
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" class="docs-link housekeeping-help" onclick="event.stopPropagation()" title="${escHtml(label)}">?</a>`;
+}
+
 // ── Unlanded work card ───────────────────────────────────────────────────────
 // unlandedWorkCardHtml(data) draws GET /api/autonomous/unlanded-work:
 // { branches: [{automaton_id, branch, title, commits, last_activity,
@@ -32710,7 +32725,7 @@ window.unlandedWorkCardHtml = function(data) {
       _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
       `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
   }).join('');
-  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}</div>${rows}</div>`;
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
 };
 
 window.unlandedWorkAct = function(btn, act) {
@@ -32757,7 +32772,7 @@ window.cleanupPermissionHtml = function(status) {
   if (!iss || typeof iss !== 'object' || iss.hidden || !(Number(iss.count) > 0)) return '';
   const fix = iss.fixable
     ? ` <button type="button" class="btn-secondary cleanup-permission-fix" style="font-size:11px;padding:3px 10px;" data-paths="${escHtml(JSON.stringify(Array.isArray(iss.paths) ? iss.paths : []))}" onclick="window.cleanupPermissionFix(this)">${escHtml(t('cleanup_permission_fix'))}</button>` : '';
-  return `<div class="cleanup-permission" style="margin-top:8px;min-width:0;overflow-wrap:anywhere;">${escHtml(String(iss.why || ''))}${fix}</div>`;
+  return `<div class="cleanup-permission" style="margin-top:8px;min-width:0;overflow-wrap:anywhere;">${escHtml(String(iss.why || ''))}${fix}${_housekeepingHelpLink('cleanup_permission_fix', 'cleanup_permission_help_link')}</div>`;
 };
 window.cleanupPermissionFix = function(btn) {
   let paths = [];
