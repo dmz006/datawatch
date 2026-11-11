@@ -123,7 +123,7 @@ Every surface reads the same data. The optional `session` and `automaton`
 arguments narrow the list to one session or one Automaton; an id that matches
 nothing gives an empty list.
 
-- **Web app.** On the Automation **Setup and policy** sub-tab, the **Automata model request
+- **Web app.** On the **Events** tab, the **Automata model request
   progress** card lists each watched session with its role, task, node and
   summary, and refreshes every 10 seconds. A small chip with the same wording sits on the session
   rows, the session detail header and the task rows. The card links to this
@@ -247,7 +247,7 @@ Each way of reading and changing the settings takes the same eleven keys.
 |---|---|---|
 | **YAML** | not applicable | `autonomous.request_watch:` in `~/.datawatch/config.yaml` with any of the eleven keys |
 | **CLI** | `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` | `datawatch config set autonomous.request_watch.no_progress_minutes 45` |
-| **Web UI** | the **Automata model request progress** card on the Automation **Setup and policy** sub-tab; the chips on the session and task views | Settings → General → Automata settings → **Model request watch** |
+| **Web UI** | the **Automata model request progress** card on the **Events** tab; the chips on the session and task views | Settings → General → Automata settings → **Model request watch** |
 | **REST API** | `GET /api/autonomous/request-watch` with optional `session` and `automaton`; the settings are also under `autonomous.request_watch` in `GET /api/config` | `PUT /api/config` with `{"autonomous.request_watch.no_progress_minutes": 45}` |
 | **Comm channel** | `autonomous request-watch [session <id> \| automaton <id>]` | `configure autonomous.request_watch.no_progress_minutes=45` |
 

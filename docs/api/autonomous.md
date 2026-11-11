@@ -1801,7 +1801,7 @@ autonomous:
     remediation_options: [keep_waiting, end_worker, retry_other_backend, unload_reload_model]   # unset reads as all four
 ```
 
-**Surfaces.** The same read is available as the MCP tool `autonomous_request_watch` (read-only; optional `session` and `automaton`), the CLI `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the comm verb `autonomous request-watch [session <id> | automaton <id>]`. The web app shows it as a card on the Automation Setup and policy sub-tab and as chips on the session and task views. At the no-progress threshold the daemon raises one alert and one non-blocking operator question; answering it only records the choice.
+**Surfaces.** The same read is available as the MCP tool `autonomous_request_watch` (read-only; optional `session` and `automaton`), the CLI `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the comm verb `autonomous request-watch [session <id> | automaton <id>]`. The web app shows it as a card on the Automata Events tab and as chips on the session and task views. At the no-progress threshold the daemon raises one alert and one non-blocking operator question; answering it only records the choice.
 
 ## Merge state and safe-to-delete report (`GET /api/autonomous/merge`, `GET /api/autonomous/safe-to-delete`)
 
@@ -1964,7 +1964,7 @@ GET /api/autonomous/merge/shadow
 
 Answers: `405` with `Allow: GET` for any other method; `403` for a federated peer without the autonomous read capability; `500` with the store's error when the plan or comparison store cannot be read. The **defect candidates** the comparison records are not in this body — they stay the JSON file under the data directory (`<data directory>/defect-candidates/<automaton id>.json`) until filing them into the defect queue lands.
 
-The same answer is the read behind the MCP tool `autonomous_merge_shadow_status` (optional `project` argument), the CLI `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Automation Setup and policy sub-tab — all read-only, none of them writes or files anything. Note that the CLI and the card render comparison state, and the comparison is stored empty today: the post-ship flow persists the **defect candidates**, not the comparison record, so these reads stay empty until that wiring lands — the stored plans are the part that is populated now.
+The same answer is the read behind the MCP tool `autonomous_merge_shadow_status` (optional `project` argument), the CLI `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Automata Events tab — all read-only, none of them writes or files anything. Note that the CLI and the card render comparison state, and the comparison is stored empty today: the post-ship flow persists the **defect candidates**, not the comparison record, so these reads stay empty until that wiring lands — the stored plans are the part that is populated now.
 
 ### `GET /api/autonomous/safe-to-delete`
 

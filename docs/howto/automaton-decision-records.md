@@ -377,7 +377,7 @@ was requested, its status and its result.
 | MCP | `autonomous_decision_record_list` and `autonomous_decision_record_get` (the decision line is `autonomous_decisions`) |
 | CLI | `datawatch autonomous decision-records list [--state ...] [--automaton ...] [--limit n] [--json]` and `show <id>` |
 | Chat | `autonomous decision-records [automaton-id]` and `autonomous decision-record <id>` |
-| PWA | the **Decision records** card in the Automata area |
+| PWA | the **Decision records** card in the Automata area. It shows only when at least one record exists, and the folder-watch-off note shows in Settings only; the folder settings are in **Settings → General → Automata** |
 
 The decision line (`GET /api/autonomous/decisions`) carries the record id on
 each decision raised from a record.

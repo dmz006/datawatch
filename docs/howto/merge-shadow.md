@@ -162,7 +162,7 @@ All five surfaces proxy one daemon endpoint and read — none of them writes:
 | **MCP** | `autonomous_merge_shadow_status` — read-only; the same answer, with an optional `project` argument to restrict it to one project. |
 | **CLI** | `datawatch autonomous merge-shadow status` — matched and different counts per release size, or `no merge shadow comparison exists yet` while nothing is stored; `datawatch autonomous merge-shadow compare <automaton-id>` — that Automaton's comparison: matched, different, not-compared, then each difference with its field, severity, planned value and landed value (or `No merge shadow comparison exists for Automaton <id>`). |
 | **Comm channel** | `autonomous merge-shadow` — one summary line: `Merge shadow: patch 4 matched, 1 different; minor …; major …; none …`; `No merge comparisons yet` while nothing is stored. It takes no arguments. |
-| **PWA** | The **Merge shadow** card on the Automation **Setup and policy** sub-tab: matched and different per release size, summed over all projects (plain figures — the card carries no links of its own). Rendered only when the shadow is enabled **and** at least one comparison has been stored — otherwise the card is absent from the page, which is the expected state, not a failure. |
+| **PWA** | The **Merge shadow** card on the **Events** tab (the Setup and policy sub-tab was removed): matched and different per release size, summed over all projects (plain figures — the card carries no links of its own). Rendered only when the shadow is enabled **and** at least one comparison has been stored — otherwise the card is absent from the page, which is the expected state, not a failure. |
 
 **Why the comparison reads can come back empty.** The post-ship flow does not
 persist a comparison record yet: the hook persists the **defect candidates**, and
@@ -200,7 +200,7 @@ block, one place it is read back from:
 | **MCP** | The generic `config_set` tool, with the key `autonomous.merge_shadow.<key>` and its value. The shadow has no dedicated MCP setter; `get_config` reads it back. |
 | **CLI** | `datawatch config set autonomous.merge_shadow.enabled true|false` and friends |
 | **Comm channel** | `configure autonomous.merge_shadow.enabled=false`, `configure autonomous.merge_shadow.gate_timeout=1m`, `configure autonomous.merge_shadow.plan_keep=50` |
-| **Web UI** | Settings → Automation → **Merge shadow** group: one toggle (`enabled`) and two fields (`gate_timeout`, `plan_keep`). The state read above lives on the **Merge shadow** card of the Automation **Setup and policy** sub-tab |
+| **Web UI** | Settings → Automation → **Merge shadow** group: one toggle (`enabled`) and two fields (`gate_timeout`, `plan_keep`). The state read above lives on the **Merge shadow** card on the **Events** tab |
 
 ## Reading the counts on each surface
 

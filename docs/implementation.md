@@ -2286,7 +2286,7 @@ The daemon observes the in-flight model request of a worker or verifier session 
   - MCP `autonomous_request_watch` and the `request_watch_*` arguments of `autonomous_config_set` (`internal/mcp/request_watch_tools.go`);
   - CLI `datawatch autonomous request-watch` (`cmd/datawatch/cli_request_watch.go`);
   - comm `autonomous request-watch` (`internal/router/request_watch_comm.go`);
-  - web app status card on the Automation Setup and policy sub-tab, session and task chips, and the Model request watch settings group (`internal/server/web/app.js`), with the `request_watch_*` and `settings_request_watch_*` strings in the five locale bundles (en, de, es, fr, ja).
+  - web app status card on the Automata Events tab, session and task chips, and the Model request watch settings group (`internal/server/web/app.js`), with the `request_watch_*` and `settings_request_watch_*` strings in the five locale bundles (en, de, es, fr, ja).
 - **How-to:** [howto/model-request-progress.md](howto/model-request-progress.md).
 ## Model routing (autonomous.model_routing)
 
