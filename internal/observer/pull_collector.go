@@ -86,6 +86,9 @@ const (
 	ReasonNotPermitted = "not_permitted"
 	ReasonBadPayload   = "bad_payload"
 	ReasonUnknown      = "unknown"
+	// ReasonCollectorNotRunning is reported by the server (never recorded by
+	// the collector) for an opted-in peer whose collector is nil or stopped.
+	ReasonCollectorNotRunning = "collector not running"
 )
 
 // PullSource is the Source value recorded on every pull-mode state entry.

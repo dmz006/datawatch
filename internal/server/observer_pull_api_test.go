@@ -354,3 +354,43 @@ func TestConfigPut_ObserverPullRejectsUnderrunValues(t *testing.T) {
 		t.Errorf("skipped = %v, want both invalid keys listed", names)
 	}
 }
+
+func TestHandleObserverPull_NilCollectorIsStale(t *testing.T) {
+	s := newObserverPullServer(t, "http://127.0.0.1:1", "token-abc", nil)
+	s.observerPull = nil
+	code, body := getPull(t, s, context.Background())
+	if code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", code, body)
+	}
+	rows := pullRows(t, body)
+	if len(rows) != 1 || rows[0]["stale"] != true || rows[0]["stale_reason"] != "collector not running" {
+		t.Fatalf("rows = %s, want stale true / collector not running", body)
+	}
+	if info := s.pullInfoFor("peer1"); !info.Stale || info.StaleReason != "collector not running" {
+		t.Errorf("pullInfoFor = %+v, want stale/collector not running", info)
+	}
+}
+
+func TestHandleObserverPull_StoppedCollectorIsStale(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(statsOK))
+	defer srv.Close()
+	s := newObserverPullServer(t, srv.URL, "token-abc", nil)
+	reg := &testTickers{}
+	op := &observerPull{s: s}
+	op.col = observer.NewPullCollector(observer.PullCollectorOptions{Fetcher: op, NewTicker: reg.new})
+	s.observerPull = op
+	op.col.SetTargets(op.targets())
+	waitFor(t, 2*time.Second, "initial fetch", func() bool {
+		st, ok := op.col.Last("peer1")
+		return ok && !st.LastSuccessAt.IsZero()
+	})
+	op.col.Stop()
+	_, body := getPull(t, s, context.Background())
+	rows := pullRows(t, body)
+	if len(rows) != 1 || rows[0]["stale"] != true || rows[0]["stale_reason"] != "collector not running" {
+		t.Fatalf("rows = %s, want stale true / collector not running", body)
+	}
+	if info := s.pullInfoFor("peer1"); !info.Stale || info.StaleReason != "collector not running" || info.LastSuccessAt == nil {
+		t.Errorf("pullInfoFor = %+v", info)
+	}
+}

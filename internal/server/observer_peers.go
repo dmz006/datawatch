@@ -499,6 +499,15 @@ func (s *Server) pullStateFor(name string) (observer.PullState, bool) {
 	return s.observerPull.col.Last(name)
 }
 
+// pullCollectorDown reports whether name is opted in for pull while the
+// collector is nil or stopped, so its stats are never refreshed.
+func (s *Server) pullCollectorDown(name string) bool {
+	if !s.pullConfigured(name) {
+		return false
+	}
+	return s.observerPull == nil || s.observerPull.col == nil || !s.observerPull.col.Running()
+}
+
 // pullSnapshotFor returns the last successfully pulled snapshot for name,
 // or nil when the pull collector has none.
 func (s *Server) pullSnapshotFor(name string) *observer.StatsResponse {
@@ -545,10 +554,16 @@ func (s *Server) pullInfoFor(name string) peerPullInfo {
 		info.Enabled = true
 		info.IntervalS = s.pullIntervalS(name)
 	}
+	if s.pullCollectorDown(name) {
+		info.Stale = true
+		info.StaleReason = observer.ReasonCollectorNotRunning
+	}
 	if st, ok := s.pullStateFor(name); ok {
-		info.Stale = st.Stale
-		if st.StaleReason != "" {
-			info.StaleReason = st.StaleReason
+		if !s.pullCollectorDown(name) {
+			info.Stale = st.Stale
+			if st.StaleReason != "" {
+				info.StaleReason = st.StaleReason
+			}
 		}
 		if !st.LastSuccessAt.IsZero() {
 			t := st.LastSuccessAt
