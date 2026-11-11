@@ -184,17 +184,21 @@ A row links to its Automaton view, and a session link opens the session. The
 **Overview** choice in the picker is the cross-project in-flight view, not a
 project.
 
-#### Empty lines are hidden by default
+#### The show-empty checkbox
 
-The page shows only what has content. Empty header fields, the "none recorded"
-lines under an arc (plan documents, design documents, issues), an empty Arcs or
-Unassigned Automata section, an empty merge pipeline and an empty event stream
-are not drawn. To see them, tick **Show empty lines and sections** next to the
-project picker. The choice is remembered in this browser only (local storage key
-`cs_projects_show_empty`); it is not a daemon setting, so it has no REST, MCP,
-CLI, chat or YAML form, and a browser that blocks storage always starts hidden.
-Nothing is lost by hiding: a section that is needed still appears, and a missing
-weekly share is reported in Events whenever the project has work that needs one.
+**Show empty lines and sections**, the checkbox next to the project picker, is
+off by default. While it is off the page draws only what has content: empty
+header fields (an unset owner, repository, target or lane default), the
+"none recorded" lines under an arc (plan documents, design documents, issues),
+an empty Arcs or Unassigned Automata section, an empty merge pipeline and an
+empty event stream are left out. Tick it to see every line and section, with
+"none recorded" or "no arcs" shown where there is nothing yet. The choice is
+remembered per viewer in the browser, not by the daemon, so it has no REST,
+MCP, CLI, chat or configuration form, and a browser that blocks storage starts
+hidden each time. Nothing is lost while it is off: a section that needs
+attention still appears, and a missing weekly share is reported in the page's
+Events list whenever the project has an arc or an unassigned Automaton that
+needs one.
 
 ### 7. Read the history and the Gantt
 
