@@ -2586,12 +2586,22 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
-**Migration status:** all eight "Install Trivy" steps in `release.yaml` (2),
-`containers.yaml` (2) and `image-refresh.yaml` (4) now run
-`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin`; none fetches
-the installer from `main` any more. The pins were left as they were:
-`containers.yaml` uses `v0.70.0`, while `release.yaml` and `image-refresh.yaml`
-use `v0.73.0`. Unifying them is an operator decision. Full write-up in
+**Single pin.** The Trivy version lives only in `scripts/trivy-version.txt`
+(one `vX.Y.Z` tag, currently `v0.73.0`). The eight "Install Trivy" steps in
+`release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
+`bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin`;
+no workflow holds a `TRIVY_VERSION:` value or a literal tag. To bump Trivy,
+edit that one file. The kind smoke workflow installs helm the same way, pinned
+and with a retrying download.
+
+`bash scripts/check-trivy-version-single.sh` enforces this (bad or missing
+version file, a literal pin in a workflow, an installer caller that never reads
+the file); its coverage is
+`bash scripts/tests/check-trivy-version-single_test.sh`.
+
+**Operator review:** `containers.yaml` used to pin `v0.70.0` and now follows
+`v0.73.0`, so check that the next container build is not newly red. Also
+confirm the guard runs in `make lint` and `ci.yaml`. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
