@@ -1,6 +1,6 @@
 # Automata pages redesign (first pass), operator notes 2026-11-06
 
-Status: design notes captured, no PRD filed. Each decision below is asked in chat one at a time and the
+Status: Done for the first pass (shipped; see docs/plans/2026-11-09-automata-events-tab.md for the Events tab and the parity issue file for the Settings move and usage dashboards). Design notes below are kept as the record; later passes are not yet filed. Each decision below is asked in chat one at a time and the
 operator's answer is quoted here. UI placement is a design question, so nothing is filed until it is answered.
 
 Goal, in the operator's words: "biggest thing make it human consumable and easy to digest ... lets clean up the

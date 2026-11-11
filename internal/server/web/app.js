@@ -27816,7 +27816,7 @@ function renderAutomataEventsPanel() {
 // counts, release readiness, request watch, the onboarding report and the
 // merge shadow. A card that is off, empty or 'never' stays hidden. The loop
 // card polls only while the Events tab is shown.
-const _AUTOMATA_EVENTS_STATUS_IDS = ['automationOnboardingReportCard', 'automationSupervisorLoopCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'];
+const _AUTOMATA_EVENTS_STATUS_IDS = ['automationOnboardingReportCard', 'automationSupervisorLoopCard', 'automationMergeShadowCard', 'automationMergePipelineCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'];
 function automataEventsStatusHtml() {
   const slots = _AUTOMATA_EVENTS_STATUS_IDS.map(id => `<div id="${id}" class="prd-capacity-slot" style="display:none;margin:6px 0 0;"></div>`).join('');
   const link = `<div style="font-size:11px;margin-top:6px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(_automataEventsText('automata_events_config_in_settings', 'Automata configuration is in Settings under Automata'))}</a></div>`;
@@ -27831,7 +27831,7 @@ function automataEventsStatusPrune() {
 }
 function automataEventsStatusStart() {
   if (typeof listLoaderAll === 'function') {
-    try { listLoaderAll([_automationOnboardingReportLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]); } catch (_) { /* cards stay hidden */ }
+    try { listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]); } catch (_) { /* cards stay hidden */ }
   }
   if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
   supervisorLoopStartPolling();
@@ -27839,7 +27839,7 @@ function automataEventsStatusStart() {
 }
 function automataEventsStatusStop() {
   supervisorLoopStopPolling();
-  _automationStopLoaders(['automation_onboarding_report', 'automation_release_readiness', 'automation_request_watch']);
+  _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_request_watch']);
 }
 
 // automataEventsHelpLink renders the '?' help anchor used by the Events tab,

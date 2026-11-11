@@ -30,6 +30,10 @@ LLM_ONLY=(
     automata-tab-loading  # PWA-only view; nothing callable from MCP (like automation-tab) — reference/conceptual doc
     navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
     codeql-local-scan  # shell-script workflow (scripts/codeql-local.sh); no MCP-callable steps
+    automata-cost  # PWA-only view (Cost tab dashboards); nothing callable from MCP (like automation-tab) — reference/conceptual doc
+    automata-events  # PWA-only view (Events tab); nothing callable from MCP (like automation-tab) — reference/conceptual doc
+    automata-resources  # PWA-only view (Resources tab dashboards); nothing callable from MCP (like automation-tab) — reference/conceptual doc
+    merge-shadow  # PWA status card plus read-only report; nothing callable from MCP to assert — reference/conceptual doc
     worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
 )
 
