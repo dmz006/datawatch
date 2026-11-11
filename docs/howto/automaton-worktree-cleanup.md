@@ -238,7 +238,7 @@ Every surface reads the same status and none of them changes anything.
 | MCP | `autonomous_cleanup_status` (read-only) |
 | CLI | `datawatch autonomous cleanup`; add `--json` for the raw body |
 | Comm channel | `autonomous cleanup` (the reply adds the alert text while the alert is active) |
-| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Cleanup** card, below the safe-to-delete card, refreshed every 30 seconds |
+| PWA | Automata tab → **Events** sub-tab → the **Automata cleanup status** card under the stream, below the safe-to-delete card, refreshed every 30 seconds; its worktrees pass lists the skipped worktrees by reason |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
 The status holds, for each pass (`worktrees` and `temp`):

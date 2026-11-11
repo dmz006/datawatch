@@ -3480,6 +3480,7 @@
   "cleanup_never_run": "The Automata cleanup has not run yet.",
   "cleanup_counts": "Automata cleanup: removed %1$d, would remove %2$d, skipped %3$d, failed %4$d",
   "cleanup_bytes_freed": "Automata cleanup bytes freed: %1$s",
+  "cleanup_skipped_by_reason": "Automaton worktrees skipped by reason: %1$s",
   "cleanup_split": "Automata cleanup removed by the owner: %1$d, by the safety net: %2$d",
   "cleanup_last_error": "Last Automata cleanup error: %1$s",
   "cleanup_error_none": "No Automata cleanup error.",

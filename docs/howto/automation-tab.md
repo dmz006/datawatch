@@ -166,7 +166,7 @@ never blanks the cards.
 - **Setup and policy:** the onboarding and requirements report, the merge
   pipeline card and the model request watch card.
 - **Housekeeping:** the uncommitted work card. The safe-to-delete report and
-  the cleanup card are in the Events tab.
+  the cleanup card are cards under the stream on the Events tab.
 
 ### Reading the merge state and the safe-to-delete report
 
@@ -183,7 +183,7 @@ No badge means the Automaton is merged, has nothing ahead of `main`, or has not 
 
 **Trying it first with shadow mode.** Set the check to `shadow` and it records what it would have done (state, commits ahead, whether it would have alerted) without raising any alert or writing any merge-pending record. Read that history with `datawatch autonomous merge` or `GET /api/autonomous/merge` (`shadow_decisions`, newest first) and switch to `on` once the states match what you expect. The badge also appears in shadow mode, so you can see the states on your own branches before anything alerts.
 
-**The safe-to-delete report.** On the Housekeeping sub-tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
+**The safe-to-delete report.** Under the stream on the Events tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
 
 **The report never deletes anything.** The card has no delete, merge or push button, and no command acts on the report. It tells you what is safe; removing a branch or a worktree is a step you take yourself after checking it. The read is not slow each time: the daemon keeps the report in memory for 60 seconds per base repository, so the first read within a lifetime does the git work and the rest get the stored result at once. A read that misses the lifetime still returns at once (marked stale) and starts at most one background refresh, bounded at 60 seconds — further reads in the same window start none, and while that refresh is still running they keep serving the last successful result, so a slow or failing refresh never leaves the card blank or blocked; a failed refresh is counted in the daemon stats. The same two reads are available as `datawatch autonomous merge` and `datawatch autonomous safe-to-delete`, as the chat verbs `autonomous merge` and `autonomous safe-to-delete`, and over MCP as `autonomous_merge` and `autonomous_safe_to_delete`. The states, the alert and the config keys are described in the *Merge-pending check* section of [operations.md](../operations.md), and the response shapes in [the API reference](../api/autonomous.md#merge-state-and-safe-to-delete-report-get-apiautonomousmerge-get-apiautonomoussafe-to-delete).
 
@@ -567,8 +567,8 @@ for it:
 | Recent decisions (lane fill) | `decision` rows in [Events](automata-events.md) |
 | Infrastructure retries | `retry` rows in [Events](automata-events.md) |
 | Automata checks | `check` rows in [Events](automata-events.md) |
-| Safe-to-delete report | `cleanup` rows in [Events](automata-events.md) |
-| Cleanup status | the `cleanup` status row in [Events](automata-events.md) |
+| Safe-to-delete report | `cleanup` rows in [Events](automata-events.md), and the card under the stream there |
+| Cleanup status | the `cleanup` status row in [Events](automata-events.md), and the card under the stream there (skipped worktrees by reason) |
 
 Their reads over REST, MCP, CLI and chat are unchanged; the Events tab reads
 the same state as one stream. The repo CI watch's CI line is a `watch` row
