@@ -1,7 +1,7 @@
 # Report: live smoke — place a missing model on a real compute node
 
 - Date: 2026-11-08
-- Scope: `/home/dmz/.datawatch/prd-worktrees/ecf30001-tasks/live-smoke-place-a-missing-model-on-a-re-7207000f`
+- Scope: `<repo>` (the task worktree)
 - Test: `go test ./internal/autonomous/ -run TestSmokeModelPlacement -v` (file: `internal/autonomous/smoke_model_placement_test.go`)
 - Method: fully in-process — per-node fake Ollama servers (httptest) reporting loaded model (`/api/ps`), version + free memory (`/api/version`) and serving the fake model pull (`/api/pull`); fake nodes with different free memory; the real planner (`compute.PlaceMissingModel`), the real admission gate and the real `inference.ModelLoader` pull path. No daemons, no real pulls, no real compute nodes.
 
