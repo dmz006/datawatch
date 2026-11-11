@@ -41,9 +41,7 @@ func (s *Server) automatonCostFor(id string) *automatonCost {
 	var billing costreport.BillingFunc
 	if s.cfg != nil {
 		cr = s.cfg.CostReport
-		billing = func(backend string) config.EffectiveBillingProfile {
-			return s.cfg.Usage.EffectiveBillingProfile(backend)
-		}
+		billing = s.resolvedBilling()
 	}
 	now := time.Now()
 	rep, err := costreport.Build(cr, costreport.Request{GroupBy: costreport.GroupByAutomaton, Since: time.Unix(0, 0), Until: now},

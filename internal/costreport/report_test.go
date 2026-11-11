@@ -602,11 +602,20 @@ func TestCostReportBillingMixedModes(t *testing.T) {
 	if row.BillingMode != MixedBillingMode {
 		t.Fatalf("billing_mode: want %q, got %q", MixedBillingMode, row.BillingMode)
 	}
-	if row.USDEstimate == nil {
-		t.Fatal("mixed rows keep the unambiguous usd_estimate")
+	if row.USDEstimate != nil {
+		t.Fatal("mixed rows never carry one summed dollar figure")
 	}
-	// aider 0.036 + claude-code (1000/1K*0.01 + 1000/1K*0.02) 0.03 = 0.066
-	floatEq(t, *row.USDEstimate, 0.066)
+	// claude-code api_metered 0.03 dollars; aider bundled plan is points.
+	var dollars *UnitTotal
+	for i := range row.UnitTotals {
+		if row.UnitTotals[i].Unit == UnitDollars {
+			dollars = &row.UnitTotals[i]
+		}
+	}
+	if dollars == nil || dollars.Dollars == nil || len(row.UnitTotals) != 2 {
+		t.Fatalf("want a dollars and a points total, got %+v", row.UnitTotals)
+	}
+	floatEq(t, *dollars.Dollars, 0.03)
 }
 
 func TestCostReportBillingNilKeepsLegacyShape(t *testing.T) {

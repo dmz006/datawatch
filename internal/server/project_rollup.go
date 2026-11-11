@@ -268,9 +268,7 @@ func setPerDay(t *rollupThroughput, windowDays int) {
 func (s *Server) costRollupPoints(mgr *autonomous.Manager, now time.Time, windowDays int) map[string]float64 {
 	points := map[string]float64{}
 	src := s.newManagerCostSource(mgr)
-	billing := func(backend string) config.EffectiveBillingProfile {
-		return s.cfg.Usage.EffectiveBillingProfile(backend)
-	}
+	billing := s.resolvedBilling()
 	req := costreport.Request{
 		GroupBy: costreport.GroupByAutomaton,
 		Since:   now.Add(-time.Duration(windowDays) * 24 * time.Hour),

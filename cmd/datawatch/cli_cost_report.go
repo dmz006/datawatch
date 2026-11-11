@@ -82,6 +82,7 @@ func newCostReportCmd() *cobra.Command {
 type costReportWire struct {
 	GroupBy          string          `json:"group_by"`
 	Rows             []costReportRow `json:"rows"`
+	TotalsByUnit     []costUnitTotal `json:"totals_by_unit"`
 	RetentionDays    int             `json:"retention_days"`
 	LifetimeFallback bool            `json:"lifetime_fallback"`
 	RetentionNote    string          `json:"retention_note"`
@@ -96,6 +97,42 @@ type costAttribWire struct {
 	SessionIDs        []string `json:"session_ids"`
 	OK                bool     `json:"ok"`
 	Note              string   `json:"note"`
+}
+
+// costUnitTotal mirrors costreport.UnitTotal.
+type costUnitTotal struct {
+	Unit          string   `json:"unit"`
+	BillingMode   string   `json:"billing_mode"`
+	Sessions      int      `json:"sessions"`
+	TokensIn      int      `json:"tokens_in"`
+	TokensOut     int      `json:"tokens_out"`
+	ActiveSeconds float64  `json:"active_seconds"`
+	Dollars       *float64 `json:"dollars"`
+	Points        *float64 `json:"points"`
+	Percent       *float64 `json:"percent"`
+}
+
+// printUnitTotals renders one line per billing unit; dollars, points and
+// local usage are never added together.
+func printUnitTotals(totals []costUnitTotal) {
+	if len(totals) == 0 {
+		return
+	}
+	fmt.Println("totals by unit:")
+	for _, t := range totals {
+		fig := "tokens and time only"
+		switch t.Unit {
+		case "dollars":
+			fig = "dollars " + moneyOrDash(t.Dollars)
+		case "points":
+			fig = "points " + numOrDash(t.Points)
+			if t.Percent != nil {
+				fig += fmt.Sprintf(", %.1f%% of the allowance", *t.Percent)
+			}
+		}
+		fmt.Printf("  %s (%s): %s; sessions %d, tokens in %d, tokens out %d, active %s\n",
+			t.Unit, t.BillingMode, fig, t.Sessions, t.TokensIn, t.TokensOut, formatSeconds(t.ActiveSeconds))
+	}
 }
 
 type costReportRow struct {
@@ -204,6 +241,7 @@ func printCostReport(body []byte) error {
 	//nolint:errcheck
 	w.Flush()
 
+	printUnitTotals(rep.TotalsByUnit)
 	if anyAPI {
 		fmt.Println("api_equiv_usd is an API-equivalent estimate, not a bill")
 	}
