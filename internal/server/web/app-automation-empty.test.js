@@ -147,7 +147,7 @@ test('the capacity card is present on the Automation sub-tab only', async () => 
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
   // Absent from every other Automation sub-tab body.
-  for (const other of ['inbox', 'automations', 'progress', 'setup', 'housekeeping']) {
+  for (const other of ['inbox', 'automations', 'progress', 'housekeeping']) {
     sb.switchAutomationSubtab(other);
     assert.doesNotMatch(out.view, /id="automationCapacityCard"/, 'no capacity slot on ' + other);
   }

@@ -10196,6 +10196,8 @@ const DOCS_LINKS_BY_KEY = {
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
   settings_identity_backups_to_keep: DOCS_DEFINITIONS + '#identity-backups-and-restore',
+  settings_usage_entry_title: 'howto/usage-calculator.md',
+  settings_usage_entry_help: 'howto/burn-guard.md',
   settings_automata_questions_quality_mode: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
@@ -10235,7 +10237,7 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.request_watch.raise_question': DOCS_DEFINITIONS + '#autonomous-request-watch-raise-question',
   'autonomous.request_watch.remediation_options': DOCS_DEFINITIONS + '#autonomous-request-watch-remediation-options',
   settings_automata_decisions_enabled: DOCS_DEFINITIONS + '#decision-record-settings',
-  settings_automata_decisions_folder: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_folder: 'howto/automaton-decision-records.md',
   settings_automata_decisions_folder_glob: DOCS_DEFINITIONS + '#decision-record-settings',
   settings_automata_decisions_front_matter_delimiter: DOCS_DEFINITIONS + '#decision-record-settings',
   settings_automata_decisions_front_matter_separator: DOCS_DEFINITIONS + '#decision-record-settings',
@@ -10867,7 +10869,7 @@ function renderSettingsView() {
         ${GENERAL_CONFIG_FIELDS.map(sec => {
           // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
           // plugins section to Plugins tab; everything else stays in General.
-          const _automataIds = ['pipeline', 'autonomous', 'orchestrator'];
+          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard'];
           const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
           return `
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
@@ -10877,6 +10879,14 @@ function renderSettingsView() {
           </div>
         </div>`;
         }).join('')}
+
+        <!-- Usage reading and extra credit entry: the same forms and endpoints as the usage page. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('usage_entry', t('settings_usage_entry_title'), DOCS_LINKS_SETTINGS_USAGE_ENTRY)}
+          <div id="settings-sec-usage_entry" style="${secContent('usage_entry')}">
+            <div id="settingsUsageEntry" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
 
         <!-- Requirements report + model pull consent cards (web setup view):
              the requirements report card shows the minimum versions the
@@ -19066,7 +19076,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Usage calculator — the weekly-allowance advice. Variant picks how the advice
   // is drawn, policy picks the target it aims at; the rest feed the model.
   // optionLabelKeys shows a locale label for an option whose id is not for people.
-  { id: 'usage_calculator', section: 'Usage calculator', fields: [
+  { id: 'usage_calculator', section: 'Usage calculator', docs: 'howto/usage-calculator.md', fields: [
     { key: 'usage.calculator.variant', label: 'Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)', labelKey: 'settings_usage_calculator_variant', type: 'select', options: ['pace-gauge', 'lane-planner', 'burn-ledger', 'all'], default: 'all' },
     { key: 'usage.calculator.policy', label: 'Usage calculator policy', labelKey: 'settings_usage_calculator_policy', type: 'select', options: ['use-all', 'pace', 'finish-early'], default: 'use-all',
       optionLabelKeys: { 'use-all': 'settings_usage_calculator_policy_use_all', 'pace': 'settings_usage_calculator_policy_pace', 'finish-early': 'settings_usage_calculator_policy_finish_early' } },
@@ -21073,6 +21083,7 @@ function loadGeneralConfig() {
       // it current while Settings is open — the loop moves caps hourly, so
       // poll once a minute on the shared window handle (never a second).
       if (window._usageAutoLanesStatusInterval) { clearInterval(window._usageAutoLanesStatusInterval); window._usageAutoLanesStatusInterval = null; }
+      if (document.getElementById('settingsUsageEntry') && window.settingsUsageEntryLoad) window.settingsUsageEntryLoad(false);
       if (document.getElementById('gcfg_uc_autolanes_status') && window.refreshUsageAutoLanesStatus) {
         window.refreshUsageAutoLanesStatus();
         window._usageAutoLanesStatusInterval = setInterval(window.refreshUsageAutoLanesStatus, 60 * 1000);
@@ -27544,6 +27555,7 @@ function switchAutomataTab(tab) {
     try { localStorage.setItem(_AUTOMATA_TAB_STORE_KEY, tab); } catch (_) { /* storage blocked */ }
   }
   st.selected.clear();
+  if (prev === 'events' && tab !== 'events') automataEventsStatusStop();
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
@@ -27774,6 +27786,7 @@ function renderAutomataEventsPanel() {
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
     <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
     ${automataEventsFilterHtml()}
+    ${automataEventsStatusHtml()}
     <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
     <div id="automataEventsMoreWrap" style="margin-top:8px;">
       <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
@@ -27802,6 +27815,37 @@ function renderAutomataEventsPanel() {
     });
   }
   automataEventsReload();
+  automataEventsStatusStart();
+}
+
+// The Events tab hosts the status the operator reads: supervisor loop runs and
+// counts, release readiness, request watch, the onboarding report and the
+// merge shadow. A card that is off, empty or 'never' stays hidden. The loop
+// card polls only while the Events tab is shown.
+const _AUTOMATA_EVENTS_STATUS_IDS = ['automationOnboardingReportCard', 'automationSupervisorLoopCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'];
+function automataEventsStatusHtml() {
+  const slots = _AUTOMATA_EVENTS_STATUS_IDS.map(id => `<div id="${id}" class="prd-capacity-slot" style="display:none;margin:6px 0 0;"></div>`).join('');
+  const link = `<div style="font-size:11px;margin-top:6px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(_automataEventsText('automata_events_config_in_settings', 'Automata configuration is in Settings under Automata'))}</a></div>`;
+  return `<div id="automataEventsStatus" style="margin-bottom:8px;">${slots}${link}</div>`;
+}
+// Show a slot only once its card drew content; hide it while it is empty.
+function automataEventsStatusPrune() {
+  _AUTOMATA_EVENTS_STATUS_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.innerHTML.trim() ? '' : 'none';
+  });
+}
+function automataEventsStatusStart() {
+  if (typeof listLoaderAll === 'function') {
+    try { listLoaderAll([_automationOnboardingReportLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]); } catch (_) { /* cards stay hidden */ }
+  }
+  if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
+  supervisorLoopStartPolling();
+  setTimeout(automataEventsStatusPrune, 1500);
+}
+function automataEventsStatusStop() {
+  supervisorLoopStopPolling();
+  _automationStopLoaders(['automation_onboarding_report', 'automation_release_readiness', 'automation_request_watch']);
 }
 
 // automataEventsHelpLink renders the '?' help anchor used by the Events tab,
@@ -29533,45 +29577,145 @@ function _usageCalcMessage(text) {
 function _usageCalcWrite(method, path, body) {
   const opts = { method };
   if (body !== undefined) opts.body = JSON.stringify(body);
+  const inSettings = typeof document !== 'undefined' && !!document.getElementById('settingsUsageEntry');
   return apiFetch(path, opts)
-    .then(() => usageCalcRefresh())
+    .then(() => (inSettings ? window.settingsUsageEntryLoad(true) : usageCalcRefresh()))
     .catch(err => {
+      if (inSettings) {
+        _usageCalcMessage(t('usage_calc_error', [err && err.message ? err.message : String(err)]));
+        return;
+      }
       _usageCalc.error = err && err.message ? err.message : String(err);
       usageCalcRerender();
     });
 }
 
-// The frame: verdict first, then the variant switcher and the chosen variant,
-// then the reading, policy, extra-credit, remaining-work and counter sections.
-// opts: variant (the chosen switcher id), policy, error, loading, now (ms).
+// The usage page body: one plain-language verdict sentence above up to three small
+// cards (weekly allowance, pace line, burn per day). The reading and extra credit
+// forms live in Settings; this page only reads the advice body and draws it. A card
+// whose data is off, empty or never set is not drawn.
+// opts: error, loading.
+const USAGE_CALC_DOCS_HREF = '/diagrams.html#docs/howto/usage-calculator.md';
+window.usageCalcHelpToggle = function (btn) {
+  const pop = btn && btn.nextElementSibling;
+  if (!pop) return;
+  const open = pop.hasAttribute('hidden');
+  if (open) pop.removeAttribute('hidden'); else pop.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
+function _usageCalcHelpHtml(textKey) {
+  return `<span class="usage-help-wrap"><button type="button" class="usage-help" aria-expanded="false" aria-label="${escHtml(t('usage_page_help_label'))}" onclick="usageCalcHelpToggle(this)">?</button>` +
+    `<span class="usage-help-pop" role="note" hidden>${escHtml(t(textKey))} ` +
+    `<a class="usage-help-docs" href="${USAGE_CALC_DOCS_HREF}" target="_blank" rel="noopener">${escHtml(t('usage_page_help_docs'))}</a></span></span>`;
+}
+function _usageCalcHasNum(v) {
+  return v !== null && v !== undefined && v !== '' && isFinite(Number(v));
+}
+// One sentence from the verdict fields: the recent-burn verdict (the same chip logic),
+// or the week-average verdict when the recent one is not given.
+function _usageCalcSentence(a) {
+  const verdict = a.verdict === 'over' || a.verdict === 'within' ? a.verdict : (a.verdict_avg === 'over' || a.verdict_avg === 'within' ? a.verdict_avg : '');
+  const end = verdict && verdict === a.verdict ? a.projected_end_recent : a.projected_end_avg;
+  if (!verdict) return (a.advice && a.advice.headline) || t('usage_page_verdict_unknown');
+  return t(verdict === 'over' ? 'usage_page_verdict_over' : 'usage_page_verdict_within', [_usageCalcNum(a.percent, 0), _usageCalcNum(end, 0)]);
+}
+function _usageCalcCardHtml(id, titleKey, helpKey, state, why, next, chart) {
+  return `<div class="usage-card usage-card-${id}" data-card="${id}">` +
+    `<div class="usage-card-head"><span class="usage-card-title">${escHtml(t(titleKey))}</span>${_usageCalcHelpHtml(helpKey)}</div>` +
+    `<div class="usage-card-state">${escHtml(state)}</div>${chart || ''}` +
+    `<div class="usage-card-why">${escHtml(why)}</div><div class="usage-card-next">${escHtml(next)}</div></div>`;
+}
+function _usageCalcAllowanceCard(a) {
+  if (!_usageCalcHasNum(a.percent) || !(a.ceiling > 0)) return '';
+  const frac = Math.min(Math.max(Number(a.percent) / a.ceiling, 0), 1);
+  const chart = `<svg class="usage-card-chart" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('usage_calc_gauge_title'))}">` +
+    `<rect x="0" y="0" width="100" height="8" rx="2" style="fill:var(--bg2,#1e1e1e);"/>` +
+    `<rect data-fill="percent" x="0" y="0" width="${(frac * 100).toFixed(1)}" height="8" rx="2" style="fill:var(--accent,#3b82f6);"/></svg>`;
+  const extra = a.extra_credit_points || 0;
+  const over = a.verdict === 'over';
+  return _usageCalcCardHtml('allowance', 'usage_page_allowance_title', 'usage_page_allowance_help',
+    t('usage_page_allowance_state', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.ceiling, 0)]),
+    t('usage_page_allowance_why', [_usageCalcNum(a.ceiling, 0), _usageCalcNum(extra, 0)]),
+    over ? t('usage_page_allowance_next_over') : t('usage_page_allowance_next_ok'), chart);
+}
+function _usageCalcPaceCard(a) {
+  if (!_usageCalcHasNum(a.pace_line)) return '';
+  let chart = '';
+  const series = Array.isArray(a.series) ? a.series : [];
+  const from = Date.parse(a.last_reset_at);
+  const to = Date.parse(a.next_reset_at);
+  if (series.length && to > from) {
+    const W = 100, H = 30, ceil = a.ceiling > 0 ? a.ceiling : 100;
+    const x = at => Math.min(Math.max((Date.parse(at) - from) / (to - from), 0), 1) * W;
+    const y = v => H - Math.min(Math.max(Number(v) / ceil, 0), 1) * H;
+    const pts = series.map(s => `${x(s.at).toFixed(1)},${y(s.percent).toFixed(1)}`).join(' ');
+    chart = `<svg class="usage-card-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('usage_calc_series_title'))}">` +
+      `<line data-series="pace" x1="0" y1="${H}" x2="${W}" y2="0" style="stroke:var(--text2,#999);stroke-width:1;" vector-effect="non-scaling-stroke"/>` +
+      `<polyline data-series="readings" points="${pts}" style="fill:none;stroke:var(--accent,#3b82f6);stroke-width:2;" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  const state = a.ahead_of_pace ? t('usage_page_pace_state_ahead', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.pace_line)])
+    : t('usage_page_pace_state_behind', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.pace_line), _usageCalcNum(a.headroom)]);
+  return _usageCalcCardHtml('pace', 'usage_page_pace_title', 'usage_page_pace_help', state,
+    t('usage_page_pace_why', [_usageCalcNum(a.days_since_reset, 1), _usageCalcNum(a.days_left, 1)]),
+    a.ahead_of_pace ? t('usage_page_pace_next_ahead') : t('usage_page_pace_next_ok'), chart);
+}
+function _usageCalcBurnCard(a) {
+  const daily = Array.isArray(a.daily) ? a.daily.filter(d => _usageCalcHasNum(d.points)) : [];
+  if (!daily.length || !(Number(a.recent_burn_per_24h) > 0 || Number(a.week_avg_burn_per_24h) > 0)) return '';
+  const W = 100, H = 30, n = daily.length;
+  const max = Math.max.apply(null, daily.map(d => Number(d.points)).concat([1]));
+  const bw = W / n;
+  const bars = daily.map((d, i) => {
+    const h = Math.max((Number(d.points) / max) * H, 1);
+    return `<rect data-bar="${i}" x="${(i * bw + 1).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${Math.max(bw - 2, 1).toFixed(1)}" height="${h.toFixed(1)}" style="fill:var(--accent,#3b82f6);"/>`;
+  }).join('');
+  const chart = `<svg class="usage-card-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('usage_calc_ledger_chart_title'))}">${bars}</svg>`;
+  const next = a.verdict === 'over' && a.advice && a.advice.lanes_suggested >= 0
+    ? t('usage_page_burn_next_over', [String(a.advice.lanes_suggested)]) : t('usage_page_burn_next_ok');
+  return _usageCalcCardHtml('burn', 'usage_page_burn_title', 'usage_page_burn_help',
+    t('usage_page_burn_state', [_usageCalcNum(a.recent_burn_per_24h)]),
+    t('usage_page_burn_why', [_usageCalcNum(a.week_avg_burn_per_24h)]), next, chart);
+}
+
+// The three cards by dashboard card type: one table, shared by the Resources row
+// and the built-in dashboard cards so they render identically at the bounded size.
+const USAGE_CARD_RENDERERS = {
+  'usage-allowance': _usageCalcAllowanceCard,
+  'usage-pace': _usageCalcPaceCard,
+  'usage-burn': _usageCalcBurnCard,
+};
+function _usageCalcCardsRowHtml(a) {
+  const cards = _usageCalcAllowanceCard(a) + _usageCalcPaceCard(a) + _usageCalcBurnCard(a);
+  return cards ? `<div class="usage-cards">${cards}</div>` : '';
+}
+window.usageCalcCardForType = function (type, advice) {
+  const fn = USAGE_CARD_RENDERERS[type];
+  return fn && advice && !advice.needs ? fn(advice) : '';
+};
+
 window.usageCalcFrameHtml = function (body, opts) {
   opts = opts || {};
   const res = body || null;
-  const variants = _usageCalcVariantList(res);
-  const active = _usageCalcActive(variants, opts.variant);
   const parts = [];
   parts.push(`<div class="usage-calc-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
-    `<div class="usage-calc-title" style="font-weight:600;">${escHtml(t('usage_calc_title'))}</div>` +
+    `<div class="usage-calc-title" style="font-weight:600;">${escHtml(t('usage_calc_title'))} ${_usageCalcHelpHtml('usage_calc_intro')}</div>` +
     `<button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcRefresh()">${escHtml(t('usage_calc_refresh'))}</button></div>`);
-  parts.push(`<div class="usage-calc-intro" style="font-size:12px;color:var(--text2);margin:4px 0 8px;">${escHtml(t('usage_calc_intro'))}</div>`);
-  if (opts.error) parts.push(`<div class="usage-calc-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;margin-bottom:8px;">${escHtml(t('usage_calc_error', [opts.error]))}</div>`);
+  if (opts.error) parts.push(`<div class="usage-calc-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(t('usage_calc_error', [opts.error]))}</div>`);
   if (!res) {
     if (!opts.error) parts.push(`<div class="usage-calc-loading" style="color:var(--text2);font-size:12px;">${escHtml(t('usage_calc_loading'))}</div>`);
   } else if (res.advice && res.advice.needs) {
-    parts.push(`<div class="usage-calc-empty" style="padding:12px 0;"><div style="font-weight:600;">${escHtml(t('usage_calc_empty_title'))}</div>` +
-      `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_empty_body'))}</div></div>`);
+    parts.push(`<div class="usage-calc-empty"><div style="font-weight:600;">${escHtml(t('usage_calc_empty_title'))}</div>` +
+      `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_page_empty_body'))}</div></div>`);
   } else if (res.advice) {
-    parts.push(_usageCalcVerdictHtml(res, active));
-    if (variants.length > 1) parts.push(_usageCalcSwitcherHtml(variants, active));
-    parts.push(_usageCalcVariantBody(res, active, opts));
+    const a = res.advice;
+    parts.push(`<div class="usage-verdict-sentence" role="status">${escHtml(_usageCalcSentence(a))}</div>`);
+    if (a.recent_fallback) parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
+    if (res.stale) parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)]))}</div>`);
+    const row = _usageCalcCardsRowHtml(a);
+    if (row) parts.push(row);
   }
-  parts.push(_usageCalcReadingForm(res, opts));
-  if (res && res.advice && !res.advice.needs) parts.push(_usageCalcVariantHook(window.usageCalcInputNotes, active, res));
-  parts.push(_usageCalcPolicyForm(res, opts));
-  parts.push(_usageCalcExtraForm(res));
-  parts.push(_usageCalcRemainingForm(res));
+  parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
   parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
-  parts.push(_usageCalcCounterHtml(res, active));
   return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
 
@@ -29753,6 +29897,28 @@ window.usageCalcSaveExtraCredit = function () {
   const built = usageCalcPointsBody(el ? el.value : '');
   if (built.error) return _usageCalcMessage(built.error);
   return _usageCalcWrite('PUT', '/api/usage/extra-credit', built.body);
+};
+
+// Settings -> Automata -> Usage reading and extra credit. The panel reuses
+// _usageCalcReadingForm and _usageCalcExtraForm and the same save functions,
+// so it posts to /api/usage/readings and /api/usage/extra-credit exactly as
+// the usage page does.
+const DOCS_LINKS_SETTINGS_USAGE_ENTRY = 'howto/usage-calculator.md';
+window.settingsUsageEntryHtml = function (res, savedMsg) {
+  return `<div class="settings-usage-entry" style="display:flex;flex-direction:column;gap:12px;">` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('settings_usage_entry_intro'))}</div>` +
+    _usageCalcReadingForm(res, {}) + _usageCalcExtraForm(res) +
+    `<div id="settingsUsageEntrySaved" role="status" style="font-size:12px;color:var(--text2);">${escHtml(savedMsg || '')}</div></div>`;
+};
+window.settingsUsageEntryLoad = function (saved) {
+  const el = document.getElementById('settingsUsageEntry');
+  if (!el) return Promise.resolve();
+  return apiFetch('/api/usage/advice')
+    .then(body => { el.innerHTML = window.settingsUsageEntryHtml(body, saved ? t('settings_usage_entry_saved') : ''); })
+    .catch(err => {
+      el.innerHTML = window.settingsUsageEntryHtml(null, '');
+      _usageCalcMessage(t('usage_calc_error', [err && err.message ? err.message : String(err)]));
+    });
 };
 
 // The remaining work is the estimate (queued tasks times the cost per task)
@@ -30866,56 +31032,142 @@ function _laneFillKindModesHtml(base, modes) {
     .filter(p => p[1]).map(p => t('lane_fill_kind_modes_part', [t(p[0]), label(p[1])]));
   return `<div class="lane-fill-kind-modes" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_kind_modes', [parts.join('; ')]))}</div>`;
 }
+// One lane is one row: lane name, node, state and what it runs, then a small
+// bounded bar (full when working, half when waiting on a verifier, empty when
+// idle). The bar has a fixed maximum width so it never stretches.
+const LANE_BAR_LEVEL = { occupied: 100, waiting_verifier: 50, idle: 0 };
 function _laneFillLaneHtml(l) {
   const occupied = l.state === 'occupied';
   const waitingVerifier = l.state === 'waiting_verifier';
   const typeKey = _laneFillKey(LANE_FILL_TYPE_KEYS, l.type);
   const typeLabel = typeKey ? t(typeKey) : String(l.type || '');
-  const stateLabel = t(waitingVerifier ? 'lane_fill_state_waiting_verifier'
-    : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle'));
-  const waiting = Number(l.eligible_waiting) > 0
-    ? `<span class="lane-fill-waiting" style="color:var(--accent2,var(--text));font-weight:600;">&#9203; ${escHtml(t('lane_fill_waiting', [Number(l.eligible_waiting)]))}</span>` : '';
-  // A lane that works and a lane that waits must read differently: show why
-  // the verifier slot is taken, escaped. Absent or empty reason = label only.
-  const waitReason = waitingVerifier
-    ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
-  const waitReasonHtml = waitReason
-    ? `<span class="lane-fill-wait-reason" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_waiting_verifier_reason', [waitReason]))}</span>` : '';
-  const occupant = (occupied || waitingVerifier) && l.occupant
+  const stateKey = waitingVerifier ? 'lane_fill_state_waiting_verifier' : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle');
+  const level = waitingVerifier ? LANE_BAR_LEVEL.waiting_verifier : (occupied ? LANE_BAR_LEVEL.occupied : LANE_BAR_LEVEL.idle);
+  const node = String(l.node || (l.occupant && l.occupant.node) || '').trim();
+  const runs = (occupied || waitingVerifier) && l.occupant
     ? [l.occupant.title, l.occupant.backend].filter(Boolean).join(' · ') : '';
-  const blocker = l.blocker ? `<div style="color:var(--text2);">${escHtml(t('lane_fill_blocked', [l.blocker]))}</div>` : '';
-  return `<div class="lane-fill-lane" style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
-    `<span style="font-weight:600;overflow-wrap:anywhere;">${escHtml(l.id)} · ${escHtml(typeLabel)}</span>` +
-    `<span>${escHtml(stateLabel)}</span>${waiting}${waitReasonHtml}` +
-    `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
+  const waitReason = waitingVerifier ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
+  const notes = [];
+  if (l.blocker) notes.push(['lane-fill-blocker', t('lane_fill_blocked', [l.blocker])]);
+  if (waitReason) notes.push(['lane-fill-wait-reason', t('lane_fill_waiting_verifier_reason', [waitReason])]);
+  if (Number(l.eligible_waiting) > 0) notes.push(['lane-fill-waiting', t('lane_fill_waiting', [Number(l.eligible_waiting)])]);
+  const notesHtml = notes.map(n => `<span class="${n[0]}">${escHtml(n[1])}</span>`).join(' — ');
+  const cell = (cls, txt) => `<span class="lane-row-${cls}">${escHtml(txt)}</span>`;
+  return `<div class="lane-fill-lane lane-row" data-lane-state="${escHtml(l.state || 'idle')}">` +
+    cell('name', `${l.id} · ${typeLabel}`) +
+    cell('node', node ? t('lane_fill_node', [node]) : t('lane_fill_node_none')) +
+    cell('state', t(stateKey)) +
+    `<span class="lane-bar" role="img" aria-label="${escHtml(t(stateKey))}"><span class="lane-bar-fill" style="width:${level}%;"></span></span>` +
+    `<span class="lane-row-runs">${escHtml(runs)}${notesHtml ? (runs ? ' — ' : '') + notesHtml : ''}</span></div>`;
 }
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
     `<span style="color:var(--text2);">${escHtml(_laneFillClock(a.at))}</span> ${escHtml(a.lane_id)} · ${escHtml(a.work)}${escHtml(message)}</div>`;
 }
+// _resourceHelpHtml is the '?' entry of a Resources or Progress card: a small
+// button that opens a note with a link to the docs page.
+function _resourceHelpHtml(textKey, href) {
+  return `<span class="usage-help-wrap"><button type="button" class="usage-help" aria-expanded="false" aria-label="${escHtml(t('usage_page_help_label'))}" onclick="usageCalcHelpToggle(this)">?</button>` +
+    `<span class="usage-help-pop" role="note" hidden>${escHtml(t(textKey))} ` +
+    `<a class="usage-help-docs" href="${escHtml(href)}" target="_blank" rel="noopener">${escHtml(t('usage_page_help_docs'))}</a></span></span>`;
+}
+const LANE_FILL_DOCS_HREF = '/diagrams.html#docs/howto/automata-resources.md';
 window.laneFillCardHtml = function(status, cap) {
-  const head = `<div class="cap-title">${escHtml(t('lane_fill_card_title'))}</div>`;
-  if (!status || typeof status !== 'object') {
-    return `<div class="prd-capacity-card lane-fill-card">${head}<div style="color:var(--text2);">${escHtml(t('lane_fill_empty'))}</div></div>`;
-  }
+  // A card that is off, empty or never read is not drawn.
+  if (!status || typeof status !== 'object') return '';
   const lanes = Array.isArray(status.lanes) ? status.lanes : [];
-  const lanesHtml = lanes.length ? lanes.map(_laneFillLaneHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_lanes'))}</div>`;
+  if (!lanes.length || status.mode === 'off') return '';
+  const head = `<div class="cap-title card-head">${escHtml(t('lane_fill_card_title'))} ${_resourceHelpHtml('lane_fill_help_text', LANE_FILL_DOCS_HREF)}</div>`;
+  const lanesHtml = lanes.map(_laneFillLaneHtml).join('');
   const queued = status.queued_eligible || {};
-  const queuedLine = `<div style="margin-top:6px;">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
+  const queuedLine = `<div class="lane-fill-queued">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
   const ev = status.evidence || {};
   const models = (Array.isArray(ev.loaded_models) ? ev.loaded_models : []).map(m => `${m.host} ${m.model}`).join(', ');
   const evidenceLine = ev.error
     ? t('lane_fill_evidence_error', [ev.error])
     : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
-  const evidence = `<div style="margin-top:6px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(evidenceLine)}</div>`;
+  const evidence = `<div class="lane-fill-evidence">${escHtml(evidenceLine)}</div>`;
+  // The recent decisions log is not part of this card: its data is on the
+  // Events tab. The idle lane alerts stay, in their own block below the lanes.
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
-  const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
-  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
-    _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
-    `<div class="lane-fill-gap" aria-hidden="true" style="height:14px;"></div>` +
-    _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
+  const alertsHtml = alerts.length
+    ? `<div class="lane-fill-gap" aria-hidden="true"></div>` + _laneFillSection(t('lane_fill_alerts_heading'), alerts.map(_laneFillAlertHtml).join('')) : '';
+  return `<div class="prd-capacity-card lane-fill-card lane-card">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
+    `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + alertsHtml + `</div>`;
 };
+
+// ── Headline cards (progress, cost, forecast) ───────────────────────────────
+// metricCardHtml(spec) draws one fixed-size card: the headline number large,
+// its unit labelled beneath, and the trend. spec: {id, titleKey, helpKey,
+// docs, value (number or text), unitKey, trend ('up'|'down'|'flat')}. A value
+// that is missing (off, empty or never measured) draws nothing at all.
+const METRIC_TREND_KEYS = { up: 'metric_trend_up', down: 'metric_trend_down', flat: 'metric_trend_flat' };
+const METRIC_TREND_MARK = { up: '\u25B2', down: '\u25BC', flat: '\u25B6' };
+window.metricCardHtml = function(spec) {
+  if (!spec || spec.value === null || spec.value === undefined || spec.value === '') return '';
+  if (typeof spec.value === 'number' && !isFinite(spec.value)) return '';
+  const dir = _laneFillKey(METRIC_TREND_KEYS, spec.trend);
+  const trend = dir
+    ? `<div class="metric-card-trend metric-trend-${escHtml(spec.trend)}">${METRIC_TREND_MARK[spec.trend]} ${escHtml(t(dir))}</div>` : '';
+  return `<div class="metric-card" id="${escHtml(spec.id)}Body" data-metric="${escHtml(spec.id)}">` +
+    `<div class="metric-card-head card-head"><span class="metric-card-title">${escHtml(t(spec.titleKey))}</span> ${_resourceHelpHtml(spec.helpKey, spec.docs)}</div>` +
+    `<div class="metric-card-value">${escHtml(String(spec.value))}</div>` +
+    `<div class="metric-card-unit">${escHtml(t(spec.unitKey))}</div>${trend}</div>`;
+};
+const METRIC_PROGRESS_DOCS = '/diagrams.html#docs/howto/automata-progress.md';
+const METRIC_COST_DOCS = '/diagrams.html#docs/howto/automata-cost.md';
+function _metricTrendOf(dir) {
+  return dir === 'converging' ? 'down' : (dir === 'widening' ? 'up' : (dir === 'flat' ? 'flat' : ''));
+}
+// metricCardSpecs turns the decoded progress body, the progress trend body and
+// the cost body into the three card specs. Missing parts give a spec with no value.
+window.metricCardSpecs = function(progress, trend, cost, prevCost) {
+  const tot = (progress && progress.totals) || {};
+  const comp = (progress && progress.completion) || {};
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
+  const done = num(tot.tasks_done);
+  const total = num(tot.tasks);
+  const trendDir = _metricTrendOf(trend && trend.direction);
+  const usd = num(cost && cost.total_usd);
+  let costTrend = '';
+  if (usd !== null && num(prevCost) !== null) costTrend = usd > prevCost ? 'up' : (usd < prevCost ? 'down' : 'flat');
+  const lo = num(comp.low_days), hi = num(comp.high_days);
+  return [
+    { id: 'automationProgressHeadline', titleKey: 'metric_progress_title', helpKey: 'metric_progress_help', docs: METRIC_PROGRESS_DOCS,
+      value: done !== null && total !== null && total > 0 ? `${done} / ${total}` : null, unitKey: 'metric_progress_unit', trend: trendDir },
+    { id: 'automationCostBillingCard', titleKey: 'metric_cost_title', helpKey: 'metric_cost_help', docs: METRIC_COST_DOCS,
+      value: usd !== null && usd > 0 ? '$' + usd.toFixed(2) : null, unitKey: 'metric_cost_unit', trend: costTrend },
+    { id: 'automationCompletionForecastCard', titleKey: 'metric_forecast_title', helpKey: 'metric_forecast_help', docs: METRIC_PROGRESS_DOCS,
+      value: lo !== null && hi !== null ? `${Number(lo.toFixed(1))}\u2013${Number(hi.toFixed(1))}` : null, unitKey: 'metric_forecast_unit', trend: trendDir },
+  ];
+};
+// _metricCardsPaint draws each spec into its slot and hides a slot whose card is empty.
+function _metricCardsPaint(specs) {
+  specs.forEach(sp => {
+    const el = document.getElementById(sp.id);
+    if (!el) return;
+    const html = window.metricCardHtml(sp);
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
+  });
+}
+function _metricCardsLoad() {
+  const get = (u) => Promise.resolve(apiFetch(u)).catch(() => null);
+  return Promise.all([get('/api/autonomous/progress'), get('/api/autonomous/progress/trend?days=14'), get('/api/cost')]).then(([pr, tr, co]) => {
+    const prev = window._metricPrevCost;
+    if (co && typeof co.total_usd === 'number') window._metricPrevCost = co.total_usd;
+    _metricCardsPaint(window.metricCardSpecs(pr, tr, co, prev));
+  });
+}
+function _metricCardsStart() {
+  _metricCardsStop();
+  _metricCardsLoad();
+  window._metricCardsInterval = setInterval(_metricCardsLoad, 30000);
+}
+function _metricCardsStop() {
+  if (window._metricCardsInterval) { clearInterval(window._metricCardsInterval); window._metricCardsInterval = null; }
+}
 
 // ── Infrastructure retries card ─────────────────────────────────────────────
 // infraRetryCardHtml(status) turns the decoded GET /api/autonomous/infra-retries
@@ -31942,12 +32194,8 @@ function _decisionRecordFolderLine(folder) {
     .filter(p => p && typeof p === 'object' && (p.file || p.message));
   const issueBits = issues.map(p =>
     `${t('decision_record_folder_issue') || 'issue'} ${p.file || ''}${p.message ? ': ' + p.message : ''}`);
-  if (!folder.enabled) {
-    const bits = [t('decision_record_folder_off') || 'Folder watch is off'];
-    if (folder.path) bits.push(String(folder.path));
-    bits.push(...issueBits);
-    return `<div class="decision-record-folder decision-record-folder-off" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(bits.join(' · '))}</div>`;
-  }
+  // Folder watch off is shown in Settings only, never on the card.
+  if (!folder.enabled) return '';
   const bits = [];
   if (folder.path) bits.push(String(folder.path));
   bits.push(`${folder.files_seen || 0} ${t('decision_record_folder_files') || 'files read'}`);
@@ -31965,12 +32213,9 @@ window.decisionRecordCardHtml = function(view) {
     return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}<div class="decision-record-loading" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_loading') || 'Loading…')}</div></div>`;
   }
   const recs = Array.isArray(view.decision_records) ? view.decision_records : [];
-  let body;
-  if (recs.length === 0) {
-    body = `<div class="decision-record-empty" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_empty') || 'No decision records yet.')}</div>`;
-  } else {
-    body = recs.map(_decisionRecordRow).join('');
-  }
+  // No decision records: the card renders nothing.
+  if (recs.length === 0) return '';
+  const body = recs.map(_decisionRecordRow).join('');
   return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}${body}${_decisionRecordFolderLine(view.folder)}</div>`;
 };
 
@@ -36079,26 +36324,12 @@ function _automationPlaceholderHTML(id) {
   ['resources', 'automationLaneUtilizationCard', 100],
   ['resources', 'automationVerifierSlotsCard', 110],
   ['progress', 'automationAllProjectsGanttCard', 100],
-  ['progress', 'automationCostBillingCard', 110],
-  ['progress', 'automationCompletionForecastCard', 120],
-  ['setup', 'automationProjectPolicyCard', 100],
-  ['setup', 'automationDecomposeLintCard', 110],
-  ['setup', 'automationPriorityByKindCard', 120],
-  ['setup', 'automationGroupingTagsCard', 130],
-  ['setup', 'automationSupervisorLoopCard', 140],
   ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
-// The Supervisor loop card fills the Setup placeholder reserved above: it keeps
-// the slot id, order and hidden placeholder markup (it un-hides on the first read), and polls only
-// while the Setup sub-tab is shown.
-registerAutomationCardSlot('setup', {
-  id: 'automationSupervisorLoopCard',
-  order: 140,
-  html: _automationPlaceholderHTML('automationSupervisorLoopCard'),
-  mount: () => supervisorLoopStartPolling(),
-  stop: () => supervisorLoopStopPolling(),
-});
-
+// The three headline cards sit in one row on the Progress tab; the cost slot
+// starts and stops the shared loader. Each card hides itself when it has no value.
+registerAutomationCardSlot('progress', { id: 'automationProgressHeadline', order: 105, html: '<div id="metricCardRow" class="metric-cards"><div id="automationProgressHeadline" style="display:none;"></div><div id="automationCostBillingCard" style="display:none;"></div><div id="automationCompletionForecastCard" style="display:none;"></div></div>',
+  mount: _metricCardsStart, stop: _metricCardsStop });
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,
 // security failures and open supervisor-watch findings. The counts live here
@@ -36270,27 +36501,6 @@ const _AUTOMATION_SUBTABS = [
     stop() { _automationSlotsStop('progress'); },
   },
   {
-    id: 'setup',
-    labelKey: 'automation_subtab_setup',
-    bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergeShadowCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationReleaseReadinessCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      ${_automationSlotsHTML('setup')}`,
-    mount() {
-      listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]);
-      // The merge shadow card is a plain one-shot read (no list chrome), so it
-      // has no loader entry; it renders nothing when the shadow is off or empty.
-      if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
-      _automationSlotsMount('setup');
-    },
-    stop() {
-      _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_request_watch']);
-      _automationSlotsStop('setup');
-    },
-  },
-  {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
     bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
@@ -36306,6 +36516,13 @@ const _AUTOMATION_SUBTABS = [
     },
   },
 ];
+
+// _automationNormalizeSubtab makes an unknown stored or deep-linked sub-tab id
+// (such as the removed 'setup') fall back to the default sub-tab.
+function _automationNormalizeSubtab() {
+  if (!_AUTOMATION_SUBTABS.some(s => s.id === _automationState.subtab)) _automationState.subtab = _AUTOMATION_DEFAULT_SUBTAB;
+  return _automationState.subtab;
+}
 
 // The second-row sub-tab bar: the fixed automation-subtabs classes and the
 // data-subtab attribute are the contract for the styles, the node tests and
@@ -36331,6 +36548,7 @@ function _automationSubtabsBarHTML() {
 // The Automation sub-tab's body: the second-row sub-tab bar first, then the
 // body of the sub-tab that is selected.
 function _automationBodyHTML() {
+  _automationNormalizeSubtab();
   const st = _automationState;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
     || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
@@ -36346,6 +36564,7 @@ function _automationMount() {
   // A fresh render has not loaded anything yet: the empty state waits for a
   // load that succeeds after this point.
   _automationState.loaded = false;
+  _automationNormalizeSubtab();
   const def = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab) || _AUTOMATION_SUBTABS[0];
   def.mount();
   // The Inbox count badge stays current behind the other sub-tabs.
@@ -36357,7 +36576,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -36390,6 +36609,7 @@ function _automationSubtabsReveal() {
 window._automationSubtabsReveal = _automationSubtabsReveal;
 
 function switchAutomationSubtab(id) {
+  _automationNormalizeSubtab();
   const def = _AUTOMATION_SUBTABS.find(s => s.id === id);
   if (!def) return;
   if (_automataNormalizeTab() !== 'automation') return;
@@ -36469,7 +36689,12 @@ function _automationLaneFillLoader() {
     key: 'automation_lane_fill', el: 'automationLaneFillCard', url: '/api/autonomous/lane-fill?limit=20', pollMs: 5000,
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
-    render: status => window.laneFillCardHtml(status, window._lastAutomationCapacity),
+    render: status => {
+      const html = window.laneFillCardHtml(status, window._lastAutomationCapacity);
+      const el = document.getElementById('automationLaneFillCard');
+      if (el) el.style.display = html ? '' : 'none';
+      return html;
+    },
   });
 }
 
@@ -37308,7 +37533,9 @@ function supervisorLoopCardHtml(jobsBody, runsBody) {
 function supervisorLoopRenderCard(jobsBody, runsBody) {
   const el = document.getElementById(SUPERVISOR_LOOP_CARD_ELEMENT_ID);
   if (!el) return;
-  const html = supervisorLoopCardHtml(jobsBody, runsBody);
+  const runs = runsBody && Array.isArray(runsBody.runs) ? runsBody.runs : [];
+  // A loop that is off or has never run is not shown.
+  const html = (jobsBody && jobsBody.enabled === false && !runs.length) || !runs.length ? null : supervisorLoopCardHtml(jobsBody, runsBody);
   if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.innerHTML = html;
   el.style.display = '';
@@ -45348,6 +45575,14 @@ const DASH_CARD_DEFS = [
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
+  // The three small usage cards (one shared renderer, bounded size).
+  { id: 'usage-allowance', label: 'Weekly allowance', labelKey: 'dash_card_usage_allowance', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-allowance" style="height:100%;overflow:auto;"></div>' },
+  { id: 'usage-pace', label: 'Pace line', labelKey: 'dash_card_usage_pace', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-pace" style="height:100%;overflow:auto;"></div>' },
+  { id: 'usage-burn', label: 'Burn per day', labelKey: 'dash_card_usage_burn', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-burn" style="height:100%;overflow:auto;"></div>' },
+
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
   // GET /api/cost/report; controls in the card: group select, window
@@ -45632,6 +45867,7 @@ function _dashBuildGrid(layout) {
   _dashRenderWebSearchUsage();
   _dashFetchCostReport();
   _dashRenderCostReport();
+  _dashRenderUsageCards();
   _dashRenderConsole();
   // Operator console: prime/refresh the one shared summary payload whenever
   // the board carries at least one console card; per-tick refresh then
@@ -46261,6 +46497,17 @@ window._costReportSetDays = function(v) {
   c.userTouched = true;
   window._costReportRefresh();
 };
+
+// Usage cards: one GET of /api/usage/advice fills every usage card on the board.
+function _dashRenderUsageCards() {
+  const els = document.querySelectorAll ? document.querySelectorAll('[data-usage-card]') : [];
+  if (!els || !els.length) return;
+  const fill = advice => els.forEach(el => {
+    el.innerHTML = window.usageCalcCardForType(el.getAttribute('data-usage-card'), advice) ||
+      `<div style="font-size:11px;color:var(--text2);padding:6px 8px;">${escHtml(t('usage_calc_empty_title'))}</div>`;
+  });
+  Promise.resolve(apiFetch('/api/usage/advice')).then(b => fill(b && b.advice ? b.advice : {})).catch(() => fill({}));
+}
 
 function _dashRenderCostReport() {
   const el = document.getElementById('dashCostReportCard');

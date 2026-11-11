@@ -229,36 +229,6 @@ test('a tick falls every 24 hours across the week, both ends included', () => {
   assert.ok(html.includes('>Sun</text>'), 'the week starts on the reset weekday');
 });
 
-test('the reading fields sit in a collapsible list inside the verdict card, above the lane body', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody({ variant: 'lane-planner' }), {});
-  const verdictAt = html.indexOf('class="usage-calc-verdict"');
-  const listAt = html.indexOf('<details class="usage-calc-lane-fields"');
-  const bodyAt = html.indexOf('class="usage-calc-lane-planner"');
-  assert.ok(verdictAt >= 0 && listAt > verdictAt, 'the list is drawn inside the verdict card');
-  assert.ok(bodyAt > listAt, 'the lane body comes after the verdict card');
-  assert.ok(!/<details class="usage-calc-lane-fields" open/.test(html), 'the list starts closed');
-  assert.ok(html.slice(listAt, bodyAt).includes('data-field="0"'), 'the list holds the reading fields');
-});
-
-test('the burn-per-lane note sits under the input form and says it is inferred', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody({ variant: 'lane-planner' }), {});
-  const form = html.indexOf('usageCalcSubmitReading()');
-  const note = html.indexOf('usage-calc-lane-per-lane');
-  assert.ok(note > form, 'the note comes after the reading form');
-  assert.ok(html.includes('Burn per lane: 7.0 per 24 hours, inferred, recalibrate at each reading.'));
-});
-
-test('the stale marker is still drawn by the frame above the lane planner', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody({
-    variant: 'lane-planner', stale: true, copied_at: '2026-10-23T20:00:00-04:00', keeper: 'peer-b',
-  }), {});
-  assert.ok(html.includes('Last copy from peer-b at'), 'stale marker missing');
-  assert.ok(html.indexOf('Last copy from') < html.indexOf('class="usage-calc-lane-planner"'), 'marker sits in the verdict card');
-});
-
 test('the lane planner adds no tracker ID or PRD wording to the drawn text', () => {
   const s = loadApp();
   const html = render(s, workedExampleBody());

@@ -8,12 +8,14 @@ docs:
 The **Automation** view is the place in the web app where you build, watch and
 steer chains of Automata. It is the first sub-tab of the **Automata** tab: open
 Automata in the bottom navigation and Automation is selected on the sub-tab bar,
-left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
+left of **Automata**, **Events** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
 skip, insert, remove, edit edges) next to the members they act on. Inside the
-Automation sub-tab, a second row of six sub-tabs splits the view, in this
-order: **Inbox**, **Automations**, **Resources**, **Progress and cost**,
-**Setup and policy** and **Housekeeping**. Inbox is the one open by default.
+Automation sub-tab, a second row of five sub-tabs splits the view, in this
+order: **Inbox**, **Automations**, **Resources**, **Progress and cost**
+and **Housekeeping**. The former **Setup and policy** sub-tab is gone: a
+stored or bookmarked link to it opens Inbox, its status cards moved to the
+Events tab and its configuration moved to Settings. Inbox is the one open by default.
 
 The first sub-tab row also holds an **Events** sub-tab (between **Automata**
 and **Templates**): the one stream of what the daemon watches and does for
@@ -32,9 +34,9 @@ to its tab without changing the other tabs.
 |---|---|
 | **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting. |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
-| **Resources** | Capacity, lane fill, usage against the plan, and the Automata ship status card. Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
-| **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
-| **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind and the supervisor loop appear here when they ship. The automatic grouping tags (the placement axes and the tag sweep) ship today, but they live on the Settings page under **Settings → General → Automata → Placement tags**, not as a card of this tab; see [automata-tags](automata-tags.md). |
+| **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
+| **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
+| *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
 | **Housekeeping** | The uncommitted work card. The safe-to-delete report and the cleanup card now live in the Events tab. Stale worktrees appears here when it ships. |
 
 ## What an Automation is
@@ -47,7 +49,7 @@ datawatch starts the next Automaton by itself. See
 works behind the scenes.
 
 The bottom navigation has no Automation button of its own. Inside the Automata
-tab, the sub-tab bar reads **Automation**, **Automata**, **Templates**. The
+tab, the sub-tab bar reads **Automation**, **Automata**, **Events**, **Templates**. The
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
 
@@ -156,15 +158,17 @@ never blanks the cards.
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
   counts what is waiting on you.
-- **Resources:** the capacity and queue card (the pools and their usage, any
+- **Resources:** the three usage cards in a row (weekly allowance, pace line,
+  burn per day), the capacity and queue card (the pools and their usage, any
   usage back-off, budgets, and the Automata waiting for capacity), the lane fill
-  card, the usage card (usage against the plan) and the Automata ship status
+  card (one row per lane, with its node) and the Automata ship status
   card (the push, tag and release steps). The infrastructure retries and the
   Automata checks cards (the four report-only checks) are in the Events tab.
 - **Progress and cost:** the Progress card, with the kind table, work left and
   completion range.
-- **Setup and policy:** the onboarding and requirements report, the merge
-  pipeline card and the model request watch card.
+- **Setup and policy (removed):** its cards are on the Events tab (see
+  [automata-events.md](automata-events.md#status-cards-on-the-events-tab)) and
+  its configuration is in Settings under Automata.
 - **Housekeeping:** the uncommitted work card. The safe-to-delete report and
   the cleanup card are in the Events tab.
 
@@ -546,7 +550,7 @@ log as `autonomous_judge_outcome`.
 
 ### Tune both settings
 
-- **Settings page:** Settings > General > Automata, the two fields above.
+- **Settings page:** Settings → General → Automata, the two fields above.
 - **CLI:** `datawatch config set autonomous.judge_prompt_file_threshold_lines 300`
   and `datawatch config set autonomous.judge_delivery_wait_per_thousand_lines_seconds 60`.
 - **Comm channel:** `configure autonomous.judge_prompt_file_threshold_lines=300`,

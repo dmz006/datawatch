@@ -48,16 +48,6 @@ test('the reading form has no lanes stepper elements', () => {
   assert.ok(html.includes('id="usageCalcPercent"') && html.includes('id="usageCalcReadAt"'), 'the reading inputs remain');
 });
 
-test('the what-if stepper sits in the policy form and starts unset', () => {
-  const s = loadApp();
-  const html = run(s, '_usageCalcPolicyForm(_b, {})', { _b: workedExampleBody() });
-  for (const id of LANE_IDS) assert.ok(html.includes(`id="${id}"`), `${id} missing from the policy form`);
-  assert.ok(html.includes('id="usageCalcWhatIf" data-whatif-set="false"'), 'the what-if starts unset');
-  assert.match(html, /id="usageCalcLanes" data-value="3"/, 'unset shows the chosen count');
-  const frameHtml = run(s, 'window.usageCalcFrameHtml(_b, {})', { _b: workedExampleBody() });
-  assert.ok(frameHtml.indexOf('id="usageCalcLanes"') > frameHtml.indexOf('name="usageCalcPolicy"'), 'the stepper follows the policy radios');
-});
-
 test('an unset what-if sends no lanes parameter', async () => {
   const s = loadApp();
   assert.equal(run(s, 'window._usageCalc.whatIf'), null);
