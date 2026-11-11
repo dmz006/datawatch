@@ -33,6 +33,15 @@ const InfraClassJudgeCouldNotStart = "judge_could_not_start"
 // message.
 const judgeCouldNotStartText = "task delivery failed: main prompt never appeared within"
 
+// InfraClassModelUnresponsive is the class of a pi attempt that failed because
+// the model never answered: the recorded text carries the pi failure marker
+// (or its evidence) and the output shows "Request timed out".
+const InfraClassModelUnresponsive = "model_unresponsive"
+
+// modelUnresponsiveText is the fixed phrase, lower case, of a model request
+// timeout in the pi output.
+const modelUnresponsiveText = "request timed out"
+
 // daemonRestartText is the message of ErrDaemonRestart.
 const daemonRestartText = "daemon restarted while the task was running"
 
@@ -143,6 +152,10 @@ func ClassifyInfraText(text string) (class string, ok bool) {
 		if strings.Contains(lower, p) {
 			return config.InfraRetryClassStorageWrite, true
 		}
+	}
+	if strings.Contains(lower, strings.ToLower(piFailedLinePrefix)) &&
+		strings.Contains(lower, modelUnresponsiveText) {
+		return InfraClassModelUnresponsive, true
 	}
 	return "", false
 }
