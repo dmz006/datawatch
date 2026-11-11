@@ -4,6 +4,11 @@ Date: 2026-11-11
 
 ## Decision
 
+Operator decision, 2026-11-11, quoted: "Leave them opt-in: keep them out of the default list".
+The task spec was amended to match; this note records the reasoning, and
+`TestDashOptInSeriesCardsStayOutOfDefaults` in `internal/server/api_dashboard_cards_test.go`
+pins it (none of the six keys in the defaults, all six accepted on add).
+
 The six opt-in series cards (lane utilization, throughput forecast, verifier health,
 release train, review backlog, defects found and fixed per day) are **not** added to
 `defaultDashCards()` in `internal/server/api_dashboard_cards.go`, and `DASH_DEFAULT_LAYOUT`
