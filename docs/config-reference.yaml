@@ -1253,6 +1253,7 @@ autonomous:
   # Background loop tick in seconds.
   poll_interval_seconds: 30
   # Refresh an Automaton branch that has fallen behind its base. Off by default.
+  # Walkthrough: docs/howto/automaton-branch-refresh.md.
   branch_refresh_enabled: false
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
