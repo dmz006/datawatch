@@ -35,7 +35,6 @@ type projectListItem struct {
 	DefaultBackend string                `json:"default_backend,omitempty"`
 	Description    string                `json:"description,omitempty"`
 	Policy         *config.ProjectPolicy `json:"policy,omitempty"`
-	Packs          []string              `json:"packs,omitempty"`
 }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +100,6 @@ func (s *Server) listProjects(w http.ResponseWriter) {
 			DefaultBackend: entry.DefaultBackend,
 			Description:    entry.Description,
 			Policy:         entry.Policy,
-			Packs:          entry.Packs,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -121,7 +119,6 @@ func (s *Server) getProject(w http.ResponseWriter, name string) {
 		DefaultBackend: entry.DefaultBackend,
 		Description:    entry.Description,
 		Policy:         entry.Policy,
-		Packs:          entry.Packs,
 	})
 }
 
@@ -132,7 +129,6 @@ func (s *Server) upsertProject(w http.ResponseWriter, r *http.Request) {
 		DefaultBackend string                `json:"default_backend,omitempty"`
 		Description    string                `json:"description,omitempty"`
 		Policy         *config.ProjectPolicy `json:"policy,omitempty"`
-		Packs          []string              `json:"packs,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -157,7 +153,7 @@ func (s *Server) upsertProject(w http.ResponseWriter, r *http.Request) {
 	}
 	s.cfg.Projects[req.Name] = config.ProjectConfigEntry{
 		Dir: req.Dir, DefaultBackend: req.DefaultBackend, Description: req.Description,
-		Policy: req.Policy, Packs: config.NormalizePacks(req.Packs),
+		Policy: req.Policy,
 	}
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
