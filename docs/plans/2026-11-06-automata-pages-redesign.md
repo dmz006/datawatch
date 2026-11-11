@@ -252,6 +252,16 @@ Decision: A, with the review of the 77 unlanded branches done first (the C step)
 useful work is recovered before anything is deleted. The review result is recorded in
 `2026-11-06-unlanded-branch-review.md`.
 
+Status (2026-11-11): built. The Housekeeping sub-tab now carries the **Unlanded work** card (recommendation plus Keep,
+Archive branch and Delete worktree per row; Delete worktree writes a verified backup bundle first), a **Commit**
+button with the diff and a message on the uncommitted work card, one-line reasons and a **Fix permissions** button for
+permission errors, and the skipped-by-reason counts. The safe-to-delete report and cleanup history moved to the Events
+tab. Surfaces: REST, CLI and comm channel for the list and its three actions, MCP read-only for the list, PWA for all
+of it; the commit and the permission fix are REST and PWA only. `scripts/branch-audit.py` reports the same branches as
+`UNLANDED`. Documented in `docs/howto/automaton-worktree-cleanup.md` and `docs/howto/automation-tab.md`. Still open:
+whether a kept branch also suppresses the safe-to-delete report (operator to confirm), and mobile parity (tracked in
+datawatch-app).
+
 ## Why the worktree cleanup did not prevent this (operator question 2026-11-06 09:08)
 
 Quoted: "so yes c a one time review too need to get worktrees fixed and why did our work on cleaning up and having
