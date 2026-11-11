@@ -97,9 +97,9 @@ func TestConfigAuditor_CEFSignature(t *testing.T) {
 		t.Fatalf("read cef: %v", err)
 	}
 	line := strings.TrimRight(string(data), "\n")
-	// |65|ConfigWrite|5| sits between the version and the extension fields.
-	if !strings.Contains(line, "|65|ConfigWrite|5|") {
-		t.Fatalf("CEF line missing |65|ConfigWrite|5|: %q", line)
+	// |87|ConfigWrite|5| sits between the version and the extension fields.
+	if !strings.Contains(line, "|87|ConfigWrite|5|") {
+		t.Fatalf("CEF line missing |87|ConfigWrite|5|: %q", line)
 	}
 	if !strings.HasPrefix(line, "CEF:0|datawatch|datawatch|") {
 		t.Fatalf("CEF line bad header: %q", line)

@@ -233,9 +233,7 @@ func ExtractConfigPatch(raw []byte) (keys []string, values map[string]string) {
 	}
 	values = make(map[string]string)
 	for k, v := range patch {
-		for _, dk := range expandPatchKey(values, k, v) {
-			keys = append(keys, dk)
-		}
+		keys = append(keys, expandPatchKey(values, k, v)...)
 	}
 	sort.Strings(keys)
 	return keys, values

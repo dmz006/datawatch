@@ -683,7 +683,9 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 //     dns channel, proxy, channel routing, council, orchestrator, autonomous,
 //     autonomous scan, smoke forward, observer); compute_pin_settings; the
 //     usage settings writers (usage_backoff_set, usage_extra_credit_set,
-//     usage_remaining_work_set, burn_guard_config_set); council_personas_set
+//     usage_remaining_work_set, burn_guard_config_set); council_personas_set;
+//     the later settings writers autonomous_decompose_lint_config_set,
+//     planning_routing_set, rules_context_set and secret_scan_config_set
 //   - LLM registry: llm_add, llm_add_model, llm_delete, llm_disable,
 //     llm_enable, llm_refresh_models, llm_remove_model, llm_update
 //   - compute-node registry: compute_node_add, compute_node_attach_observer,
@@ -717,7 +719,8 @@ var configWriteTools = map[string]bool{
 	"orchestrator_config_set": true, "proxy_config_set": true, "server_add": true, "server_delete": true,
 	"server_update": true, "smoke_forward_config_set": true, "usage_backoff_set": true, "usage_extra_credit_set": true,
 	"usage_remaining_work_set": true, "websearch_provider_add": true, "websearch_provider_delete": true, "websearch_provider_disable": true,
-	"websearch_provider_update": true,
+	"websearch_provider_update":            true,
+	"autonomous_decompose_lint_config_set": true, "planning_routing_set": true, "rules_context_set": true, "secret_scan_config_set": true,
 }
 
 var nonConfigWriteTools = map[string]bool{
@@ -842,6 +845,25 @@ var nonConfigWriteTools = map[string]bool{
 	"usage_reading_add": true, "usage_reading_delete": true, "usage_readings": true, "vision_describe": true,
 	"websearch_history": true, "websearch_provider_enable": true, "websearch_provider_get": true, "websearch_provider_test": true,
 	"websearch_providers_list": true, "websearch_stats": true,
+	"automation_model_pull_consent_get": true, "automation_model_pull_consent_set": true, "automation_rename_stage": true, "automation_requirements_report": true,
+	"automation_return_to_draft": true, "autonomous_decision_record_create": true, "autonomous_decision_record_get": true, "autonomous_decision_record_list": true,
+	"autonomous_decision_record_update": true, "autonomous_decision_record_withdraw": true, "autonomous_decompose_lint_config_get": true, "autonomous_decompose_lint_dry_run": true,
+	"autonomous_decompose_lint_findings": true, "autonomous_defect_batch_split": true, "autonomous_defect_batches": true, "autonomous_defect_intake": true,
+	"autonomous_defect_tinyfix_check": true, "autonomous_event_log": true, "autonomous_merge_shadow_status": true, "autonomous_prd_change_record": true,
+	"autonomous_prd_generated_artefact": true, "autonomous_prd_regenerate_artefact": true, "autonomous_prd_set_authorized_paths": true, "autonomous_prd_set_breaking_change": true,
+	"autonomous_prd_set_release_size": true, "autonomous_prd_set_story_node": true, "autonomous_prd_set_task_node": true, "autonomous_prd_set_worker_profile": true,
+	"autonomous_protected_paths": true, "autonomous_release_readiness": true, "autonomous_standard_tasks": true, "autonomous_tag_sweep": true,
+	"checks_status": true, "compute_node_backend_versions": true, "compute_node_drain": true, "compute_node_undrain": true,
+	"compute_served_models": true, "generated_artefacts_get": true, "llm_classifier": true, "planning_routing_get": true,
+	"planning_routing_test": true, "planning_scorecard": true, "platform_context_status": true, "plugin_service_restart": true,
+	"plugin_service_start": true, "plugin_service_status": true, "plugin_service_stop": true, "plugin_token_list": true,
+	"plugin_token_rotate": true, "plugin_widget_get": true, "plugin_widget_list": true, "project_history": true,
+	"project_policy_effective": true, "project_rollup": true, "project_set_arcs": true, "release_push_status": true,
+	"restart_interruptions": true, "rules_context_status": true, "secret_scan_config_get": true, "secret_scan_stats": true,
+	"session_tag_list": true, "ship_status": true, "supervisor_loop_eval": true, "supervisor_loop_jobs": true,
+	"supervisor_loop_run_job": true, "supervisor_loop_runs": true, "supervisor_loop_stats": true, "trace_automaton": true,
+	"trace_coverage": true, "trace_rollup": true, "trace_session": true, "trace_stats": true,
+	"usage_autolanes_status": true, "worker_profile_status": true,
 }
 
 // IsConfigWriteTool reports whether tool is an MCP call that changes the

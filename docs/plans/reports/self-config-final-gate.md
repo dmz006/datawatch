@@ -93,7 +93,7 @@ own mechanism, same as §85's live note):
 - The self-config audit sink now mirrors CEF when `audit.cef_mirror_enabled` is set
   (default false — the same opt-in as the operator audit log): `federation.ConfigAuditor`
   gains `EnableCEFMirror()`, and `Record()` appends a
-  `CEF:0|datawatch|datawatch|<v>|65|ConfigWrite|5|…` line to `<path>.cef`, signature
+  `CEF:0|datawatch|datawatch|<v>|87|ConfigWrite|5|…` line to `<path>.cef`, signature
   `65/ConfigWrite`, severity 5, header + extension values escaped with the operator-log
   rules (backslash, `=`, `\n`, `\r`).
 - Live: a scratch daemon started with `audit.cef_mirror_enabled: true` boots clean and the

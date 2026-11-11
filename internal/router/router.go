@@ -1116,7 +1116,7 @@ func (r *Router) configureWrite(key, value string) error {
 	}
 	if key == verifierRunCapKey {
 		if err := checkVerifierRunCapValue(value); err != nil {
-			return fmt.Errorf("Automaton verifier run cap: %v", err)
+			return fmt.Errorf("Automaton verifier run cap: %v", err) //nolint:staticcheck // Automaton is a proper noun, as in the message the verifier-run-cap check always gave
 		}
 	}
 	if isMergePipelineReleaseApprovalKey(key) {

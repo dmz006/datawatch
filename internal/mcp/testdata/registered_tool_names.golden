@@ -507,6 +507,7 @@ secret_scan_stats
 secret_set
 secrets_vault_status
 security_failure_list
+self_config_audit
 send_input
 send_saved_command
 server_add

@@ -172,7 +172,7 @@ func TestConfigAudit_Daemon_EndToEnd_SharedSinkAcrossSurfaces(t *testing.T) {
 	for {
 		resp, err := http.Get(base + "/api/health")
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			break
 		}
 		if time.Now().After(deadline) {
