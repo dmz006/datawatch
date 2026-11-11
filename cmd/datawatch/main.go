@@ -5662,7 +5662,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if paneErr != nil {
 											pane = ""
 										}
-										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession, staleLogPath, sessionEvidenceNode(s), s.Model)
 									}
 									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerIdleDetector, Reason: idleDetectorEndReason(idleObs)})
 									alertspkg.EmitSystem(alertspkg.LevelError, "Task session idle without completion",
@@ -5700,7 +5700,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									if paneErr != nil {
 										pane = ""
 									}
-									task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+									task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession, staleLogPath, sessionEvidenceNode(s), s.Model)
 								}
 								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
 								alertspkg.EmitSystem(alertspkg.LevelError, "Task session exited silently",
@@ -5752,7 +5752,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if paneErr != nil {
 											pane = ""
 										}
-										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession, staleLogPath, sessionEvidenceNode(s), s.Model)
 										appendDescendantEvidence(task.RunnerEvidence, recordedDescendants)
 										killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
 											session.EndReason{Caller: endCallerDescendantStall, Reason: descendantStallEndReason(reason)})
