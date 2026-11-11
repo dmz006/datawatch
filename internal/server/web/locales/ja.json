@@ -4644,5 +4644,16 @@
   "settings.self_config_recent_loading": "読み込み中…",
   "settings.self_config_recent_empty": "まだセルフ設定監査記録はありません。",
   "settings.self_config_recent_more": "%1$d件の古い記録は表示されていません",
-  "settings.self_config_recent_unavailable": "セルフ設定監査ログを利用できません"
+  "settings.self_config_recent_unavailable": "セルフ設定監査ログを利用できません",
+  "list_mode_toggle": "表示モード",
+  "list_mode_list": "リスト",
+  "list_mode_tiles": "タイル",
+  "list_mode_compact": "コンパクト",
+  "list_group_by": "グループ化",
+  "list_group_by_none": "グループ化なし",
+  "list_group_untagged": "タグなし",
+  "list_group_none": "なし",
+  "list_state_mix": "状態の内訳",
+  "list_show_more": "もっと見る",
+  "list_overflow_menu": "その他の操作"
 }
