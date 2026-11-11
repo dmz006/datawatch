@@ -775,3 +775,93 @@ func TestCostReportBundledUSDLabel(t *testing.T) {
 		t.Fatalf("want API-equivalent label, got %+v", row)
 	}
 }
+
+func notesRecord(id string, first, at time.Time) Record {
+	r := makeRecord(id, "", id, "claude-code", at, 10, 5, false)
+	r.FirstActivity = first
+	r.LastActivity = at
+	return r
+}
+
+func TestCostReportWindowPartialRowNote(t *testing.T) {
+	since := fixedNow.Add(-7 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		notesRecord("old", since.Add(-3*day), since.Add(day)),
+		notesRecord("new", since.Add(day), since.Add(2*day)),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rep.Rows {
+		switch r.Key {
+		case "old":
+			if !r.WindowPartial || !strings.Contains(r.WindowNote, "7 days") || !strings.Contains(r.WindowNote, "31 days") {
+				t.Fatalf("old row note missing: %+v", r)
+			}
+		case "new":
+			if r.WindowPartial || r.WindowNote != "" {
+				t.Fatalf("new row must not be partial: %+v", r)
+			}
+		}
+	}
+	if !strings.Contains(rep.WindowNote, "1 row(s)") || !strings.Contains(rep.WindowNote, "not zero") {
+		t.Fatalf("top-level note: %q", rep.WindowNote)
+	}
+}
+
+func TestCostReportWindowNoteAbsentWhenNothingPartial(t *testing.T) {
+	since := fixedNow.Add(-7 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", since.Add(day), since.Add(2*day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.WindowNote != "" {
+		t.Fatalf("unexpected note %q", rep.WindowNote)
+	}
+}
+
+func TestCostReportUnknownSpendBeforeLedgerHorizon(t *testing.T) {
+	since := fixedNow.Add(-45 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", since.Add(day), since.Add(2*day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Since: since, Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.UnknownBefore == nil || !strings.Contains(rep.UnknownSpendNote, "unknown") || !strings.Contains(rep.UnknownSpendNote, "not zero") {
+		t.Fatalf("unknown note missing: %+v", rep)
+	}
+	for _, r := range rep.Rows {
+		if !r.SpendUnknown || r.SpendUnknownNote == "" {
+			t.Fatalf("row not marked unknown: %+v", r)
+		}
+	}
+	if len(rep.Rows) != 1 || rep.Rows[0].TokensIn != 10 {
+		t.Fatalf("recorded figures must be untouched, not backfilled: %+v", rep.Rows)
+	}
+}
+
+func TestCostReportUnknownAbsentInsideLedger(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", fixedNow.Add(-2*day), fixedNow.Add(-day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.UnknownSpendNote != "" || rep.UnknownBefore != nil || rep.Rows[0].SpendUnknown {
+		t.Fatalf("unexpected unknown marking: %+v", rep)
+	}
+}
+
+func TestCostReportPartialAndUnknownTogether(t *testing.T) {
+	since := fixedNow.Add(-40 * day)
+	src := &fakeSource{result: &SourceResult{Records: []Record{notesRecord("a", since.Add(-5*day), since.Add(day))}}}
+	rep, err := Build(config.CostReportConfig{}, Request{Since: since, Until: fixedNow}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rep.Rows[0]
+	if !r.WindowPartial || !r.SpendUnknown || rep.WindowNote == "" || rep.UnknownSpendNote == "" {
+		t.Fatalf("both notes expected: %+v / %+v", r, rep)
+	}
+}
