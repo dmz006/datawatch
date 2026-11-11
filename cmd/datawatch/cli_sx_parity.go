@@ -656,6 +656,36 @@ func newAuditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&since, "since", "", "RFC3339 lower bound")
 	cmd.Flags().StringVar(&until, "until", "", "RFC3339 upper bound")
 	cmd.Flags().IntVar(&limit, "limit", audit.DefaultQueryLimit, "Max entries")
+
+	// BL412 — self-config audit view (kept in its own function so the
+	// newAuditCmd AST walk for the `audit` filter set stays clean).
+	cmd.AddCommand(newSelfConfigAuditCmd())
+	return cmd
+}
+
+// newSelfConfigAuditCmd builds the `audit self-config` subcommand: one
+// record per attempt through the self-config path (allowed and by default
+// denied), newest-first, limit-capped. Read-only; the operator audit log
+// (`audit`) is BL9.
+func newSelfConfigAuditCmd() *cobra.Command {
+	var sLimit int
+	cmd := &cobra.Command{
+		Use:   "self-config",
+		Short: "Query the self-config audit log",
+		Long: "Query the self-config audit log, newest-first.\n\n" +
+			"One record per attempt through the self-config path — config-write\n" +
+			"MCP tools, session/peer REST config PUTs, comm configure — allowed\n" +
+			"and (by default) denied, with the changed key(s), caller, and denial\n" +
+			"reason. Read-only; the operator audit log (`audit`) is BL9.",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			path := "/api/audit/self-config"
+			if sLimit > 0 {
+				path += "?limit=" + strconv.Itoa(sLimit)
+			}
+			return daemonGet(path)
+		},
+	}
+	cmd.Flags().IntVar(&sLimit, "limit", audit.DefaultQueryLimit, "Max entries")
 	return cmd
 }
 

@@ -574,6 +574,7 @@ var MCPToolCap = map[string]string{
 	"secret_list":                         CapSecretsList,
 	"secret_set":                          CapSecretsWrite,
 	"secrets_vault_status":                CapSecretsList,
+	"self_config_audit":                   CapAuditRead,
 	"secret_scan_config_get":              CapConfigRead,
 	"secret_scan_config_set":              CapConfigWrite,
 	"secret_scan_stats":                   CapHealthRead,
@@ -657,4 +658,204 @@ var MCPToolCap = map[string]string{
 func RequiredCapForMCPTool(tool string) (string, bool) {
 	c, ok := MCPToolCap[tool]
 	return c, ok
+}
+
+// ---------------------------------------------------------------------------
+// Self-config classification (BL412 option C, docs/plans/2026-10-29-bl412-self-config-gate-proposal.md)
+// ---------------------------------------------------------------------------
+
+// IsConfigWriteTool answers "does this MCP call change the daemon's own
+// settings or a component registry?" so one place can be asked that
+// question, per BL412 option C (fold the allow_self_config switch into the
+// capability system; operator answer 2026-11-01: cover only non-secret
+// settings).
+//
+// The classification is TWO-SIDED and complete: every registered MCP tool
+// appears in exactly one of configWriteTools or nonConfigWriteTools, and
+// TestIsConfigWriteTool_EveryRegisteredToolIsClassified (in
+// mcp_tool_caps_test.go) fails the build when a new registration in
+// internal/mcp/server.go lands in neither list. Adding a new MCP tool
+// requires adding it to exactly one list.
+//
+// configWriteTools — the daemon settings writers plus the component registry
+// writers the operator's BL412 answer selected:
+//   - daemon settings: config_set; the named *_config_set tools (detection,
+//     dns channel, proxy, channel routing, council, orchestrator, autonomous,
+//     autonomous scan, smoke forward, observer); compute_pin_settings; the
+//     usage settings writers (usage_backoff_set, usage_extra_credit_set,
+//     usage_remaining_work_set, burn_guard_config_set); council_personas_set
+//   - LLM registry: llm_add, llm_add_model, llm_delete, llm_disable,
+//     llm_enable, llm_refresh_models, llm_remove_model, llm_update
+//   - compute-node registry: compute_node_add, compute_node_attach_observer,
+//     compute_node_delete, compute_node_detach_observer, compute_node_pull_model,
+//     compute_node_remove_model, compute_node_update
+//   - observer-peer registry: observer_peer_register, observer_peer_delete
+//   - upstream-server registry (still gated by federation:write; the
+//     self-config group deliberately excludes the federation cap):
+//     server_add, server_delete, server_update
+//   - websearch provider registry: websearch_provider_add,
+//     websearch_provider_delete, websearch_provider_disable,
+//     websearch_provider_update
+//
+// nonConfigWriteTools — everything else, explicitly classified as
+// non-config-write in this task even where it persists operator files:
+// secrets (secret_*, secrets_vault_status), identity (set_identity,
+// update_identity, configure_identity, restore_identity, reset_identity),
+// daemon control (restart_daemon, reload), the session/agent/queue/result/
+// memory/comm/alert writes, the autonomous PRD and automation state tools,
+// and the profile/project/template/schedule/device/plugin/skill/dashboard/
+// filter/alert-rule surfaces. Moving any of those into the config-write side
+// later is a product decision for a follow-up PRD, not a code default.
+var configWriteTools = map[string]bool{
+	"autonomous_config_set": true, "autonomous_scan_config_set": true, "burn_guard_config_set": true, "channel_routing_config_set": true,
+	"compute_node_add": true, "compute_node_attach_observer": true, "compute_node_delete": true, "compute_node_detach_observer": true,
+	"compute_node_pull_model": true, "compute_node_remove_model": true, "compute_node_update": true, "compute_pin_settings": true,
+	"config_set": true, "council_config_set": true, "council_personas_set": true, "detection_config_set": true,
+	"dns_channel_config_set": true, "llm_add": true, "llm_add_model": true, "llm_delete": true,
+	"llm_disable": true, "llm_enable": true, "llm_refresh_models": true, "llm_remove_model": true,
+	"llm_update": true, "observer_config_set": true, "observer_peer_delete": true, "observer_peer_register": true,
+	"orchestrator_config_set": true, "proxy_config_set": true, "server_add": true, "server_delete": true,
+	"server_update": true, "smoke_forward_config_set": true, "usage_backoff_set": true, "usage_extra_credit_set": true,
+	"usage_remaining_work_set": true, "websearch_provider_add": true, "websearch_provider_delete": true, "websearch_provider_disable": true,
+	"websearch_provider_update": true,
+}
+
+var nonConfigWriteTools = map[string]bool{
+	"acme_issuer_log": true, "acme_renew": true, "acme_status": true, "agent_audit": true,
+	"agent_get": true, "agent_list": true, "agent_logs": true, "agent_spawn": true,
+	"agent_terminate": true, "alert_rule_create": true, "alert_rule_delete": true, "alert_rule_disable": true,
+	"alert_rule_enable": true, "alert_rule_firings": true, "alert_rule_get": true, "alert_rule_list": true,
+	"alert_rule_update": true, "algorithm_abort": true, "algorithm_advance": true, "algorithm_edit": true,
+	"algorithm_get": true, "algorithm_list": true, "algorithm_measure": true, "algorithm_reset": true,
+	"algorithm_start": true, "analytics": true, "ask": true, "assist": true,
+	"audit_access_query": true, "audit_query": true, "automation_activate": true, "automation_approve_insert": true,
+	"automation_cancel": true, "automation_create": true, "automation_delete": true, "automation_get": true,
+	"automation_import_graph": true, "automation_insert_member": true, "automation_list": true, "automation_merged_members": true,
+	"automation_pause": true, "automation_remove_member": true, "automation_reorder_edges": true, "automation_resume": true,
+	"automation_set_budget": true, "automation_set_decision_assistant": true, "automation_set_effort_ceiling": true, "automation_set_llm": true,
+	"automation_set_verification_llm": true, "automation_skip_member": true, "automation_update": true, "autonomous_attention_list": true,
+	"autonomous_cleanup_status": true, "autonomous_config_get": true, "autonomous_decisions": true, "autonomous_events_pending": true,
+	"autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_learnings": true,
+	"autonomous_merge": true, "autonomous_merge_pipeline_get": true, "autonomous_merge_pipeline_set_record": true, "autonomous_merge_pipeline_validate": true,
+	"autonomous_overlap_search": true, "autonomous_prd_add_story": true, "autonomous_prd_add_task": true, "autonomous_prd_approve": true,
+	"autonomous_prd_approve_task": true, "autonomous_prd_cancel": true, "autonomous_prd_cancel_story": true, "autonomous_prd_cancel_task": true,
+	"autonomous_prd_children": true, "autonomous_prd_clone_to_template": true, "autonomous_prd_create": true, "autonomous_prd_decompose": true,
+	"autonomous_prd_edit_story": true, "autonomous_prd_edit_task": true, "autonomous_prd_get": true, "autonomous_prd_instantiate": true,
+	"autonomous_prd_list": true, "autonomous_prd_plan_coverage_acknowledge": true, "autonomous_prd_plan_coverage_get": true, "autonomous_prd_plan_review": true,
+	"autonomous_prd_reject": true, "autonomous_prd_rejudge": true, "autonomous_prd_remove_story": true, "autonomous_prd_remove_task": true,
+	"autonomous_prd_repair_depends_on": true, "autonomous_prd_request_revision": true, "autonomous_prd_reset_task": true, "autonomous_prd_reset_to_draft": true,
+	"autonomous_prd_resolve_task_review": true, "autonomous_prd_resume": true, "autonomous_prd_run": true, "autonomous_prd_scan": true,
+	"autonomous_prd_scan_fix": true, "autonomous_prd_scan_results": true, "autonomous_prd_scan_rules": true, "autonomous_prd_set_continue_on_story_failure": true,
+	"autonomous_prd_set_failure_escalation": true, "autonomous_prd_set_git": true, "autonomous_prd_set_guided_mode": true, "autonomous_prd_set_kind": true,
+	"autonomous_prd_set_lane_preference": true, "autonomous_prd_set_llm": true, "autonomous_prd_set_memory_harvest": true, "autonomous_prd_set_memory_seed": true,
+	"autonomous_prd_set_notify_events": true, "autonomous_prd_set_priority": true, "autonomous_prd_set_quality_gates": true, "autonomous_prd_set_skills": true,
+	"autonomous_prd_set_story_llm": true, "autonomous_prd_set_story_thinking_level": true, "autonomous_prd_set_story_verification_llm": true, "autonomous_prd_set_tags": true,
+	"autonomous_prd_set_task_effort_ceiling": true, "autonomous_prd_set_task_llm": true, "autonomous_prd_set_task_project_dir": true, "autonomous_prd_set_task_thinking_level": true,
+	"autonomous_prd_set_task_verification_llm": true, "autonomous_prd_set_task_verifier_policy": true, "autonomous_prd_set_thinking_level": true, "autonomous_prd_set_type": true,
+	"autonomous_prd_set_verification_llm": true, "autonomous_prd_set_verifier_policy": true, "autonomous_progress": true, "autonomous_progress_trend": true,
+	"autonomous_repo_ci_watch": true, "autonomous_request_watch": true, "autonomous_safe_to_delete": true, "autonomous_scan_config_get": true,
+	"autonomous_shipped_backfill": true, "autonomous_shipped_counts": true, "autonomous_shipped_record": true, "autonomous_status": true,
+	"autonomous_subscribe": true, "autonomous_subscription_test": true, "autonomous_subscription_update": true, "autonomous_subscriptions": true,
+	"autonomous_tag_create": true, "autonomous_tag_delete": true, "autonomous_tag_list": true, "autonomous_tag_registry_dismiss_note": true,
+	"autonomous_tag_registry_status": true, "autonomous_tag_rename": true, "autonomous_tag_set_color": true, "autonomous_tag_set_parent": true,
+	"autonomous_template_create": true, "autonomous_template_delete": true, "autonomous_template_get": true, "autonomous_template_instantiate": true,
+	"autonomous_template_list": true, "autonomous_template_update": true, "autonomous_triage": true, "autonomous_type_list": true,
+	"autonomous_type_register": true, "autonomous_uncommitted_work": true, "autonomous_unsubscribe": true, "backends_active": true,
+	"backends_list": true, "budget_status": true, "burn_guard_config_get": true, "burn_guard_run": true,
+	"burn_guard_status": true, "capacity_admission": true, "capacity_status": true, "channel_diagnostics": true,
+	"channel_info": true, "channel_routing_config_get": true, "claude_efforts": true, "claude_models": true,
+	"claude_permission_modes": true, "compute_node_detail": true, "compute_node_get": true, "compute_node_health": true,
+	"compute_node_list": true, "configure_identity": true, "cooldown_clear": true, "cooldown_set": true,
+	"cooldown_status": true, "cost_rates": true, "cost_report": true, "cost_summary": true,
+	"cost_usage": true, "council_config_get": true, "council_get_run": true, "council_list_runs": true,
+	"council_persona_draft_answer": true, "council_persona_draft_list": true, "council_persona_draft_purge": true, "council_persona_draft_refine": true,
+	"council_persona_draft_save": true, "council_persona_draft_start": true, "council_persona_oneshot": true, "council_personas": true,
+	"council_personas_get": true, "council_run": true, "council_run_cancel": true, "create_alert": true,
+	"daemon_logs": true, "dashboard_card_add": true, "dashboard_card_delete": true, "dashboard_card_update": true,
+	"dashboard_cards_list": true, "dashboard_config_get": true, "dashboard_console_get": true, "delete_session": true,
+	"detection_config_get": true, "detection_status": true, "device_alias_delete": true, "device_alias_list": true,
+	"device_alias_upsert": true, "device_delete": true, "device_list": true, "device_register": true,
+	"diagnose": true, "discussion_subscribe": true, "discussion_subscriptions": true, "discussion_unsubscribe": true,
+	"dns_channel_config_get": true, "docs_apply": true, "docs_list_howtos": true, "docs_read": true,
+	"docs_search": true, "docs_trust_accept": true, "docs_trust_add": true, "docs_trust_dismiss": true,
+	"docs_trust_list": true, "docs_trust_pending": true, "docs_trust_remove": true, "eval_get_run": true,
+	"eval_list_runs": true, "eval_list_suites": true, "eval_run": true, "exit_hook_add": true,
+	"exit_hook_delete": true, "exit_hook_disable": true, "exit_hook_enable": true, "exit_hook_list": true,
+	"federation_fingerprint_confirm": true, "federation_fingerprint_matches": true, "federation_fingerprint_reject": true, "federation_group_add": true,
+	"federation_group_delete": true, "federation_group_get": true, "federation_group_list": true, "federation_group_list_builtins": true,
+	"federation_group_update": true, "federation_meta_peers": true, "federation_peer_add": true, "federation_peer_delete": true,
+	"federation_peer_get": true, "federation_peer_list": true, "federation_peer_test": true, "federation_peer_update": true,
+	"federation_sessions": true, "files_delete": true, "files_list": true, "files_meta": true,
+	"files_upload": true, "filter_add": true, "filter_delete": true, "filter_list": true,
+	"filter_toggle": true, "get_alerts": true, "get_config": true, "get_identity": true,
+	"get_my_scope": true, "get_my_session_id": true, "get_stats": true, "get_version": true,
+	"guardrail_library_list": true, "guardrail_profile_create": true, "guardrail_profile_delete": true, "guardrail_profile_get": true,
+	"guardrail_profile_list": true, "guardrail_profile_update": true, "identity_backups": true, "kill_session": true,
+	"list_orphaned_sessions": true, "list_saved_commands": true, "list_sessions": true, "llm_get": true,
+	"llm_in_use": true, "llm_list": true, "llm_list_models": true, "llm_test": true,
+	"mark_alert_read": true, "marketplace_ollama_catalog": true, "marketplace_pull_task": true, "matrix_status": true,
+	"matrix_test": true, "memory_archive_import": true, "memory_discussion_participants": true, "memory_discussion_recall": true,
+	"memory_discussion_wal": true, "memory_discussion_write": true, "memory_extract_facts": true, "memory_forget": true,
+	"memory_handoff": true, "memory_import": true, "memory_learnings": true, "memory_list": true,
+	"memory_pin": true, "memory_prd_report": true, "memory_recall": true, "memory_remember": true,
+	"memory_schema_version": true, "memory_scope_borrow": true, "memory_scope_inventory": true, "memory_scope_promote": true,
+	"memory_scope_recall": true, "memory_scope_seed": true, "memory_spellcheck": true, "memory_stats": true,
+	"memory_sweep_stale": true, "memory_test_embedder": true, "memory_wakeup": true, "memory_wal": true,
+	"observer_agent_list": true, "observer_agent_stats": true, "observer_config_get": true, "observer_envelope": true,
+	"observer_envelopes": true, "observer_envelopes_all_peers": true, "observer_peer_get": true, "observer_peer_stats": true,
+	"observer_peers_by_node": true, "observer_peers_free": true, "observer_peers_list": true, "observer_stats": true,
+	"onboarding_report": true, "orchestrator_config_get": true, "orchestrator_graph_cancel": true, "orchestrator_graph_create": true,
+	"orchestrator_graph_get": true, "orchestrator_graph_list": true, "orchestrator_graph_plan": true, "orchestrator_graph_run": true,
+	"orchestrator_verdicts": true, "per_automaton_guardrails_set": true, "per_automaton_retry_policy_set": true, "pipeline_cancel": true,
+	"pipeline_list": true, "pipeline_start": true, "pipeline_status": true, "plugin_browse_registry": true,
+	"plugin_disable": true, "plugin_enable": true, "plugin_get": true, "plugin_install": true,
+	"plugin_run_subcommand": true, "plugin_test": true, "plugins_list": true, "plugins_reload": true,
+	"post_result": true, "profile_create": true, "profile_delete": true, "profile_get": true,
+	"profile_list": true, "profile_set_agent_settings": true, "profile_smoke": true, "profile_update": true,
+	"project_alias_delete": true, "project_list": true, "project_summary": true, "project_upsert": true,
+	"proxy_config_get": true, "question_answer": true, "question_get": true, "question_list": true,
+	"question_quality": true, "question_raise": true, "question_stats": true, "question_withdraw": true,
+	"queue_claim": true, "queue_complete": true, "queue_fail": true, "queue_list": true,
+	"queue_push": true, "reload": true, "rename_session": true, "reply_to_parent": true,
+	"reset_identity": true, "restart_daemon": true, "restart_session": true, "restore_identity": true,
+	"result_delete": true, "result_get": true, "result_list": true, "result_put": true,
+	"retry_profile_create": true, "retry_profile_delete": true, "retry_profile_get": true, "retry_profile_list": true,
+	"retry_profile_update": true, "routing_rules_list": true, "routing_rules_test": true, "rtk_check": true,
+	"rtk_discover": true, "rtk_update": true, "rtk_version": true, "schedule_add": true,
+	"schedule_cancel": true, "schedule_list": true, "schedule_results_list": true, "schedule_spawn": true,
+	"secret_delete": true, "secret_exists": true, "secret_get": true, "secret_list": true,
+	"secret_set": true, "secrets_vault_status": true, "security_failure_list": true, "self_config_audit": true, "send_input": true,
+	"send_saved_command": true, "server_get": true, "server_list": true, "server_test": true,
+	"session_bind_agent": true, "session_children": true, "session_guardrail_approve": true, "session_guardrail_run": true,
+	"session_import": true, "session_output": true, "session_reconcile": true, "session_rollback": true,
+	"session_set_state": true, "session_set_tags": true, "session_summarize": true, "session_timeline": true,
+	"sessions_stale": true, "set_identity": true, "set_session_priority": true, "skill_load": true,
+	"skills_get": true, "skills_list": true, "skills_registry_add_default": true, "skills_registry_available": true,
+	"skills_registry_connect": true, "skills_registry_create": true, "skills_registry_delete": true, "skills_registry_get": true,
+	"skills_registry_list": true, "skills_registry_sync": true, "skills_registry_unsync": true, "skills_registry_update": true,
+	"smoke_forward_config_get": true, "splash_info": true, "start_session": true, "stop_all_sessions": true,
+	"supervisor_watch_list": true, "supervisor_watch_stats": true, "tailscale_acl_generate": true, "tailscale_acl_push": true,
+	"tailscale_auth_key": true, "tailscale_nodes": true, "tailscale_status": true, "telemetry_get": true,
+	"telemetry_list": true, "template_delete": true, "template_list": true, "template_upsert": true,
+	"tooling_cleanup": true, "tooling_gitignore": true, "tooling_status": true, "update_identity": true,
+	"usage_advice": true, "usage_backoff_clear": true, "usage_backoff_recheck": true, "usage_backoff_status": true,
+	"usage_reading_add": true, "usage_reading_delete": true, "usage_readings": true, "vision_describe": true,
+	"websearch_history": true, "websearch_provider_enable": true, "websearch_provider_get": true, "websearch_provider_test": true,
+	"websearch_providers_list": true, "websearch_stats": true,
+}
+
+// IsConfigWriteTool reports whether tool is an MCP call that changes the
+// daemon's own settings or a component registry (the list and its chosen
+// boundary are above). Unknown tool names report false.
+func IsConfigWriteTool(tool string) bool {
+	return configWriteTools[tool]
+}
+
+// IsNonConfigWriteTool reports whether tool is explicitly classified as NOT
+// a configuration write. With IsConfigWriteTool it forms the complete
+// two-sided classification that
+// TestIsConfigWriteTool_EveryRegisteredToolIsClassified enforces for every
+// registered MCP tool.
+func IsNonConfigWriteTool(tool string) bool {
+	return nonConfigWriteTools[tool]
 }

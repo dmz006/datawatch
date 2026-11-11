@@ -4633,5 +4633,16 @@
   "observer_peer_never_pushed": "Jamais envoyé",
   "settings_observer_peers": "Pairs de l'observer",
   "settings_observer_peer_silent_alert_minutes": "Alerte pair silencieux après (minutes ; 0 = désactivé)",
-  "settings_observer_peer_silent_alert_minutes_hint": "Déclenche une alerte lorsqu'un pair d'observer enregistré n'a rien envoyé depuis ce nombre de minutes. 0 désactive la vérification."
+  "settings_observer_peer_silent_alert_minutes_hint": "Déclenche une alerte lorsqu'un pair d'observer enregistré n'a rien envoyé depuis ce nombre de minutes. 0 désactive la vérification.",
+  "settings.self_config": "Self-config",
+  "settings.self_config.allow": "Autoriser la autoconfiguration de l’agent",
+  "settings.self_config.allow_help": "Activé : un agent du groupe self-config (mcp.allow_self_config) peut modifier ses réglages non sensibles — config, sessions, observers, LLMs, quota. Désactivé : chaque tentative est refusée et auditée.",
+  "settings.self_config.audit_path": "Chemin du journal d’audit",
+  "settings.self_config.audit_denied": "Enregistrer aussi les tentatives refusées",
+  "settings.self_config.audit_denied_help": "Activé (par défaut) : les tentatives refusées sont aussi journalisées avec leur motif. Désactivé : seules les écritures autorisées.",
+  "settings.self_config_recent": "Enregistrements d’audit self-config récents",
+  "settings.self_config_recent_loading": "Chargement…",
+  "settings.self_config_recent_empty": "Aucun enregistrement d’audit self-config pour l’instant.",
+  "settings.self_config_recent_more": "%1$d enregistrement(s) plus ancien(s) non affiché(s)",
+  "settings.self_config_recent_unavailable": "Journal d’audit self-config indisponible"
 }

@@ -251,7 +251,7 @@ func newWorkerProfileConfigServer(t *testing.T) (*workerProfileConfigDaemon, *Se
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	t.Cleanup(srv.Close)
-	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 // TestWorkerProfileConfigSet_RefusesInvalidWrite: config_set returns an error

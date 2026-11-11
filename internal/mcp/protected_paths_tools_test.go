@@ -329,7 +329,7 @@ func TestProtectedPathsMCPConfigSetIsGeneric(t *testing.T) {
 			_, _ = w.Write([]byte(`{}`))
 		}))
 		port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-		s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+		s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 		res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{"key": tc.key, "value": tc.value}))
 		srv.Close()
 		if err != nil || res == nil || res.IsError {

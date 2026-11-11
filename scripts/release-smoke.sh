@@ -6576,6 +6576,68 @@ for dec in d.get("decisions") or []:
 fi
 
 # ---------------------------------------------------------------------------
+H "93. Self-config audit trail — REST view and CLI read"
+# GET /api/audit/self-config lists every attempt that went through the
+# self-config path (config-write MCP tools, session/peer REST config PUTs,
+# comm configure) newest-first, with count/entries/path. Read-only and
+# capability-gated (CapAuditRead); the CLI `datawatch audit self-config`
+# reads the same route. This section never changes a setting — it only
+# reads the trail (earlier sections' config writes are what fills it).
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SA_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/audit/self-config" 2>/dev/null || true)
+  SA_CODE=$(echo "$SA_BODY" | tail -n1)
+  SA_JSON=$(echo "$SA_BODY" | sed '$d')
+  if [[ "$SA_CODE" == "200" ]] && echo "$SA_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d["count"], int), d
+assert isinstance(d["entries"], list), d
+assert d["count"] == len(d["entries"]), d
+assert d["count"] <= 100, d["count"]
+for e in d["entries"]:
+    assert e["surface"] in ("mcp","rest","comm"), e
+    assert isinstance(e["allowed"], bool), e
+    assert isinstance(e["time"], str) and e["time"], e
+' 2>/dev/null; then
+    ok "self-config audit: GET /api/audit/self-config answers 200 with count/entries/path and known surfaces"
+  else
+    ko "self-config audit: read returned HTTP $SA_CODE or a malformed body: $(echo "$SA_JSON" | head -c 300)"
+  fi
+
+  SA_LIM=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/audit/self-config?limit=1" 2>/dev/null || true)
+  if [[ "$SA_LIM" == "200" ]]; then
+    ok "self-config audit: limit=1 is accepted"
+  else
+    ko "self-config audit: limit=1 answered HTTP $SA_LIM, expected 200"
+  fi
+
+  SA_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/audit/self-config?limit=0" 2>/dev/null || true)
+  if [[ "$SA_BAD" == "400" ]]; then
+    ok "self-config audit: limit=0 is refused with a 400"
+  else
+    ko "self-config audit: limit=0 answered HTTP $SA_BAD, expected 400"
+  fi
+
+  SA_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/audit/self-config" 2>/dev/null || true)
+  if [[ "$SA_POST" == "405" ]]; then
+    ok "self-config audit: the route is read only (POST answers 405)"
+  else
+    ko "self-config audit: POST answered HTTP $SA_POST, expected 405"
+  fi
+
+  if [[ -z "$DW_CLI" ]]; then
+    skip "self-config audit: CLI not available in this mode"
+  else
+    SA_CLI=$($DW_CLI audit self-config 2>&1); SA_CLI_RC=$?
+    if [[ $SA_CLI_RC -eq 0 && -n "$SA_CLI" ]]; then
+      ok "self-config audit: datawatch audit self-config reads the trail"
+    else
+      ko "self-config audit: datawatch audit self-config failed (rc=$SA_CLI_RC): $(echo "$SA_CLI" | head -c 300)"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Burn guard (usage.burn_guard)"
 # GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config and POST
 # /api/usage/burn-guard/run. The config round trip is skipped on an external daemon.

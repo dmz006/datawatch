@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,7 +291,7 @@ func TestSave_RoundTrip_MCPSelfConfig(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.MCP.AllowSelfConfig = true
+	cfg.MCP.AllowSelfConfig = BoolPtr(true)
 	cfg.MCP.SelfConfigAuditPath = "/tmp/dw/self.jsonl"
 
 	if err := Save(cfg, path); err != nil {
@@ -300,12 +301,153 @@ func TestSave_RoundTrip_MCPSelfConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !loaded.MCP.AllowSelfConfig {
-		t.Errorf("AllowSelfConfig did not round-trip")
+	if loaded.MCP.AllowSelfConfig == nil || !*loaded.MCP.AllowSelfConfig {
+		t.Errorf("explicit true AllowSelfConfig did not round-trip: got %v", *loaded.MCP.AllowSelfConfig)
+	}
+	if !loaded.MCP.SelfConfigEnabled() {
+		t.Errorf("SelfConfigEnabled() = false, want true")
 	}
 	if loaded.MCP.SelfConfigAuditPath != "/tmp/dw/self.jsonl" {
 		t.Errorf("SelfConfigAuditPath: got %q want /tmp/dw/self.jsonl",
 			loaded.MCP.SelfConfigAuditPath)
+	}
+}
+
+// captureMigrationNotices swaps selfConfigMigrationLogf for a capturing
+// sink and restores it when the test finishes; it returns the raw notices.
+func captureMigrationNotices(t *testing.T) *[]string {
+	t.Helper()
+	orig := selfConfigMigrationLogf
+	var notices []string
+	selfConfigMigrationLogf = func(format string, args ...interface{}) {
+		notices = append(notices, fmt.Sprintf(format, args...))
+	}
+	t.Cleanup(func() { selfConfigMigrationLogf = orig })
+	return &notices
+}
+
+func writeConfig(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+func TestLoad_AllowSelfConfig_AbsentKeyDefaultsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	notices := captureMigrationNotices(t)
+
+	writeConfig(t, path, "server:\n  token: x\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MCP.SelfConfigEnabled() {
+		t.Errorf("absent key: SelfConfigEnabled() = false, want true (new default)")
+	}
+	if cfg.MCP.AllowSelfConfig == nil {
+		t.Errorf("migration did not materialize the field for runtime readers")
+	} else if !*cfg.MCP.AllowSelfConfig {
+		t.Errorf("materialized value = false, want true")
+	}
+	if len(*notices) != 1 {
+		t.Fatalf("want exactly one migration notice, got %d: %v", len(*notices), *notices)
+	}
+	if !strings.Contains((*notices)[0], "allow_self_config") {
+		t.Errorf("notice should name the setting: %q", (*notices)[0])
+	}
+}
+
+func TestLoad_AllowSelfConfig_ExplicitFalsePreserved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	notices := captureMigrationNotices(t)
+
+	writeConfig(t, path, "mcp:\n  allow_self_config: false\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MCP.SelfConfigEnabled() {
+		t.Errorf("explicit false: SelfConfigEnabled() = true, want false")
+	}
+	if cfg.MCP.AllowSelfConfig == nil || *cfg.MCP.AllowSelfConfig {
+		t.Errorf("explicit false was not preserved as-written")
+	}
+	if len(*notices) != 0 {
+		t.Errorf("explicit false should not trigger the migration notice, got: %v", *notices)
+	}
+}
+
+func TestLoad_AllowSelfConfig_ExplicitTruePreserved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	notices := captureMigrationNotices(t)
+
+	writeConfig(t, path, "mcp:\n  allow_self_config: true\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MCP.SelfConfigEnabled() {
+		t.Errorf("explicit true: SelfConfigEnabled() = false, want true")
+	}
+	if cfg.MCP.AllowSelfConfig == nil || !*cfg.MCP.AllowSelfConfig {
+		t.Errorf("explicit true was not preserved as-written")
+	}
+	if len(*notices) != 0 {
+		t.Errorf("explicit true should not trigger the migration notice, got: %v", *notices)
+	}
+}
+
+func TestApplyDefaults_AllowSelfConfig_MigrationIdempotent(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.MCP.AllowSelfConfig != nil {
+		t.Fatalf("DefaultConfig must leave the key absent (nil), got %v", *cfg.MCP.AllowSelfConfig)
+	}
+	// First application: fills nil → true.
+	applyDefaults(cfg)
+	if cfg.MCP.AllowSelfConfig == nil || !*cfg.MCP.AllowSelfConfig {
+		t.Fatalf("first applyDefaults: want *true, got %v", cfg.MCP.AllowSelfConfig)
+	}
+	// Second application: no-op, still true (idempotent).
+	applyDefaults(cfg)
+	if cfg.MCP.AllowSelfConfig == nil || !*cfg.MCP.AllowSelfConfig {
+		t.Errorf("second applyDefaults mutated the value (not idempotent)")
+	}
+	// An explicit false survives re-application too.
+	cfg2 := DefaultConfig()
+	cfg2.MCP.AllowSelfConfig = BoolPtr(false)
+	applyDefaults(cfg2)
+	applyDefaults(cfg2)
+	if cfg2.MCP.AllowSelfConfig == nil || *cfg2.MCP.AllowSelfConfig {
+		t.Errorf("explicit false must survive repeated applyDefaults")
+	}
+}
+
+func TestSave_RoundTrip_AllowSelfConfigExplicitFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.MCP.AllowSelfConfig = BoolPtr(false)
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(raw), "allow_self_config: false") {
+		t.Errorf("an explicit false must be written (not omitted), file:\n%s", raw)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.MCP.SelfConfigEnabled() {
+		t.Errorf("explicit false lost across Save→Load")
 	}
 }
 

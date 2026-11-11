@@ -121,7 +121,7 @@ func TestInfraRetry_ErrorResponseIsPassedBack(t *testing.T) {
 
 func TestInfraRetry_ConfigSetReachesPutBodyUnchanged(t *testing.T) {
 	s, rec := activateServer(t, http.StatusOK, `{}`)
-	s.cfg = &config.MCPConfig{AllowSelfConfig: true}
+	s.cfg = &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}
 	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{
 		"key": "autonomous.infra_retry.max_tries", "value": "5",
 	}))
@@ -141,7 +141,7 @@ func TestInfraRetry_ConfigSetReachesPutBodyUnchanged(t *testing.T) {
 
 func TestInfraRetry_ConfigSetPassesListValueUnchanged(t *testing.T) {
 	s, rec := activateServer(t, http.StatusOK, `{}`)
-	s.cfg = &config.MCPConfig{AllowSelfConfig: true}
+	s.cfg = &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}
 	if _, err := s.handleConfigSet(context.Background(), callReq(map[string]any{
 		"key": "autonomous.infra_retry.backoff_seconds", "value": "[10,60,300]",
 	})); err != nil {
@@ -155,7 +155,7 @@ func TestInfraRetry_ConfigSetPassesListValueUnchanged(t *testing.T) {
 
 func TestInfraRetry_ConfigSetRefusalIsPassedBack(t *testing.T) {
 	s, _ := activateServer(t, http.StatusBadRequest, "autonomous.infra_retry.max_tries must be a whole number from 1 to 1000")
-	s.cfg = &config.MCPConfig{AllowSelfConfig: true}
+	s.cfg = &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}
 	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{
 		"key": "autonomous.infra_retry.max_tries", "value": "0",
 	}))

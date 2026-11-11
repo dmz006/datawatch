@@ -119,7 +119,12 @@ type Server struct {
 	// "unavailable" message.
 	agentAuditPath string
 	agentAuditCEF  bool
-	token          string // bearer token for internal API calls
+
+	// configAudit (BL110 extension) — shared config-write audit sink;
+	// when set, the tool middleware in config_write_audit.go records every
+	// config-write tool call (allowed and denied) as one JSON line.
+	configAudit *federation.ConfigAuditor
+	token       string // bearer token for internal API calls
 	// BL317 — federation peer store for MCP SSE auth (nil = no federation).
 	fedPeerStore FedPeerStore
 	// BL363 T3 — set when this MCP server is a Goose channel subprocess;
@@ -306,6 +311,9 @@ type Options struct {
 	// API-equivalent, not billed; api_metered → usd_estimate; free_local →
 	// tokens only; unset → assumed api_metered).
 	UsageCfg config.UsageConfig
+	// ConfigAudit — shared config-write audit sink (BL110 extension); nil
+	// = MCP config-write calls are not audited.
+	ConfigAudit *federation.ConfigAuditor
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -331,6 +339,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		fallbackToken:       opts.FallbackToken,
 		costReportCfg:       opts.CostReportCfg,
 		usageCfg:            opts.UsageCfg,
+		configAudit:         opts.ConfigAudit,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -368,6 +377,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// was unregistered here, so one panicking tool was a permanent, full
 	// MCP drop (daemon: whole process; bridge: CONNECTION_CLOSED forever).
 	RegisterToolPanicRecovery(mcpSrv)
+	// BL110 extension — single audit point for every MCP config-write
+	// tool (registered after panic recovery, wrapping every handler).
+	RegisterConfigWriteAudit(mcpSrv, s)
 
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -588,6 +600,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCostReport(), tracked(s.handleCostReport))                         // cost report (internal/costreport)
 	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                         // BL9
 	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))             // GH#201
+	mcpSrv.AddTool(s.toolSelfConfigAudit(), tracked(s.handleSelfConfigAudit))               // BL412 (self-config audit view)
 	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                             // BL37
 	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                                 // BL17
 	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                           // BL12
@@ -1468,6 +1481,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolSessionImport, "session_import"},
 		{s.toolSessionSummarize, "session_summarize"},
 		{s.toolAgentAudit, "agent_audit"},
+		{s.toolSelfConfigAudit, "self_config_audit"},
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolCreateAlert, "create_alert"},
 		{s.toolMarkAlertRead, "mark_alert_read"},

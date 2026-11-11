@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -64,6 +66,10 @@ type Router struct {
 	configureFn          func(key, value string) error          // optional func to set a config value
 	workerProfileInForce WorkerProfileInForceFunc               // optional func reading the worker profile in force
 	attemptCostStateFn   func() AttemptCostState                // optional func returning the stored attempt-cost settings
+	// configAudit (BL110 extension) — the shared config-write audit sink
+	// for the comm-channel configure path (surface "comm"); nil = the
+	// configure path produces no audit record.
+	configAudit *federation.ConfigAuditor
 	chanTracker          *stats.ChannelCounters                 // per-channel message counters
 	transcriber          transcribe.Transcriber                 // optional voice-to-text transcriber
 	visioner             Visioner                               // optional image-to-text describer (BL368)
@@ -302,6 +308,37 @@ func (r *Router) attemptCostCandidate() config.AutonomousConfig {
 		cfg.FirstAttempt[kind] = choice
 	}
 	return cfg
+}
+
+// SetConfigAuditor wires the shared config-write audit sink (BL110
+// extension) into the comm-channel configure path. The daemon (runStart)
+// wires the same instance into every surface — REST server, MCP server,
+// and every router — so a config write from any surface lands as exactly
+// one record. Nil (the default) means the configure path produces no
+// audit record.
+func (r *Router) SetConfigAuditor(a *federation.ConfigAuditor) { r.configAudit = a }
+
+// ConfigureAttribution carries the principal for a session-attributed
+// comm invocation (BL110): which session or peer the configure write is
+// on behalf of, whether that credential holds the config:write
+// capability, and — when it does not — the denial reason. The zero
+// value is an operator (admin) message: real comm-channel traffic
+// arrives without a session credential, runs the loopback REST write on
+// the admin token, and is NOT audited as a session write (consistent
+// with the REST and MCP surfaces, which skip admin callers); the daemon
+// uses it only for the session-attributed test-injection path
+// (HandleAttributedTestMessage), where the REST layer resolves the
+// calling session's token to this struct.
+type ConfigureAttribution struct {
+	// Caller names the session or peer the write is on behalf of
+	// ("session:<id>" or "peer:<name>"). Empty = operator/admin.
+	Caller string
+	// ConfigWriteAllowed is the capability decision (config:write) made
+	// by the surface that owns the credential.
+	ConfigWriteAllowed bool
+	// DenyReason is the denial carried into the audit record when
+	// ConfigWriteAllowed is false (e.g. the exact missing capability).
+	DenyReason string
 }
 
 // SetChannelTracker sets the per-channel stats counters for this router.
@@ -964,7 +1001,20 @@ func formatMemories(memories []Memory) string {
 	return b.String()
 }
 
+// handleConfigure is the operator-facing entry point (channel traffic with
+// no session credential → zero attribution → not audited as a session
+// write). Tests and the plain comm path keep using it.
 func (r *Router) handleConfigure(cmd Command) {
+	r.handleConfigureAttributed(cmd, ConfigureAttribution{})
+}
+
+// handleConfigureAttributed is the session-attributed variant (BL110
+// extension): an attempted `configure` from a session or peer credential
+// records exactly ONE audit record (surface "comm") — allowed, denied
+// (capability, the BL412 built-in-group removal), or failed — naming the
+// credential, its decision, and the exact key that should have changed.
+// A zero attribution behaves exactly like handleConfigure.
+func (r *Router) handleConfigureAttributed(cmd Command, at ConfigureAttribution) {
 	if r.configureFn == nil {
 		r.send(fmt.Sprintf("[%s] Configuration not available.", r.hostname))
 		return
@@ -995,37 +1045,11 @@ func (r *Router) handleConfigure(cmd Command) {
 	}
 	key := strings.TrimSpace(text[:eqIdx])
 	value := strings.TrimSpace(text[eqIdx+1:])
-	// The four attempt-cost keys refuse through the shared validator before
-	// anything is written: the candidate value is layered over the stored
-	// settings (AttemptCostState) and checked with
-	// config.ValidateAttemptCostSettings. On refusal the validator's
-	// message is sent back as-is and configureFn is never called, so
-	// nothing is written.
-	if verr := r.validateAttemptCostKey(key, value); verr != nil {
-		r.send(fmt.Sprintf("[%s] Refused: %s", r.hostname, verr.Error()))
+	err := r.configureAudited(key, value, at)
+	var refused *configureRefused
+	if errors.As(err, &refused) {
+		r.send(fmt.Sprintf("[%s] Refused: %s", r.hostname, refused.msg))
 		return
-	}
-	if err := checkMergePipelineConfigure(key, value); err != nil {
-		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
-		return
-	}
-	if err := checkBurnGuardConfigure(key, value); err != nil {
-		r.send(fmt.Sprintf("[%s] Refused: %v", r.hostname, err))
-		return
-	}
-	if key == verifierRunCapKey {
-		if err := checkVerifierRunCapValue(value); err != nil {
-			r.send(fmt.Sprintf("[%s] Configure failed: Automaton verifier run cap: %v", r.hostname, err))
-			return
-		}
-	}
-	var err error
-	if isMergePipelineReleaseApprovalKey(key) {
-		// Release approval modes are applied by the daemon through
-		// SetReleaseApprovalMode, which needs the comm surface named.
-		err = r.configureMergePipelineReleaseMode(key, value)
-	} else {
-		err = r.configureFn(key, value)
 	}
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
@@ -1061,6 +1085,103 @@ func (r *Router) handleConfigurePlatformContext(text string) {
 			r.send(fmt.Sprintf("[%s] Platform context note set to: %s", r.hostname, pc.Value))
 		}
 	}
+}
+
+// configureRefused is a configure write turned away by a pre-write check
+// (the attempt-cost validator, the burn guard). It is replied as
+// "Refused: <msg>", and still reaches the audit record as a failed attempt.
+type configureRefused struct{ msg string }
+
+func (e *configureRefused) Error() string { return e.msg }
+
+// configureWrite runs the pre-write checks for one configure key and then
+// the write itself. It is the body the audit point wraps, so a refused
+// write is audited exactly like a failed one.
+//
+// The four attempt-cost keys refuse through the shared validator before
+// anything is written: the candidate value is layered over the stored
+// settings (AttemptCostState) and checked with
+// config.ValidateAttemptCostSettings. On refusal the validator's message
+// is sent back as-is and configureFn is never called, so nothing is
+// written.
+func (r *Router) configureWrite(key, value string) error {
+	if verr := r.validateAttemptCostKey(key, value); verr != nil {
+		return &configureRefused{msg: verr.Error()}
+	}
+	if err := checkMergePipelineConfigure(key, value); err != nil {
+		return err
+	}
+	if err := checkBurnGuardConfigure(key, value); err != nil {
+		return &configureRefused{msg: err.Error()}
+	}
+	if key == verifierRunCapKey {
+		if err := checkVerifierRunCapValue(value); err != nil {
+			return fmt.Errorf("Automaton verifier run cap: %v", err)
+		}
+	}
+	if isMergePipelineReleaseApprovalKey(key) {
+		// Release approval modes are applied by the daemon through
+		// SetReleaseApprovalMode, which needs the comm surface named.
+		return r.configureMergePipelineReleaseMode(key, value)
+	}
+	return r.configureFn(key, value)
+}
+
+// configureAudited is the single audit point for the comm-channel
+// configure path: it runs the real write (configureFn — a loopback REST
+// PUT on the admin token) and, when the invocation is session-attributed
+// (at.Caller set), records exactly one federation.ConfigAuditRecord per
+// attempted write with surface "comm" — denied (capability) and failed
+// writes included, with the reason. Operator (zero-attribution) traffic
+// is not audited as a session write, consistent with the REST and MCP
+// surfaces (admin callers skip their own audit points; the loopback PUT
+// this make is admin, so the REST point skips it too). When configAudit
+// is nil the audit is a silent no-op.
+func (r *Router) configureAudited(key, value string, at ConfigureAttribution) error {
+	body, merr := json.Marshal(map[string]any{key: value})
+	// Session-attributed but the credential lacks the config:write
+	// capability: the write is refused before it runs and recorded once
+	// as a denied attempt naming the capability it is missing — exactly
+	// as the REST fedCap gate and the MCP middleware do for their
+	// surfaces.
+	if at.Caller != "" && !at.ConfigWriteAllowed {
+		reason := at.DenyReason
+		if reason == "" {
+			reason = "denied: missing capability " + federation.CapConfigWrite
+		}
+		if r.configAudit != nil {
+			rec := federation.ConfigAuditRecord{
+				Surface: "comm",
+				Tool:    "configure",
+				Caller:  at.Caller,
+				Allowed: false,
+				Reason:  reason,
+			}
+			if merr == nil {
+				rec.Keys, rec.Values = federation.ExtractConfigPatch(body)
+			}
+			r.configAudit.Record(rec)
+		}
+		return fmt.Errorf("%s", reason)
+	}
+	err := r.configureWrite(key, value)
+	if at.Caller == "" || r.configAudit == nil {
+		return err
+	}
+	rec := federation.ConfigAuditRecord{
+		Surface: "comm",
+		Tool:    "configure",
+		Caller:  at.Caller,
+		Allowed: err == nil,
+	}
+	if merr == nil {
+		rec.Keys, rec.Values = federation.ExtractConfigPatch(body)
+	}
+	if err != nil {
+		rec.Reason = "denied: " + err.Error()
+	}
+	r.configAudit.Record(rec)
+	return err
 }
 
 func (r *Router) handleCapacity() {
@@ -1142,6 +1263,14 @@ func (r *Router) Run(ctx context.Context) error {
 
 // handleMessage processes an incoming message.
 func (r *Router) handleMessage(msg messaging.Message) {
+	r.processMessage(msg, ConfigureAttribution{})
+}
+
+// processMessage is the real message processor. at is the
+// session-attribution for this message (zero = operator/admin traffic,
+// which is not audited as a session write); it only affects the
+// configure path's audit point (BL110).
+func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) {
 	// Only process messages from our configured group
 	if msg.GroupID != r.groupID {
 		// Log mismatches for debugging (use -v flag to see)
@@ -1275,7 +1404,7 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdProgress:
 		r.handleProgress(cmd.Text)
 	case CmdConfigure:
-		r.handleConfigure(cmd)
+		r.handleConfigureAttributed(cmd, at)
 	case CmdCopy:
 		r.handleCopy(cmd)
 	case CmdPrompt:
@@ -2407,9 +2536,23 @@ func (r *Router) send(text string) {
 	}()
 }
 
-// HandleTestMessage simulates an incoming message and captures all responses.
-// Used by the API test endpoint for comm channel testing.
+// HandleTestMessage simulates an incoming message and captures all
+// responses. Used by the API test endpoint for comm channel testing.
+// The message is operator-attributed: no session credential is involved
+// and the configure path (if any) is not audited as a session write.
 func (r *Router) HandleTestMessage(text string) []string {
+	return r.HandleAttributedTestMessage(text, ConfigureAttribution{})
+}
+
+// HandleAttributedTestMessage simulates an incoming message on behalf of
+// the session or peer named by at and captures all responses — the
+// daemon's session-attributed comm test-injection path (wired by
+// runStart to POST /api/test/message, where the REST layer resolves the
+// calling credential to at). When at names a session/peer with the
+// config:write capability, a configure command lands exactly one audit
+// record (surface "comm", caller = at.Caller); without the capability it
+// is refused and recorded with allowed=false and the denial reason.
+func (r *Router) HandleAttributedTestMessage(text string, at ConfigureAttribution) []string {
 	var responses []string
 	var mu sync.Mutex
 
@@ -2421,13 +2564,13 @@ func (r *Router) HandleTestMessage(text string) []string {
 	}
 
 	// Simulate the message
-	r.handleMessage(messaging.Message{
+	r.processMessage(messaging.Message{
 		ID:      "test-" + fmt.Sprintf("%d", time.Now().UnixNano()),
 		GroupID: r.groupID,
 		Sender:  "test-api",
 		Text:    text,
 		Backend: "test",
-	})
+	}, at)
 
 	// Wait briefly for async sends
 	time.Sleep(200 * time.Millisecond)

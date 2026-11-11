@@ -4633,5 +4633,16 @@
   "observer_peer_never_pushed": "Never pushed",
   "settings_observer_peers": "Observer peers",
   "settings_observer_peer_silent_alert_minutes": "Silent peer alert after (minutes; 0 = disabled)",
-  "settings_observer_peer_silent_alert_minutes_hint": "Raise an alert when a registered observer peer has not pushed for this many minutes. 0 disables the check."
+  "settings_observer_peer_silent_alert_minutes_hint": "Raise an alert when a registered observer peer has not pushed for this many minutes. 0 disables the check.",
+  "settings.self_config": "Self-config",
+  "settings.self_config.allow": "Allow agent self-config",
+  "settings.self_config.allow_help": "On: an agent holding the self-config group (mcp.allow_self_config) may change its own non-secret settings — config, sessions, observers, LLMs, quota. Off: every self-config attempt is denied and audited.",
+  "settings.self_config.audit_path": "Audit log path",
+  "settings.self_config.audit_denied": "Also record denied attempts",
+  "settings.self_config.audit_denied_help": "On (default): denied attempts are logged too, with their reason. Off: only allowed writes are logged.",
+  "settings.self_config_recent": "Recent self-config audit records",
+  "settings.self_config_recent_loading": "Loading…",
+  "settings.self_config_recent_empty": "No self-config audit records yet.",
+  "settings.self_config_recent_more": "%1$d older record(s) not shown",
+  "settings.self_config_recent_unavailable": "Self-config audit log unavailable"
 }

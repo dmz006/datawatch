@@ -360,8 +360,25 @@ func AuditCommKeys() []string { return slices.Clone(auditCommKeys) }
 
 func (r *Router) handleAudit(cmd Command) {
 	// "audit actor=<x> action=<y|prefix*> subject=<z> session_id=<s> since=<t> until=<t> limit=<n>"
+	// "audit self-config [limit=<n>]" — BL412 self-config audit view
+	words := strings.Fields(strings.TrimSpace(cmd.Text))
+	if len(words) > 0 && words[0] == "self-config" {
+		q := url.Values{}
+		for _, kv := range words[1:] {
+			if i := strings.IndexByte(kv, '='); i > 0 && kv[:i] == "limit" {
+				q.Set("limit", kv[i+1:])
+			}
+		}
+		body, err := r.commGet("/api/audit/self-config", q)
+		if err != nil {
+			r.reply("self-config audit failed", err.Error())
+			return
+		}
+		r.reply("self-config audit", prettyJSON(body))
+		return
+	}
 	q := url.Values{}
-	for _, kv := range strings.Fields(cmd.Text) {
+	for _, kv := range words {
 		i := strings.IndexByte(kv, '=')
 		if i <= 0 {
 			continue

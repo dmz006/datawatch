@@ -179,6 +179,18 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"tag_inherited_note",
 		// Cost report card + cost_report settings (v: cost report PWA view).
 		"dash_cost_report",
+		// Self-config group + recent audit (BL412).
+		"settings.self_config",
+		"settings.self_config.allow",
+		"settings.self_config.allow_help",
+		"settings.self_config.audit_path",
+		"settings.self_config.audit_denied",
+		"settings.self_config.audit_denied_help",
+		"settings.self_config_recent",
+		"settings.self_config_recent_loading",
+		"settings.self_config_recent_empty",
+		"settings.self_config_recent_more",
+		"settings.self_config_recent_unavailable",
 		"cost_report_card_title",
 		"cost_report_help_link",
 		"cost_report_refresh",

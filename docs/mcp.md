@@ -269,7 +269,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
-| Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `worker_profile_status`, `autonomous_prd_set_worker_profile`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
+| Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `self_config_audit`, `get_config`, `config_set`, `get_stats`, `worker_profile_status`, `autonomous_prd_set_worker_profile`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
 | Identity | `get_identity`, `set_identity`, `update_identity`, `configure_identity`, `identity_backups`, `restore_identity`, `reset_identity` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
@@ -1336,6 +1336,26 @@ audit_access_query(action="auth_failure", since="2026-10-08T00:00:00Z")
 ```
 ```json
 {"count":1,"entries":[{"ts":"2026-10-09T02:14:03Z","actor":"unauthenticated","action":"auth_failure","details":{"method":"GET","path":"/api/sessions","status":401,"remote_ip":"198.51.100.4","user_agent":"curl/8.4.0"}}]}
+```
+
+---
+
+### `self_config_audit`
+
+Query the **self-config audit log**. One record per attempt to change the daemon's own non-secret settings through an agent surface: a config-write MCP tool (`surface: "mcp"`, e.g. `config_set`, `autonomous_config_set`), a session- or peer-origin REST config PUT (`"rest"`), or a comm `configure` command (`"comm"`). Allowed attempts are logged; denied attempts too — with the refusal reason — unless `mcp.self_config_audit_denied` is explicitly `false`. Secret values are redacted (`"<redacted>"`); the changed key(s) with their new values, the tool/route, and the caller are kept (a denied attempt may have no `keys`). Newest-first. Read-only: it reads the JSONL file (`mcp.self_config_audit_path`, default `<data dir>/audit/config-self-modify.jsonl`) and never writes or changes anything. The group settings themselves — `mcp.allow_self_config`, `mcp.self_config_audit_path`, `mcp.self_config_audit_denied` — are read with `get_config` and changed with `config_set` (which stays bootstrap-protected for `mcp.allow_self_config` itself).
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `limit` | number | No | Max entries returned (default 100, cap 1000) |
+
+**Example:**
+```
+self_config_audit(limit=5)
+```
+```json
+{"count":2,"entries":[{"time":"2026-10-29T02:14:03Z","surface":"mcp","tool":"config_set","keys":["mcp.allow_self_config"],"values":{"mcp.allow_self_config":true},"caller":"session:opencode-a3f2","allowed":true},{"time":"2026-10-29T02:13:41Z","surface":"mcp","tool":"config_set","caller":"session:goose-b7c1","allowed":false,"reason":"bootstrap: mcp.allow_self_config cannot be changed via config_set"}]}
 ```
 
 ---

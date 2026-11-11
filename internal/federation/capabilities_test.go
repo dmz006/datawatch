@@ -300,3 +300,78 @@ func TestUsageCapabilityGroups(t *testing.T) {
 		}
 	}
 }
+
+// TestSelfConfigGroup pins the BL412 option C group
+// (docs/plans/2026-10-29-bl412-self-config-gate-proposal.md): the built-in
+// self-config group holds exactly the config-write capabilities the operator
+// selected (non-secret settings), never the excluded ones (secrets,
+// federation), is listed by ListBuiltinGroups, and — per this task's scope —
+// does not enlarge the session-default grant.
+func TestSelfConfigGroup(t *testing.T) {
+	g, ok := federation.BuiltinGroups["self-config"]
+	if !ok {
+		t.Fatal("BuiltinGroups missing self-config group")
+	}
+	if !g.Builtin {
+		t.Error("self-config must be a builtin group")
+	}
+	if g.Name != "self-config" {
+		t.Errorf("Name = %q, want %q", g.Name, "self-config")
+	}
+	if len(g.Description) < 10 {
+		t.Error("Description must record the capability set and the chosen exclusions")
+	}
+
+	granted := federation.Resolve([]string{"self-config"}, nil)
+	for _, c := range []string{
+		federation.CapConfigWrite,
+		federation.CapAutonomousWrite,
+		federation.CapObserversWrite,
+		federation.CapLLMsWrite,
+		federation.CapUsageWrite,
+	} {
+		if !federation.Check(granted, c) {
+			t.Errorf("self-config must grant %s", c)
+		}
+	}
+
+	// Exclusions per the operator's "non-secret settings only" answer: the
+	// secrets surface and the federation surface (server_add & friends stay
+	// gated by federation:write).
+	for _, c := range []string{
+		federation.CapSecretsList,
+		federation.CapSecretsRead,
+		federation.CapSecretsWrite,
+		federation.CapFederationList,
+		federation.CapFederationRead,
+		federation.CapFederationWrite,
+		federation.CapFederationFingerprint,
+		federation.CapFederationSelf,
+	} {
+		if federation.Check(granted, c) {
+			t.Errorf("self-config must NOT grant %s (excluded by operator answer)", c)
+		}
+	}
+
+	var listed []string
+	for _, gg := range federation.ListBuiltinGroups() {
+		listed = append(listed, gg.Name)
+	}
+	found := false
+	for _, n := range listed {
+		if n == "self-config" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ListBuiltinGroups() missing self-config: %v", listed)
+	}
+
+	// This task does not change the session-default grant: sessions do not
+	// automatically gain the config-write surface.
+	def := federation.Resolve([]string{"session-default"}, nil)
+	if federation.Check(def, federation.CapConfigWrite) {
+		t.Error("session-default must not automatically grant config:write (session-default is out of scope for this task)")
+	}
+}

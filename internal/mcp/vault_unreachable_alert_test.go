@@ -45,7 +45,7 @@ func vaultAlertStubDaemon(t *testing.T) *Server {
 	}))
 	t.Cleanup(srv.Close)
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-	return &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 func vaultAlertCall(t *testing.T, s *Server, v string) string {

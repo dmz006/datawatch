@@ -268,6 +268,8 @@ func cefSignature(action string) (int, string, int) {
 		return 85, "ReleaseTag", 3
 	case "autonomous.verifier_run_cap":
 		return 86, "AutonomousVerifierRunCap", 4
+	case ActionConfigWrite:
+		return 87, "ConfigWrite", 5
 	default:
 		return 0, "AuditEvent", 3
 	}

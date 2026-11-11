@@ -494,6 +494,34 @@ mcp:
   # Path to TLS private key PEM file
   tls_key: ""
 
+  # ── Self-config (see docs/datawatch-definitions.md#self-config and docs/howto/self-config-capability.md) ──
+  # The single operator switch for the builtin `self-config` capability group —
+  # the ability of a session or connected agent to change this daemon's own
+  # non-secret configuration at runtime (config:write, autonomous:write,
+  # observers:write, llms:write, usage:write). Absent = ENABLED (the default is
+  # the operator's answer; nothing here is tied to a repo). An explicit `false`
+  # disables: the MCP config-write tools refuse, the built-in session-default
+  # capability grant drops the group, and chat-channel `configure` for a config
+  # key is refused (and the refusal is audit-logged). Re-enable by removing
+  # the `false` (or setting `true`) and restarting — never from a session: the
+  # key is bootstrap-protected against config_set. Operator surfaces (YAML,
+  # CLI `datawatch config set`, Web UI Settings → General → Self-config,
+  # REST PUT /api/config) set it in either direction.
+  allow_self_config: true
+  # Where the self-config audit file (JSONL) is written: one record per
+  # configuration-write attempt from every session-facing surface
+  # (mcp / rest / comm), allowed or refused — time, surface, tool, keys,
+  # redacted values, acting credential, allowed, refusal reason.
+  # Read it from anywhere: the MCP tool `self_config_audit`, the CLI
+  # `datawatch audit self-config`, REST GET /api/audit/self-config, the
+  # PWA Self-config card, or the file itself.
+  # Default: <data dir>/audit/config-self-modify.jsonl
+  self_config_audit_path: ""
+  # Record refused attempts (allowed: false with a reason) alongside the
+  # allowed ones. Recommended setting is on — this default. `false` records
+  # only the successful writes.
+  self_config_audit_denied: true
+
 # ── Signal ──
 # Signal messenger integration via signal-cli subprocess.
 signal:

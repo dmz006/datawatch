@@ -367,4 +367,17 @@ const (
 	ActionReleasePush = "release_push"
 	// ActionReleaseTag — a release tag created or pushed (performed or refused).
 	ActionReleaseTag = "release_tag"
+	// ActionConfigWrite — one attempt to change a daemon setting through a
+	// config-write surface: a config-write MCP tool (surface mcp), a REST
+	// config PUT (surface rest) or a comm configure command (surface comm).
+	// Emitted by the shared config-write audit sink (federation.ConfigAuditor,
+	// its JSONL file read back by GET /api/audit/self-config and the
+	// self_config_audit MCP tool), mapped to a CEF line here when the
+	// daemon mirrors it. Allowed attempts are recorded; denied attempts too,
+	// with their reason of refusal. Subject: the MCP tool name or the
+	// "PUT /route" name. Details: surface, allowed, keys (comma-joined),
+	// reason (denied attempts; secret-like values are already redacted in
+	// the JSONL record and never reach the CEF line — the CEF line carries
+	// keys and reason only).
+	ActionConfigWrite = "config_write"
 )

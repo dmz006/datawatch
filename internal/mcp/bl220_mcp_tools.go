@@ -24,12 +24,15 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
-// allowSelfConfigCheck returns a denied result if mcp.allow_self_config is not
-// set, nil otherwise.  Shared by all _config_set tools.
-func (s *Server) allowSelfConfigCheck() *mcpsdk.CallToolResult {
-	if s.cfg == nil || !s.cfg.AllowSelfConfig {
-		return mcpsdk.NewToolResultText(
-			"permission denied: set mcp.allow_self_config=true in the config file (and restart) to enable self-modify",
+// selfConfigGate is the BL110 permission gate: it returns a denied result if the allow_self_config
+// alias (the builtin "self-config" capability group) is disabled, nil
+// otherwise. Shared by all _config_set tools. The alias defaults to
+// ENABLED (absent key = on); an explicit allow_self_config: false
+// closes it.
+func (s *Server) selfConfigGate() *mcpsdk.CallToolResult {
+	if s.cfg == nil || !s.cfg.SelfConfigEnabled() {
+		return mcpsdk.NewToolResultError(
+			"permission denied: self-modify is disabled (mcp.allow_self_config: false) — remove the explicit false (the default is enabled) and restart to enable",
 		)
 	}
 	return nil
@@ -100,7 +103,7 @@ func (s *Server) handleDetectionConfigSet(ctx context.Context, req mcpsdk.CallTo
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if denied := s.allowSelfConfigCheck(); denied != nil {
+	if denied := s.selfConfigGate(); denied != nil {
 		return denied, nil
 	}
 	patch := map[string]any{}
@@ -164,7 +167,7 @@ func (s *Server) handleDNSChannelConfigSet(ctx context.Context, req mcpsdk.CallT
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if denied := s.allowSelfConfigCheck(); denied != nil {
+	if denied := s.selfConfigGate(); denied != nil {
 		return denied, nil
 	}
 	patch := map[string]any{}
@@ -246,7 +249,7 @@ func (s *Server) handleProxyConfigSet(ctx context.Context, req mcpsdk.CallToolRe
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if denied := s.allowSelfConfigCheck(); denied != nil {
+	if denied := s.selfConfigGate(); denied != nil {
 		return denied, nil
 	}
 	patch := map[string]any{}

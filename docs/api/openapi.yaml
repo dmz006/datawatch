@@ -1185,6 +1185,19 @@ paths:
         reset runs in UTC; the `/api/usage/advice` result then carries a note under
         `notes` telling the operator to set the zone explicitly, and its `zone` field
         reports the effective zone with `server_zone` set when the operator left it unset).
+
+        Self-config group, operator- or session-token write, never masked:
+        `mcp.allow_self_config` (boolean default true; the self-config builtin group —
+        when an agent holds it, a config-write MCP tool may change the non-secret
+        settings of its own configuration scope: the groups config, session, observers,
+        llms, usage. Setting it to false removes self-config from every grant),
+        `mcp.self_config_audit_path` (string; where the daemon writes the self-config
+        audit trail. Default `<data>/audit/config-self-modify.jsonl`; changing it
+        reopens the sink, existing records stay put),
+        `mcp.self_config_audit_denied` (boolean default true; set it to false to have only
+        allowed writes logged — an attempt is still an attempt, so denied ones are logged by
+        default, with their reason of refusal, as a record with no key set). All three changes
+        take effect immediately and are written to the config file.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -7752,6 +7765,45 @@ paths:
         - {name: until, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: limit, in: query, required: false, schema: {type: integer}}
       responses: {"200": {description: OK}, "400": {description: since or until is not RFC 3339}}
+  /api/audit/self-config:
+    get:
+      summary: Query the self-config audit log
+      description: |
+        One record per attempt through the self-config path on this daemon — a
+        config-write MCP tool (surface `mcp`), a session- or peer-origin REST config
+        PUT (surface `rest`), or a comm `configure` command (surface `comm`). Allowed
+        attempts are logged by default; denied attempts too, unless `mcp.
+        self_config_audit_denied` is explicitly false. Secret values are redacted, the tool/route,
+        the changed key(s) with their new values, and the deny reason are kept (denies
+        may not have a key set). Read-only.
+      operationId: selfConfigAuditQuery
+      tags: [Singletons]
+      parameters:
+        - {name: limit, in: query, required: false, description: "Max number of entries, most recent first (default 100, max 1000)", schema: {type: integer, minimum: 1, maximum: 1000}}
+      responses:
+        "200":
+          description: Self-config audit entries, most recent first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer, description: Number of entries returned}
+                  path: {type: string, description: The file the trail is being written to (empty when the daemon is not configured to audit)}
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        time: {type: string, format: date-time}
+                        surface: {type: string, enum: [mcp, rest, comm]}
+                        tool: {type: string, description: MCP tool name, REST route and method, or the configure key}
+                        keys: {type: array, items: {type: string}, description: Dot-path of the changed key}
+                        caller: {type: string, description: Session id, peer host, or comm channel}
+                        allowed: {type: boolean}
+                        reason: {type: string, description: Reason for refusal when denied}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/cooldown:
     get:
       summary: Current global rate-limit cooldown state
@@ -10775,6 +10827,19 @@ components:
             username: { type: string }
             from: { type: string }
             to: { type: string }
+        mcp:
+          type: object
+          description: The MCP section of the config, including the self-config group
+          properties:
+            allow_self_config:
+              type: boolean
+              description: The self-config builtin group (alias). Default true; when an agent holds it, config-write MCP tools may change the non-secret settings of its own configuration scope
+            self_config_audit_path:
+              type: string
+              description: Where the daemon writes the self-config audit trail (default `<data>/audit/config-self-modify.jsonl`)
+            self_config_audit_denied:
+              type: boolean
+              description: True when denied attempts are also logged (default true; explicit false logs allowed writes only)
         webhook:
           type: object
           properties:

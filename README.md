@@ -114,6 +114,7 @@ More: [channel routing](docs/howto/channel-routing.md) · [file sharing](docs/ho
 - Data on disk is encrypted
 - Passwords and keys live in a vault
 - Logins, encrypted connections, and a log of who did what
+- Self-config gate: an agent may change the daemon's own non-secret settings only while it holds the **self-config** group — every attempt (allowed and denied) is recorded, and you can read the trail from the PWA Settings card, `datawatch audit self-config` or `GET /api/audit/self-config`
 
 More: [encryption](docs/encryption.md) · [security review](docs/security-review.md)
 

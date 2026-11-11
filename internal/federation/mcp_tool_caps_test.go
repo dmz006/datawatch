@@ -6,19 +6,21 @@ import (
 	"go/token"
 	"os"
 	"regexp"
+	"sort"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
-// TestMCPToolCap_EveryRegisteredToolHasAnEntry is Design A3's structural
-// regression test (mirrors internal/server's A2 audit test): parses every
-// mcpSrv.AddTool(s.toolX(), ...) registration in internal/mcp/server.go,
-// resolves each toolX() function to its registered tool name, and fails if
-// that name has no entry in federation.MCPToolCap — a future MCP tool
-// landing with no capability assigned (defaulting to "nobody but admin can
-// call it" until someone notices) is a safety failure, not silence.
-func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
+// registeredMCPToolNames is the shared enumeration source for the coverage
+// tests in this file: it parses internal/mcp, finds each tool function
+// (func (s *Server) toolX()) returning a NewTool("name", ...) or
+// NewToolWithRawSchema("name", ...) literal, and resolves the names
+// registered by the mcpSrv.AddTool(s.toolX(), ...) calls in server.go. It
+// returns the deduplicated registered tool names and the number of AddTool
+// registrations found.
+func registeredMCPToolNames(t *testing.T) (names []string, addToolCount int) {
+	t.Helper()
 	const mcpDir = "../mcp"
 	entries, err := os.ReadDir(mcpDir)
 	if err != nil {
@@ -87,11 +89,7 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 		t.Fatalf("read server.go: %v", err)
 	}
 	matches := addToolRe.FindAllStringSubmatch(string(src), -1)
-	if len(matches) < 300 {
-		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", len(matches))
-	}
 
-	var missing []string
 	seen := map[string]bool{}
 	for _, m := range matches {
 		name, ok := toolFuncToName[m[1]]
@@ -99,6 +97,28 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 			continue
 		}
 		seen[name] = true
+		names = append(names, name)
+	}
+	return names, len(matches)
+}
+
+// TestMCPToolCap_EveryRegisteredToolHasAnEntry is Design A3's structural
+// regression test (mirrors internal/server's A2 audit test): parses every
+// mcpSrv.AddTool(s.toolX(), ...) registration in internal/mcp/server.go,
+// resolves each toolX() function to its registered tool name, and fails if
+// that name has no entry in federation.MCPToolCap — a future MCP tool
+// landing with no capability assigned (defaulting to "nobody but admin can
+// call it" until someone notices) is a safety failure, not silence.
+func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
+	names, addToolCount := registeredMCPToolNames(t)
+	if addToolCount < 300 {
+		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", addToolCount)
+	}
+	if len(names) < 300 {
+		t.Fatalf("only resolved %d tool names from %d AddTool registrations — tool-name extraction may be broken", len(names), addToolCount)
+	}
+	var missing []string
+	for _, name := range names {
 		if _, ok := federation.RequiredCapForMCPTool(name); !ok {
 			missing = append(missing, name)
 		}
@@ -107,8 +127,95 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 		t.Errorf("Design A3 regression: %d registered MCP tool(s) have no entry in federation.MCPToolCap "+
 			"(they will be treated as admin-only until classified): %v", len(missing), missing)
 	}
-	if len(seen) < 300 {
-		t.Fatalf("only resolved %d tool names from %d AddTool registrations — tool-name extraction may be broken", len(seen), len(matches))
+}
+
+// TestIsConfigWriteTool_Classification pins both sides of the BL412
+// self-config classification (option C,
+// docs/plans/2026-10-29-bl412-self-config-gate-proposal.md): the daemon
+// settings writers and the component-registry writers classify as config
+// writes, while the excluded surfaces (secrets, identity, daemon control,
+// session/autonomous state) are explicitly classified non-config-write —
+// never left on neither side.
+func TestIsConfigWriteTool_Classification(t *testing.T) {
+	configWrite := []string{
+		"config_set",
+		"detection_config_set", "dns_channel_config_set", "proxy_config_set",
+		"channel_routing_config_set", "council_config_set", "council_personas_set",
+		"orchestrator_config_set", "autonomous_config_set", "autonomous_scan_config_set",
+		"observer_config_set", "smoke_forward_config_set", "burn_guard_config_set",
+		"compute_pin_settings",
+		"usage_backoff_set", "usage_extra_credit_set", "usage_remaining_work_set",
+		"llm_add", "llm_update", "llm_delete", "llm_disable", "llm_enable",
+		"llm_add_model", "llm_remove_model", "llm_refresh_models",
+		"compute_node_add", "compute_node_update", "compute_node_delete",
+		"compute_node_attach_observer", "compute_node_detach_observer",
+		"compute_node_pull_model", "compute_node_remove_model",
+		"observer_peer_register", "observer_peer_delete",
+		"server_add", "server_delete", "server_update",
+		"websearch_provider_add", "websearch_provider_update",
+		"websearch_provider_delete", "websearch_provider_disable",
+	}
+	for _, name := range configWrite {
+		if !federation.IsConfigWriteTool(name) {
+			t.Errorf("IsConfigWriteTool(%q) = false, want true", name)
+		}
+		if federation.IsNonConfigWriteTool(name) {
+			t.Errorf("%q must sit in exactly one of the two lists", name)
+		}
+	}
+
+	// Explicit non-config side: readers of the same surfaces, the excluded
+	// surfaces, and autonomous state.
+	nonConfigWrite := []string{
+		"llm_list", "llm_get",
+		"get_config",
+		"observer_config_get",
+		"compute_node_get",
+		"secret_get", "secret_set", "secrets_vault_status",
+		"set_identity", "update_identity", "configure_identity",
+		"restore_identity", "reset_identity",
+		"restart_daemon", "reload",
+		"agent_spawn", "autonomous_prd_create",
+	}
+	for _, name := range nonConfigWrite {
+		if federation.IsConfigWriteTool(name) {
+			t.Errorf("IsConfigWriteTool(%q) = true, want false (excluded surface)", name)
+		}
+		if !federation.IsNonConfigWriteTool(name) {
+			t.Errorf("IsNonConfigWriteTool(%q) = false — must be explicitly listed non-config-write", name)
+		}
+	}
+
+	// Unknown tool names never classify as config writes.
+	for _, name := range []string{"", "not_a_registered_tool", "LLM_ADD"} {
+		if federation.IsConfigWriteTool(name) {
+			t.Errorf("IsConfigWriteTool(%q) = true, want false for unknown tool names", name)
+		}
+	}
+}
+
+// TestIsConfigWriteTool_EveryRegisteredToolIsClassified fails the build
+// when a registered MCP tool lands in neither configWriteTools nor
+// nonConfigWriteTools, so a new registration can't be forgotten on both
+// sides of the self-config classification (BL412 option C). It reuses the
+// same enumeration source as TestMCPToolCap_EveryRegisteredToolHasAnEntry.
+func TestIsConfigWriteTool_EveryRegisteredToolIsClassified(t *testing.T) {
+	names, addToolCount := registeredMCPToolNames(t)
+	if addToolCount < 300 {
+		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", addToolCount)
+	}
+	var unclassified []string
+	for _, name := range names {
+		if federation.IsConfigWriteTool(name) || federation.IsNonConfigWriteTool(name) {
+			continue
+		}
+		unclassified = append(unclassified, name)
+	}
+	if len(unclassified) > 0 {
+		sort.Strings(unclassified)
+		t.Fatalf("every registered MCP tool must be classified as a config write or explicitly listed non-config-write; %d unclassified: %v\n"+
+			"Add each new tool to exactly one of the lists under IsConfigWriteTool in mcp_tool_caps.go.",
+			len(unclassified), unclassified)
 	}
 }
 

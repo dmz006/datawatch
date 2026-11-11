@@ -68,7 +68,7 @@ func livenessStubDaemon(t *testing.T) *Server {
 	}))
 	t.Cleanup(srv.Close)
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-	return &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 func TestLivenessMCPRoundTrip(t *testing.T) {

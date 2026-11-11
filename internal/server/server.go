@@ -366,6 +366,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/budget/usage", api.handleBudgetUsage)                              // this daemon's own spend only
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
 	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
+	apiMux.HandleFunc("/api/audit/self-config", api.handleSelfConfigAudit)                     // BL412 (self-config audit view)
 	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)            // GH#203 (list + mint)
 	apiMux.HandleFunc("/api/secrets/service-tokens/", api.handleSecretServiceTokens)           // GH#203 (revoke by name)
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)                                      // BL242
@@ -927,6 +928,14 @@ func (s *HTTPServer) SetDefectQueue(b DefectQueueBackend, log autonomous.IntakeL
 	s.api.SetDefectQueue(b, log)
 }
 
+// SetConfigAuditor wires the shared config-write audit sink (BL110
+// extension) into the REST config-write routes (PUT /api/config, PUT
+// /api/cost/rates — surface "rest"). Nil (the default) means those
+// routes produce no audit record.
+func (s *HTTPServer) SetConfigAuditor(a *federation.ConfigAuditor) {
+	s.api.configAudit = a
+}
+
 // SetMatrixBackend wires the Matrix messaging backend for /api/matrix/* endpoints (BL241).
 func (s *HTTPServer) SetMatrixBackend(b matrixBackendAPI) { s.api.SetMatrixBackend(b) }
 
@@ -1459,8 +1468,10 @@ func (s *HTTPServer) SetMCPSamplingDispatcher(d MCPSamplingAPI) {
 func (s *HTTPServer) SetMCPElicitationDispatcher(d MCPElicitationAPI) {
 	s.api.SetMCPElicitationDispatcher(d)
 }
-func (s *HTTPServer) SetStatsCollector(c *stats.Collector)           { s.api.statsCollector = c }
-func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
+func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
+func (s *HTTPServer) SetTestMessageHandler(fn func(text string, at TestMessageAttribution) []string) {
+	s.api.SetTestMessageHandler(fn)
+}
 
 // SetSmokeForward (#54) — wires cross-instance smoke-run forwarding.
 func (s *HTTPServer) SetSmokeForward(url, token string) {

@@ -1545,6 +1545,15 @@ Per-session token accounting (BL6).
 
 Query the operator audit log (BL9, append-only JSONL or CEF).
 
+### `datawatch audit self-config [--limit N]`
+
+Query the self-config audit trail — one record per attempt to change the
+daemon's own non-secret settings through an agent surface (config-write
+MCP tools, session/peer REST config PUTs, comm `configure`), allowed and
+(by default) denied, newest-first. Read-only; `--limit` caps entries
+(default 100, max 1000). Same source as the PWA Settings → Self-config
+card and `GET /api/audit/self-config`.
+
 ### `datawatch diagnose`
 
 Run the daemon diagnostic battery (BL37): tmux availability, config

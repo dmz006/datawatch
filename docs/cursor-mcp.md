@@ -245,6 +245,10 @@ The one newest-first stream of what the daemon watches and does for you (the kin
 
 The body of `GET /api/autonomous/event-log` is `{"events": [...], "next_cursor": "...", "total": n}`; `next_cursor` is empty on the last page, and `total` counts every event that matches the filters. Example: `GET /api/autonomous/event-log?kind=watch,retry&limit=10` — the ten newest `watch` and `retry` rows. The CLI equivalent is `datawatch autonomous event-log --kind watch --kind retry --limit 10`, and the comm verb is `autonomous event-log kind=watch,retry limit=10` (its limit is 1–10, default 10). What a row means, what an error entry and a quiet entry are, and the next action for a common error: [howto/automata-events.md](howto/automata-events.md).
 
+### Changing the daemon's own settings
+
+`get_config` / `config_set` read and change the daemon's settings (session, LLM, autonomous, server, …) over MCP. Self-config is **enabled by default** (`mcp.allow_self_config` aliases the builtin **self-config** capability group, which carries `config:write` in every session's scoped credential); when it is off, config-write tools are refused and the setting is read-only via `get_config`. The alias itself is bootstrap-protected — a session cannot flip it. Every attempt (allowed and refused) is in the self-config audit log, readable with `self_config_audit`. See [howto/self-config-capability.md](howto/self-config-capability.md) for the definition, hardening steps and audit queries.
+
 ## Example Usage in Cursor
 
 Once configured, you can ask Claude in Cursor:

@@ -266,7 +266,13 @@ type Server struct {
 	// dataDir is this instance's explicit data-directory override (set by
 	// the daemon at startup; empty in bare test fixtures). statePath
 	// resolves it first, then cfg.DataDir, then the config default.
-	dataDir            string
+	dataDir string
+	// configAudit (BL110 extension) — the shared config-write audit sink
+	// (surface "rest"); nil means REST config writes produce no audit
+	// record. One audited record per PUT /api/config or PUT
+	// /api/cost/rates from session or peer callers (admin excluded — see
+	// auditConfigPut).
+	configAudit        *federation.ConfigAuditor
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
@@ -488,7 +494,9 @@ type Server struct {
 
 	// testMessageHandler is an optional function that routes a simulated incoming
 	// message through the router, enabling comm channel testing via the API.
-	testMessageHandler func(text string) []string
+	// The attribution parameter carries the calling credential and its
+	// config:write decision (see TestMessageAttribution).
+	testMessageHandler func(text string, at TestMessageAttribution) []string
 
 	// memoryAPI provides memory operations for the REST API.
 	memoryAPI MemoryAPI
@@ -5946,10 +5954,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleGetConfig(w, r)
 	case http.MethodPut:
-		if !s.fedCap(w, r, federation.CapConfigWrite) {
-			return
-		}
-		s.handlePutConfig(w, r)
+		// BL110 extension — the single REST audit point for config writes:
+		// it wraps the capability gate AND the handler, so exactly one
+		// record per call is written, allowed or denied (denied records
+		// carry the gate's refusal reason). Shared sink with the MCP and
+		// comm surfaces.
+		s.auditConfigPut("/api/config", func(w http.ResponseWriter, r *http.Request) {
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			s.handlePutConfig(w, r)
+		})(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -6340,6 +6355,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
 			"tls_cert":          s.cfg.MCP.TLSCert,
 			"tls_key":           s.cfg.MCP.TLSKey,
+			// BL412 — self-config group (alias: mcp.allow_self_config). The
+			// YAML field is tri-state (absent = enabled); GET reports the
+			// effective value so a read-modify-write round trip preserves the
+			// enabled/disabled state. Audit path and denied-recording flag are
+			// read-only here (mutable via PUT, same as every other mcp.* key).
+			"allow_self_config":        s.cfg.MCP.SelfConfigEnabled(),
+			"self_config_audit_path":   s.cfg.MCP.SelfConfigAuditPath,
+			"self_config_audit_denied": s.cfg.MCP.SelfConfigAuditDeniedOn(),
 		},
 		"detection": map[string]interface{}{
 			"prompt_patterns":       s.cfg.Detection.PromptPatterns,
@@ -8900,6 +8923,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.MCP.TLSCert = toString(v)
 		case "mcp.tls_key":
 			cfg.MCP.TLSKey = toString(v)
+		// BL412 — self-config group. allow_self_config is stored as an
+		// explicit bool (the tri-state "absent = on" default is resolved on
+		// read via SelfConfigEnabled; PUT makes the operator's intent stick).
+		case "mcp.allow_self_config":
+			b := toBool(v)
+			cfg.MCP.AllowSelfConfig = &b
+		case "mcp.self_config_audit_path":
+			if s := toString(v); s != "" {
+				cfg.MCP.SelfConfigAuditPath = s
+			}
+		case "mcp.self_config_audit_denied":
+			b := toBool(v)
+			cfg.MCP.SelfConfigAuditDenied = &b
 		case "update.enabled":
 			cfg.Update.Enabled = toBool(v)
 		case "update.schedule":
@@ -10904,8 +10940,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 }
 
 // SetTestMessageHandler wires a function that routes simulated messages through
-// the router. Used by POST /api/test/message for comm channel testing.
-func (s *Server) SetTestMessageHandler(fn func(text string) []string) {
+// the router. Used by POST /api/test/message for comm channel testing. The
+// handler receives the request's TestMessageAttribution (calling credential +
+// config:write decision) so a session-attributed configure is audited once
+// (surface "comm") and refused without the capability.
+func (s *Server) SetTestMessageHandler(fn func(text string, at TestMessageAttribution) []string) {
 	s.testMessageHandler = fn
 }
 
@@ -10932,7 +10971,7 @@ func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "need {\"text\":\"...\"}", http.StatusBadRequest)
 		return
 	}
-	responses := s.testMessageHandler(req.Text)
+	responses := s.testMessageHandler(req.Text, s.configureWriteAttribution(r))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"input":     req.Text,

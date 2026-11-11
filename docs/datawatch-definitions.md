@@ -1530,6 +1530,30 @@ Config: `mcp.elicitation.enabled`, `mcp.elicitation.timeout_seconds`.
 
 **See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md) · [`howto/mcp-prompts.md`](howto/mcp-prompts.md) · [`howto/mcp-sampling.md`](howto/mcp-sampling.md) · [`howto/mcp-elicitation.md`](howto/mcp-elicitation.md)
 
+### Self-config
+
+**Self-config** is the ability of a session or a connected agent to change the daemon's own non-secret configuration at runtime — things like `session.max_sessions`, a detection pattern, an LLM entry, or the burn-guard budget. It is expressed as a **capability group** named `self-config`, and the single operator-facing switch for the whole group is `mcp.allow_self_config`.
+
+**The group** is builtin and fixed in code. It grants: `config:write`, `autonomous:write`, `observers:write`, `llms:write`, `usage:write`. It deliberately grants **no** access to anything under `secrets:`, anything under `federation:`, or daemon-identity control (sessions kill, compute control, plugin install, tailscale admin). Being a group rather than a loose list of caps is what makes it grantable and auditable as one unit.
+
+**The alias.** `mcp.allow_self_config` exists for the operator's convenience in both YAML and the Settings UI; under the hood it *is* the group. One field, three effects: (1) while it is disabled, every MCP configuration-write tool refuses with the reason `self-modify is disabled`; (2) the default capability set handed to a spawned session is `session-default` **plus** `self-config` while enabled, and `session-default` alone while disabled (an explicit `session.capabilities` list wins over both); and (3) while disabled a chat-channel `configure` for a configuration key is refused and the refusal is audit-logged. Setting the flag on does not grant capabilities to a credential that never had the group; it only controls whether the default grant includes it and whether the write paths accept it.
+
+**Default: enabled.** Absent `mcp.allow_self_config` means enabled — the operator's answer for this installation, baked into the default. An explicit `false` disables. Re-enabling is removing the `false` (or setting `true`) and restarting — never a session flipping the key itself: on the MCP surface `config_set` always refuses it, whatever the alias's state (bootstrap-protected), and on the other session surfaces the key is only reachable by a credential that holds `config:write` itself, which the alias's own disabled state removes from the default grant. The operator's own surfaces (YAML, CLI, Web UI, REST with the operator credential) can set it either way.
+
+**Configurable settings.**
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `mcp.allow_self_config` | enabled (absent) | Alias for the `self-config` group: on = sessions/agents may write their daemon's non-secret configuration; explicit `false` = they may not |
+| `mcp.self_config_audit_path` | `<data dir>/audit/config-self-modify.jsonl` | Where the self-config audit file (JSONL) is written |
+| `mcp.self_config_audit_denied` | on | When on (default), refused attempts are recorded too (`allowed: false` + `reason`); `false` records only the successful writes |
+
+**Audit.** One record per configuration-write attempt by a session or peer credential, regardless of surface — exactly the surfaces they write from: **mcp** (a config-write tool), **rest** (`PUT /api/config`), **comm** (the `configure` verb). Each record carries the time, the surface, the tool or route, the keys and values (secret-looking values redacted), the acting credential (a session `session:<id>` or a federation peer `peer:<name>`; the operator's own admin writes are not recorded), whether it was allowed, and the refusal reason when not. Reading the audit is never gated: `self_config_audit` (MCP, `limit` 1–1000, default 100), `datawatch audit self-config` (CLI), `GET /api/audit/self-config` (REST), the **Self-config** card on the PWA, or the file itself on disk.
+
+**How to set it** — in YAML under `mcp:` as `allow_self_config: false`; with `datawatch config set mcp.allow_self_config false` (operator CLI); in the PWA under Settings → General → **Self-config** (toggle **Allow self-config**, plus the audit path and the record-denied toggle); with `PUT /api/config` and the body `{"mcp.allow_self_config": false}`; or from inside a session — there the key is bootstrap-protected: `config_set` with it is always refused, whatever the alias's state. All writes need a restart to affect the default capability grant of newly spawned sessions. Scoping and hardening — narrowing the group with a custom one, removing it from the session default, or granting it to one selected daemon — is walked through step by step in [`howto/self-config-capability.md`](howto/self-config-capability.md).
+
+**See also:** [`howto/self-config-capability.md`](howto/self-config-capability.md) · [`howto/federation-cbac.md`](howto/federation-cbac.md) · capability groups
+
 ### Settings — About
 
 A short identity panel: this daemon's hostname + version, a link to the mobile companion app, an Orphaned Tmux Sessions maintenance row, and a single hyperlink to **System documentation & diagrams** which opens this manual in the in-app rendered viewer.

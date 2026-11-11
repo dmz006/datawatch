@@ -1557,9 +1557,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				sessionChannelEnv["DATAWATCH_CA_CERT"] = v
 			}
 			if sessionTokenStore != nil {
+				// BL412 option C followup — the session-default grant for
+				// the spawned session's scoped credential carries the
+				// builtin "self-config" capability group when the
+				// allow_self_config alias is enabled (the default); an
+				// explicit operator grant (session.capabilities) is always
+				// used as-written, which is how the group is removed or
+				// narrowed on purpose.
 				grantCaps := cfg.Session.Capabilities
 				if len(grantCaps) == 0 {
-					grantCaps = []string{"session-default"}
+					grantCaps = federation.SessionDefaultGrantCaps(cfg.MCP.SelfConfigEnabled())
 				}
 				resolved := federation.Resolve(grantCaps, nil)
 				if tok, err := sessionTokenStore.Mint(sess.FullID, resolved); err != nil {
@@ -3091,6 +3098,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// backend up here to forward the alert.
 	commBackends := map[string]messaging.Backend{}
 
+	// BL110 — one shared config-write audit sink for this daemon. The SAME
+	// instance is wired into every surface below — the REST server, the MCP
+	// server, and every comm router (including the test-injection router)
+	// — so a config write from a session or federation peer lands as
+	// exactly one record, surface "rest", "mcp", or "comm". Operator (admin)
+	// callers are skipped by every surface; the loopback PUTs that MCP
+	// config_set / comm configure issue are admin and so are not
+	// double-recorded by the REST point.
+	cfgAuditSink := configAuditSinkFor(cfg)
+
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
@@ -3102,6 +3119,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			r.SetWebPort(cfg.Server.Port)
 			r.SetWebToken(cfg.Server.Token)
 		}
+		// BL110 — comm configure audit point (surface "comm").
+		r.SetConfigAuditor(cfgAuditSink)
 		// BL102 — register the backend by its declared name. Last
 		// router-construction call wins per name; for parents that
 		// run multiple instances of the same backend (rare) the
@@ -3190,6 +3209,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return err
 			}
 			req.Header.Set("Content-Type", "application/json")
+			// Token-protected daemon: present the loopback as admin, the
+			// same way Router.commGet does — an unauthenticated PUT would
+			// return 401 and comm `configure` would break whenever
+			// server.token is set.
+			if cfg.Server.Token != "" {
+				req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("API call failed: %w", err)
@@ -3569,6 +3595,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if traceStore != nil {
 			httpServer.SetTraceStore(traceStore)
 		}
+		// BL110 — REST config-write audit point (surface "rest"): shares the
+		// sink with the MCP and comm surfaces.
+		httpServer.SetConfigAuditor(cfgAuditSink)
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -8609,6 +8638,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
+		// BL110 — the comm configure path in this router audits (surface
+		// "comm") through the shared sink; session attribution +
+		// config:write decision arrive from the REST layer per request.
+		testRouter.SetConfigAuditor(cfgAuditSink)
 		testRouter.SetProjectStore(projectStore)
 		testRouter.SetClusterStore(clusterStore)
 		testRouter.SetAgentManager(agentMgr)
@@ -8640,6 +8673,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				return err
 			}
 			req.Header.Set("Content-Type", "application/json")
+			// Token-protected daemon: present the loopback as admin, the
+			// same way Router.commGet does — an unauthenticated PUT would
+			// return 401 and comm `configure` would break whenever
+			// server.token is set.
+			if cfg.Server.Token != "" {
+				req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("API call failed: %w", err)
@@ -8676,7 +8716,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			testPipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 			testRouter.SetPipelineExecutor(pipelinePkg.NewRouterAdapter(testPipeExec))
 		}
-		httpServer.SetTestMessageHandler(testRouter.HandleTestMessage)
+		httpServer.SetTestMessageHandler(func(text string, at server.TestMessageAttribution) []string {
+			return testRouter.HandleAttributedTestMessage(text, router.ConfigureAttribution{
+				Caller:             at.Caller,
+				ConfigWriteAllowed: at.ConfigWriteAllowed,
+				DenyReason:         at.DenyReason,
+			})
+		})
 		// Start system statistics collector (assign to shared var for router access)
 		statsCollector = statspkg.NewCollector(expandHome(cfg.DataDir))
 		statsCollector.SetSessionCountFunc(func() (int, int) {
@@ -9546,6 +9592,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		ConfigAudit:         cfgAuditSink,     // BL110 — shared sink (same instance as REST + comm)
 		RestartFn: guardRestart(func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
@@ -9581,12 +9628,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Println("[docsindex] LLM translator attached (uses configured Ollama/OpenWebUI backend)")
 		}
 	}
-	// BL110 — default self-modify audit path when AllowSelfConfig is on
-	// and the operator hasn't picked an explicit one.
-	if cfg.MCP.AllowSelfConfig && cfg.MCP.SelfConfigAuditPath == "" {
-		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
-			"audit", "config-self-modify.jsonl")
-	}
+	// BL110 — the audit path default is applied by configAuditSinkFor (see runStart setup).
 	if pipeAdapter != nil {
 		mcpSrv.SetPipelineAPI(pipeAdapter)
 	}
@@ -11042,6 +11084,29 @@ func validateLoopback(cfg *config.Config) error {
 		return fmt.Errorf("loopback %s returned HTTP %d", url, resp.StatusCode)
 	}
 	return nil
+}
+
+// configAuditSinkFor (BL110) builds the shared config-write audit sink for
+// this invocation: mcp.self_config_audit_path (defaulting to
+// <data>/audit/config-self-modify.jsonl while self-config is enabled and the
+// path is unset) plus the mcp.self_config_audit_denied flag. runStart wires
+// the same instance into every surface (REST server, MCP server, comm
+// routers) and runMCP into its MCP server, so a config write from a session
+// or federation peer is recorded exactly once regardless of surface.
+func configAuditSinkFor(cfg *config.Config) *federation.ConfigAuditor {
+	if cfg.MCP.SelfConfigEnabled() && cfg.MCP.SelfConfigAuditPath == "" {
+		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
+			"audit", "config-self-modify.jsonl")
+	}
+	sink := federation.NewConfigAuditor(cfg.MCP.SelfConfigAuditPath, cfg.MCP.SelfConfigAuditDeniedOn())
+	// AGENT.md's Audit Logging Rule: the config-write sink, like the operator
+	// audit log, is emittable in both JSON-lines and CEF. When the daemon
+	// mirrors the operator audit log to CEF (audit.cef_mirror_enabled), the
+	// self-config audit trail mirrors too (<path>.cef).
+	if cfg.Audit.CEFMirrorEnabled {
+		sink.EnableCEFMirror()
+	}
+	return sink
 }
 
 func expandHome(p string) string {
@@ -15274,6 +15339,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		ConfigAudit:         configAuditSinkFor(cfg), // BL110 — shared sink
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

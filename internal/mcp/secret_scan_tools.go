@@ -58,7 +58,7 @@ func (s *Server) handleSecretScanConfigSet(ctx context.Context, req mcpsdk.CallT
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if denied := s.allowSelfConfigCheck(); denied != nil {
+	if denied := s.selfConfigGate(); denied != nil {
 		return denied, nil
 	}
 	patch := map[string]any{}

@@ -158,7 +158,7 @@ func (s *Server) handleComputePinSettingsMCP(ctx context.Context, req mcpsdk.Cal
 		if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 			return deny, nil
 		}
-		if denied := s.allowSelfConfigCheck(); denied != nil {
+		if denied := s.selfConfigGate(); denied != nil {
 			return denied, nil
 		}
 		secs := req.GetFloat("pin_check_seconds", -1)

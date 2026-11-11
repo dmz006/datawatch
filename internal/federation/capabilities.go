@@ -275,6 +275,42 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Builtin:     true,
 		Caps:        []string{CapConfigRead, CapConfigWrite, CapUsageRead, CapUsageWrite},
 	},
+	// self-config (BL412 option C, docs/plans/2026-10-29-bl412-self-config-
+	// gate-proposal.md; operator answer 2026-11-01: fold the allow_self_config
+	// switch into the capability system as a built-in group, covering only
+	// non-secret settings). Holds exactly the configuration-write capabilities
+	// a session needs to change daemon settings:
+	//   config:write     — config_set, every *_config_set tool (detection,
+	//                     dns channel, proxy, channel routing, council,
+	//                     orchestrator, autonomous, autonomous scan, smoke
+	//                     forward), compute_pin_settings, usage_backoff_set
+	//   autonomous:write — autonomous_config_set, orchestrator_config_set,
+	//                     autonomous_scan_config_set (and their getters'
+	//                     sibling settings writers)
+	//   observers:write  — observer_config_set
+	//   llms:write       — llm_add / llm_update / llm_delete and the rest of
+	//                     the LLM registry writes
+	//   usage:write      — burn_guard_config_set, usage_extra_credit_set,
+	//                     usage_remaining_work_set
+	// Chosen exclusions, recorded here per the operator's "non-secret
+	// settings only" answer: secrets:* (secret_set and friends),
+	// federation:* — so server_add / server_update write the upstream-server
+	// registry but are granted only via federation:write, never this group;
+	// identity and daemon-control (restart_daemon / reload) have no dedicated
+	// capability to withhold, so they are kept OUT of the self-config
+	// classification instead (IsConfigWriteTool in mcp_tool_caps.go).
+	//
+	// BL412 option C followup: mcp.allow_self_config is the ALIAS for this
+	// group and defaults to ENABLED. When the alias is enabled, spawned
+	// sessions' scoped credentials are minted with this group added to the
+	// session-default grant (SessionDefaultGrantCaps below); an explicit
+	// grant (session.capabilities) can remove or narrow it.
+	SelfConfigGroup: {
+		Name:        SelfConfigGroup,
+		Description: "Session config-write surface: the setting writers a session may run — config:write, autonomous:write, observers:write, llms:write, usage:write. Excluded (non-secret settings only) and recorded here: secrets (secret_*), federation (so server_add/server_update stay outside), identity (set_identity/update_identity/configure_identity/restore/reset_identity) and daemon control (restart_daemon, reload) — see IsConfigWriteTool for the per-tool boundary",
+		Builtin:     true,
+		Caps:        []string{CapConfigWrite, CapAutonomousWrite, CapObserversWrite, CapLLMsWrite, CapUsageWrite},
+	},
 	"analytics-viewer": {
 		Name:        "analytics-viewer",
 		Description: "Cost analytics, dashboard, and audit log",
@@ -423,6 +459,27 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 	},
 }
 
+// SelfConfigGroup is the name of the builtin capability group that
+// mcp.allow_self_config aliases (BL412 option C followup,
+// docs/plans/2026-10-29-bl412-self-config-gate-proposal.md). Defined as a
+// constant so the alias and the group cannot drift apart.
+const SelfConfigGroup = "self-config"
+
+// SessionDefaultGrantCaps is the grant list (group names) minted into a
+// spawned session's scoped credential when the operator has NOT set
+// session.capabilities: the builtin "session-default" group plus, when
+// the allow_self_config alias is enabled (its default), the builtin
+// "self-config" group. An explicit operator grant (session.capabilities)
+// is always used as-written instead of this helper — that is how the
+// self-config group is removed or narrowed on purpose.
+func SessionDefaultGrantCaps(selfConfigEnabled bool) []string {
+	grant := []string{"session-default"}
+	if selfConfigEnabled {
+		grant = append(grant, SelfConfigGroup)
+	}
+	return grant
+}
+
 // Resolve expands a slice of capability strings (group names and/or individual
 // cap strings) into a deduplicated set of individual capability strings.
 // custom is the operator-defined group map (may be nil).
@@ -479,7 +536,7 @@ func Check(granted []string, required string) bool {
 func ListBuiltinGroups() []*CapabilityGroup {
 	order := []string{
 		"monitor", "session-viewer", "session-operator",
-		"inference-admin", "config-reader", "config-admin",
+		"inference-admin", "config-reader", "config-admin", "self-config",
 		"analytics-viewer", "autonomous-operator", "council-operator",
 		"federation-peer", "comm-bridge", "comms-channel-agent", "session-default", "read-only", "full-control",
 	}

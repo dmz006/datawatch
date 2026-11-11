@@ -2251,20 +2251,73 @@ type MCPConfig struct {
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
 
-	// AllowSelfConfig (BL110) gates the `config_set` MCP tool. Default
-	// false → AI sessions calling `config_set` get a permission-denied
-	// response. Set true (per the BL110 vision: "datawatch will run
-	// itself one day") to let an in-process AI mutate its own config.
-	// Every approved mutation is logged to the daemon's stderr +
-	// audit/config-self-modify.jsonl so an operator can review what
-	// the AI changed. The setting itself can NOT be flipped via
-	// config_set — bootstrap protection.
-	AllowSelfConfig bool `yaml:"allow_self_config,omitempty"`
+	// AllowSelfConfig (BL110; BL412 option C followup) is the alias for
+	// the builtin "self-config" capability group (defined in
+	// internal/federation/capabilities.go). Tri-state: nil (the key
+	// absent from the YAML) and an explicit true both read as ENABLED —
+	// that is the default; an explicit false disables it. Use
+	// SelfConfigEnabled() rather than reading the field directly.
+	//
+	// With the alias enabled:
+	//   - AI sessions calling the config_set MCP tools (and the named
+	//     *_config_set tools that cover the same non-secret daemon
+	//     settings — see federation.IsConfigWriteTool) are allowed;
+	//     every mutation is still logged to the daemon's stderr +
+	//     audit/config-self-modify.jsonl, and the setting itself
+	//     remains bootstrap-protected (it cannot be flipped via
+	//     config_set).
+	//   - spawned sessions' scoped credentials are minted with the
+	//     builtin "self-config" group added to the session-default
+	//     grant, so the same tool set is also gated the capability way
+	//     over the REST chokepoint (POST /api/mcp/call).
+	//
+	// Operators who want it off write allow_self_config: false; an
+	// explicit grant (session.capabilities) can remove or narrow it.
+	// Design: docs/plans/2026-10-29-bl412-self-config-gate-proposal.md;
+	// see also docs/howto/federation-cbac.md.
+	AllowSelfConfig *bool `yaml:"allow_self_config,omitempty"`
 
 	// SelfConfigAuditPath (BL110) is the file the self-modify audit
 	// stream writes to. Default <data_dir>/audit/config-self-modify.jsonl.
 	// Empty disables the file sink (events still go to stderr).
 	SelfConfigAuditPath string `yaml:"self_config_audit_path,omitempty"`
+
+	// SelfConfigAuditDenied (BL110 extension) controls whether DENIED
+	// config-write attempts are recorded by the shared audit sink in
+	// addition to allowed writes. Absent (nil) reads as true — an
+	// attempt is an attempt; operators who want allowed-only logs write
+	// self_config_audit_denied: false.
+	SelfConfigAuditDenied *bool `yaml:"self_config_audit_denied,omitempty"`
+}
+
+// SelfConfigAuditDeniedOn resolves the self_config_audit_denied tri-state:
+// an absent key (nil) reads as true (denied attempts ARE recorded), and
+// an explicit false disables them.
+func (m MCPConfig) SelfConfigAuditDeniedOn() bool {
+	return m.SelfConfigAuditDenied == nil || *m.SelfConfigAuditDenied
+}
+
+// SelfConfigEnabled resolves the allow_self_config alias: an absent key
+// (nil pointer) reads as ENABLED — the default since the BL412 option C
+// followup (docs/plans/2026-10-29-bl412-self-config-gate-proposal.md);
+// an explicit false disables it. All runtime gates should call this
+// rather than dereferencing AllowSelfConfig directly.
+func (m MCPConfig) SelfConfigEnabled() bool {
+	return m.AllowSelfConfig == nil || *m.AllowSelfConfig
+}
+
+// BoolPtr returns a pointer to b. Convenient for the tri-state bool
+// config fields (e.g. MCPConfig.AllowSelfConfig), where nil carries
+// meaning: a *bool field with yaml:"...,omitempty" stays absent when
+// nil, while an explicit false or true round-trips through Save/Load.
+func BoolPtr(b bool) *bool { return &b }
+
+// selfConfigMigrationLogf carries the one-line notice raised when the
+// allow_self_config default-flip migration (in applyDefaults) fills an
+// absent key with the new default (enabled). Tests replace it to
+// capture the output — same convention as usageCalculatorLogf.
+var selfConfigMigrationLogf = func(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
 
 // SignalConfig holds Signal-specific configuration.
@@ -7762,6 +7815,20 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.MCP.SSEBindTimeout <= 0 {
 		cfg.MCP.SSEBindTimeout = 120 * time.Second
+	}
+	// BL412 option C followup (docs/plans/
+	// 2026-10-29-bl412-self-config-gate-proposal.md) — the
+	// allow_self_config default flip, isolated here as a migration so it
+	// is testable in one place: allow_self_config is now the alias for
+	// the builtin "self-config" capability group and defaults to
+	// ENABLED. An explicit value (true OR false in the YAML) is
+	// preserved as-written — this block only fills nil → true, so an
+	// operator's explicit false never silently flips. Idempotent: once
+	// filled, a second application is a no-op and logs nothing.
+	if cfg.MCP.AllowSelfConfig == nil {
+		cfg.MCP.AllowSelfConfig = BoolPtr(true)
+		selfConfigMigrationLogf(
+			"mcp.allow_self_config: key absent — applying new default (enabled), the alias for the builtin \"self-config\" capability group; set allow_self_config: false to disable")
 	}
 	if cfg.Session.LogLevel == "" {
 		cfg.Session.LogLevel = "info"

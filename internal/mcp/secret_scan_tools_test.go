@@ -155,7 +155,7 @@ func TestSecretScanConfigSet_DisabledByAllowSelfConfig_NoBackendCall(t *testing.
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: false},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(false)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -194,7 +194,7 @@ func TestSecretScanConfigSet_AllFourParams_PutsCorrectPatch(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -241,7 +241,7 @@ func TestSecretScanConfigSet_OnlyMode_PatchesOnlyMode(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -281,7 +281,7 @@ func TestSecretScanConfigSet_NoFields_NoOp_NoRequest(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -309,7 +309,7 @@ func TestSecretScanConfigSet_BackendError_ToolError(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -336,7 +336,7 @@ func TestSecretScanConfigSet_FedCap_Denied(t *testing.T) {
 	}))
 	defer srv.Close()
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 	peer := &multiserver.Entry{
 		Name:         "reader-peer",
 		Federated:    true,
@@ -369,7 +369,7 @@ func TestSecretScanConfigSet_FedCap_Allowed_Proceeds(t *testing.T) {
 	}))
 	defer srv.Close()
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 	peer := &multiserver.Entry{
 		Name:         "writer-peer",
 		Federated:    true,

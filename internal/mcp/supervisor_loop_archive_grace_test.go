@@ -40,7 +40,7 @@ func TestSupervisorLoopArchiveGraceMCP(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 
 	key := "autonomous." + supervisorloop.KeyArchiveCancelledAfterMinutes
 	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{"key": key, "value": "15"}))

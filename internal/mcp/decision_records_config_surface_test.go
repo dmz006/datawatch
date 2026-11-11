@@ -88,7 +88,7 @@ func newDecisionRecordMCPServer(t *testing.T) (*decisionRecordMCPDaemon, *Server
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	t.Cleanup(srv.Close)
-	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 func decisionRecordConfigSet(t *testing.T, s *Server, key, value string) string {

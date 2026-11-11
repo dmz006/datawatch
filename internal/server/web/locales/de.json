@@ -4633,5 +4633,16 @@
   "observer_peer_never_pushed": "Nie gesendet",
   "settings_observer_peers": "Observer-Peers",
   "settings_observer_peer_silent_alert_minutes": "Alarm bei stillem Peer nach (Minuten; 0 = aus)",
-  "settings_observer_peer_silent_alert_minutes_hint": "Alarm auslösen, wenn ein registrierter Observer-Peer so viele Minuten nichts gesendet hat. 0 deaktiviert die Prüfung."
+  "settings_observer_peer_silent_alert_minutes_hint": "Alarm auslösen, wenn ein registrierter Observer-Peer so viele Minuten nichts gesendet hat. 0 deaktiviert die Prüfung.",
+  "settings.self_config": "Self-config",
+  "settings.self_config.allow": "Agent-Selbstkonfiguration erlauben",
+  "settings.self_config.allow_help": "An: Ein Agent mit der self-config-Gruppe (mcp.allow_self_config) darf eigene nicht-sensible Einstellungen ändern — config, sessions, observers, LLMs, quota. Aus: Versuche werden abgelehnt und protokolliert.",
+  "settings.self_config.audit_path": "Pfad des Audit-Logs",
+  "settings.self_config.audit_denied": "Auch abgelehnte Versuche protokollieren",
+  "settings.self_config.audit_denied_help": "An (Standard): Auch abgelehnte Versuche werden mit Grund protokolliert. Aus: nur erlaubte Schreibungen.",
+  "settings.self_config_recent": "Letzte self-config-Audit-Einträge",
+  "settings.self_config_recent_loading": "Wird geladen …",
+  "settings.self_config_recent_empty": "Noch keine self-config-Audit-Einträge.",
+  "settings.self_config_recent_more": "%1$d ältere(r) Eintrag(e) nicht angezeigt",
+  "settings.self_config_recent_unavailable": "Self-config-Audit-Log nicht verfügbar"
 }

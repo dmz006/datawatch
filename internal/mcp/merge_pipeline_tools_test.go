@@ -648,7 +648,7 @@ func TestMergePipelineMCP_ReleaseApprovalConfigSetRouting(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	t.Cleanup(srv.Close)
-	s := &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	s := &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 	ctx := context.Background()
 	set := func(key, value string) *mcpsdk.CallToolResult {
 		t.Helper()

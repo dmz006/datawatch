@@ -3075,6 +3075,45 @@ serving.
   stdio MCP server's stdout stays strict JSON-RPC; recovery/diagnostic messages go
   to stderr, so no line outside the protocol can corrupt a client's stream.
 
+### Self-config: what sessions may change about this daemon
+
+The builtin capability group **`self-config`** is the ability of a session or a
+connected agent to change this daemon's own non-secret configuration at runtime
+(`config:write`, `autonomous:write`, `observers:write`, `llms:write`, `usage:write`
+— nothing under `secrets:` or `federation:`, no identity or daemon control).
+The operator-facing switch for the whole group is `mcp.allow_self_config`: it is
+the group, surfaced as one field. **Default: enabled** — absent
+`mcp.allow_self_config` means on; an explicit `false` disables it.
+
+While disabled:
+
+- every MCP configuration-write tool refuses with `permission denied: self-modify is disabled (mcp.allow_self_config: false) — remove the explicit false (the default is enabled) and restart to enable`;
+- the built-in `session-default` capability grant no longer includes the group, so a spawned session's credentials cannot write config at all, and chat-channel `configure` for a configuration key is refused (the refusal is audit-logged, surface `comm`);
+- operators keep full control: YAML, `datawatch config set`, the Web UI
+  (Settings → General → **Self-config**), and `PUT /api/config` all still work, because those act with the operator credential, not a session grant.
+
+Two protections never go away:
+
+- **Bootstrap protection.** `config_set` with key `mcp.allow_self_config` is refused on the MCP surface, whatever the alias's state: `refused: mcp.allow_self_config is bootstrap-protected; edit the YAML directly to change it`. On the other session surfaces the key is only reachable by a credential that holds `config:write` itself — and disabling the alias is exactly what removes that from the default grant — so a closed gate can never be re-opened by the sessions it used to cover. Re-enabling is a deliberate operator act: edit the YAML (remove the `false` or set `true`) and restart.
+- **Audit is never gated.** One record per configuration-write attempt, from
+  every session-facing surface — the MCP config-write tools (surfaces `mcp`),
+  `PUT /api/config` (`rest`), chat `configure` (`comm`) — allowed **and**
+  (recorded on by default, `mcp.self_config_audit_denied`) refused, with the
+  refusal reason. Fields: time, surface, tool, keys, redacted values, acting
+  credential, allowed, reason. Reads: the MCP tool `self_config_audit`
+  (`limit` 1–1000, default 100), `datawatch audit self-config`, `GET
+  /api/audit/self-config`, the card on the PWA, or the file itself — JSONL at
+  `mcp.self_config_audit_path` (default
+  `<data dir>/audit/config-self-modify.jsonl`).
+
+Hardening, strongest first, is walked through in
+[`howto/self-config-capability.md`](howto/self-config-capability.md): close the
+gate (`allow_self_config: false`) and restart; remove the group from the
+`session-default` grant entirely (`session.capabilities: ["session-default"]`
+in the same YAML, an explicit list always wins); define a narrower
+custom group (for example only `llms:write`); grant that to the one session
+(or the sessions of the one daemon) that needs it (`session.capabilities`). Definitions: [datawatch-definitions.md#self-config](datawatch-definitions.md#self-config).
+
 ---
 
 ## Chat Mode and Output Modes

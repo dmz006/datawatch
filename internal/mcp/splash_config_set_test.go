@@ -64,7 +64,7 @@ func newSplashMCPServer(t *testing.T) (*splashMCPDaemon, *Server) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	t.Cleanup(srv.Close)
-	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 func splashConfigSet(t *testing.T, s *Server, key, value string) string {

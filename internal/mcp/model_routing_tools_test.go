@@ -218,7 +218,7 @@ func TestModelRoutingTools_ConfigKeysRoundTrip(t *testing.T) {
 
 	// config_set passes a single dotted key through unchanged.
 	s, rec = activateServer(t, http.StatusOK, `{}`)
-	s.cfg = &config.MCPConfig{AllowSelfConfig: true}
+	s.cfg = &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}
 	if res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{
 		"key": "autonomous.model_routing.probe_timeout_seconds", "value": "12",
 	})); err != nil || res == nil || res.IsError {

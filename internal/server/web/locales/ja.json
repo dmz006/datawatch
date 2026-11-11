@@ -4633,5 +4633,16 @@
   "observer_peer_never_pushed": "未送信",
   "settings_observer_peers": "オブザーバーピア",
   "settings_observer_peer_silent_alert_minutes": "無通信ピアのアラートまでの時間（分、0で無効）",
-  "settings_observer_peer_silent_alert_minutes_hint": "登録済みオブザーバーピアがこの分数のあいだ送信しない場合にアラートを出します。0でチェックを無効にします。"
+  "settings_observer_peer_silent_alert_minutes_hint": "登録済みオブザーバーピアがこの分数のあいだ送信しない場合にアラートを出します。0でチェックを無効にします。",
+  "settings.self_config": "セルフ設定",
+  "settings.self_config.allow": "エージェントの自己設定を許可",
+  "settings.self_config.allow_help": "ON: self-config グループ (mcp.allow_self_config) を持つエージェントは、自身の非機密設定 (config, sessions, observers, LLMs, quota) の変更が可能。OFF: いかなる試行も拒否され、監査記録されます。",
+  "settings.self_config.audit_path": "監査ログのパス",
+  "settings.self_config.audit_denied": "拒否された試行も記録する",
+  "settings.self_config.audit_denied_help": "ON（デフォルト）: 拒否された試行も理由とともに記録。OFF: 許可された書き込みのみ記録。",
+  "settings.self_config_recent": "直近のセルフ設定監査記録",
+  "settings.self_config_recent_loading": "読み込み中…",
+  "settings.self_config_recent_empty": "まだセルフ設定監査記録はありません。",
+  "settings.self_config_recent_more": "%1$d件の古い記録は表示されていません",
+  "settings.self_config_recent_unavailable": "セルフ設定監査ログを利用できません"
 }
