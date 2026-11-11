@@ -160,6 +160,7 @@ var MCPToolCap = map[string]string{
 	"capacity_admission":                   CapAutonomousRead,
 	"autonomous_progress":                  CapAutonomousRead,
 	"autonomous_progress_trend":            CapAutonomousRead,
+	"autonomous_timeline":                  CapAutonomousRead,
 	"autonomous_lane_fill_status":          CapAutonomousRead,
 	"autonomous_infra_retries":             CapAutonomousRead,
 	"onboarding_report":                    CapAutonomousRead,
