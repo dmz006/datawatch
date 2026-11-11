@@ -4031,3 +4031,241 @@ entries:
     expires: "2026-12-06"
     validated_by: "claude-session"
     reason: "The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists CVE-2026-85091 (HIGH) on zlib1g 1:1.2.13.dfsg-1 as affected with no fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as vulnerable with no fixed bookworm version; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-107364
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-107364 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-107364 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112315
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112315 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112315 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112316
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112316 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112316 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112317
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112317 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112317 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112318
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112318 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112318 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112319
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112319 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112319 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112320
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112320 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112320 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112321
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112321 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112321 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112322
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112322 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112322 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-112323
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-112323 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112323 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-118380
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-118380 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-118380 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-119079
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-119079 is in an ASN.1 sequence decoder in the client library. It is reachable only when git, ssh or curl performs Kerberos or GSSAPI authentication against a Kerberos realm. The agent images configure no Kerberos client, no keytab and no realm, and run no GSSAPI-authenticated service, so the code path is not exercised."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-119079 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-71199
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-71199 is in CAMMAC checksum validation in the client library. It is reachable only when git, ssh or curl performs Kerberos or GSSAPI authentication against a Kerberos realm. The agent images configure no Kerberos client, no keytab and no realm, and run no GSSAPI-authenticated service, so the code path is not exercised."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71199 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-71200
+    kind: container
+    package: "libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0"
+    version: "1.20.1-2+deb12u5"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on agent-base built from main on 2026-11-11: dpkg -l shows only libgssapi-krb5-2, libkrb5-3 and libkrb5support0 at 1.20.1-2+deb12u5 (libk5crypto3 is their dependency) and no krb5-kdc or krb5-admin-server package; ls /usr/sbin shows no krb5kdc or kadmind; apt-cache rdepends --installed shows the libraries are pulled in only by openssh-client and libcurl."
+      analysis: "CVE-2026-71200 is in MIT Kerberos server-side code that runs only inside kadmind or the KDC (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab reader or KDC request handling). The image contains the client libraries only and no KDC or kadmin daemon, so the vulnerable code never runs."
+    first_added: "2026-11-11"
+    added: "2026-11-11"
+    expires: "2026-12-11"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71200 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
