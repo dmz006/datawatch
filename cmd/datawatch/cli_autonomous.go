@@ -284,6 +284,7 @@ Subcommands:
 		newAutonomousPRDSetGuidedModeCmd(),
 		newAutonomousPRDSetNotifyEventsCmd(),
 		newAutonomousPRDSetGitCmd(),
+		newAutonomousBranchRefreshCmd(),
 		newAutonomousPRDSetSkillsCmd(),
 		newAutonomousTypesListCmd(),
 		newAutonomousTypeRegisterCmd(),
@@ -2030,6 +2031,32 @@ func newAutonomousPRDSetGitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "PR base branch override (empty = repo's own default branch)")
 	cmd.Flags().StringVar(&pushOnComplete, "push-on-complete", "", "per-PRD push-on-complete override: never | branch | default_branch | inherit (inherit = clear the override, use the daemon's git.push_on_complete); omit to leave unchanged")
 	return cmd
+}
+
+func newAutonomousBranchRefreshCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "branch-refresh <id> <enabled|disabled|inherit>",
+		Short: "Set the per-Automaton branch refresh override (enabled, disabled, or inherit the daemon setting)",
+		Long: "Set the branch refresh override of one Automaton. enabled refreshes it even when the daemon\n" +
+			"setting is off, disabled never refreshes it, inherit clears the override so\n" +
+			"autonomous.branch_refresh_enabled applies. The daemon settings are set with\n" +
+			"datawatch config set autonomous.branch_refresh_enabled / autonomous.branch_refresh_behind_limit.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			var v string
+			switch strings.ToLower(args[1]) {
+			case "enabled", "enable", "on", "true":
+				v = "true"
+			case "disabled", "disable", "off", "false":
+				v = "false"
+			case "inherit", "clear", "default":
+				v = "null"
+			default:
+				return fmt.Errorf("mode must be enabled, disabled or inherit, got %q", args[1])
+			}
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/branch-refresh", []byte(`{"enabled":`+v+`}`))
+		},
+	}
 }
 
 func newAutonomousPRDSetSkillsCmd() *cobra.Command {
