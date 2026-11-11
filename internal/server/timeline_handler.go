@@ -18,6 +18,35 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
+// TimelineRESTOperation is one timeline REST operation: the name and method.
+type TimelineRESTOperation struct {
+	Name   string
+	Method string
+}
+
+// timelineRESTOperations is the single list of timeline REST operations, read
+// by the parity test.
+var timelineRESTOperations = []TimelineRESTOperation{
+	{"timeline", http.MethodGet},
+}
+
+// TimelineRESTOperations returns the timeline REST operations.
+func TimelineRESTOperations() []TimelineRESTOperation {
+	return append([]TimelineRESTOperation(nil), timelineRESTOperations...)
+}
+
+// NewTimelineHandler builds the timeline route alone, for the parity test.
+// now is the injected clock (nil = time.Now), like NewProgressHandler.
+func NewTimelineHandler(mgr AutonomousAPI, now func() time.Time) http.Handler {
+	s := &Server{autonomousMgr: mgr}
+	if now != nil {
+		s.timelineNow = now
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/autonomous/timeline", s.handleAutonomousTimeline)
+	return mux
+}
+
 // timelineProvider is the optional AutonomousAPI extension that supplies the
 // records the timeline is drawn from. Kept off AutonomousAPI so test doubles
 // keep compiling; a manager without it draws an empty chart.
