@@ -38,6 +38,7 @@ type Event struct {
 	ProviderType string
 	Query        string
 	SessionID    string
+	Caller       string // one of the Caller* kinds
 	CacheHit     bool
 	Success      bool
 	Error        string

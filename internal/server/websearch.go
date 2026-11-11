@@ -407,8 +407,12 @@ func (s *Server) handleWebSearchStatsV2(w http.ResponseWriter, r *http.Request) 
 		"provider_names": s.websearchReg.ProviderNames(),
 		"summary":        websearch.Summary{},
 		"daily_series":   []websearch.DayCount{},
+		"callers":        []websearch.CallerCount{},
 	}
 	if s.websearchReg != nil {
+		if callers, err := s.websearchReg.Callers(r.Context(), s.sessionIsAutomaton); err == nil {
+			resp["callers"] = callers
+		}
 		if summary, err := s.websearchReg.Summary(r.Context()); err == nil {
 			resp["summary"] = summary
 		}
@@ -433,4 +437,13 @@ func (s *Server) handleWebSearchHistory(w http.ResponseWriter, r *http.Request) 
 		history, _ = s.websearchReg.History(r.Context(), limit, offset)
 	}
 	writeJSONOK(w, map[string]any{"history": history})
+}
+
+// sessionIsAutomaton reports whether the session belongs to an Automaton task.
+func (s *Server) sessionIsAutomaton(sessionID string) bool {
+	if s.manager == nil || sessionID == "" {
+		return false
+	}
+	sess, ok := s.manager.GetSession(sessionID)
+	return ok && sess != nil && sess.PRDID != ""
 }

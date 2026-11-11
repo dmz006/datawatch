@@ -105,6 +105,16 @@ func (r *Registry) ProviderNames() []string {
 // failed (a single provider's failure is recorded but not returned — the
 // next provider gets a chance).
 func (r *Registry) Search(ctx context.Context, query string, limit int, sessionID string) ([]Result, string, error) {
+	caller := CallerMCP
+	if sessionID != "" {
+		caller = CallerSession
+	}
+	return r.SearchFrom(ctx, query, limit, sessionID, caller)
+}
+
+// SearchFrom is Search with the caller kind named by the caller (one of the
+// Caller* constants), recorded with each search for the usage-by-caller counts.
+func (r *Registry) SearchFrom(ctx context.Context, query string, limit int, sessionID, caller string) ([]Result, string, error) {
 	if r == nil || len(r.providers) == 0 {
 		return nil, "", fmt.Errorf("websearch: no enabled providers configured")
 	}
@@ -118,7 +128,7 @@ func (r *Registry) Search(ctx context.Context, query string, limit int, sessionI
 		if results, ok := r.cache.Get(p.Name, query, limit); ok {
 			r.record(ctx, Event{
 				Time: time.Now(), ProviderName: p.Name, ProviderType: p.Type,
-				Query: query, SessionID: sessionID, CacheHit: true, Success: true,
+				Query: query, SessionID: sessionID, Caller: caller, CacheHit: true, Success: true,
 				ResultCount: len(results),
 			})
 			return results, p.Name, nil
@@ -134,7 +144,7 @@ func (r *Registry) Search(ctx context.Context, query string, limit int, sessionI
 			lastErr = err
 			r.record(ctx, Event{
 				Time: start, ProviderName: p.Name, ProviderType: p.Type,
-				Query: query, SessionID: sessionID, Success: false, Error: err.Error(),
+				Query: query, SessionID: sessionID, Caller: caller, Success: false, Error: err.Error(),
 				LatencyMS: latency.Milliseconds(),
 			})
 			continue
@@ -146,14 +156,14 @@ func (r *Registry) Search(ctx context.Context, query string, limit int, sessionI
 			// results shouldn't block a better provider from being tried).
 			r.record(ctx, Event{
 				Time: start, ProviderName: p.Name, ProviderType: p.Type,
-				Query: query, SessionID: sessionID, Success: true,
+				Query: query, SessionID: sessionID, Caller: caller, Success: true,
 				LatencyMS: latency.Milliseconds(), ResultCount: 0,
 			})
 			continue
 		}
 		r.record(ctx, Event{
 			Time: start, ProviderName: p.Name, ProviderType: p.Type,
-			Query: query, SessionID: sessionID, Success: true,
+			Query: query, SessionID: sessionID, Caller: caller, Success: true,
 			LatencyMS: latency.Milliseconds(), ResultCount: len(results),
 		})
 		r.cache.Set(p.Name, query, limit, results, p.CacheTTL)
@@ -174,6 +184,14 @@ func (r *Registry) record(ctx context.Context, e Event) {
 	// swallowed (nothing actionable a caller could do with a stats-write
 	// failure mid-search).
 	_ = r.store.Record(ctx, e)
+}
+
+// Callers proxies Store.Callers (nil-safe).
+func (r *Registry) Callers(ctx context.Context, isAutomaton func(string) bool) ([]CallerCount, error) {
+	if r == nil || r.store == nil {
+		return []CallerCount{}, nil
+	}
+	return r.store.Callers(ctx, isAutomaton)
 }
 
 // Summary, DailySeries, and History proxy to the underlying Store so

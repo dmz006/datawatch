@@ -46371,7 +46371,26 @@ function _dashRenderWebSearchUsage() {
       </div>`;
     }
   }
+  html += _dashWebSearchCallersHtml(d.callers);
   el.innerHTML = html;
+}
+
+// _dashWebSearchCallersHtml: the counts-by-caller list under the provider bars.
+// Empty when no search has a caller, so the heading never sits over nothing.
+function _dashWebSearchCallersHtml(callers) {
+  const rows = (Array.isArray(callers) ? callers : []).filter(c => c && (c.total || 0) > 0);
+  if (!rows.length) return '';
+  const keys = { session: 'websearch_caller_session', automaton: 'websearch_caller_automaton',
+    mcp: 'websearch_caller_mcp', rest: 'websearch_caller_rest', cli: 'websearch_caller_cli' };
+  const label = k => (keys[k] && t(keys[k])) || k;
+  let h = `<div style="margin-top:6px;font-size:9px;color:var(--text2);">${escHtml(t('websearch_callers') || 'by caller')}</div>`;
+  for (const c of rows) {
+    h += `<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(label(String(c.caller)))}</span>
+      <span style="flex-shrink:0;margin-left:4px;color:var(--text);">${c.total|0}</span>
+    </div>`;
+  }
+  return h;
 }
 
 // ── Work map card (dashboard wiring) ────────────────────────────────────────

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -52,6 +53,10 @@ func NewStore(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("websearch store: create table: %w", err)
 	}
+	// Older databases predate the caller column; add it in place. The error is
+	// ignored on purpose: "duplicate column" on an up-to-date database is the
+	// normal case, and a real failure surfaces at the first Record.
+	_, _ = db.Exec(`ALTER TABLE events ADD COLUMN caller TEXT NOT NULL DEFAULT ''`)
 	return &Store{db: db}, nil
 }
 
@@ -70,9 +75,9 @@ func (s *Store) Record(ctx context.Context, e Event) error {
 		return nil
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO events (ts, provider_name, provider_type, query, session_id, cache_hit, success, error, latency_ms, result_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.Time.UTC().Unix(), e.ProviderName, e.ProviderType, e.Query, e.SessionID,
+		INSERT INTO events (ts, provider_name, provider_type, query, session_id, caller, cache_hit, success, error, latency_ms, result_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Time.UTC().Unix(), e.ProviderName, e.ProviderType, e.Query, e.SessionID, e.Caller,
 		boolToInt(e.CacheHit), boolToInt(e.Success), e.Error, e.LatencyMS, e.ResultCount,
 	)
 	if err != nil {
@@ -292,4 +297,68 @@ func (s *Store) Prune(ctx context.Context, retain time.Duration) error {
 		return fmt.Errorf("websearch store: prune: %w", err)
 	}
 	return nil
+}
+
+// Caller kinds recorded with each search.
+const (
+	CallerSession   = "session"   // an AI coding session's search tool
+	CallerAutomaton = "automaton" // a session working an Automaton task
+	CallerMCP       = "mcp"       // an MCP client with no session
+	CallerREST      = "rest"
+	CallerCLI       = "cli"
+)
+
+// CallerCount is the number of searches made by one kind of caller.
+type CallerCount struct {
+	Caller string `json:"caller"`
+	Total  int    `json:"total"`
+}
+
+// Callers returns search counts by caller kind, largest first. isAutomaton
+// (may be nil) says whether a session id belongs to a session working an
+// Automaton task, so those searches count as automaton rather than session.
+// Rows written before callers were recorded are classified from their session
+// id: a session id means session, none means an MCP client.
+func (s *Store) Callers(ctx context.Context, isAutomaton func(sessionID string) bool) ([]CallerCount, error) {
+	out := []CallerCount{}
+	if s == nil || s.db == nil {
+		return out, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT caller, session_id, COUNT(*) FROM events GROUP BY caller, session_id`)
+	if err != nil {
+		return out, fmt.Errorf("websearch store: callers query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	counts := map[string]int{}
+	for rows.Next() {
+		var caller, sid string
+		var n int
+		if err := rows.Scan(&caller, &sid, &n); err != nil {
+			return out, fmt.Errorf("websearch store: callers scan: %w", err)
+		}
+		if caller == "" {
+			caller = CallerMCP
+			if sid != "" {
+				caller = CallerSession
+			}
+		}
+		if caller == CallerSession && isAutomaton != nil && isAutomaton(sid) {
+			caller = CallerAutomaton
+		}
+		counts[caller] += n
+	}
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("websearch store: callers rows: %w", err)
+	}
+	for k, n := range counts {
+		out = append(out, CallerCount{Caller: k, Total: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Total != out[j].Total {
+			return out[i].Total > out[j].Total
+		}
+		return out[i].Caller < out[j].Caller
+	})
+	return out, nil
 }
