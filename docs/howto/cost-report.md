@@ -165,6 +165,24 @@ The same per-Automaton row (the whole ledger, not the window) appears as `cost` 
 
 The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `session_ids`, `ok` and a `note`. `ok` is true when none are missing. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
 
+### What is recorded per Automaton and role
+
+Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (worker, verifier, rules-review, planner, decompose or guardrail; a retry keeps the role of the session it retries), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so planning, verification and retries are part of its cost and not hidden under the worker.
+
+### Reading the window: a missing row, partial rows and unknown spend
+
+- **A missing row is not zero spend.** The default window is 7 days (`cost_report.default_window_days`). An Automaton that does not appear had no activity in the window. Widen `since` to find it.
+- **Partial rows.** A row whose first activity is before the window start sets `window_partial` and a `window_note`: its figures cover the window only, not the Automaton's whole life. The report body carries a top-level `window_note` when any row is partial.
+- **Unknown spend older than the ledger.** When the window reaches before the 31-day horizon, the report carries `unknown_spend_note` and `unknown_before` (the horizon date), and the affected rows set `spend_unknown` with a `spend_unknown_note`. Spend before that date is **unknown**: it is not zero and is never backfilled.
+
+### Reading the cache tokens
+
+`cache_read` and `cache_creation` sit beside `tokens_in` and `tokens_out` and are counted separately from them. Cache creation is the prompt text written to the provider's cache, and cache read is the cached text reused on a later turn. A large `cache_read` beside a small `tokens_in` is a healthy, cache-heavy session. They are shown as tokens and are not priced separately on the row.
+
+### The API-equivalent label on a bundled plan
+
+On a bundled plan the dollar figure is `api_equivalent_usd`, labeled **“bundled plan — API-equivalent, not billed”**. It is what the same tokens would cost at API rates, shown so Automata can be compared with each other. It is not a charge: the plan is a flat monthly price, and `share_of_monthly_price` and `estimated_usage_points` show how much of the allowance the spend represents.
+
 ## The groupings
 
 | `group_by` | One row per |
@@ -278,10 +296,12 @@ default.
 |---|---|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml`; see `docs/config-reference.yaml` |
 | **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default, JSON the raw body |
-| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); Settings → Cost Report for the five keys |
+| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; settings with `configure cost_report.<key>=<value>` |
+
+The merged change record (merge report) of an Automaton also carries a cost section, read from the same ledger through the same engine.
 
 All five read methods answer from the same engine call over the daemon's
 recorded sessions, so the same window and grouping give the same rows.
