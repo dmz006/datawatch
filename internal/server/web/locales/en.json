@@ -4644,5 +4644,10 @@
   "settings.self_config_recent_loading": "Loading…",
   "settings.self_config_recent_empty": "No self-config audit records yet.",
   "settings.self_config_recent_more": "%1$d older record(s) not shown",
-  "settings.self_config_recent_unavailable": "Self-config audit log unavailable"
+  "settings.self_config_recent_unavailable": "Self-config audit log unavailable",
+  "billing_mode_label": "Billing mode",
+  "billing_mode_option_api": "api",
+  "billing_mode_option_allowance": "allowance",
+  "billing_mode_option_local": "local",
+  "billing_mode_help": "api: each call is billed per token. allowance: calls draw on a flat plan allowance. local: runs on your own hardware at no per-call charge. The cost report groups spend by this word."
 }

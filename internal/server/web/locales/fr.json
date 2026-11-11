@@ -4644,5 +4644,10 @@
   "settings.self_config_recent_loading": "Chargement…",
   "settings.self_config_recent_empty": "Aucun enregistrement d’audit self-config pour l’instant.",
   "settings.self_config_recent_more": "%1$d enregistrement(s) plus ancien(s) non affiché(s)",
-  "settings.self_config_recent_unavailable": "Journal d’audit self-config indisponible"
+  "settings.self_config_recent_unavailable": "Journal d’audit self-config indisponible",
+  "billing_mode_label": "Mode de facturation",
+  "billing_mode_option_api": "api",
+  "billing_mode_option_allowance": "allowance",
+  "billing_mode_option_local": "local",
+  "billing_mode_help": "api : chaque appel est facturé au jeton. allowance : les appels puisent dans un forfait fixe. local : s'exécute sur votre propre matériel sans frais par appel. Le rapport de coûts regroupe les dépenses selon ce mot."
 }
