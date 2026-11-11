@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os/exec"
+	"strings"
 	"testing"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -61,5 +62,31 @@ func TestWithRunnerExitStatus_NoStatusLeavesErrorAlone(t *testing.T) {
 	}
 	if got := withRunnerExitStatus(base, &autonomouspkg.RunnerEvidence{}); got != base {
 		t.Fatalf("evidence without a status changed the error: %v", got)
+	}
+}
+
+func TestWithRunnerExitStatus_NamesNodeModelAndLastLine(t *testing.T) {
+	base := autonomouspkg.ExitSilenceError("runner gone")
+	status := 1
+	err := withRunnerExitStatus(base, &autonomouspkg.RunnerEvidence{
+		ExitStatus: &status,
+		Node:       "gpu-a",
+		Model:      "qwen",
+		LastOutput: []string{"first", "boom happened"},
+	})
+	if !errors.Is(err, autonomouspkg.ErrWorkerStalled) {
+		t.Fatalf("lost ErrWorkerStalled: %v", err)
+	}
+	want := base.Error() + " (pi exited with status 1; node gpu-a; model qwen; last: boom happened)"
+	if err.Error() != want {
+		t.Fatalf("err = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestWithRunnerExitStatus_CapsDetail(t *testing.T) {
+	base := autonomouspkg.ExitSilenceError("runner gone")
+	err := withRunnerExitStatus(base, &autonomouspkg.RunnerEvidence{LastOutput: []string{strings.Repeat("x", 2000)}})
+	if extra := len(err.Error()) - len(base.Error()); extra > runnerStallDetailCap+10 {
+		t.Fatalf("appended %d chars, want a capped detail", extra)
 	}
 }
