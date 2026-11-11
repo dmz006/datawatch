@@ -5681,6 +5681,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// waiting_input. Only the pi-prompt family runs it (nil tracker
 						// otherwise), and mgr.Kill below is the only kill path — no
 						// tmux kill commands.
+						if exitSilenceTracker != nil && family == "pi-prompt" {
+							// A pi failure line already in the output log is the real
+							// failure: fail the attempt now instead of waiting out the
+							// silence limit.
+							if ev, failed := autonomouspkg.PiFailedLineEvidence(staleLogPath, sessionEvidenceNode(s), s.Model); failed {
+								procs := runnerProcessLines(s.TmuxSession)
+								ev.Processes = procs
+								task.RunnerEvidence = &ev
+								reason := "pi reported a failure line in the output log"
+								log.Printf("[autonomous] pi failure line found for session %s task %s/%s; failing the attempt at once",
+									task.SessionID, task.PRDID, task.ID)
+								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task session failed",
+									fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
+								stallErr = withRunnerExitStatus(autonomouspkg.ExitSilenceError(reason), task.RunnerEvidence)
+								break waitLoop
+							}
+						}
 						if exitSilenceTracker != nil {
 							// Runner liveness, not work children, feeds the tracker: the question is
 							// whether the runner has exited. A generating pi run may have no child
