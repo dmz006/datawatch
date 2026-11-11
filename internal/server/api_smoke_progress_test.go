@@ -145,19 +145,34 @@ func TestSmokeProgress_PostedRunAppearsInList(t *testing.T) {
 	}
 	var found *map[string]any
 	for i := range list {
-		if list[i]["id"] == "run-live-1" { found = &list[i]; break }
+		if list[i]["id"] == "run-live-1" {
+			found = &list[i]
+			break
+		}
 	}
 	if found == nil {
 		t.Fatalf("run-live-1 not in list of %d: %s", len(list), listRR.Body.String())
 	}
 	got := *found
-	if got["type"] != "smoke" { t.Errorf("type=%v, want smoke", got["type"]) }
-	if got["version"] != "v9.99.0" { t.Errorf("version=%v, want v9.99.0", got["version"]) }
-	if got["pass"] != float64(5) { t.Errorf("pass=%v, want 5", got["pass"]) }
-	if got["fail"] != float64(1) { t.Errorf("fail=%v, want 1", got["fail"]) }
-	if got["active"] != true { t.Errorf("active=%v, want true", got["active"]) }
+	if got["type"] != "smoke" {
+		t.Errorf("type=%v, want smoke", got["type"])
+	}
+	if got["version"] != "v9.99.0" {
+		t.Errorf("version=%v, want v9.99.0", got["version"])
+	}
+	if got["pass"] != float64(5) {
+		t.Errorf("pass=%v, want 5", got["pass"])
+	}
+	if got["fail"] != float64(1) {
+		t.Errorf("fail=%v, want 1", got["fail"])
+	}
+	if got["active"] != true {
+		t.Errorf("active=%v, want true", got["active"])
+	}
 	// 6 of 8 checks settled (5 pass + 1 fail) = 75%, computed server-side for the card.
-	if got["pct"] != float64(75) { t.Errorf("pct=%v, want 75", got["pct"]) }
+	if got["pct"] != float64(75) {
+		t.Errorf("pct=%v, want 75", got["pct"])
+	}
 }
 
 func TestSmokeProgress_MonitorPeerCanReadButNotWrite(t *testing.T) {

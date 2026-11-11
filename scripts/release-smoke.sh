@@ -452,13 +452,16 @@ print(json.dumps([json.loads(l) for l in lines]))
     "$SMOKE_CUR_SEC" "$SMOKE_CUR_NAME" \
     "$PASS" "$FAIL" "$SKIP" "$secs_json")
   printf '%s' "$payload" > "$SMOKE_PROGRESS_FILE" 2>/dev/null || true
-  # The PWA Smoke card polls GET /api/smoke/progress. When this smoke talks to
-  # a daemon over HTTP (DW_BASE / CI), the local file write above is invisible
-  # to that daemon's data directory, so also upsert the run at the endpoint so
-  # a real run shows on the card. Fire-and-forget: a dashboard outage must
-  # never fail the smoke, and a 4xx (e.g. a read-only peer) is equally harmless.
-  if [[ -n "${BASE:-}" ]] && command -v curl >/dev/null 2>&1; then
-    curl -s --max-time 5 -o /dev/null \
+  # The PWA Smoke card polls GET /api/smoke/progress. When this smoke targets
+  # an external daemon (DW_BASE), the local file write above lands in this
+  # machine's data directory, not that daemon's, so also upsert the run at its
+  # endpoint so a real run shows on its card. The throwaway test daemon of a
+  # default run is not the daemon an operator watches, so it is skipped.
+  # Fire-and-forget: a dashboard outage must never fail the smoke, and a 4xx
+  # (e.g. a read-only peer) is equally harmless. -k matches the rest of this
+  # script (self-signed TLS).
+  if [[ "${EXTERNAL_DAEMON:-0}" == "1" && -n "${BASE:-}" ]] && command -v curl >/dev/null 2>&1; then
+    curl -sk --max-time 5 -o /dev/null \
       ${TOK:+-H "Authorization: Bearer $TOK"} \
       -H 'Content-Type: application/json' \
       -X POST -d "$payload" "$BASE/api/smoke/progress" 2>/dev/null || true
