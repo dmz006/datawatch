@@ -24,7 +24,7 @@ Each flow is documented in its own file under `docs/flow/`.
 | [PRD-DAG Orchestrator Flow](flow/orchestrator-flow.md) | `flow/orchestrator-flow.md` | Operator intent → graph.Plan → Runner walks DAG → autonomous PRD run per node → guardrail attestation → block/warn/pass verdict → graph status |
 | [Telemetry Flow](flow/telemetry-flow.md) | `flow/telemetry-flow.md` | Hook script → POST hook-event → telemetry store → GET telemetry endpoint + persist-on-stop |
 | [Guardrail Flow](flow/guardrail-flow.md) | `flow/guardrail-flow.md` | Guardrail registry, scan unification, profiles, per-Automaton override |
-| [Dashboard Flow](flow/dashboard-flow.md) | `flow/dashboard-flow.md` | WS hook_update → constellation nodes + EKG waveform → sprint pipeline + expand panel |
+| [Dashboard Flow](flow/dashboard-flow.md) | `flow/dashboard-flow.md` | WS hook_update → Network and work-map cards, Lane pulse + burn panel (from `/api/dashboard/work-map` and `/api/dashboard/lane-pulse`) → expand panel |
 | [Classification Verdict Flow](flow/classification-verdict-flow.md) | `flow/classification-verdict-flow.md` | Classify-mode judge: publisher allowlist, calibration, probe, abstain rules, fail-closed blocks and the low-confidence hold |
 | [Automation Triage Flow](flow/automation-triage-flow.md) | `flow/automation-triage-flow.md` | Poll-time triage pass — fill/refresh/clear the stuck Automaton's record, one alert per episode, and the read on every surface |
 | [Automation Merge-Pending Flow](flow/automation-merge-pending-flow.md) | `flow/automation-merge-pending-flow.md` | Poll-time merge-pending check — cache keyed by branch and main tips, git cherry and subject check, state decision, shadow recording vs the on-mode alert |

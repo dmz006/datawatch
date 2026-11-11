@@ -1,31 +1,36 @@
 ---
 docs:
   index: true
-  topics: [dashboard, sessions, telemetry, constellation, guardrail]
+  topics: [dashboard, sessions, telemetry, network, lane-pulse, guardrail]
 ---
 # How-to: /dashboard Mission Control
 
-The `/dashboard` view gives you a live, full-fleet picture of everything
-running on a datawatch instance: session constellation, EKG activity
-waveform, sprint pipeline for active Automata, and an expand panel for
-per-session deep-dives — all driven by WebSocket, zero polling.
+The `/dashboard` view gives you a live picture of the work running on a
+datawatch instance: a **Network** card that maps projects, Automations,
+Automata, tasks and live sessions as one graph, a **Lane pulse** card that
+shows when each capacity lane was busy or waiting, and the feature cards
+described below. Cards are arranged on a grid you can change, and the
+cards read their data from the daemon's REST endpoints, refreshed while the
+view is open.
 
 > **Pre-conditions**: The dashboard surfaces live data from multiple subsystems. For the full experience:
 > - Sessions and LLM cards require an LLM backend. See [llm-registry.md](llm-registry.md).
-> - Automata / Timeline / Network cards require Automata to be running. See [autonomous-planning.md](autonomous-planning.md).
+> - The Network and Work map cards need live sessions or Automaton tasks. See [autonomous-planning.md](autonomous-planning.md).
+> - The Lane pulse card needs a capacity lane to have held or waited on a lease in its window, or a usage reading for the burn panel. See [usage-calculator.md](usage-calculator.md).
 > - Guardrail verdict cards require guardrail profiles to be configured. See [guardrail-library.md](guardrail-library.md).
 
 ## What it is
 
-- **Session constellation** — every active session rendered as a node in an
-  SVG force-directed graph. Node colour reflects session state; pulse ring
-  indicates activity; hook-health ring shows hook event status.
-- **EKG waveform** — a scrolling canvas trace fed by every incoming
-  `hook_update` WebSocket event. Spikes decay over time; the line shows
-  aggregate fleet activity at a glance.
-- **Sprint pipeline** — shown when Automata are running. Horizontal stage
-  bar with story nodes, gate rings (pass/fail from guardrail verdicts), and
-  stage colours matching story status.
+- **Network** — the work map. One node per project, Automation, Automaton,
+  task and live session, with an edge for every parent-to-child link. Click a
+  project to expand it and a session to open it. The footer shows the node
+  count, and a button steps through the running sessions. See
+  [Work map details](#work-map-details).
+- **Lane pulse** — one trace per capacity lane and node over a time window,
+  drawn from busy (a lease held), waiting (a request queued for the lane) and
+  idle time. Under the traces, the **burn panel** shows the weekly usage
+  level in points against the pace line. See
+  [Lane pulse details](#lane-pulse-details).
 - **Integration status (opt-in)** — one row per schedule: status badge,
   summary and time of the latest posted result, an inline SVG sparkline of
   recent statuses (oldest → newest, capped at 60), and a click-through into
@@ -33,9 +38,9 @@ per-session deep-dives — all driven by WebSocket, zero polling.
   Add-Card panel. When no schedules have posted yet, the empty state
   explains how jobs post results and links the result endpoint in the API
   reference (`/api/openapi.yaml`).
-- **Expand panel** — click any constellation node (or the `⊞` button on a
-  session or Automata card) to open a three-column overlay:
-  - **Left sidebar**: live task tree (reuses S3 `renderLiveTaskTree`).
+- **Expand panel** — click the `⊞` button on a session or Automata card to
+  open a three-column overlay:
+  - **Left sidebar**: live task tree (reuses the telemetry task tree renderer).
   - **Main area**: session status board (hook health, current focus, tests,
     git).
   - **Right rail**: guardrail verdicts from the session's telemetry.
@@ -53,23 +58,23 @@ Or from any session card / Automata card via the `⊞` icon button.
 ### 3a. Happy path — PWA
 
 1. Tap **⊞ Dashboard** in the bottom nav.
-2. The EKG canvas animates immediately (even with no hook events — flatline
-   is the baseline state).
-3. Sessions appear as nodes in the constellation. Nodes for running sessions
-   pulse; waiting-input nodes glow amber; failed nodes are red.
-4. Click any node to open the **expand panel** for that session.
-5. In the expand panel, the status board auto-refreshes via WebSocket — no
-   manual reload needed.
-6. Click **← Back** to return to the full constellation view.
-7. When Automata are running, the sprint pipeline appears at the bottom: each
-   story is a stage; gate rings show guardrail pass/fail between stages.
+2. The **Network** card draws the work map. Projects, Automations, Automata,
+   tasks and live sessions appear as nodes; a running session is the one to
+   look for in the **Running now** strip.
+3. Click a session in the map to open it. Click a project to expand it.
+4. The **Lane pulse** card appears once a lane has held or waited on a lease in
+   its window. Each lane and node is a row; busy segments are one colour and
+   waiting segments another.
+5. Open the `⊞` button on a session card or an Automata card to see the
+   **expand panel** for that item. Its status board refreshes via WebSocket,
+   so no manual reload is needed.
 
 ### 3b. Happy path — session/Automata card maximize
 
 1. From the **Sessions** list or the **Automata** list, click the `⊞` button
    on any card.
 2. The dashboard opens with that session's expand panel immediately visible.
-3. Close the expand panel to see the full constellation.
+3. Close the expand panel to return to the board.
 
 ## WebSocket events
 
@@ -77,20 +82,19 @@ The dashboard receives two event types:
 
 | Event | Effect |
 |-------|--------|
-| `hook_update` | Updates the node's hook health + state; adds a spike to the EKG; refreshes expand panel if open for that session |
-| `session_state` | Updates node colour and label when session state changes |
+| `hook_update` | Updates the session's hook health and state on the cards; adds a sample to the Sessions sparkline; refreshes the expand panel if it is open for that session |
+| `session_state` | Updates the session state shown on the cards when it changes |
 
-All updates are zero-polling — no `setInterval` / REST calls inside the
-animation loop.
+The WebSocket keeps the session cards and the expand panel current. The
+Network, Work map and Lane pulse cards read their REST endpoints while the
+view is open, so they can lag the WebSocket by a few seconds.
 
 ## Performance notes
 
-- The constellation SVG re-renders at ~20fps (every 3 animation frames).
-- The EKG canvas renders at full 60fps; the force-layout physics step also
-  runs at ~20fps.
-- The spring pipeline re-renders at ~10fps.
-- The EKG ring buffer caps at 400 events; older events are discarded.
-- Force layout uses simple Euler integration with damping (not a full Barnes-Hut). For fleets > 30 sessions the layout may be slow to converge — expect ~5s for the graph to stabilise.
+- The Sessions sparkline keeps a ring buffer of 400 hook events; older
+  events are discarded.
+- A longer Lane pulse window draws more segments (see
+  [Lane pulse details](#lane-pulse-details)).
 
 ## Expand panel data sources
 
@@ -116,7 +120,9 @@ are what you see in the Add-Card picker.
 | **Smoke Run** | Release smoke and end-to-end run progress, from `GET /api/smoke/progress`. A run against an external daemon (`DW_BASE`) posts its progress to that daemon, so the card shows it there; the throwaway test daemon of a default run is not posted. | "No smoke runs recorded on this machine." |
 | **Cost report** | `GET /api/cost/report`, with the reconciliation against usage readings. See [cost-report.md](cost-report.md). | "No recorded sessions with token usage in this window — the card fills as sessions report usage." |
 | **Search Usage** | `GET /api/websearch/stats`. Searches are counted by caller: session, Automaton task, MCP client, REST and CLI. See [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md). | "Web search is off or no providers are configured." |
+| **Network** | `GET /api/dashboard/work-map` — the same graph as the Work map card, drawn as the Network card's map. Its footer shows the node count and a button to step to the next running session. | "No live sessions or Automaton tasks yet — the map fills as work runs." |
 | **Work map** | `GET /api/dashboard/work-map` — a graph of projects, Automations, Automata, tasks and live sessions, with one edge per parent-to-child link and a list of the running sessions. | "No live sessions or Automaton tasks yet — the map fills as work runs." |
+| **Lane pulse** | `GET /api/dashboard/lane-pulse` — one row per lane and node, busy, waiting and idle over the window, and the usage burn panel. See [Lane pulse details](#lane-pulse-details). | "No lane has held or waited on a lease in this window yet, and no usage reading is available — this card fills as lanes run." |
 
 ### Work map details
 
@@ -129,6 +135,33 @@ are what you see in the Add-Card picker.
   card.
 - The **Running now** strip lists up to eight live sessions in an active state,
   newest first, and shows the total count beside its heading.
+- The Network card and the Work map card show the same payload. Each one is
+  hidden from the grid while the map has no nodes.
+
+### Lane pulse details
+
+- **Window.** `GET /api/dashboard/lane-pulse?window=<duration>` takes a Go
+  duration from `1m` to `168h`. The default is `6h`. A value outside that range,
+  or one that does not parse, is a `400`. The response's `window_from`,
+  `window_to` and `window_seconds` say which window was answered.
+- **Rows.** Each `series` entry is one lane on one node, with `busy_seconds`,
+  `waiting_seconds` and `idle_seconds` for the window and the time-ordered
+  `segments`. Busy is a capacity lease held; waiting is a request queued for that
+  lane and node. A request often waits while the lane is full, so waiting can
+  overlap busy. Idle is the time neither is true. Idle is only counted after the
+  capacity ledger began keeping history, so the earliest part of a window can be
+  uncovered (`recording_from` shows where history starts).
+- **Burn panel.** The usage level is shown in **points** of the weekly
+  allowance, against the **pace line**. The card says *ahead of pace* or *on
+  pace*, and *stale* when the reading is old. The panel never shows dollars.
+- **Burn reasons.** When the usage calculator cannot answer, the burn block has
+  `available: false` and a reason code, and the card shows the matching text:
+  `not_wired` (the calculator is not configured), `advice_unavailable`,
+  `needs_percent`, `needs_reading` or `needs_reset`. The calculator's own
+  settings are described in [usage-calculator.md](usage-calculator.md).
+- **Card visibility.** The card stays off the grid until a lane held or waited in
+  the window, or the burn panel can read a level. With
+  `dashboard.hide_inactive_cards` off, it shows its reason instead.
 
 ## Open for operator review
 
@@ -147,9 +180,24 @@ confirm each before the wording is treated as final:
   acceptable, rather than a gap to close.
 - **Cost report USD label.** The card labels the column **API-equivalent USD
   (unbilled)**. Confirm the wording with the operator before release notes repeat it.
-- **Locale text.** The empty-state sentences above are the English strings. The
-  de, es, fr and ja locale files were not changed by this docs pass, so those
-  translations may not match.
+- **Constellation and EKG are gone from the board.** The session constellation
+  was replaced by the Network card and the EKG card by the Lane pulse card. The
+  Sprint pipeline no longer renders anywhere on the dashboard. The help links
+  for the Network and Lane pulse cards still open the old anchors
+  `#session-constellation` and `#ekg-waveform` in
+  [datawatch-definitions.md](../datawatch-definitions.md#dashboard). Those
+  anchors are kept and now describe the new cards. Confirm the Sprint pipeline
+  is meant to stay removed.
+- **Lane pulse live check is owed.** The Go and PWA tests pass, but the
+  testing tracker records no live check against a daemon with real lease traffic
+  and usage readings. Confirm before the card is called validated.
+- **Lane pulse help link.** The Lane pulse card's help link uses the key of the
+  Live Events card, so its *Dashboard card reference* link opens the Live Events
+  entry. Confirm whether it should get its own entry.
+- **Locale text.** The work map and lane pulse strings now exist in the English,
+  German, Spanish, French and Japanese bundles. The empty-state sentences above
+  are the English strings. Confirm the translations of the new strings with a
+  native speaker before release.
 
 ## Related how-tos
 

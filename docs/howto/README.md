@@ -96,7 +96,7 @@ you already have a daemon you can talk to.
 | [Sessions deep-dive](sessions-deep-dive.md) | Session anatomy, lifecycle, daemon-restart resume path, debugging when state goes wrong |
 | [Claude Code hooks](claude-hooks.md) | Auto-install, manual setup, structured hook payload schema, TodoWrite integration |
 | [Session Telemetry](session-telemetry.md) | Structured task telemetry from hook events: tasks[], guardrail verdicts, persist-on-stop |
-| [Dashboard](dashboard.md) | /dashboard Mission Control: session constellation, EKG waveform, sprint pipeline, expand mode |
+| [Dashboard](dashboard.md) | /dashboard Mission Control: Network work map, work-map card, Lane pulse with burn panel, session cards, expand mode |
 | [Operator console](dashboard-operator-console.md) | The dashboard's one-glance “what needs my attention” summary — questions waiting, held & blocked, lanes, usage, CI & release; every switch, every surface (YAML, CLI, PWA, REST, MCP, chat), and what the console never does |
 | [Channel state engine](channel-state-engine.md) | Why a session is in its current state; signals + diagnostic walkthrough |
 | [Identity + Telos](identity-and-telos.md) | One-time operator self-description; injected into every session's wake-up L0 layer. Also covers the automatic identity backups, the empty-write refusal, Reset, and restoring an earlier identity from the PWA, CLI, MCP, REST or chat |

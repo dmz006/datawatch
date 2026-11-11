@@ -624,7 +624,7 @@ All three endpoints and the `hook_update` WS event are stable for Android/Wear/A
 The `/dashboard` view is PWA-only; mobile/Wear/Auto consume the same backend
 events and APIs that the dashboard visualises.
 
-**Node data for constellation equivalents (e.g. Wear summary tiles):**
+**Node data for session cards (e.g. Wear summary tiles):**
 
 Each connected session surfaces its state via the existing `session_state` WS
 event:
@@ -640,12 +640,18 @@ event:
 }
 ```
 
-**Sprint pipeline data:**
+**Work map and lane pulse data (replace the removed sprint pipeline strip):**
 ```
-GET /api/autonomous/prds
+GET /api/dashboard/work-map
+GET /api/dashboard/lane-pulse?window=6h
 ```
-Returns the full list with `stories[].status` fields; filter for
-`status ∈ {running, blocked, planning}` to build pipeline equivalents.
+The work map returns `nodes` and `edges` for the Network card: projects,
+Automations, Automata, tasks and live sessions. It answers 503 only when the
+daemon has neither a session store nor a trace store. The lane pulse returns
+per-lane `series` (busy, waiting, idle) and a `burn` object for the burn panel.
+The window defaults to 6h and is capped at 168h. The sprint pipeline strip no
+longer renders on the PWA dashboard, so `GET /api/autonomous/prds` is no longer
+needed for it.
 
 **Dashboard expand data (three-pane equivalent for mobile detail screens):**
 

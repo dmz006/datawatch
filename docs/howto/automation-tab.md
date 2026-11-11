@@ -591,8 +591,8 @@ there too.
 - [automation-queue-advance.md](automation-queue-advance.md): activating an
   Automation, automatic advance, idle alert, model defaults and the
   all-channels table
-- [dashboard.md](dashboard.md): the fleet view, including the sprint pipeline
-  for running Automata
+- [dashboard.md](dashboard.md): the fleet view, including the Network work map
+  of running Automata and the Lane pulse card
 - [autonomous-planning.md](autonomous-planning.md): how single Automata are
   created and decomposed
 - [automata-events.md](automata-events.md): the Events tab — the one stream of
