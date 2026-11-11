@@ -7530,6 +7530,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)
 			classifyWiring.ledger.Store(capLedger)
+			// Preflight a pi launch on a compute node: a node that fails it is
+			// marked unhealthy in the ledger and the launch is deferred.
+			pibackend.SetLaunchGate(capLedger, func(addr string) string {
+				if computeReg == nil {
+					return ""
+				}
+				for _, n := range computeReg.List() {
+					if n.Address == addr || strings.TrimPrefix(strings.TrimPrefix(n.Address, "http://"), "https://") == strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://") {
+						return n.Name
+					}
+				}
+				return ""
+			})
 			// placement-tags — restart backfill: the ledger now holds the leases that
 			// survived the restart (adoption hold still on, so the session manager
 			// accepts no new work yet). Restore each running lease-bound session's
