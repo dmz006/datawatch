@@ -76,6 +76,10 @@ absent (not zero) when the daemon does not have a figure to show:
 | `api_equivalent_usd` | bundled-plan rows only | The money the group would have cost at API rates — an **equivalence, not a charge**; the row's `usd_estimate` is absent on these rows by design. |
 | `estimated_usage_points` | bundled-plan rows, priced only | The usage points that amount represents against the allowance, from the profile's monthly price. An estimate. |
 | `share_of_monthly_price` | bundled-plan rows, priced only | The fraction of the plan's monthly price (0.05 is 5%). An estimate. |
+| `cache_read` / `cache_creation` | yes | Cache tokens the group used, beside the in/out tokens. |
+| `tool_calls` | yes | Tool calls the group's sessions made, counted from the Claude transcript. Zero for backends that do not report them. |
+| `first_activity` / `last_activity` / `span_seconds` / `active_seconds` | when the group has activity | When the group worked, the span between, and the active time. An Automaton's row carries all of these, so its tokens, time, sessions and tool calls read together. |
+| `window_partial` / `window_note` | when the window cuts the group off | Set when the window is older than the ledger or the group started mid-window. |
 | `units` | `release` rows only | The shipped units the release carries, from the daemon's shipped-unit state; blank when the record has none |
 
 The body also carries `retention_days`, `retention_note` and
@@ -154,6 +158,8 @@ An Automaton's row counts every session it launches, not just its worker session
 
 - **Deleting sessions does not lower the cost.** The ledger entry outlives the session, so deleting or cleaning up a session leaves the Automaton's cost unchanged until the entry ages out of the 31-day window.
 - **Older sessions stay uncounted.** Sessions that ran before this change carry no attribution and land under `unattributed`. Nothing is back-filled; new sessions count from the first launch after the upgrade.
+
+The same per-Automaton row (the whole ledger, not the window) appears as `cost` in `GET /api/autonomous/prds/{id}` (MCP `autonomous_prd_get`), so one Automaton's spend reads without running the report. An Automaton with no recorded spend gets a zero row; `cost` is absent only when no spend ledger is wired. The CLI and comm-channel cost report show the sessions, tool-call and time columns for Automaton rows, and the MCP `cost_report` tool returns them in every row.
 
 ### Checking for unattributed sessions
 
