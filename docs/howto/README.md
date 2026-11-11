@@ -44,6 +44,7 @@ you already have a daemon you can talk to.
 | [CodeQL local scan](codeql-local-scan.md) | Run the CodeQL default suite on your machine without uploading, compare with GitHub alerts, check bundle pin drift, optional pre-push and pre-ship steps |
 | [Automata capacity](automata-capacity.md) | Wait for free sessions / node / LLM slots instead of failing; fair queue, priority, reserved interactive slots |
 | [Automata progress](automata-progress.md) | How far along the Automata are and roughly when the rest will be done: counts by kind, rates per active day, known versus estimated work left, a completion range, the daily trend; set an Automaton kind, backlog markers, the waits file |
+| [Automata timeline](automata-timeline.md) | The interval chart of your Automata across all projects: every task as a bar with its start and end, blocked and waiting time, the today marker and the projected finish, narrowed by project, Automaton, stage, kind or tag |
 | [Automata tags](automata-tags.md) | Organise Automata in a nested tag tree: assign several tags, browse with an include-sub-tags switch, bulk tag; deletes of used tags are refused |
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |
 | [Automation queue advance](automation-queue-advance.md) | Chain Automatons in an Automation: activate, automatic advance on completion, blocked/idle alerts, restart behaviour |

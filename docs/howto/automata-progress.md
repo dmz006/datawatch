@@ -322,3 +322,4 @@ Automata carrying one tag. A bad date is refused (HTTP 400).
 - [Automata capacity](automata-capacity.md) - the slots the lanes stand for
 - [Automata planning](autonomous-planning.md)
 - [Automata tags](automata-tags.md) - narrow the count to one tag
+- [Automata timeline](automata-timeline.md) - the interval chart: every task as a bar with its start and end, blocked and waiting time, the today marker and the projected finish
