@@ -80,10 +80,12 @@ Each Automaton also has an **override** that wins over the daemon setting:
 refreshes it, and cleared (the default) follows the daemon setting. The
 override is stored on the Automaton as `branch_refresh_override`.
 
-> **Review needed.** The override can only be set by code inside the daemon
-> today. There is no REST route, CLI command, MCP tool, comm verb or PWA
-> control for it yet, so an operator cannot change it. Until one lands, use the
-> two daemon settings.
+Set it over REST with `POST /api/autonomous/prds/{id}/branch-refresh` and a
+body of `{"enabled": true}`, `{"enabled": false}` or `{"enabled": null}` (null
+clears the override). The reply is the Automaton record with its refresh state.
+
+> **Review needed.** The override has a REST route only. There is no CLI
+> command, MCP tool, comm verb or PWA control for it yet.
 
 ## What you see
 
@@ -97,8 +99,13 @@ the state of its latest refresh (when, how many commits behind, the base commit
 merged, the result, and whether refreshing is stopped) as `branch_refresh` in
 its record.
 
-> **Review needed.** That state has no dedicated card or route yet. Read it
-> from the Automaton's Decisions list or its JSON record.
+The Automaton `GET` reply (`GET /api/autonomous/prds/{id}`, full detail) always
+carries `branch_refresh` (null when no refresh has run),
+`branch_refresh_override` (true, false or null) and `branch_refresh_enabled`,
+the setting in effect for that Automaton.
+
+> **Review needed.** That state has no dedicated card in the PWA yet. Read it
+> from the Automaton's JSON record or its Decisions list.
 
 ## When the merge conflicts
 

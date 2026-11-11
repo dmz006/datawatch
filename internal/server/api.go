@@ -6555,6 +6555,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"first_attempt":                         firstAttemptDisplay(s.cfg.Autonomous.FirstAttempt),
 			"first_attempt_escalate_after_failures": s.cfg.Autonomous.FirstAttemptEscalateAfterFailures,
 			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
+			// Between-task branch refresh: off by default; the behind limit's
+			// 0 reads as 5 (config.AutonomousConfig.BranchRefreshLimit).
+			"branch_refresh_enabled":      s.cfg.Autonomous.BranchRefreshEnabled,
+			"branch_refresh_behind_limit": s.cfg.Autonomous.BranchRefreshBehindLimit,
 			// Snapshot-never-stage list (path patterns the autonomous
 			// snapshot must never `git add`): nil (unset) reads the built-in
 			// defaults (config.DefaultSnapshotNeverStage), so render the
@@ -8045,6 +8049,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// Branch refresh settings: a non-boolean enabled or a negative or
+	// non-numeric behind limit refuses the whole PUT (branch_refresh_api.go).
+	if err := validateBranchRefreshPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	// Release approval modes go through SetReleaseApprovalMode, which stores
 	// them with an audit event and a decision record, so they are taken out of
@@ -10510,6 +10520,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case branchRefreshEnabledKey, branchRefreshLimitKey:
+			// Between-task branch refresh (branch_refresh_api.go): handlePutConfig
+			// refuses a bad value first; one that reaches here is skipped.
+			if _, applied := applyBranchRefreshConfigKey(cfg, k, v); !applied {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.continue_on_story_failure":
 			// Daemon-wide default: false (halt) so a story failure stops
 			// the PRD for operator re-edit/rerun instead of continuing

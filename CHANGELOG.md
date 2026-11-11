@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Branch refresh is now settable from the operator surfaces.** `POST /api/autonomous/prds/{id}/branch-refresh` with `{"enabled": true|false|null}` sets or clears an Automaton's branch refresh override (`null` clears it so the daemon setting applies again), and the two daemon settings `autonomous.branch_refresh_enabled` and `autonomous.branch_refresh_behind_limit` are accepted on `PUT /api/config`, so `datawatch config set`, the comm channel's `configure` and MCP `config_set` all take them; a non-boolean enabled or a negative behind limit refuses the whole write. `GET /api/config` lists both keys. The Automaton `GET` reply (full detail) now always carries the refresh state: `branch_refresh` (the last refresh, `null` when none has run), `branch_refresh_override` (`true`, `false` or `null`) and `branch_refresh_enabled` (the setting in effect for that Automaton). The OpenAPI spec documents the route. See [howto/automaton-branch-refresh.md](docs/howto/automaton-branch-refresh.md).
+
 ## v9.135.0 — Self-config is a built-in capability group
 
 ### Added
