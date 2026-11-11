@@ -44239,9 +44239,9 @@ function _dashNodeColor(stateStr) {
 function _dashInitNodes() {
   _dash.nodes = {};
   _dash.edges = [];
-  const svgEl = document.getElementById('constellationSvg');
-  const W = (svgEl && svgEl.clientWidth) || 320;
-  const H = (svgEl && svgEl.clientHeight) || 220;
+  // Registry positions are no longer drawn (the Network card is a work map);
+  // they stay here only so the board sync keeps its node records.
+  const W = 320, H = 220;
   const sessions = state.sessions;
   if (!sessions.length) return;
   const cx = W / 2, cy = H / 2;
@@ -44287,9 +44287,9 @@ function _dashInitNodes() {
 
 function _dashReconcileNodes() {
   const sessions = state.sessions || [];
-  const svgEl = document.getElementById('constellationSvg');
-  const W = (svgEl && svgEl.clientWidth) || 320;
-  const H = (svgEl && svgEl.clientHeight) || 220;
+  // Registry positions are no longer drawn (the Network card is a work map);
+  // they stay here only so the board sync keeps its node records.
+  const W = 320, H = 220;
   const cx = W / 2, cy = H / 2;
 
   // Build live ID sets
@@ -44357,149 +44357,261 @@ function _dashReconcileNodes() {
   }
 }
 
-function _dashForceStep() {
-  const ids = Object.keys(_dash.nodes);
-  if (ids.length < 2) return;
-  const svgEl = document.getElementById('constellationSvg');
-  if (!svgEl) return;
-  const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
-  const cx = W / 2, cy = H / 2;
+// ── Network card (dashboard card id 'orbital') — the work map ───────────────
+// 2026-11-06 dashboard review: the old orbital session map could not say what
+// it answered, so the card is rebuilt as a work map. It draws the same
+// GET /api/dashboard/work-map payload the 'work-map' card reads (_dash._workMap,
+// one shared fetch per ~30s tick): projects are the roots, a click expands a
+// project to its Automations, Automata, tasks and sessions, fill colour is the
+// compute node and outline colour the lane, and a rotate control (plus the
+// timer on window._dashWorkMapInterval) steps through the running sessions,
+// highlighting each with its ancestors. A session click opens its detail.
+// The card is hidden through DASH_CARD_FEATURES['orbital'] while the map has
+// no nodes; with dashboard.hide_inactive_cards off it shows the one-line reason.
 
-  // Repulsion
-  for (let i = 0; i < ids.length; i++) {
-    for (let j = i + 1; j < ids.length; j++) {
-      const a = _dash.nodes[ids[i]], b = _dash.nodes[ids[j]];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const d2 = dx*dx + dy*dy + 1;
-      const f = Math.min(2500 / d2, 3);
-      const fx = (dx / Math.sqrt(d2)) * f;
-      const fy = (dy / Math.sqrt(d2)) * f;
-      a.vx -= fx; a.vy -= fy;
-      b.vx += fx; b.vy += fy;
-    }
-    // Gravity toward center
-    const n = _dash.nodes[ids[i]];
-    n.vx += (cx - n.x) * 0.008;
-    n.vy += (cy - n.y) * 0.008;
-  }
+const DASH_NETWORK_ROTATE_MS = 6000;
+const DASH_NETWORK_KIND_ORDER = ['project', 'automation', 'automaton', 'task', 'session'];
+const DASH_NETWORK_NODE_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#84cc16'];
+const DASH_NETWORK_LANE_PALETTE = ['#22d3ee', '#fde047', '#fb7185', '#c084fc', '#a3e635'];
+const DASH_NETWORK_ROW_STEP = 26;
+const DASH_NETWORK_NODE_H = 20;
+const DASH_NETWORK_PAD = 8;
 
-  // Edge attraction
-  for (const e of _dash.edges) {
-    const a = _dash.nodes[e.from], b = _dash.nodes[e.to];
-    if (!a || !b) continue;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const d = Math.sqrt(dx*dx + dy*dy) + 0.01;
-    const target = Math.min(W, H) * 0.22;
-    const f = (d - target) * 0.015;
-    const fx = (dx / d) * f, fy = (dy / d) * f;
-    a.vx += fx; a.vy += fy;
-    b.vx -= fx; b.vy -= fy;
-  }
-
-  // Integrate + clamp
-  for (const id of ids) {
-    const n = _dash.nodes[id];
-    const r = n.prd ? 20 : 14;
-    n.vx *= 0.72; n.vy *= 0.72;
-    n.x = Math.max(r + 2, Math.min(W - r - 2, n.x + n.vx));
-    n.y = Math.max(r + 14, Math.min(H - r - 2, n.y + n.vy));
-  }
+// _dashNetworkHash: a stable, small hash of a string (palette index source).
+function _dashNetworkHash(s) {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }
 
-function _drawConstellation() {
-  const svgEl = document.getElementById('constellationSvg');
+// _dashNetworkColors: fill by compute node, outline by lane. An error status
+// overrides the outline so a failure stays visible; no node or lane falls back
+// to the status colour and a neutral fill.
+function _dashNetworkColors(node, lane, status) {
+  const fill = node ? DASH_NETWORK_NODE_PALETTE[_dashNetworkHash(node) % DASH_NETWORK_NODE_PALETTE.length] : '#64748b';
+  let stroke = lane ? DASH_NETWORK_LANE_PALETTE[_dashNetworkHash(lane) % DASH_NETWORK_LANE_PALETTE.length] : _dashWorkMapStatusColor(status);
+  if (status === 'error') stroke = '#ef4444';
+  return { fill, stroke };
+}
+
+// _dashNetworkIndex: the work-map nodes keyed by id (a Map, so no id can reach
+// Object.prototype), each node's child ids, its top-level ancestor, and the
+// placement (compute node and lane) it shows. A container carries no placement
+// of its own, so it takes the placement of its first session below it.
+function _dashNetworkIndex(d) {
+  const nodes = d && Array.isArray(d.nodes) ? d.nodes.filter(n => n && n.id) : [];
+  const byId = new Map();
+  for (const n of nodes) byId.set(n.id, n);
+  const kids = new Map();
+  for (const n of nodes) {
+    if (n.parent && byId.has(n.parent)) {
+      if (!kids.has(n.parent)) kids.set(n.parent, []);
+      kids.get(n.parent).push(n.id);
+    }
+  }
+  const top = (id) => {
+    let cur = id;
+    for (let guard = 0; guard < 16; guard++) {
+      const n = byId.get(cur);
+      if (!n || !n.parent || !byId.has(n.parent)) break;
+      cur = n.parent;
+    }
+    return cur;
+  };
+  const placeOf = (id, depth) => {
+    const n = byId.get(id);
+    if (!n) return { node: '', lane: '' };
+    if (n.node || n.lane) return { node: n.node || '', lane: n.lane || '' };
+    if (depth > 8) return { node: '', lane: '' };
+    for (const c of kids.get(id) || []) {
+      const p = placeOf(c, depth + 1);
+      if (p.node || p.lane) return p;
+    }
+    return { node: '', lane: '' };
+  };
+  const placement = new Map();
+  for (const n of nodes) placement.set(n.id, placeOf(n.id, 0));
+  return { nodes, byId, kids, top, placement };
+}
+
+// _dashNetworkVisible: the nodes the card draws now. A project is always drawn;
+// the work under it only while the project is expanded by a click or is the
+// project under the rotation focus. Work with no project above it is always drawn.
+function _dashNetworkVisible(idx, expanded, focusProject) {
+  const out = [];
+  for (const n of idx.nodes) {
+    const root = idx.byId.get(idx.top(n.id));
+    const underProject = n.kind !== 'project' && root && root.kind === 'project';
+    if (!underProject || expanded.has(root.id) || root.id === focusProject) out.push(n);
+  }
+  return out;
+}
+
+// _dashNetworkLayout: a fixed-box column layout of the visible nodes. One
+// column per kind present, left to right; rows are sized to the box so nothing
+// is drawn outside it. A column that cannot fit its rows shows the first ones
+// and a count of the rest.
+function _dashNetworkLayout(visible, W, H) {
+  const byKind = new Map();
+  for (const n of visible) {
+    const k = n.kind || 'other';
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push(n);
+  }
+  const kinds = DASH_NETWORK_KIND_ORDER.filter(k => byKind.has(k))
+    .concat([...byKind.keys()].filter(k => DASH_NETWORK_KIND_ORDER.indexOf(k) < 0).sort());
+  const colW = (W - DASH_NETWORK_PAD * 2) / Math.max(1, kinds.length);
+  const nodeW = Math.max(40, Math.min(150, colW - 12));
+  const rowsFit = Math.max(1, Math.floor((H - DASH_NETWORK_PAD * 2) / DASH_NETWORK_ROW_STEP));
+  const pos = new Map();
+  const placed = [];
+  const more = [];
+  kinds.forEach((k, ci) => {
+    const list = byKind.get(k);
+    const fit = list.length > rowsFit ? rowsFit - 1 : list.length;
+    const x = DASH_NETWORK_PAD + ci * colW + colW / 2;
+    for (let ri = 0; ri < fit; ri++) {
+      const y = DASH_NETWORK_PAD + DASH_NETWORK_NODE_H / 2 + ri * DASH_NETWORK_ROW_STEP;
+      pos.set(list[ri].id, { x, y });
+      placed.push({ n: list[ri], x, y });
+    }
+    if (list.length > fit) {
+      more.push({ x, y: DASH_NETWORK_PAD + DASH_NETWORK_NODE_H / 2 + fit * DASH_NETWORK_ROW_STEP, count: list.length - fit });
+    }
+  });
+  return { pos, placed, more, nodeW, nodeH: DASH_NETWORK_NODE_H };
+}
+
+// _dashNetworkFocusId: the running session the rotation is on (or null).
+function _dashNetworkFocusId(running) {
+  if (!running.length) return null;
+  const len = running.length;
+  const i = (((_dash._netFocus || 0) % len) + len) % len;
+  return running[i].id;
+}
+
+// _dashNetworkRotate: one timer on window._dashWorkMapInterval, never stacked.
+// It runs only while the Network card is on the page and running work exists,
+// and clears itself when either is gone.
+function _dashNetworkRotate() {
+  const d = _dash._workMap;
+  const running = d && Array.isArray(d.running) ? d.running : [];
+  const live = !!document.getElementById('dashNetworkSvg') && running.length > 0;
+  if (!live) {
+    if (window._dashWorkMapInterval) clearInterval(window._dashWorkMapInterval);
+    window._dashWorkMapInterval = null;
+    return;
+  }
+  if (window._dashWorkMapInterval) return;
+  window._dashWorkMapInterval = setInterval(() => {
+    window._dashNetworkStep(1);
+    _dashNetworkRotate();
+  }, DASH_NETWORK_ROTATE_MS);
+}
+
+// window._dashNetworkStep: move the rotation focus by dir (+1 next, -1 back)
+// through the running sessions and redraw.
+window._dashNetworkStep = function(dir) {
+  const d = _dash._workMap;
+  const len = d && Array.isArray(d.running) ? d.running.length : 0;
+  if (!len) return;
+  _dash._netFocus = (((_dash._netFocus || 0) + (dir || 1)) % len + len) % len;
+  _drawNetworkWorkMap();
+};
+
+// window._dashNetworkClick: a project toggles its expansion; a session opens
+// its session detail. Other kinds do nothing here.
+window._dashNetworkClick = function(id) {
+  const d = _dash._workMap;
+  const n = d && Array.isArray(d.nodes) ? d.nodes.find(x => x && x.id === id) : null;
+  if (!n) return;
+  if (n.kind === 'project') {
+    if (!_dash._netExpanded) _dash._netExpanded = new Set();
+    if (_dash._netExpanded.has(id)) _dash._netExpanded.delete(id);
+    else _dash._netExpanded.add(id);
+    _drawNetworkWorkMap();
+    return;
+  }
+  if (n.kind === 'session' && typeof navigate === 'function') navigate('session-detail', id);
+};
+
+// _dashNetworkOnClick: one delegated click handler on the svg, set once per
+// element (the element is rebuilt when the grid is).
+function _dashNetworkOnClick(ev) {
+  const el = ev && ev.target && ev.target.closest ? ev.target.closest('[data-wm-id]') : null;
+  if (el) window._dashNetworkClick(el.getAttribute('data-wm-id'));
+}
+
+// _drawNetworkWorkMap: the Network card's frame. Draws into #dashNetworkSvg
+// (absent while the card is hidden or off, so the frame does nothing then).
+function _drawNetworkWorkMap() {
+  const svgEl = document.getElementById('dashNetworkSvg');
   if (!svgEl) return;
   const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
   svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
-
-  // Issue #98 — narrow fallback: width < 400px → compact text list
-  if (W < 400) {
-    const sessions = state.sessions || [];
-    if (sessions.length === 0) {
-      svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
-      return;
-    }
-    const stateColors = { running: '#7c3aed', generating: '#7c3aed', waiting_input: '#f59e0b', completed: '#10b981', failed: '#ef4444', blocked: '#ef4444', idle: '#64748b' };
-    const stateBadges = { running: '▶', generating: '▶', waiting_input: '⏸', completed: '✓', failed: '✗', blocked: '!', idle: '○' };
-    let html = '';
-    const ROW_H = 20, PAD = 8;
-    for (let i = 0; i < sessions.length && i < Math.floor((H - PAD) / ROW_H); i++) {
-      const s = sessions[i];
-      const col = stateColors[s.state] || '#64748b';
-      const badge = stateBadges[s.state] || '·';
-      const name = (s.name || s.task || s.id || '').slice(0, 18);
-      const age = s.created_at ? timeAgo(s.created_at) : '';
-      const y = PAD + i * ROW_H + 13;
-      html += `<text x="${PAD}" y="${y}" font-size="11" fill="${col}" style="pointer-events:none">• ${escHtml(name)}</text>`;
-      html += `<text x="${W - PAD - (age ? 36 : 18)}" y="${y}" font-size="10" fill="${col}" font-weight="700" style="pointer-events:none">${escHtml(badge)}</text>`;
-      if (age) html += `<text x="${W - PAD}" y="${y}" font-size="9" fill="var(--text2)" text-anchor="end" style="pointer-events:none">${escHtml(age)}</text>`;
-    }
-    svgEl.innerHTML = html;
+  svgEl.onclick = _dashNetworkOnClick;
+  const d = _dash._workMap;
+  const running = d && Array.isArray(d.running) ? d.running : [];
+  const cnt = document.getElementById('dashNetworkCount');
+  if (!d || !Array.isArray(d.nodes) || !d.nodes.length) {
+    svgEl.innerHTML = '';
+    if (cnt) cnt.innerHTML = '';
     return;
   }
-
-  const ids = Object.keys(_dash.nodes);
-  if (ids.length === 0) {
-    svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
-    return;
+  if (!_dash._netExpanded) _dash._netExpanded = new Set();
+  const idx = _dashNetworkIndex(d);
+  const focusId = _dashNetworkFocusId(running);
+  const focusProject = focusId ? idx.top(focusId) : null;
+  // The chain from the focused node up to its top-level ancestor is highlighted.
+  const chain = new Set();
+  for (let cur = focusId, g = 0; cur && g < 16; g++) {
+    chain.add(cur);
+    const n = idx.byId.get(cur);
+    cur = n && n.parent ? n.parent : null;
   }
-
-  const now = Date.now();
-  let html = `<defs>
-    <style>
-      .dbn { cursor:pointer; transition:opacity 0.1s; }
-      .dbn:hover { opacity:1 !important; filter:brightness(1.25); }
-    </style>
-  </defs>`;
-
-  // Hint text bottom-left
-  html += `<text x="8" y="${H-6}" font-size="10" fill="var(--text2)" opacity="0.5" style="pointer-events:none">Click a node to inspect</text>`;
-
-  // Edges
-  for (const e of _dash.edges) {
-    const a = _dash.nodes[e.from], b = _dash.nodes[e.to];
+  const lay = _dashNetworkLayout(_dashNetworkVisible(idx, _dash._netExpanded, focusProject), W, H);
+  let svg = '';
+  for (const e of d.edges || []) {
+    const a = lay.pos.get(e.from), b = lay.pos.get(e.to);
     if (!a || !b) continue;
-    html += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+    const x1 = a.x + lay.nodeW / 2, x2 = b.x - lay.nodeW / 2;
+    const mx = (x1 + x2) / 2;
+    const hot = chain.has(e.from) && chain.has(e.to);
+    svg += `<path d="M ${x1} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${x2} ${b.y}" fill="none" stroke="${hot ? '#3b82f6' : 'var(--border,#333)'}" stroke-width="${hot ? 2 : 1}"/>`;
   }
-
-  // Nodes
-  for (const id of ids) {
-    const n = _dash.nodes[id];
-    const r = n.prd ? 22 : 16;
-    const active = n.state === 'running' || n.state === 'generating' || n.state === 'waiting_input';
-    const pulseR = active ? (r + 6 + Math.sin(now / 500) * 4) : 0;
-    const opacity = n.hookHealth === 'missing' && !n.prd ? '0.4' : '0.9';
-
-    if (active && pulseR > 0) {
-      const pulseAlpha = (0.25 + Math.sin(now / 400) * 0.15).toFixed(2);
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${pulseR.toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="2" opacity="${pulseAlpha}"/>`;
+  for (const p of lay.placed) {
+    const n = p.n;
+    const pl = idx.placement.get(n.id) || { node: '', lane: '' };
+    const c = _dashNetworkColors(pl.node, pl.lane, n.status);
+    const label = String(n.label || n.id || '').slice(0, 15);
+    const x = p.x - lay.nodeW / 2;
+    const y = p.y - lay.nodeH / 2;
+    const isProject = n.kind === 'project';
+    const kids = idx.kids.get(n.id) || [];
+    const open = isProject && _dash._netExpanded.has(n.id);
+    const hot = chain.has(n.id);
+    const title = [n.label || n.id, pl.node, pl.lane, n.status].filter(Boolean).map(s => escHtml(String(s))).join(' · ');
+    svg += `<g data-wm-id="${escHtml(n.id)}" style="cursor:${n.kind === 'project' || n.kind === 'session' ? 'pointer' : 'default'};${n.status === 'done' ? 'opacity:0.6;' : ''}">
+      <title>${title}</title>
+      <rect x="${x}" y="${y}" width="${lay.nodeW}" height="${lay.nodeH}" rx="5" fill="var(--bg2,#111)" stroke="${c.stroke}" stroke-width="${hot ? 2.5 : 1.2}"/>
+      <circle cx="${x + 9}" cy="${p.y}" r="3.5" fill="${c.fill}"/>
+      <text x="${x + 17}" y="${p.y + 3.5}" font-size="10" fill="var(--text,#ccc)" style="pointer-events:none">${escHtml(label)}</text>`;
+    if (isProject) {
+      const mark = open ? '▾' : '▸';
+      svg += `<text x="${x + lay.nodeW - 6}" y="${p.y + 3.5}" text-anchor="end" font-size="10" fill="var(--text2,#888)" style="pointer-events:none">${mark}${kids.length ? ' ' + kids.length : ''}</text>`;
     }
-    if (n.hookHealth === 'alive') {
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="1" opacity="0.4"/>`;
-    } else if (n.hookHealth === 'stale') {
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="var(--warning)" stroke-width="1" opacity="0.4"/>`;
-    }
-
-    // Filled node + invisible larger hit target for easier clicking
-    html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+6).toFixed(1)}" fill="transparent" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(id)})`)}"/>`;
-    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(id)})`)}">`;
-    html += `<title>${escHtml(n.label)} · ${escHtml(n.state)} — click to open</title></circle>`;
-
-    // State initial inside node
-    const stateInitial = ({running:'▶', generating:'▶', waiting_input:'⏸', completed:'✓', failed:'✗', blocked:'!', idle:'○'})[n.state] || '·';
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+4).toFixed(1)}" text-anchor="middle" font-size="${n.prd ? 11 : 9}" fill="rgba(255,255,255,0.85)" style="pointer-events:none;font-weight:700;">${stateInitial}</text>`;
-
-    if (n.threats > 0) {
-      html += `<circle cx="${(n.x+r-4).toFixed(1)}" cy="${(n.y-r+4).toFixed(1)}" r="6" fill="var(--error)" opacity="0.95"/>`;
-      html += `<text x="${(n.x+r-4).toFixed(1)}" y="${(n.y-r+8).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fff" style="pointer-events:none;font-weight:700;">${n.threats}</text>`;
-    }
-
-    const label = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+14).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text)" opacity="0.75" style="pointer-events:none">${escHtml(label)}</text>`;
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+24).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text2)" opacity="0.55" style="pointer-events:none">${escHtml(n.state)}</text>`;
+    svg += `</g>`;
   }
-
-  svgEl.innerHTML = html;
+  for (const m of lay.more) {
+    svg += `<text x="${m.x}" y="${m.y + 3.5}" text-anchor="middle" font-size="10" fill="var(--text2,#888)" style="pointer-events:none">+${m.count}</text>`;
+  }
+  svgEl.innerHTML = svg;
+  if (cnt) {
+    const i = focusId ? running.findIndex(r => r.id === focusId) : -1;
+    cnt.innerHTML = running.length ? escHtml(`${i + 1}/${running.length}`) : escHtml(t('dash_network_none_running') || '');
+  }
+  _dashNetworkRotate();
 }
 
 function _drawMultiEKG() {
@@ -44743,11 +44855,10 @@ function _dashLoop(ts) {
 
   // Canvas renders at full rate
   _drawMultiEKG();
-  _dashForceStep();
 
-  // Orbital + Gantt at ~10fps
+  // Network (work map) + Gantt at ~10fps
   if (_dash._frameCount % 6 === 0) {
-    _drawConstellation();
+    _drawNetworkWorkMap();
     _drawGantt();
   }
 
@@ -45166,8 +45277,8 @@ function _dashDefLabel(def) {
 // maps to these five at-a-glance cards. Two existing OBSERVER cards are
 // REUSED as the higher-level source for two of them instead of rebuilding
 // the observer views:
-//   • lanes — `orbital` (the Network card, _drawConstellation) already
-//     shows the session/automaton network; console-lanes distills the same
+//   • lanes — `orbital` (the Network card, _drawNetworkWorkMap) already
+//     shows the session/automaton work map; console-lanes distills the same
 //     picture into one number + the #lanes link and stays on the default
 //     board;
 //   • usage — `ekg` (the Multi-EKG card, _drawMultiEKG plus its burn-rate
@@ -45358,8 +45469,20 @@ const DASH_CARD_DEFS = [
     body: () => '<div id="dashIntegrationStatusCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   { id: 'tree',       label: 'Automata',       icon: '⣿',  defaultCs: 2,
     body: () => '<div id="dashTree" style="height:100%;overflow-y:auto;"></div>' },
+  // Network card — the work map (see _drawNetworkWorkMap): one line of purpose,
+  // a rotate control with its position in the running work, and the map in a
+  // box that never grows past the grid cell.
   { id: 'orbital',    label: 'Network',         icon: '◎',  defaultCs: 6,
-    body: () => '<svg id="constellationSvg" style="width:100%;height:100%;display:block;"></svg>' },
+    body: () => `<div id="dashNetworkWorkMap" style="height:100%;display:flex;flex-direction:column;overflow:hidden;min-height:0;font-size:10px;">
+      <div style="display:flex;align-items:center;gap:6px;padding:2px 6px;min-width:0;flex-shrink:0;">
+        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text2);">${escHtml(t('dash_network_purpose') || '')}</span>
+        <span id="dashNetworkCount" style="flex-shrink:0;color:var(--text2);"></span>
+        <button type="button" onclick="window._dashNetworkStep(1)" title="${escHtml(t('dash_network_next') || '')}" aria-label="${escHtml(t('dash_network_next') || '')}" style="flex-shrink:0;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;padding:0 6px;font-size:10px;line-height:1.4;">▶</button>
+      </div>
+      <div style="flex:1;min-height:0;position:relative;">
+        <svg id="dashNetworkSvg" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></svg>
+      </div>
+    </div>` },
   { id: 'events',     label: 'Live Events',     icon: '⚡', defaultCs: 2,
     body: () => '<div id="dashEventFeed" style="height:100%;overflow-y:auto;font-family:monospace;font-size:10px;"></div>' },
   { id: 'sparklines', label: 'Sessions',        icon: '▬',  defaultCs: 2,
@@ -45534,6 +45657,21 @@ const DASH_CARD_FEATURES = {
       return !!(r && Array.isArray(r.rows) && r.rows.length > 0);
     },
   },
+  // The Network card draws the same work map as 'work-map' from the same
+  // payload. It is shown while the map has nodes; with no work it is dropped
+  // from the grid, and with hide_inactive_cards off it shows the one-line reason
+  // below (the same key the work-map card uses, since the map is the same).
+  'orbital': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_work_map_reason',
+    reasonDefault: 'No live sessions or Automaton tasks yet — the map fills as work runs.',
+    linkKey: 'dash_card_off_work_map_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const d = _dash._workMap;
+      return !!(d && Array.isArray(d.nodes) && d.nodes.length > 0);
+    },
+  },
   'work-map': {
     docsKey: 'dash_card_work_map',
     reasonKey: 'dash_card_off_work_map_reason',
@@ -45605,6 +45743,7 @@ function _dashPumpFeatureData() {
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
   kick(_dashCardFeature('heatmap'), _dashFetchHeatmap);
   kick(_dashCardFeature('work-map'), _dashFetchWorkMap);
+  kick(_dashCardFeature('orbital'), _dashFetchWorkMap);
   kick(_dashCardFeature('cost-report'), _dashFetchCostReport);
   kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
@@ -45758,8 +45897,7 @@ function _dashBuildGrid(layout) {
   _dashRenderIntegrationStatus();
   _dashRenderPluginWidgets();
   _drawGantt();
-  _dashForceStep();
-  _drawConstellation();
+  _drawNetworkWorkMap();
 }
 
 window._dashStartEdit = function() {
