@@ -10196,6 +10196,8 @@ const DOCS_LINKS_BY_KEY = {
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
   settings_identity_backups_to_keep: DOCS_DEFINITIONS + '#identity-backups-and-restore',
+  settings_usage_entry_title: 'howto/usage-calculator.md',
+  settings_usage_entry_help: 'howto/burn-guard.md',
   settings_automata_questions_quality_mode: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
@@ -10867,7 +10869,7 @@ function renderSettingsView() {
         ${GENERAL_CONFIG_FIELDS.map(sec => {
           // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
           // plugins section to Plugins tab; everything else stays in General.
-          const _automataIds = ['pipeline', 'autonomous', 'orchestrator'];
+          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard'];
           const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
           return `
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
@@ -10877,6 +10879,14 @@ function renderSettingsView() {
           </div>
         </div>`;
         }).join('')}
+
+        <!-- Usage reading and extra credit entry: the same forms and endpoints as the usage page. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('usage_entry', t('settings_usage_entry_title'), DOCS_LINKS_SETTINGS_USAGE_ENTRY)}
+          <div id="settings-sec-usage_entry" style="${secContent('usage_entry')}">
+            <div id="settingsUsageEntry" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
 
         <!-- Requirements report + model pull consent cards (web setup view):
              the requirements report card shows the minimum versions the
@@ -19060,7 +19070,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Usage calculator — the weekly-allowance advice. Variant picks how the advice
   // is drawn, policy picks the target it aims at; the rest feed the model.
   // optionLabelKeys shows a locale label for an option whose id is not for people.
-  { id: 'usage_calculator', section: 'Usage calculator', fields: [
+  { id: 'usage_calculator', section: 'Usage calculator', docs: 'howto/usage-calculator.md', fields: [
     { key: 'usage.calculator.variant', label: 'Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)', labelKey: 'settings_usage_calculator_variant', type: 'select', options: ['pace-gauge', 'lane-planner', 'burn-ledger', 'all'], default: 'all' },
     { key: 'usage.calculator.policy', label: 'Usage calculator policy', labelKey: 'settings_usage_calculator_policy', type: 'select', options: ['use-all', 'pace', 'finish-early'], default: 'use-all',
       optionLabelKeys: { 'use-all': 'settings_usage_calculator_policy_use_all', 'pace': 'settings_usage_calculator_policy_pace', 'finish-early': 'settings_usage_calculator_policy_finish_early' } },
@@ -21067,6 +21077,7 @@ function loadGeneralConfig() {
       // it current while Settings is open — the loop moves caps hourly, so
       // poll once a minute on the shared window handle (never a second).
       if (window._usageAutoLanesStatusInterval) { clearInterval(window._usageAutoLanesStatusInterval); window._usageAutoLanesStatusInterval = null; }
+      if (document.getElementById('settingsUsageEntry') && window.settingsUsageEntryLoad) window.settingsUsageEntryLoad(false);
       if (document.getElementById('gcfg_uc_autolanes_status') && window.refreshUsageAutoLanesStatus) {
         window.refreshUsageAutoLanesStatus();
         window._usageAutoLanesStatusInterval = setInterval(window.refreshUsageAutoLanesStatus, 60 * 1000);
@@ -29527,9 +29538,14 @@ function _usageCalcMessage(text) {
 function _usageCalcWrite(method, path, body) {
   const opts = { method };
   if (body !== undefined) opts.body = JSON.stringify(body);
+  const inSettings = typeof document !== 'undefined' && !!document.getElementById('settingsUsageEntry');
   return apiFetch(path, opts)
-    .then(() => usageCalcRefresh())
+    .then(() => (inSettings ? window.settingsUsageEntryLoad(true) : usageCalcRefresh()))
     .catch(err => {
+      if (inSettings) {
+        _usageCalcMessage(t('usage_calc_error', [err && err.message ? err.message : String(err)]));
+        return;
+      }
       _usageCalc.error = err && err.message ? err.message : String(err);
       usageCalcRerender();
     });
@@ -29747,6 +29763,28 @@ window.usageCalcSaveExtraCredit = function () {
   const built = usageCalcPointsBody(el ? el.value : '');
   if (built.error) return _usageCalcMessage(built.error);
   return _usageCalcWrite('PUT', '/api/usage/extra-credit', built.body);
+};
+
+// Settings -> Automata -> Usage reading and extra credit. The panel reuses
+// _usageCalcReadingForm and _usageCalcExtraForm and the same save functions,
+// so it posts to /api/usage/readings and /api/usage/extra-credit exactly as
+// the usage page does.
+const DOCS_LINKS_SETTINGS_USAGE_ENTRY = 'howto/usage-calculator.md';
+window.settingsUsageEntryHtml = function (res, savedMsg) {
+  return `<div class="settings-usage-entry" style="display:flex;flex-direction:column;gap:12px;">` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('settings_usage_entry_intro'))}</div>` +
+    _usageCalcReadingForm(res, {}) + _usageCalcExtraForm(res) +
+    `<div id="settingsUsageEntrySaved" role="status" style="font-size:12px;color:var(--text2);">${escHtml(savedMsg || '')}</div></div>`;
+};
+window.settingsUsageEntryLoad = function (saved) {
+  const el = document.getElementById('settingsUsageEntry');
+  if (!el) return Promise.resolve();
+  return apiFetch('/api/usage/advice')
+    .then(body => { el.innerHTML = window.settingsUsageEntryHtml(body, saved ? t('settings_usage_entry_saved') : ''); })
+    .catch(err => {
+      el.innerHTML = window.settingsUsageEntryHtml(null, '');
+      _usageCalcMessage(t('usage_calc_error', [err && err.message ? err.message : String(err)]));
+    });
 };
 
 // The remaining work is the estimate (queued tasks times the cost per task)
