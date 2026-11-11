@@ -1,35 +1,34 @@
-# Parity issue draft — Per-Automaton cost completeness
+# Mobile parity draft — per-Automaton cost attribution
 
-Draft only. No issue has been filed on any tracker; the operator or supervisor files it.
-
-- **Suggested title:** feat(parity): cost report window notes, unknown-spend flag and attribution check
-- **Suggested repo:** dmz006/datawatch-app
+- **Status:** draft (file only; nothing filed on any tracker)
+- **Target repo:** dmz006/datawatch-app
+- **Suggested title:** feat(parity): per-Automaton cost report covers all spend (ledger-backed, attributed vs unattributed)
 
 ## Affected area
 
-The cost report: `internal/costreport/report.go`, `internal/server/cost_report.go` (the report source now reads the spend ledger), and the attribution check in `internal/costreport/attribution.go`. The window and unknown-spend notes are produced by the report engine in `report.go`. The mobile app's cost views read this report and the per-Automaton grouping.
+The cost report: the Automaton and group view of tokens, time, sessions and tool calls. It is served by the REST cost report in `internal/server/cost_report.go` and `internal/server/autonomous.go`, documented in `docs/api/openapi.yaml`, and exposed through the MCP tools in `internal/mcp/cost_report_tools.go`, the CLI in `cmd/datawatch/cli_cost_report.go`, and the comm-channel verb in `internal/router/commands.go`. The mobile app (datawatch-app) is the surface this draft is about.
 
 ## Current behavior
 
-The server report now covers the tokens, time, sessions and tool calls of every Automaton-launched session, not only worker sessions, by reading the spend ledger. New optional fields appear in the response:
+Before this work, the per-Automaton cost view counted only spend that could be traced from a session back to its owning Automaton. Spend from sessions the Automaton launched but that were not linked (verifier, guardrail and retry sessions, and similar) was missing, so the totals understated what an Automaton cost. The operator expects tokens, time, sessions and tool calls for every Automaton-launched session.
 
-- Per row: `window_note` and `spend_unknown` / `spend_unknown_note`, set when a row began before the requested window or the window reaches before the ledger horizon.
-- Top level: `retention_note` (always present), `window_note`, `unknown_spend_note` and `unknown_before` (the ledger horizon).
-- An attribution check result: `automaton_launched`, `unattributed`, `session_ids`, `ok` and `note`. It counts ledger sessions launched by Automaton machinery that carry no automaton id.
-
-The mobile app ignores all of these fields. Unknown spend before the horizon can therefore look like zero spend, and unattributed Automaton sessions show only as a generic "unattributed" group with no explanation.
+The report source now reads the spend ledger. Each ledger entry carries its own Automaton id, which is resolved to the owning automation and release through the PRD map. An entry with no Automaton id falls back to the session-to-owner lookup. `group_by=automaton` prices the same spend as the PRD view. An attribution check reports Automaton-launched sessions that have no owner. The same data is reachable over REST, MCP, CLI and the comm channel. The mobile app does not yet show it.
 
 ## Expected behavior
 
-The mobile cost views show the same truth as the PWA:
+The mobile app shows the same per-Automaton cost as the other surfaces:
 
-- The retention note is visible on the cost view.
-- A partial-window row shows its `window_note`.
-- A row or total with `spend_unknown` shows "unknown", never zero, with its note and the horizon date.
-- When the attribution check is not `ok`, the view shows its note and a way to list the unattributed session ids.
+- Per-Automaton totals for tokens, time, sessions and tool calls, using the ledger-backed numbers from the cost report endpoint (including `group_by=automaton`).
+- Spend that cannot be attributed to an Automaton is shown as its own "unattributed" line, not silently dropped or folded into another row.
+- Numbers match what `datawatch cost-report`, the MCP cost report tool and the comm-channel cost verb return for the same period.
+- Dollar figures are API-equivalent only, as on the other surfaces, because the operator is on a flat plan.
 
-All fields are optional. An older server that omits them must render exactly as today.
+## Gaps this work leaves
+
+- The mobile app has no Automaton cost screen or card.
+- The mobile app has no view of the attribution check, so unattributed Automaton sessions are invisible there.
+- The new request and response fields are in `docs/api/openapi.yaml` but not yet in the mobile client models.
 
 ## Suggested next step
 
-File one parity issue in the mobile repo, linking this draft. Have the mobile cost screen model decode the new optional fields. Add the retention note, the per-row and top-level notes, and the unknown-spend state to the existing cost layouts. Add the attribution banner. Then record the contract in the mobile parity matrix. Ask the operator where the banner and the session id list should sit before building, since placement is a design question.
+Use the OpenAPI additions as the contract and add a per-Automaton cost view to the mobile app that calls the cost report endpoint with `group_by=automaton`. Add an unattributed row and a link to the attribution check output. Where this view lives in the app (a new card, a tab or a sub-tab) is a design question, so ask the operator before building it. File the parity issue on dmz006/datawatch-app when the change merges. Do not file it from this task.
