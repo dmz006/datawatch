@@ -2595,6 +2595,39 @@ use `v0.73.0`. Unifying them is an operator decision. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
+### Code scanning upload in the Release workflow
+
+In `.github/workflows/release.yaml` the gosec SARIF report (category `gosec`,
+in the `gosec baseline-diff` job) is uploaded to GitHub Code Scanning. The
+upload is a courtesy copy of a result the scan step has already judged; it is
+not a release gate.
+
+- **Up to four attempts.** The upload is tried up to four times with waits
+  between attempts, which covers GitHub's rate-limit answer. The upload action
+  does not report why it failed, so a retry happens on any failure, not only on
+  that answer.
+- **Never blocking.** A failed attempt never fails the job or holds up
+  goreleaser. If every attempt fails, the step logs a warning and the run goes
+  on.
+- **Gate unchanged.** The blocking gosec baseline check still fails the run on
+  a net-new finding. The `actions/upload-artifact` copy of the SARIF file (90-day
+  retention) stays available when the upload fails.
+- **Missing results.** A release whose upload gave up has no new gosec entry in
+  Code Scanning for that run. Read the warning on the upload step, download the
+  SARIF artifact from the run, or re-run the workflow once the limit has lifted.
+- **Not covered.** The two Trivy SARIF upload steps (`build-base` and
+  `build-agents`) and the upload steps in `containers.yaml` and
+  `image-refresh.yaml` are not part of this change. The wait lengths and the
+  attempt count are fixed in the workflow file, not in a daemon setting.
+
+**Operator review:** (1) this docs change describes the workflow change made by
+an earlier, operator-approved task; the copy of `release.yaml` in this task's
+tree does not contain that change (the edit to a protected path was reverted),
+so confirm the merged workflow matches the text above, including the exact wait
+lengths, which are not stated here. (2) Decide whether a gosec upload that fails
+all four attempts should raise an alert; today it is only a warning on the step.
+(3) Decide whether the two Trivy SARIF uploads should get the same retry.
+
 ---
 
 ## 8. Web UI Features

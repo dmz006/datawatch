@@ -183,6 +183,10 @@ Reads: `GET /api/config` returns the same values nested under `autonomous` and
 `git`. To change a value through MCP, use the `config_set` tool with the dotted
 key. The status tool itself only reads.
 
+## When the code scanning upload fails
+
+The Release workflow copies its gosec SARIF report to GitHub Code Scanning. That upload never blocks a release: it tries up to four times with waits between attempts (for example when GitHub's rate limit answers), a failed attempt never fails the job, and if every attempt fails the step logs a warning and the run goes on. The blocking gosec baseline check before it is unchanged and is still the real gate. To get the results anyway, download the `gosec-results` artifact from the run, or re-run the workflow later. Look for the warning on the "Upload gosec SARIF to Code Scanning" step if a release shows no new gosec entry. The Trivy SARIF uploads are not part of this change. Details: [operations.md](../operations.md#code-scanning-upload-in-the-release-workflow).
+
 ## Related
 
 - [Automata checks and ship](automata-checks-and-ship.md) — the ship steps that run after a release finishes.
