@@ -973,3 +973,36 @@ CVE-2026-119741
 # 1:1.3.dfsg+really1.3.2-4, and its notes say non-blocking support in the gz
 # routines was introduced in zlib v1.3.1.2.
 CVE-2026-85091
+
+# MIT Kerberos (krb5 1.20.1-2+deb12u5) in the agent-base image: 14 HIGH CVEs on
+# libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0, all "affected"
+# with no fixed version. The Debian security tracker (read 2026-11-11) lists
+# every one of them as vulnerable in bookworm, trixie and sid with no fixed
+# package, so no rebuild or upgrade can clear them yet.
+# TRACED: docker run --network none --entrypoint sh on agent-base built from
+# main on 2026-11-11: only the four client libraries are installed; dpkg lists
+# no krb5-kdc or krb5-admin-server package and /usr/sbin holds no krb5kdc or
+# kadmind; apt-cache rdepends --installed shows the libraries are pulled in only
+# by openssh-client and libcurl (through libgssapi-krb5-2). Twelve of the
+# fourteen advisories are in code that runs only inside kadmind or the KDC
+# (kadm5 RPC, the GSS-RPC transport and AUTH_GSSAPI handlers, the KDB keytab
+# reader, KDC request handling), which this image does not contain. The other
+# two (CVE-2026-119079, an ASN.1 sequence decoder, and CVE-2026-71199, CAMMAC
+# checksum validation) sit in the client library and are reachable only when
+# git, ssh or curl performs Kerberos or GSSAPI authentication; the agent images
+# configure none. Re-check security-tracker.debian.org each release and remove
+# these entries as fixes ship.
+CVE-2026-107364
+CVE-2026-112315
+CVE-2026-112316
+CVE-2026-112317
+CVE-2026-112318
+CVE-2026-112319
+CVE-2026-112320
+CVE-2026-112321
+CVE-2026-112322
+CVE-2026-112323
+CVE-2026-118380
+CVE-2026-119079
+CVE-2026-71199
+CVE-2026-71200
