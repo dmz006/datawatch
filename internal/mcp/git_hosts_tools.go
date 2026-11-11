@@ -2,6 +2,7 @@
 //
 // git_hosts_status: GET  /api/git/hosts            — readiness of each host
 // git_hosts_test:   POST /api/git/hosts/{name}/test — test connection for one host
+// git_hosts_stats:  GET  /api/git/hosts/stats       — git host operation counters
 //
 // Neither tool returns a token: the REST handlers expose only the account
 // name, scope names and a vault secret NAME.
@@ -45,6 +46,20 @@ func (s *Server) handleGitHostsTest(_ context.Context, req mcpsdk.CallToolReques
 	body, err := s.proxyJSON(http.MethodPost, "/api/git/hosts/"+url.PathEscape(name)+"/test", nil)
 	if err != nil {
 		return toolError("git_hosts_test", err), nil
+	}
+	return mcpsdk.NewToolResultText(string(body)), nil
+}
+
+func (s *Server) toolGitHostsStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("git_hosts_stats",
+		mcpsdk.WithDescription("Git host counters: configured host count, the window in seconds, operations by kind (push, pull_request, merge, tag, ci_read), failed operations and the last success time. Same data as GET /api/git/hosts/stats."),
+	)
+}
+
+func (s *Server) handleGitHostsStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body, err := s.proxyGet("/api/git/hosts/stats", url.Values{})
+	if err != nil {
+		return toolError("git_hosts_stats", err), nil
 	}
 	return mcpsdk.NewToolResultText(string(body)), nil
 }

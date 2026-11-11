@@ -1091,6 +1091,7 @@ Check the git hosts set under `git.hosts`. Neither tool returns a token; a vault
 |------|-----------|---------|
 | `git_hosts_status` | none | Every configured host with its kind, credential source and readiness (logged in, account, token scopes, fix command, problem); same data as `GET /api/git/hosts` |
 | `git_hosts_test` | `name` (required) — a configured host name | `ok`, `account`, a plain-language `message` and a `fix_command` when the test fails; same data as `POST /api/git/hosts/{name}/test`. An unknown name returns a tool error |
+| `git_hosts_stats` | none | Git host counters: configured hosts, window, operations by kind, failures, last success; same data as `GET /api/git/hosts/stats` and `datawatch git hosts stats` |
 
 Example: `git_hosts_test` with `{"name": "github"}` returns `{"host":"github","ok":true,"message":"..."}`.
 

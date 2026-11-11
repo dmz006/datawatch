@@ -416,6 +416,7 @@ var MCPToolCap = map[string]string{
 	"marketplace_ollama_catalog":     CapConfigRead,
 	"marketplace_pull_task":          CapConfigWrite,
 	"git_hosts_status":               CapCommRead,
+	"git_hosts_stats":                CapAnalyticsRead,
 	"git_hosts_test":                 CapCommWrite,
 	"matrix_status":                  CapCommRead,
 	"matrix_test":                    CapCommWrite,

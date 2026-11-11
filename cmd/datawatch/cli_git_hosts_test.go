@@ -180,3 +180,23 @@ func TestGitHostsCLI(t *testing.T) {
 		}
 	})
 }
+
+func TestGitHostsStatsCLI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/git/hosts/stats" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"configured":2,"window_seconds":3600,"operations":{"push":3,"merge":1},"failed":1,"last_success_at":"0001-01-01T00:00:00Z"}`))
+	}))
+	defer srv.Close()
+	var out bytes.Buffer
+	if err := runGitHostsStats(&out, srv.URL, ""); err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	for _, want := range []string{"configured hosts: 2", "failed: 1", "last success: never", "push: 3", "merge: 1"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
+	}
+}
