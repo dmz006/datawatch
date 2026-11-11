@@ -485,6 +485,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
+	apiMux.HandleFunc("/api/autonomous/subscriptions/preview", api.handleEventPreview)
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
 	// Operator question channel (raise, read, answer, withdraw): one
