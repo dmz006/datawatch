@@ -201,3 +201,29 @@ test('every locale has the cost-report and cost_report settings keys', () => {
     }
   }
 });
+
+test('cost report shows detail columns, window notes and the unknown marker', () => {
+  const sb = loadApp();
+  sb._i18n.bundle = bundle('en');
+  const html = sb.costReportCardHtml({
+    rows: [
+      { key: 'a', sessions: 2, tokens_in: 1, tokens_out: 2, cache_read: 7, cache_creation: 8, tool_calls: 9, span_seconds: 125, active_seconds: 30 },
+      { key: 'b', sessions: 1, tokens_in: 1, tokens_out: 2, spend_unknown: true },
+    ],
+    window_note: 'Partial window note.', unknown_spend_note: 'Spend before the ledger is unknown.',
+  });
+  for (const s of ['Cache read/created', 'Tool calls', 'Span', 'Active time', '7 / 8', '2m 5s', 'Partial window note.', 'before the ledger is unknown']) {
+    assert.ok(html.includes(s), 'missing ' + s);
+  }
+  assert.ok(html.includes('unknown'));
+});
+
+test('every locale has the new cost detail keys', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of ['automata_detail_cost_unknown', 'cost_report_unknown', 'cost_report_column_cache',
+      'cost_report_column_tool_calls', 'cost_report_column_span', 'cost_report_column_active']) {
+      assert.ok(b[k] && b[k].length, lang + ' missing ' + k);
+    }
+  }
+});

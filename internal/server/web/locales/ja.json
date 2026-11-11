@@ -1,4 +1,11 @@
 {
+  "automata_detail_cost_unknown": "不明",
+  "cost_report_column_cache": "キャッシュ読取/作成",
+  "cost_report_column_tool_calls": "ツール呼び出し",
+  "cost_report_column_span": "経過時間",
+  "cost_report_column_active": "稼働時間",
+  "cost_report_unknown": "不明",
+  "cost_report_window_note_label": "期間",
   "dash_console_questions": "保留中の質問",
   "dash_console_questions_link": "質問を開く",
   "dash_console_held": "保留＆ブロック中",

@@ -1,4 +1,11 @@
 {
+  "automata_detail_cost_unknown": "desconocido",
+  "cost_report_column_cache": "Caché leída/creada",
+  "cost_report_column_tool_calls": "Llamadas a herramientas",
+  "cost_report_column_span": "Intervalo",
+  "cost_report_column_active": "Tiempo activo",
+  "cost_report_unknown": "desconocido",
+  "cost_report_window_note_label": "Ventana",
   "dash_console_questions": "Preguntas pendientes",
   "dash_console_questions_link": "Abrir preguntas",
   "dash_console_held": "Retenidas y bloqueadas",
