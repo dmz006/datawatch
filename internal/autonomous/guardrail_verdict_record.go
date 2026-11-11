@@ -36,6 +36,7 @@ func (m *Manager) recordGuardrailVerdict(prd *PRD, unitID string, v GuardrailVer
 	if v.Outcome == "warn" {
 		m.emitGuardrailWarn(prd, unitID, &v, &d)
 	}
+	m.emitJudgeVerdict(prd, unitID, &v, &d)
 	if v.JudgeOutputPath != "" {
 		if err := RemoveJudgeOutputFile(v.JudgeOutputPath); err != nil {
 			log.Printf("autonomous: remove judge output %s for PRD %s: %v", v.JudgeOutputPath, prd.ID, err)

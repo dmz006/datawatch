@@ -59,6 +59,10 @@ func OptInNotifyEvents() []string {
 		KindAutomatonTasksDone,
 		KindCapacityWaitTooLong,
 		KindBurnGuardRungChanged,
+		KindJudgeVerdictBlock,
+		KindJudgeVerdictWarn,
+		KindJudgeVerdictPass,
+		KindFinalGateFailed,
 	}
 	sort.Strings(opt)
 	return opt

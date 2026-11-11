@@ -101,6 +101,10 @@ func buildEventKindRegistry() []EventKindInfo {
 	add(KindAutomatonTasksDone, EventGroupAutomaton, "Every task of an Automaton is completed or cancelled.")
 	add(KindCapacityWaitTooLong, EventGroupCapacity, "A task has waited for capacity longer than the threshold.")
 	add(KindBurnGuardRungChanged, EventGroupBudget, "The burn guard moved to a different rung.")
+	add(KindJudgeVerdictBlock, EventGroupReview, "A judge returned a block verdict.")
+	add(KindJudgeVerdictWarn, EventGroupReview, "A judge returned a warn verdict.")
+	add(KindJudgeVerdictPass, EventGroupReview, "A judge returned a pass verdict.")
+	add(KindFinalGateFailed, EventGroupReview, "A final gate task failed.")
 	add(KindQuestionAnswered, EventGroupReview, "An operator question was answered.")
 	add(KindQuestionWithdrawn, EventGroupReview, "An operator question was withdrawn.")
 

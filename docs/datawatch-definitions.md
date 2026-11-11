@@ -1798,7 +1798,9 @@ lifecycle event (PRD/task status changes, `task.session_started` /
 to hold and again only after it clears, plus `task.capacity_wait_too_long`, sent
 once per waiting episode once a task has waited for capacity longer than half of
 `autonomous.capacity_wait_timeout_seconds`, and `burn_guard.rung_changed`, sent
-when the burn guard rung changes, carrying the old and new rung) to a delivery sink: a comm router,
+when the burn guard rung changes, carrying the old and new rung, `judge.verdict_block`,
+`judge.verdict_warn` and `judge.verdict_pass`, each sent once when a judge verdict with that
+outcome is recorded, and `task.final_gate_failed`, sent once when a final gate task fails) to a delivery sink: a comm router,
 a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
 tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:
