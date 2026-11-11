@@ -123,7 +123,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**89 suppressed container CVEs across 8 images, 26 independently traced.**
+**103 suppressed container CVEs across 8 images, 40 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -136,7 +136,17 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-106553 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106555 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106583 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
+| CVE-2026-107364 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-107364... |
 | CVE-2026-111497 | `libbrotli1` | critical | agent-base | yes | 2027-01-22 | No fix available in Debian bookworm (status affected). Found live by the Release... |
+| CVE-2026-112315 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112315... |
+| CVE-2026-112316 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112316... |
+| CVE-2026-112317 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112317... |
+| CVE-2026-112318 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112318... |
+| CVE-2026-112319 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112319... |
+| CVE-2026-112320 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112320... |
+| CVE-2026-112321 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112321... |
+| CVE-2026-112322 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112322... |
+| CVE-2026-112323 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112323... |
 | CVE-2026-113351 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-04 | The Trivy scan of agent-base in the 9.84.1 Release run lists CVE-2026-113351 (HI... |
 | CVE-2026-114820 | `openjdk-17-jre-headless` | high | parent-full | yes | 2026-11-29 | No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-202... |
 | CVE-2026-115506 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
@@ -144,6 +154,8 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-11822 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-07-25 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-11824 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-07-25 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-118370 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-02 | The Trivy scan of agent-base in the 9.64.1 Release run lists CVE-2026-118370 (HI... |
+| CVE-2026-118380 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-118380... |
+| CVE-2026-119079 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-119079... |
 | CVE-2026-119373 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-12-01 | The Trivy scan of agent-base in the 9.58.0 Release run lists CVE-2026-119373 (HI... |
 | CVE-2026-119374 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
 | CVE-2026-119379 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
@@ -197,6 +209,8 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-70461 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-70463 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-70464 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-71199 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71199 ... |
+| CVE-2026-71200 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71200 ... |
 | CVE-2026-7210 | `python3.11, libpython3.11-*` | critical | agent-gemini, agent-aider | yes | 2026-12-02 | Operator accepted this finding for 30 days on 2026-11-02 (queue answer, option a... |
 | CVE-2026-7246 | `python3-click` | high | agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-76642 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
