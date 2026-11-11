@@ -280,6 +280,41 @@ A pack summary lists the task titles in manifest order, the names of the verific
 script files (never their full paths), and the tools and file scopes the pack's tasks
 ask for. Use it to read what a pack would allow before you accept it.
 
+### Pack attribution: traces, audit and cost
+
+Pack attribution is the read side of a pack's name and version on trace events and
+audit entries. **Today nothing writes it on a running daemon**, so the filters and
+roll-ups below return no pack-attributed rows yet. The pieces are:
+
+- **Trace events** have `pack_name` and `pack_version` fields. The trace roll-up can
+  group by them: `dimension=pack_name` or `dimension=pack_version` (REST
+  `GET /api/trace/rollup`, and the `trace_rollup` MCP tool). See
+  [agent tracing](agent-tracing.md). The helper that stamps the `builtin` pack onto a
+  trace event (`autonomous.StampBuiltinPack`) exists, but no production code calls it, so
+  the standard tasks' events are not stamped yet.
+- **Audit entries are read-only for `pack_name`.** The audit query accepts a `pack_name`
+  filter, an exact match, on REST, MCP, CLI and the comm channel, and it reads the
+  `pack_name` detail. No production code writes a `pack_name` detail on an audit entry,
+  so a `pack_name` filter returns nothing until a writer ships. Do not expect filtered
+  audit results from it yet.
+- **Cost report** rows can be broken down by pack name and version (`costreport`'s pack
+  breakdown: one row per pack and version, with events, tokens and cost). Events with no
+  pack name fall into one `unattributed` row. No surface calls the breakdown yet.
+
+Events and entries written before attribution have no pack name and show as
+unattributed. Once a writer is wired, the `builtin` pack will record `pack_name: builtin`
+on the trace events of its standard tasks.
+
+The MCP tools `trace_session` and `trace_rollup` accept an optional `pack` argument. The
+MCP tool forwards it as `?pack=`, but **the REST trace routes do not read that parameter
+yet**, so over REST and through the MCP tools the argument currently has no effect.
+Filter by `dimension=pack_name` and `key=<pack>` on the roll-up instead until it is
+wired.
+
+A per-pack usage summary (runs, cost and last use per pack name and version, counted per
+session, task or Automaton) is computed by `packs.UsageByPack`. **No daemon surface calls
+it yet**, so the Packs sub-tab does not show it.
+
 ## Open items to check
 
 Flagged here so an operator looking at the web tab knows what it does **not** have
@@ -304,6 +339,13 @@ yet:
   `packs.enabled` switch is not enforced, `packs.active` is not validated, and no surface
   installs or accepts a pack. See the [Installable packs](#installable-packs-backend-only-not-yet-wired)
   section and [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
+- **The trace `pack` filter is not honoured over REST.** The MCP `trace_session` and
+  `trace_rollup` tools send `?pack=`, and the REST trace routes ignore it. Operator review
+  needed: wire the parameter on the REST routes, or drop it from the MCP tools.
+- **The per-pack usage summary and the pack cost breakdown have no surface.**
+  `packs.UsageByPack` and the cost report's pack breakdown are library functions only.
+  The Packs sub-tab named in the change does not call them yet. Decide where they show
+  (the Packs sub-tab, the cost report or both) before they are documented as user-facing.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
