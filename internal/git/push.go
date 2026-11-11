@@ -224,7 +224,8 @@ func headSHA(ctx context.Context, dir string) string {
 // to be pushed are scanned first: enforce mode refuses with
 // Kind=secret_found before the push runs, shadow mode logs the
 // findings, returns them on the success shape and pushes.
-func PushToBranch(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) PushResult {
+func PushToBranch(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) (res PushResult) {
+	defer func() { RecordHostOp(HostOpPush, res.Kind == "" && (res.Pushed || res.NothingToPush)) }()
 	if remote == "" {
 		remote = "origin"
 	}
@@ -336,7 +337,8 @@ func remoteAdvertisedRefs(ctx context.Context, dir, remote string) (map[string]b
 // If the remote already contains commits HEAD does not, git refuses
 // the push and this returns Kind=non_fast_forward with the remote
 // untouched — that is the never-force guarantee.
-func PushToDefaultBranch(ctx context.Context, dir, remote string, scan ...SecretScanPolicy) PushResult {
+func PushToDefaultBranch(ctx context.Context, dir, remote string, scan ...SecretScanPolicy) (res PushResult) {
+	defer func() { RecordHostOp(HostOpPush, res.Kind == "" && (res.Pushed || res.NothingToPush)) }()
 	if remote == "" {
 		remote = "origin"
 	}

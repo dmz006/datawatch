@@ -9039,6 +9039,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Pre-push secret-scan counters (runs, findings, shadow reports,
 		// refusals). Copied from the git package's package-level counters;
 		// nil (key omitted from the JSON) when the daemon never scanned.
+		statsCollector.SetGitHostStatsFunc(func(s *statspkg.SystemStats) {
+			if len(cfg.Git.Hosts) == 0 {
+				return
+			}
+			ho := gitpkg.HostOpStatsSnapshot()
+			s.GitHosts = &statspkg.GitHostStats{
+				Configured:    len(cfg.Git.Hosts),
+				WindowSeconds: int64(ho.Window / time.Second),
+				Operations:    ho.Operations,
+				Failed:        ho.Failed,
+				LastSuccessAt: ho.LastSuccessAt,
+			}
+		})
 		statsCollector.SetSecretScanStatsFunc(func(s *statspkg.SystemStats) {
 			ss := gitpkg.SecretScanStatsSnapshot()
 			if ss.Runs == 0 && ss.Findings == 0 && ss.ShadowReports == 0 && ss.Refusals == 0 {
