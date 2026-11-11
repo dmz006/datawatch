@@ -304,6 +304,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/usage/burn-guard/config", api.handleBurnGuardConfig)
 	apiMux.HandleFunc("/api/usage/remaining-work", api.handleUsageRemainingWork)
 
+	// Dashboard series cards: hourly lane utilization, throughput forecast, verifier health.
+	api.registerDashboardSeriesRoutes(apiMux)
+
 	// F10 sprint 3 — agent lifecycle routes.
 	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit)     // BL107
 	apiMux.HandleFunc("/api/agents/peer/send", api.handlePeerSend)   // BL104

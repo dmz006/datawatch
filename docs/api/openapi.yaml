@@ -2902,6 +2902,8 @@ paths:
                         known_tasks: {type: integer}
                         estimated_tasks: {type: number}
                         throughput_3d: {type: number}
+                        prds_per_day_24h: {type: number, description: Completions per active day over the 24 hours before the snapshot}
+                        prds_last_24h: {type: integer, description: Completions in those 24 hours}
                         utilization: {type: number}
                         completed_prds: {type: integer}
                   direction: {type: string, enum: [converging, widening, flat, unknown]}
