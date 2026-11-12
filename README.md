@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.157.1 (2026-11-12).** The Sessions page tag filter is grouped by kind with a search box and an Automaton picker, the view mode buttons work with no grouping, and the state-count line is gone. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.158.0 (2026-11-12).** A lane utilization view shows how busy each lane was over a window, on REST, MCP, the CLI, chat, a Dashboard detail card and a Gantt lane layer. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

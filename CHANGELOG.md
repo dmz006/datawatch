@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.158.0 — Lane utilization view
+
+### Added
+
+- **Lane utilization view.** A read-only report of how busy each execution lane was over a window that ends now (1 hour to 30 days, default 24 hours): busy and idle share per lane, the runs on each lane, how long work waited for a lane, the backend mix, a flag on a lane that sat idle while eligible work existed (naming the first item it could have taken), the lane fill mode with its newest decisions, and plan usage in points and tokens, never dollars. Nothing is stored; each read works the figures out from the Automata records. It is on REST (`GET /api/autonomous/lane-utilization`), MCP (`autonomous_lane_utilization`), the CLI (`datawatch autonomous lane-utilization`) and the chat verb `autonomous lane-utilization`. There is no new setting.
+- **A Lane utilization detail card on the Dashboard.** It has a window picker, a stacked graph of each lane's busy share, a table per lane, the backend mix, the lane fill decisions and the plan usage line. It sits beside the existing Lane utilization series card, which keeps its own id; it reloads every 30 seconds.
+- **A Lane utilization layer on the dashboard Gantt.** One row per lane with a bar for each run in the Gantt window, from the same data; a lane with no run still gets a row.
+- Thirty new strings in English, German, Spanish, French and Japanese.
+
+### Documentation
+
+- **Lane utilization howto.** A new how-to, `lane-utilization`, explains the view of how busy each lane was over a window: busy and idle share, queue wait, backend mix, the idle-while-eligible flag, the lane fill mode and decisions, and plan usage in points and tokens (never dollars, because plans are flat-rate). It covers the window choices and how to reach the view from REST, MCP, the CLI, the comm channel, the dashboard card and the Gantt view. It is linked from the how-to and docs indexes, with a parity row, a companion-app issue note and testing entries.
+
 ## v9.157.1 — Sessions page tag filter and view modes
 
 ### Fixed
