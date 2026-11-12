@@ -237,6 +237,12 @@ worked out.
   arc view's data on every surface. The `dashboard.hide_inactive_cards` setting
   does not hide the Arc card; it is always offered in the Add-Card picker.
 
+## Operator review
+
+- The Arc card is opt-in and is not on the default board; add it once from Edit → Add Card.
+- Android and iPhone do not show the arc view yet; parity is tracked in `dmz006/datawatch-app`.
+- The chat verb always shows the default arc; there is no way to name another arc from chat.
+
 ## Related how-tos
 
 - [Operator console](dashboard-operator-console.md) — the dashboard's one-glance summary and its switches
