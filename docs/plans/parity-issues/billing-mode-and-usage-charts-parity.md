@@ -1,6 +1,6 @@
 # [parity] Billing mode setting, unit-separated cost display and the four usage chart cards (datawatch-app follow-up)
 
-**Not filed yet.** — this is the tracked draft; the GitHub issue is opened on the
+**Filed:** https://github.com/dmz006/datawatch-app/issues/459 (datawatch v9.152.0). This is the tracked draft; the issue lives on the
 `dmz006/datawatch-app` repository when the operator files it. Filing the issue does
 not change a line of this repo. Draft written 2026-11-12.
 
