@@ -35,6 +35,25 @@ only way to set one today is the config file, and setting one changes nothing
 until the pass is switched on in a later release. The grace is the wait before
 a repair acts; a repair never acts on the poll that first sees a finding.
 
+**Reading the repairs.** One read-only view shows, per group, the mode in
+effect, what a report-mode pass would do (`would`), what an on-mode pass did
+(`did`), and the cases that failed or were skipped as unsafe. Each entry says
+what was found, what was done and how to undo it. Reading it never repairs
+anything, raises an alert or changes a mode. It is on every surface:
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/housekeeping-repairs` |
+| MCP | `housekeeping_repairs` (no arguments; any argument is refused) |
+| CLI | `datawatch autonomous housekeeping-repairs` (`--json` for the raw body) |
+| Chat | `autonomous housekeeping-repairs` |
+| Web UI | the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds, and a group row under Settings, Automata, Housekeeping repairs |
+
+A group's mode is changed only through the config set paths, key
+`autonomous.housekeeping_repairs.<group>`; none of the read surfaces can change
+it. Until the daemon runs the repair pass, `did` stays empty and `would` shows
+only what the pass has recorded.
+
 **What the shipped framework repairs.** The framework is narrower than the
 table below. The table is the full set of finding kinds and the design for each;
 the repairs written so far are these four, one per group, each built on a
@@ -174,6 +193,14 @@ shipped code before you turn any group to `on`:
   completion step for a running Automaton whose tasks are all finished, and
   `MERGE WAIT` / `MERGE READY` are reported only. Decide whether the table rows
   should be reworded or built as written.
+- The read view and its card are new. Confirm the card's wording (it says a
+  stuck state "is looked at after N seconds") reads right to you, and check
+  that the Settings rows for the four groups save a value on your build: the
+  settings are validated when the config loads, but this page's author could
+  not confirm every set path writes them yet.
+- No surface starts the repair pass yet, so the card, the REST route, the MCP
+  tool, the CLI and chat will show empty `would` and `did` lists until a later
+  release switches the pass on.
 - An unsafe finding is never repaired: it is recorded as skipped, and one
   warning alert is raised for that subject until it stops being found.
 
