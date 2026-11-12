@@ -33,6 +33,31 @@ const docsIndexPlaceholderPath = "internal/docsindex/assets/docs-bm25-index.json
 // prepareWorktreeBestEffort in worktree.go) — preparation hygiene
 // must not fail worktree creation itself.
 func prepareWorktree(path string) error {
+	// Marker handling runs for every repository, whatever its layout.
+	markerErr := ignoreCompletionMarker(path)
+	if err := prepareDocsIndex(path); err != nil {
+		if markerErr != nil {
+			return errors.Join(markerErr, err)
+		}
+		return err
+	}
+	return markerErr
+}
+
+// ignoreCompletionMarker adds the completion marker to the worktree's own
+// info/exclude file (idempotent). It never touches the tracked .gitignore and
+// never stages anything.
+func ignoreCompletionMarker(path string) error {
+	excludePath, err := worktreeExcludePath(path)
+	if err != nil {
+		return err
+	}
+	return appendGitExcludeLine(excludePath, "/"+completionMarkerFile)
+}
+
+// prepareDocsIndex drops the docs index placeholder in place for repositories
+// that carry internal/docsindex and keeps it git-ignored.
+func prepareDocsIndex(path string) error {
 	docsDir := filepath.Join(path, "internal", "docsindex")
 	if fi, err := os.Stat(docsDir); err != nil || !fi.IsDir() {
 		return nil // not this repo's layout (e.g. a different project's checkout); leave it alone
