@@ -197,13 +197,13 @@ test('inbox badge: summed count from the existing routes, aria-label, hidden at 
   const m = inbox.inner.match(/<span class="automation-subtab-badge" aria-label="([^"]*)" style="([^"]*)">(\d+)<\/span>/);
   assert.ok(m, 'Inbox carries span.automation-subtab-badge: ' + inbox.inner);
   assert.equal(m[3], '4', 'badge is the summed count: 2 triage + 1 question + 1 held question');
-  assert.equal(m[1], '4 waiting on you', 'aria-label');
+  assert.equal(m[1], '4 waiting on you across all projects', 'aria-label');
   assert.doesNotMatch(m[2], /display:none/, 'visible when non-zero');
 
   sb.switchAutomationSubtab('progress');
   inbox = stripButtons(out.view).find(b => b.id === 'inbox');
   assert.equal(inbox.active, false, 'Inbox no longer active');
-  assert.match(inbox.inner, /automation-subtab-badge" aria-label="4 waiting on you" style="[^"]*">4</, 'badge stays on Inbox behind Progress');
+  assert.match(inbox.inner, /automation-subtab-badge" aria-label="4 waiting on you across all projects" style="[^"]*">4</, 'badge stays on Inbox behind Progress');
   for (const b of stripButtons(out.view).filter(b => b.id !== 'inbox')) assert.doesNotMatch(b.inner, /badge/, b.id + ' has no badge');
 
   // In-place update through the DOM: a stub badge gets the count text and aria-label.
@@ -212,7 +212,7 @@ test('inbox badge: summed count from the existing routes, aria-label, hidden at 
   sb.document.querySelector = sel => (/data-subtab="inbox"\] \.automation-subtab-badge/.test(sel) ? badge : null);
   vm.runInContext('_automationUpdateInboxBadge()', sb);
   assert.equal(badge.textContent, '4');
-  assert.equal(attrs['aria-label'], '4 waiting on you');
+  assert.equal(attrs['aria-label'], '4 waiting on you across all projects');
   assert.equal(badge.style.display, '');
 });
 
@@ -220,7 +220,7 @@ test('inbox badge: zero is hidden', () => {
   const { sb, out } = loadView();
   sb.renderAutonomousView();
   const inbox = stripButtons(out.view).find(b => b.id === 'inbox');
-  assert.match(inbox.inner, /<span class="automation-subtab-badge" aria-label="0 waiting on you" style="display:none;">0<\/span>/, 'zero count is hidden but present');
+  assert.match(inbox.inner, /<span class="automation-subtab-badge" aria-label="0 waiting on you across all projects" style="display:none;">0<\/span>/, 'zero count is hidden but present');
 });
 
 test('strip behaviour: style.css rules for the sliding strip', () => {
@@ -245,13 +245,15 @@ test('strip behaviour: switching tabs calls _automationSubtabsReveal on the acti
   const btn = makeStubElement();
   btn.scrollIntoView = opts => calls.push(opts);
   const queried = [];
-  sb.document.querySelector = sel => { queried.push(sel); return sel === '.automation-subtabs .output-tab.active' ? btn : null; };
+  const strip = makeStubElement();
+  strip.querySelector = sel => { queried.push(sel); return sel === '.output-tab.active' ? btn : null; };
+  sb.document.querySelector = sel => (sel === '.automation-subtabs' ? strip : null);
   sb.renderAutonomousView();
   assert.equal(calls.length, 1, 'the first render reveals the active button once');
   sb.switchAutomationSubtab('progress');
   assert.equal(calls.length, 2, 'switching reveals again');
   assert.deepEqual({ ...calls[1] }, { block: 'nearest', inline: 'center', behavior: 'smooth' });
-  assert.ok(queried.includes('.automation-subtabs .output-tab.active'), 'the active button is the one queried');
+  assert.ok(queried.includes('.output-tab.active'), 'the active button is the one queried');
   sb.switchAutomationSubtab('bogus');
   assert.equal(calls.length, 2, 'an unknown id does not reveal');
   assert.equal(typeof sb._automationSubtabsReveal, 'function');

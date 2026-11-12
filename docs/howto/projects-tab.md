@@ -103,7 +103,13 @@ Project  "core-api"
    navigation, then **Projects**, the first sub-tab on the left. The old
    Projects link and the `#projects` address open the same sub-tab. The
    **Project** picker at the top lists **Overview** and every registered
-   project. Pick `core-api`.
+   project. Pick `core-api`. On a phone the Automata sub-tab bar scrolls
+   sideways; the header title reads **Projects** in its short form so it stays on
+   one line (see
+   [Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width)).
+   The Inbox count follows this picker too: with a project picked it counts only
+   that project's items, and under **Overview** it counts all projects (see
+   [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
 
 3. **Fill in the record.** Set the owner, the target and the lane defaults, then
    the arcs. Each step is shown in the walkthrough.

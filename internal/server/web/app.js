@@ -3199,6 +3199,7 @@ function _projectsPaint() {
     const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
     view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
   }
+  _tabStripsRevealAll();
 }
 
 function _projectsPickerHTML(list, selected, err) {
@@ -4017,6 +4018,7 @@ function renderProjectsView() {
     if (fromHash !== null) _projectsState.subtab = _projectsHashSubtab(_projectsCurrentHash()) || 'overview';
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
+  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   _projectsPaint();
   return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
     // Paint again only while the Projects tab is still the active view.
@@ -4061,6 +4063,7 @@ function _projectsLoadRollup() {
 function selectProjectsView(name) {
   _projectsState.selected = name || _PROJECTS_OVERVIEW;
   _projectsRememberLast(_projectsState.selected);
+  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   try {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
@@ -7132,7 +7135,7 @@ function renderSessionDetail(sessionId) {
   // tab strip with Status (default) / Stats. Outer tab id stays
   // tabStatus so existing handlers + badge code keep working.
   const outputAreaHtml = showChannel
-    ? `<div class="output-tabs">
+    ? `<div class="output-tabs tab-strip-scroll">
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? (t('session_detail_tab_chat')||'Chat') : (t('session_detail_tab_tmux')||'Tmux')}</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">${t('session_detail_tab_channel')||'Channel'}</button>
         <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
@@ -7167,7 +7170,7 @@ function renderSessionDetail(sessionId) {
       `
     : (sess?.output_mode === 'chat'
        ? `<div class="output-area chat-mode" id="chatArea"></div>`
-       : `<div class="output-tabs">
+       : `<div class="output-tabs tab-strip-scroll">
             <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${t('session_detail_tab_tmux')||'Tmux'}</button>
             <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
             <span style="margin-left:auto;"></span>
@@ -8714,6 +8717,7 @@ function switchOutputTab(tab) {
       wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="${t('btn_send_tmux')||'Send via tmux'}">&#9654;</button>`;
     }
   }
+  if (typeof _tabStripsRevealAll === 'function') _tabStripsRevealAll();
 }
 
 // v6.11.21 — Stats tab renderer. Mirrors mobile's SessionStatsPanel.kt.
@@ -12587,6 +12591,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
+  _tabStripsRevealAll();
   if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadFingerprintMatchesPanel(); loadPushPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
@@ -12632,7 +12637,7 @@ function renderSettingsView() {
 
   view.innerHTML = `
     <div class="view-content">
-      <div class="settings-tabs-bar">
+      <div class="settings-tabs-bar tab-strip-scroll">
         ${tabBtns}
       </div>
       <div class="settings-view">
@@ -13961,6 +13966,7 @@ function renderSettingsView() {
   if (typeof _applyCardOrderForTab === 'function') {
     _applyCardOrderForTab(_settingsTab);
   }
+  _tabStripsRevealAll();
   // The whole settings panel re-renders as one innerHTML assignment on every
   // tab switch, so #aboutSplashCanvas is a fresh DOM node each call — stop
   // any previous loop (same stacking hazard as setInterval on re-render)
@@ -29279,6 +29285,7 @@ function _automataFetchAll(url, o) {
 function _automataApplyData(d) {
   state._prdBackends = (d.llms || []).filter(l => !l.disabled);
   _automataState.allPrds = d.prds || [];
+  if (typeof _inboxScope === 'function' && _inboxScope().kind === 'project') _automationInboxRescope();
   _automataState.total = d.total || _automataState.allPrds.length;
   _automataState.nextCursor = d.next || '';
   _automataState.capacity = d.capacity || null;
@@ -29525,7 +29532,7 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
   {
     key: 'automaton',
     titleKey: 'automata_templates_subtab_automaton',
-    // The existing Automaton templates loader/renderer wrap around this
+    // The existing Automaton-template loader/renderer wrap around this
     // registry unchanged.
     load: () => loadAutomataTemplatesPanel(),
     render: () => _automataRenderTemplates(),
@@ -29567,7 +29574,7 @@ function _automataTmplSubtabEntry() {
 // switch logic read _AUTOMATA_TEMPLATE_SUBTABS, so adding an entry later is
 // one new registry object — the mechanism never changes.
 function _templatesSubtabsBarHTML() {
-  return `<div class="output-tabs automata-templates-subtabs" role="tablist">`
+  return `<div class="output-tabs automata-templates-subtabs tab-strip-scroll" role="tablist">`
     + _AUTOMATA_TEMPLATE_SUBTABS.map(s => `
         <button class="output-tab ${_automataTmplSubtab === s.key ? 'active' : ''}" role="tab" aria-selected="${_automataTmplSubtab === s.key ? 'true' : 'false'}" data-tmplsubtab="${s.key}" onclick="switchTemplatesSubtab('${s.key}')">${escHtml(t(s.titleKey))}</button>`).join('')
     + `
@@ -29583,6 +29590,7 @@ function _templatesSubtabsSyncActive() {
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
+  _tabStripsRevealAll();
 }
 window._templatesSubtabsSyncActive = _templatesSubtabsSyncActive;
 
@@ -29864,7 +29872,7 @@ function _automataFallbackFromAutomation() {
 }
 
 function _automataHeaderTitle() {
-  if (_automataNormalizeTab() === 'projects') return t('nav_projects') || 'Projects';
+  if (_automataNormalizeTab() === 'projects') return t('nav_projects_short') || t('nav_projects') || 'Projects';
   return _automataNormalizeTab() === 'automation'
     ? (t('nav_automation') || 'Automation')
     : (t('automata_tab_automata') || 'Automata');
@@ -29939,6 +29947,7 @@ function switchAutomataTab(tab) {
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
+  _tabStripsRevealAll();
   if (state.activeView === 'autonomous') {
     const headerTitle = document.getElementById('headerTitle');
     if (headerTitle) headerTitle.textContent = _automataHeaderTitle();
@@ -30902,6 +30911,7 @@ function _automataDetailTabsReveal() {
     const strip = btn.parentElement;
     if (!strip || typeof btn.offsetLeft !== 'number') return;
     strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+    _tabStripFade(strip);
   } catch (e) { /* cosmetic only */ }
 }
 window._automataDetailTabsReveal = _automataDetailTabsReveal;
@@ -38783,7 +38793,7 @@ function _renderDetailTabStrip(prd, currentTab) {
     ['rules',     t('prd_tab_rules')     || 'Rules',     hasRules],
     ['trace',     t('trace_card_title')  || 'Trace',     true],
   ];
-  return `<div class="output-tabs prd-detail-tabs">
+  return `<div class="output-tabs prd-detail-tabs tab-strip-scroll">
     ${tabs.filter(t => t[2]).map(([k, label]) => `
       <button class="output-tab ${k===currentTab?'active':''}" onclick="switchAutomataDetailTab('${k}')">${escHtml(label)}</button>
     `).join('')}
@@ -39993,7 +40003,9 @@ function renderAutonomousView() {
   if (isAutomation) {
     _automationMount();
     _automationSubtabsReveal();
+    _tabStripsRevealAll();
   } else {
+    _tabStripsRevealAll();
     const reuse = _automataReuseList;
     _automataReuseList = false;
     if (st.tab === 'projects') renderProjectsView();
@@ -40711,9 +40723,91 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
 // security failures and open supervisor-watch findings. The counts live here
 // by source key so the badge stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
+const _automationInboxRaw = {};
 const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
 
+// _inboxScope is where the Inbox is read from: the cross-project Overview
+// (everything) or one selected project. A project scope applies only while
+// the Projects tab is shown and the selected name is a known project.
+function _inboxScope() {
+  const sel = (typeof _projectsState !== 'undefined' && _projectsState) ? _projectsState.selected : '';
+  if (!sel || typeof _projectsActive !== 'function' || !_projectsActive()) return { kind: 'overview' };
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list : [];
+  const project = list.find(p => p && p.name === sel);
+  return project ? { kind: 'project', project } : { kind: 'overview' };
+}
+
+function _inboxCleanDir(d) {
+  return (typeof d === 'string') ? d.trim().replace(/\/+$/, '') : '';
+}
+
+// _inboxPrdFor finds the Automaton an item names by prd_id in the Automata
+// list the page already holds ('' items and unknown ids give null).
+function _inboxPrdFor(item) {
+  const id = item && typeof item.prd_id === 'string' ? item.prd_id : '';
+  if (!id || typeof _automataState === 'undefined' || !Array.isArray(_automataState.allPrds)) return null;
+  return _automataState.allPrds.find(p => p && p.id === id) || null;
+}
+
+// _inboxItemInProject is true when the item belongs to the project: the
+// project link first (a "project:<name>" system tag on the item, or on the
+// Automaton its prd_id names), the item's directory only as the fallback
+// (its project_dir, the Automaton's, or a security failure's repo name
+// against the project directory's name). An item with neither is in no
+// project. Pure: the Automata list is the only outside read.
+function _inboxItemInProject(item, project) {
+  if (!item || typeof item !== 'object' || !project || !project.name) return false;
+  const prd = _inboxPrdFor(item);
+  const tagSets = [item.system_tags, prd && prd.system_tags];
+  let linked = false;
+  for (const tags of tagSets) {
+    if (!Array.isArray(tags)) continue;
+    for (const tag of tags) {
+      if (typeof tag === 'string' && tag.indexOf('project:') === 0 && tag.slice(8).trim()) {
+        linked = true;
+        if (tag.slice(8).trim() === project.name) return true;
+      }
+    }
+  }
+  if (linked) return false;
+  const pdir = _inboxCleanDir(project.dir);
+  if (!pdir) return false;
+  const dirs = [item.project_dir, prd && prd.project_dir].map(_inboxCleanDir).filter(Boolean);
+  if (dirs.some(d => d === pdir)) return true;
+  if (!dirs.length && typeof item.repo === 'string' && item.repo) {
+    const base = pdir.split('/').pop();
+    const repoBase = item.repo.replace(/\/+$/, '').split('/').pop();
+    if (base && repoBase === base) return true;
+  }
+  return false;
+}
+
+// _inboxScopeData returns one Inbox source's data cut to the current scope,
+// in the same shape the source's renderer and counter read. The Overview
+// returns the data untouched, so count and list agree in both scopes.
+function _inboxScopeData(key, data) {
+  const scope = _inboxScope();
+  if (scope.kind !== 'project' || !data) return data;
+  const keep = x => _inboxItemInProject(x, scope.project);
+  if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
+  if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
+  if (key === 'automation_questions') {
+    if (data.__automationQuestionsDisabled) return data;
+    if (Array.isArray(data)) return data.filter(keep);
+    return Array.isArray(data.questions) ? Object.assign({}, data, { questions: data.questions.filter(keep) }) : data;
+  }
+  if (key === 'automation_held_questions') {
+    if (!Array.isArray(data.open)) return data;
+    const out = Object.assign({}, data, { open: data.open.filter(e => e && typeof e === 'object' && keep(e)) });
+    if (Array.isArray(data.shadow)) out.shadow = data.shadow.filter(keep);
+    return out;
+  }
+  if (key === 'supervisor') return (typeof data === 'object' && Array.isArray(data.findings)) ? Object.assign({}, data, { findings: data.findings.filter(keep) }) : data;
+  return data;
+}
+
 function _automationInboxCountOf(key, data) {
+  data = _inboxScopeData(key, data);
   if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
   if (key === 'automation_questions') {
@@ -40734,8 +40828,24 @@ function _automationInboxCountOf(key, data) {
 // its data is not counted then and the last open count stays.
 function _automationInboxCountSet(key, data) {
   if (key === 'automation_questions' && typeof _automationQuestionsState !== 'undefined' && _automationQuestionsState.history) return;
+  _automationInboxRaw[key] = data;
   _automationInboxCounts[key] = _automationInboxCountOf(key, data);
   _automationUpdateInboxBadge();
+}
+
+// _automationInboxRescope recomputes every source's count from the data
+// already held, for the scope now in effect, and repaints the badge and the
+// cards from it. No source is refetched. Called when the Projects selection
+// or the hash changes.
+function _automationInboxRescope() {
+  Object.keys(_automationInboxRaw).forEach(k => { _automationInboxCounts[k] = _automationInboxCountOf(k, _automationInboxRaw[k]); });
+  _automationUpdateInboxBadge();
+  if (typeof document === 'undefined') return;
+  _AUTOMATION_INBOX_KEYS.forEach(k => {
+    const ctl = window._listLoaders && window._listLoaders[k];
+    if (ctl && ctl.state && ctl.state.hasData && typeof ctl.paint === 'function') ctl.paint();
+  });
+  if (typeof supervisorWatchRenderCard === 'function' && _automationInboxRaw.supervisor) supervisorWatchRenderCard(_automationInboxRaw.supervisor);
 }
 
 function _automationInboxBadgeCount() {
@@ -40749,7 +40859,7 @@ function _automationInboxBadgeCount() {
 }
 
 function _automationBadgeLabel(n) {
-  return t('automation_subtab_inbox_badge_label', [n]);
+  return t(_inboxScope().kind === 'project' ? 'automation_subtab_inbox_badge_label' : 'automation_subtab_inbox_badge_label_all', [n]);
 }
 
 // The badge is updated in place: no redraw of the body or the bar.
@@ -40760,6 +40870,7 @@ function _automationUpdateInboxBadge() {
   const n = _automationInboxBadgeCount();
   el.textContent = String(n);
   el.setAttribute('aria-label', _automationBadgeLabel(n));
+  el.title = _automationBadgeLabel(n);
   el.style.display = n > 0 ? '' : 'none';
 }
 
@@ -40969,19 +41080,42 @@ function _automationStopLoaders(keys) {
 // _automationSubtabsReveal scrolls the active second-row tab into view inside
 // its horizontally scrolling strip, so a tab chosen by deep link or keyboard
 // is visible. Guarded for DOMs without scrollIntoView (the node stub).
-function _automationSubtabsReveal() {
+function _tabStripReveal(stripEl) {
   try {
-    const btn = document.querySelector('.automation-subtabs .output-tab.active');
+    if (!stripEl || typeof stripEl.querySelector !== 'function') return;
+    const btn = stripEl.querySelector('.output-tab.active');
     if (!btn) return;
     if (typeof btn.scrollIntoView === 'function') {
       btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-      return;
+    } else if (typeof btn.offsetLeft === 'number') {
+      stripEl.scrollLeft = btn.offsetLeft - Math.max(0, (stripEl.clientWidth - btn.offsetWidth) / 2);
     }
-    const strip = btn.parentElement;
-    if (strip && typeof btn.offsetLeft === 'number') {
-      strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+    _tabStripFade(stripEl);
+  } catch (e) { /* cosmetic only */ }
+}
+// _tabStripFade marks which sides of a scrolling strip still hide tabs so the
+// CSS edge fades show only when there is more to scroll.
+function _tabStripFade(stripEl) {
+  try {
+    if (!stripEl || !stripEl.classList) return;
+    const max = stripEl.scrollWidth - stripEl.clientWidth;
+    stripEl.classList.toggle('tabs-more-right', max > 2 && stripEl.scrollLeft < max - 2);
+    stripEl.classList.toggle('tabs-more-left', max > 2 && stripEl.scrollLeft > 2);
+    if (!stripEl._tabFadeBound && typeof stripEl.addEventListener === 'function') {
+      stripEl._tabFadeBound = true;
+      stripEl.addEventListener('scroll', () => _tabStripFade(stripEl), { passive: true });
     }
   } catch (e) { /* cosmetic only */ }
+}
+function _tabStripsRevealAll() {
+  try {
+    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
+  } catch (e) { /* cosmetic only */ }
+}
+window._tabStripReveal = _tabStripReveal;
+window._tabStripsRevealAll = _tabStripsRevealAll;
+function _automationSubtabsReveal() {
+  try { _tabStripReveal(document.querySelector('.automation-subtabs')); } catch (e) { /* cosmetic only */ }
 }
 window._automationSubtabsReveal = _automationSubtabsReveal;
 
@@ -41733,7 +41867,7 @@ function _automationTriageLoader() {
     failedText: msg => t('triage_failed', [msg]),
     active: _automationInboxLoaderActive,
     onData: data => _automationInboxCountSet('automation_triage', data),
-    render: body => window.triageListHtml(body),
+    render: body => window.triageListHtml(_inboxScopeData('automation_triage', body)),
   });
 }
 
@@ -41746,7 +41880,7 @@ function _automationSecurityFailureLoader() {
     failedText: msg => t('automation_security_failure_failed', [msg]),
     active: _automationInboxLoaderActive,
     onData: data => _automationInboxCountSet('automation_security_failure', data),
-    render: body => window.securityFailureListHtml(body),
+    render: body => window.securityFailureListHtml(_inboxScopeData('automation_security_failure', body)),
   });
 }
 
@@ -41838,7 +41972,7 @@ function supervisorWatchRenderCard(view, nowMs) {
   _automationInboxCountSet('supervisor', view);
   const el = document.getElementById(SUPERVISOR_WATCH_CARD_ELEMENT_ID);
   if (!el) return;
-  const html = supervisorWatchCardHtml(view, nowMs);
+  const html = supervisorWatchCardHtml(_inboxScopeData('supervisor', view), nowMs);
   if (!html) { // endpoint missing — hide the card, never show a stale state
     el.style.display = 'none';
     el.innerHTML = '';
@@ -42152,7 +42286,7 @@ function _automationQuestionsLoader() {
     onData: data => _automationInboxCountSet('automation_questions', data),
     render: body => _automationQuestionsState.history
       ? window.questionsHistoryHtml(body)
-      : window.questionsCardHtml(body),
+      : window.questionsCardHtml(_inboxScopeData('automation_questions', body)),
   });
 }
 
@@ -42604,7 +42738,7 @@ function _automationHeldQuestionsLoader() {
     failedText: msg => t('held_question_failed', [msg]),
     active: _automationInboxLoaderActive,
     onData: data => _automationInboxCountSet('automation_held_questions', data),
-    render: body => window.heldQuestionsCardHtml(body),
+    render: body => window.heldQuestionsCardHtml(_inboxScopeData('automation_held_questions', body)),
   });
 }
 

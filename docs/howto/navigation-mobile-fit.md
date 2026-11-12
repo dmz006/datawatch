@@ -25,7 +25,7 @@ It reports three kinds of finding. Any one of them fails the check.
 
 A passing run measures six navigation items at each width and theme and finds no problems. The report also prints the bar's `scrollWidth` and `clientWidth` for each combination. The check records those two numbers but does not test them, so sideways scrolling in the bar does not fail the run by itself. Read them yourself: on a bar that fits, the two are equal (after the fix, 320, 360 and 390 px in both themes). A scroll width larger than the client width means the bar scrolls, even when the run passes.
 
-The check does not look at the header or the tabs below the bar. Those are measured by a separate report-only pass, described under [Other modes](#other-modes).
+The check does not look at the header or the tabs below the bar. Those are measured by a separate report-only pass, described under [Other modes](#other-modes). How the tab strips behave on a phone is described under [Tab strips at phone width](#tab-strips-at-phone-width).
 
 ## Base requirements
 
@@ -123,6 +123,32 @@ What is not covered yet:
 - The ellipsis and the `title` attribute are covered only by a small unit test, `internal/server/web/app-shared-nav.test.js`, which reads the stylesheet and `index.html`. It does not render the bar, and it does not test hover or long press. Run it by hand with `node --test internal/server/web/app-shared-nav.test.js`; `make test-e2e-shared-nav`, the other make targets and CI do not run it.
 - The check runs on the PWA only. Android and iOS are not covered by this check.
 
+## Tab strips at phone width
+
+Several screens have a row of tabs under the header. At phone width every such row follows one rule: it stays on a single line and scrolls sideways, instead of wrapping or being cut off. The Automata and Projects bars switch to this at a viewport of 600 px or less or on a touch screen; the other strips use the shared `tab-strip-scroll` style at every width, where it only matters once the tabs no longer fit. This is a layout rule in the PWA only; it is not gated by the check above.
+
+| Strip | Where |
+|-------|-------|
+| Automata sub-tab bar (Projects, Automation, Automata, Events, Templates) and its action buttons | Automata view |
+| Automation second row (Inbox, Automations, Resources and the rest) | Automata → Automation |
+| Projects tab bar | Automata → Projects |
+| Templates sub-tabs (Templates, Standard tasks) | Automata → Templates |
+| Automaton detail tabs | An Automaton's page |
+| Session detail tabs (Tmux or Chat, Channel, Status) and their controls | A session's page |
+| Settings tabs | Settings |
+
+What you see:
+
+- **Sideways scroll, no wrapping.** Tabs keep their natural width and do not shrink or wrap. The scrollbar is hidden; swipe the strip.
+- **Edge fade.** A soft fade appears on the left, the right or both edges, only on a side that still hides tabs. When every tab fits, there is no fade.
+- **Active tab in view.** When you choose a tab, open a page by link or the page redraws, the active tab is scrolled to the middle of the strip.
+- **Tap targets.** Each tab and each action button in these strips is at least 40 px tall (the 44 px line above is the bottom bar's check, not these strips').
+- **Short header title.** On the Automata view the header shows the Projects sub-tab as **Projects** from its own short-name text (`nav_projects_short`), so a longer translation does not push the title onto a second line. The header title font is slightly smaller at phone width.
+
+The Observer and Dashboard views have no tab strip. The rule was audited at 320 and 360 px.
+
+What is not covered: the strips are not part of the `make test-e2e-shared-nav` gate, and there is no automated pixel check of the fade. The unit tests under `internal/server/web/` (`app-automation-subtab-load.test.js`, `app-automation-tab-registry.test.js`, `app-automaton-detail-tab-strip.test.js`) cover the scripts, not how the strip looks.
+
 ## Other modes
 
 The probe has two more modes. Both run through the same environment variables as the gate, and both are run directly rather than through `make`:
@@ -138,7 +164,7 @@ The probe's header comment, `scripts/test-stories/pwa/shared-nav-mobile-fit-prob
 |--------|-----|
 | **YAML** | N/A. No config key. |
 | **CLI** | N/A. The check is run by `make test-e2e-shared-nav`. |
-| **Web UI** | The bottom navigation bar, six buttons: Sessions, Automata, Alerts, Observer, Dashboard and Settings (Automata and Dashboard appear when enabled). |
+| **Web UI** | The bottom navigation bar, six buttons: Sessions, Automata, Alerts, Observer, Dashboard and Settings (Automata and Dashboard appear when enabled). The tab strips below it scroll sideways on a phone (see [Tab strips at phone width](#tab-strips-at-phone-width)). |
 | **REST API** | N/A. |
 | **Comm channel** | N/A. |
 

@@ -32,7 +32,7 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting. |
+| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
 | **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
 | **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
@@ -52,6 +52,14 @@ The bottom navigation has no Automation button of its own. Inside the Automata
 tab, the sub-tab bar reads **Projects**, **Automation**, **Automata**, **Events**, **Templates**. The
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
+
+On a phone, the top bar (the five sub-tabs and the action buttons) and the second
+row under the Automation sub-tab each stay on one row and scroll sideways. A soft
+fade on the left or right edge shows that more tabs are hidden on that side, and the
+active tab is scrolled into view when you open the page by link or switch tabs.
+Every tab keeps a 40 px tap target. In the header, the Projects sub-tab is titled
+with its short name so the title fits one line. See
+[Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width).
 
 ## Opening it, the remembered sub-tab and saved links
 
@@ -91,6 +99,30 @@ that connect them.
 
 On the Automations sub-tab, one card per Automation, ordered by status (active,
 blocked, paused, draft, completed, cancelled) and then by name.
+
+### What the Inbox counts
+
+The badge on the Inbox tab and the lists under it always agree, because both are cut
+by the same scope. The scope follows the **Project** picker on the Projects sub-tab:
+
+- **Overview, or any other sub-tab.** Nothing is cut. The badge counts everything
+  waiting on you in every project, and its tooltip and screen-reader label read
+  *N waiting on you across all projects*.
+- **One project selected on the Projects sub-tab.** The badge and each card (open
+  questions, held questions, Triage, security failure report and the supervisor
+  watch findings) keep only the items that belong to that project, and the label
+  reads *N waiting on you*. Changing the picker, or the `#projects` address,
+  recounts from the data already loaded; nothing is fetched again.
+
+An item belongs to a project by its link first: a `project:<name>` system tag on the
+item, or on the Automaton the item names. Only when no such tag exists is the
+directory used: the item's own project directory, the Automaton's, or, for a
+security failure, the repository name matched against the project directory's name.
+An item with neither a link nor a directory belongs to no project, so it shows only
+in Overview. If a selected project has nothing waiting, the badge is hidden.
+
+This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
+still return every item, unfiltered.
 
 ### The needs-attention card
 
