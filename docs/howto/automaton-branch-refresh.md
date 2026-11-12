@@ -57,8 +57,11 @@ starts. The daemon merges the base in only when all of these hold:
    commits that the base has and the branch does not.
 
 If any of these fails, nothing happens and the run goes on. A refresh never
-fails the Automaton: a git error is logged, recorded with result `error`, and
-the next task starts as usual.
+fails the Automaton. If the merge itself fails (not a conflict), the error is
+logged, recorded with result `error`, and the next task starts as usual. If git
+cannot even count how far behind the branch is (for example the base branch
+does not exist in the worktree), that is logged only: nothing is recorded, and
+the check tries again after the next task.
 
 The base branch is the Automaton's own git base branch when it has one, else
 the default branch of `autonomous.worktree_base_repo` when that is set, else
@@ -102,10 +105,12 @@ entry to the Automaton's Decisions list. A merge that went through reads:
 
 > branch refresh: merged main commit `<commit>`, result clean (N commits behind)
 
-The result is one of `clean`, `conflict` or `error`. The Automaton also keeps
-the state of its latest refresh (when, how many commits behind, the base commit
-merged, the result, and whether refreshing is stopped) as `branch_refresh` in
-its record.
+The result is one of `clean`, `conflict` or `error`; a conflict or an error
+entry has the same wording with that result in place of `clean`, and for those
+the commit named is the base's latest commit, not one that was merged. The
+Automaton also keeps the state of its latest refresh (when, how many commits
+behind, the base commit, the result, and whether refreshing is stopped) as
+`branch_refresh` in its record.
 
 The Automaton `GET` reply (`GET /api/autonomous/prds/{id}`, full detail) always
 carries `branch_refresh` (null when no refresh has run),
@@ -115,7 +120,9 @@ the setting in effect for that Automaton.
 The Automaton page's Overview tab shows the same state on the **Branch
 refresh** card: the last refresh time, the commits behind main, the last result
 (*Clean*, *Conflict*, *Skipped*, *Error* or *No refresh yet*) and the override
-select.
+select. The daemon does not record a *Skipped* result today, so you will not see
+it unless a later release starts to. The card does not show whether refreshing
+is stopped; read `branch_refresh.stopped` on the Automaton `GET` reply for that.
 
 ## When the merge conflicts
 
@@ -133,15 +140,21 @@ questions.
 
 | Option | What it does to refreshing |
 |---|---|
-| **resolve by hand** | Stays stopped until you reset it |
-| **retry later** | Allowed again; the next gap tries the merge again |
+| **resolve by hand** | Intended to stay stopped until you reset it (no reset is available yet) |
+| **retry later** | Intended to allow refreshing again, so the next gap tries the merge again |
 | **leave the branch alone** (the default) | The branch is untouched and refreshing stays stopped |
 
 > **Review needed.** Answering the question does not change the Automaton yet.
 > The code that applies the chosen option exists but is not connected to the
-> question answer, so refreshing stays stopped whichever option you pick.
-> Until that is connected, the only way to refresh a stopped Automaton again is
-> to bring its branch up to date yourself.
+> question answer, so refreshing stays stopped whichever option you pick, and
+> *retry later* does not allow it again.
+>
+> Nothing else restarts it either. Changing the override on the Automaton, or
+> bringing its branch up to date by hand, does **not** clear the stop: the stop
+> is cleared only by the answer handler that is not connected yet. Until it is,
+> a stopped Automaton is not refreshed again, so plan to merge its branch with
+> the base yourself, as you would with refresh off. Decide whether to connect
+> the answer before relying on refresh for Automata that may hit a conflict.
 
 If the daemon has no question store when a conflict happens, it logs the
 conflicting files and still stops refreshing.
