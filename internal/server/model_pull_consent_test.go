@@ -228,7 +228,7 @@ func TestModelPullWorkerRechecksConsent(t *testing.T) {
 	globalPullTasks.add(&PullTask{
 		ID: id, NodeName: "gpu-a", Model: "gpt-oss:20b", Status: "pending", StartedAt: now, UpdatedAt: now,
 	})
-	s.runOllamaPull(id, "http://127.0.0.1:0", "gpt-oss:20b") // unreachable fake node — must not be reached
+	s.runOllamaPull(id, &compute.Node{Name: "gpu-a", Address: "http://127.0.0.1:0"}, "gpt-oss:20b") // unreachable fake node — must not be reached
 	if *hits != 0 {
 		t.Fatalf("a refused worker hit the Ollama node %d times", *hits)
 	}

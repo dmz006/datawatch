@@ -1094,6 +1094,9 @@ type ComputeNodeYAML struct {
 	// node usage probes and the supervisor watch probe. Default false =
 	// verify. Cannot be combined with TLSCAFile or TLSCertFingerprint.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
+	// VerifyTLS makes model pulls to this node verify its HTTPS certificate
+	// against the system roots. Default false.
+	VerifyTLS bool `yaml:"verify_tls" json:"verify_tls"`
 	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
 	// system roots when the node serves a certificate from a private CA.
 	// Empty = system roots only.
