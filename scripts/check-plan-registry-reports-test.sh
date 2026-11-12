@@ -6,9 +6,12 @@
 # directory (mktemp -d under the scratch area named by TMPDIR — never a
 # hard-coded system temp path) and asserts:
 #   - the checker passes on the good set;
+#     (list count, duplicates, unlisted files are covered by the other
+#      assertions and by the real-reports run)
 #   - it fails on a duplicated file (a listed file in two batch rows);
 #   - it fails on a missing class (an entry whose class cell is empty);
-#   - it fails on a class b entry without a proposed row.
+#   - it fails on a class b entry without a proposed row;
+#   - it fails on a class c entry without a reason.
 
 set -euo pipefail
 
@@ -39,6 +42,8 @@ count: 4
 EOF
     local b1_class="b"
     [ "$variant" = "missing-class" ] && b1_class=""
+    local c1_reason="investigation only, no plan in the file"
+    [ "$variant" = "missing-reason" ] && c1_reason=""
     cat > "$dir/plan-registry-reconciliation-batch-01.md" <<EOF
 # Plan registry reconciliation — batch 01 (entries 1 to 2 of 4)
 
@@ -53,7 +58,7 @@ EOF
 | file | class | evidence | proposed row |
 |---|---|---|---|
 | b2.md | b | no registry row | Feature two \| done |
-| c1.md | c | investigation only, no plan in the file | |
+| c1.md | c | ${c1_reason} | |
 $(case "$variant" in duplicated-file) echo '| a.md | a | duplicated row | |';; esac)
 EOF
     cat > "$dir/plan-registry-reconciliation-batch-03.md" <<'EOF'
@@ -113,6 +118,9 @@ DUP="$WORK/dup";      emit_set "$DUP" duplicated-file
 NOCLASS="$WORK/noclass"; emit_set "$NOCLASS" missing-class
 BEMPTY="$WORK/bempty"
 emit_set "$BEMPTY" good
+CNO_REASON="$WORK/cnoreason"
+emit_set "$CNO_REASON" missing-reason
+
 cat > "$BEMPTY/plan-registry-reconciliation-batch-01.md" <<'EOF'
 # Plan registry reconciliation — batch 01 (entries 1 to 2 of 4)
 
@@ -126,6 +134,7 @@ run_expect "good set passes"          "$GOOD"    pass
 run_expect "duplicated file fails"    "$DUP"     fail
 run_expect "missing class fails"      "$NOCLASS" fail
 run_expect "class b without row fails" "$BEMPTY" fail
+run_expect "class c without reason fails" "$CNO_REASON" fail
 
 if [ "$failures" -ne 0 ]; then
     echo "FAIL: $failures assertion(s) failed" >&2
