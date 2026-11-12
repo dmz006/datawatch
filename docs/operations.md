@@ -4743,6 +4743,80 @@ that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
 
 ---
 
+## Repairing a Failed Automaton in Place
+
+A failed Automaton is no longer a dead end. It accepts the same structural
+edits as one that is waiting in `needs_review`:
+
+- add a task, or remove a task;
+- add a story, remove a story, or edit a story;
+- repair task dependencies;
+- request a revision.
+
+**Completed task specs stay immutable.** Only tasks that have not completed
+can be edited or removed; a finished task keeps the spec it ran with.
+
+**Resetting a task reopens the Automaton.** Resetting a task on a failed
+Automaton moves the Automaton back to `running`. A task added while the
+Automaton was failed does not start by itself: it runs once a reset has
+reopened the Automaton.
+
+### Recipe: a failure caused only by a final gate or a small formatting check
+
+When every real task passed and the Automaton failed only because a final
+gate or a small formatting check rejected the result:
+
+1. Add a fix task that corrects exactly what the gate reported, using the
+   gate's own findings as the task text.
+2. Reset the failed task. This reopens the Automaton as `running`.
+3. Run the Automaton. The fix task runs, then the gate runs again.
+
+Cancelling is no longer needed for this. Cancelling archives the Automaton
+and discards the progress the other tasks already made; repairing in place
+keeps it. Use the same steps on every surface: the Automata page, the
+`autonomous` CLI commands, the REST task and story endpoints, the chat
+verbs, or the `autonomous_prd_add_task`, `autonomous_prd_reset_task` and
+`autonomous_prd_run` MCP tools.
+
+### The cancel reply
+
+A cancel returns two counts about the Automaton's sessions:
+
+| Field | Meaning |
+|---|---|
+| `killed_sessions` | The number of sessions the cancel ended. |
+| `killed_live_sessions` | How many of those sessions were still live when the cancel began. |
+
+When `killed_sessions` is above zero and `killed_live_sessions` is `0`, the
+cancel only touched sessions that had already ended, so nothing running was
+interrupted.
+
+### Archive grace for cancelled Automata (`autonomous.archive_grace_minutes`)
+
+After a cancel, the supervisor loop archives the Automaton only after a
+grace period, so there is time to inspect it or repair and reuse it first.
+
+| Value | Behavior |
+|---|---|
+| a whole number of minutes (default `60`) | A cancelled Automaton is kept that long before it is archived. |
+| `0` | A cancelled Automaton is archived at once. |
+| negative or not a whole number | Refused, on every surface, with an error that names the rule. |
+
+It is read on every supervisor pass, so a change needs no restart.
+
+| Surface | How to set it |
+|---|---|
+| **config file** | Under the `autonomous:` block, set `archive_grace_minutes: 60`. |
+| **REST** | `GET /api/config` reads `autonomous.archive_grace_minutes`; `PUT /api/config` with `{"autonomous.archive_grace_minutes":30}` writes it. `PUT /api/autonomous/config` takes `{"archive_grace_minutes":30}`. |
+| **CLI** | `datawatch config set autonomous.archive_grace_minutes 30` (read with `datawatch config get autonomous.archive_grace_minutes`). |
+| **Comm channel** | `configure autonomous.archive_grace_minutes=30` |
+| **MCP** | `config_set` with the key `autonomous.archive_grace_minutes`, or `autonomous_config_set` with `{"archive_grace_minutes":30}`; read with `autonomous_config_get`. |
+| **Web** | Settings, Autonomous Automata planning card, field "Archive grace for cancelled Automata (min, 0=at once)". |
+
+See [howto/autonomous-recovery](howto/autonomous-recovery.md).
+
+---
+
 ## Notification Routing Across Comm Channels
 
 Every comm channel you enable (Signal, Telegram, Discord, Slack, Matrix,

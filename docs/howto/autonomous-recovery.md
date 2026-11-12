@@ -732,6 +732,7 @@ processes that attempt had been waiting for.
 
 ## See also
 
+- [Repairing a failed Automaton in place](../operations.md#repairing-a-failed-automaton-in-place)
 - [howto/autonomous-planning](autonomous-planning.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
 - [howto/automata-orchestrator](automata-orchestrator.md)
