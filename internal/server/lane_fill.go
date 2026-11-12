@@ -68,7 +68,7 @@ func unknownLanePreferenceMsg(pref string) string {
 // decompose-ahead minimum and the poll interval are whole numbers >= 0; the
 // backends and the model are strings; the verifier-wait rule and the four
 // eligibility switches are booleans; gpu_mode and claude_mode take the mode
-// values or empty; stale_after_hours is a whole number >= 0.
+// values or empty; stale_after_hours and host_down_after_minutes are whole numbers >= 0.
 // A field this does not know is not checked here.
 func validateLaneFillValue(field string, v any) error {
 	switch field {
@@ -92,6 +92,10 @@ func validateLaneFillValue(field string, v any) error {
 	case "stale_after_hours":
 		if !isWholeNonNegative(v) {
 			return fmt.Errorf("%sstale_after_hours: must be a whole number >= 0 (0 turns the stale rule off)", laneFillKeyPrefix)
+		}
+	case "host_down_after_minutes":
+		if !isWholeNonNegative(v) {
+			return fmt.Errorf("%shost_down_after_minutes: must be a whole number >= 0 (0 never treats an unreachable host as down)", laneFillKeyPrefix)
 		}
 	case "gpu_lanes", "claude_lanes", "idle_alert_minutes", "decompose_ahead_min", "poll_seconds":
 		if !isWholeNonNegative(v) {
@@ -179,6 +183,8 @@ func applyLaneFillValue(c *config.AutonomousLaneFillConfig, field string, v any)
 		c.PollSeconds = n
 	case "stale_after_hours":
 		c.StaleAfterHours = &n
+	case "host_down_after_minutes":
+		c.HostDownAfterMinutes = &n
 	}
 }
 
@@ -198,6 +204,7 @@ func laneFillConfigSurface(c config.AutonomousLaneFillConfig) map[string]interfa
 		"count_verifier_wait": c.EffectiveCountVerifierWait(),
 
 		"stale_after_hours":          c.EffectiveStaleAfterHours(),
+		"host_down_after_minutes":    c.EffectiveHostDownAfterMinutes(),
 		"require_confirmed_proposal": c.EffectiveRequireConfirmedProposal(),
 		"check_main_carries":         c.EffectiveCheckMainCarries(),
 		"require_worktree":           c.EffectiveRequireWorktree(),

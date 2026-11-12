@@ -250,6 +250,7 @@ func TestLaneFillLoadRejectsBadKindModeAndStale(t *testing.T) {
 		"gpu_mode":    {"gpu_mode: auto", "gpu_mode"},
 		"claude_mode": {"claude_mode: yes", "claude_mode"},
 		"stale":       {"stale_after_hours: -1", "stale_after_hours"},
+		"host down":   {"host_down_after_minutes: -1", "host_down_after_minutes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.yaml")
@@ -260,5 +261,50 @@ func TestLaneFillLoadRejectsBadKindModeAndStale(t *testing.T) {
 				t.Fatalf("Load error = %v, want one naming autonomous.lane_fill.%s", err, tc.key)
 			}
 		})
+	}
+}
+
+func TestLaneFillHostDownAfterMinutesDefaultAndRoundTrip(t *testing.T) {
+	for name, lf := range map[string]AutonomousLaneFillConfig{
+		"shipped defaults": DefaultConfig().Autonomous.LaneFill,
+		"zero value":       {},
+	} {
+		if got := lf.EffectiveHostDownAfterMinutes(); got != 10 {
+			t.Errorf("%s: host_down_after_minutes = %d, want 10", name, got)
+		}
+	}
+	zero := 0
+	in := AutonomousLaneFillConfig{Mode: "shadow", HostDownAfterMinutes: &zero}
+	raw, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "host_down_after_minutes: 0") {
+		t.Fatalf("yaml must carry the explicit 0:\n%s", raw)
+	}
+	var fromYAML AutonomousLaneFillConfig
+	if err := yaml.Unmarshal(raw, &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if fromYAML.HostDownAfterMinutes == nil || fromYAML.EffectiveHostDownAfterMinutes() != 0 {
+		t.Fatalf("yaml round trip lost the explicit 0: %+v", fromYAML.HostDownAfterMinutes)
+	}
+	jraw, _ := json.Marshal(in)
+	var fromJSON AutonomousLaneFillConfig
+	if err := json.Unmarshal(jraw, &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if fromJSON.HostDownAfterMinutes == nil || fromJSON.EffectiveHostDownAfterMinutes() != 0 {
+		t.Fatalf("json round trip lost the explicit 0: %s", jraw)
+	}
+	var absent AutonomousLaneFillConfig
+	if err := yaml.Unmarshal([]byte("mode: shadow\n"), &absent); err != nil {
+		t.Fatal(err)
+	}
+	if absent.HostDownAfterMinutes != nil || absent.EffectiveHostDownAfterMinutes() != 10 {
+		t.Fatal("an absent host_down_after_minutes must stay nil and read 10")
+	}
+	if out, _ := yaml.Marshal(absent); strings.Contains(string(out), "host_down_after_minutes") {
+		t.Fatalf("an unset host_down_after_minutes must not be written:\n%s", out)
 	}
 }
