@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Automata page fits a phone.** The Automata sub-tab bar, its action buttons, the second row under Automation (Inbox, Automations, Resources and the rest), the Projects bar and the Templates sub-tabs now stay on one line and scroll sideways instead of wrapping or being cut off. The header title uses a shorter form on a narrow screen.
+- **The Inbox counter and list follow the selected project.** With a project picked on the Projects sub-tab, the Inbox badge and every card under it (open questions, held questions, Triage, security failures, supervisor watch findings) show only that project's items; the Overview counts everything waiting on you across all projects. The scope is a display rule of the web app; REST, MCP, the CLI and the chat channel still return every item.
+- **Other tab strips scroll sideways the same way.** The Settings tabs, the Observer tabs, the Dashboard tabs, the session detail tabs and the Automaton detail tabs use one shared scrolling strip style.
+- Docs: the Automation tab, Projects tab and mobile fit how-tos describe the phone layout and what the Inbox counts under a project and under Overview.
+
 ## v9.156.0 — Dashboard cards: real data or removed
 
 ### Added
