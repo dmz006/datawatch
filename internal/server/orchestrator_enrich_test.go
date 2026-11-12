@@ -22,6 +22,10 @@ type fakeOrchAutonomous struct {
 func (f *fakeOrchAutonomous) Config() any         { return nil }
 func (f *fakeOrchAutonomous) SetConfig(any) error { return nil }
 func (f *fakeOrchAutonomous) Status() any         { return nil }
+func (f *fakeOrchAutonomous) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return f.CreatePRD("", "", "", "", "")
+}
+
 func (f *fakeOrchAutonomous) CreatePRD(string, string, string, string, string) (any, error) {
 	return nil, nil
 }

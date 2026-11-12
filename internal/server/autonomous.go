@@ -693,6 +693,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				Backend        string   `json:"backend,omitempty"`
 				Model          string   `json:"model,omitempty"`
 				Effort         string   `json:"effort,omitempty"`
+				ParentPRDID    string   `json:"parent_prd_id,omitempty"`   // optional parent Automaton; the child inherits from it
 				Type           string   `json:"type,omitempty"`            // BL221 Phase 4 — automaton type
 				GuidedMode     bool     `json:"guided_mode,omitempty"`     // BL221 Phase 4 — step-by-step operator checkpoints
 				Skills         []string `json:"skills,omitempty"`          // BL221 Phase 4 — skill IDs passed to task sessions
@@ -722,7 +723,16 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// project_dir = local checkout; project_profile = F10 git
 			// clone (worker side); cluster_profile alone is invalid
 			// because there's no source code to work on.
-			if strings.TrimSpace(req.ProjectDir) == "" && strings.TrimSpace(req.ProjectProfile) == "" {
+			parentID := strings.TrimSpace(req.ParentPRDID)
+			if parentID != "" {
+				if _, ok := s.autonomousMgr.GetPRD(parentID); !ok {
+					http.Error(w, "parent Automaton not found: "+parentID, http.StatusNotFound)
+					return
+				}
+			}
+			// A child inherits its parent's project, so a parent id stands in
+			// for project_dir / project_profile.
+			if parentID == "" && strings.TrimSpace(req.ProjectDir) == "" && strings.TrimSpace(req.ProjectProfile) == "" {
 				// BL407 Phase 1's worktree auto-assignment (Decision 2)
 				// covers exactly this case at Run() time: when no
 				// project_dir/project_profile/cluster_profile is given
@@ -754,7 +764,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, unknownKindMsg(req.Kind), http.StatusBadRequest)
 				return
 			}
-			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
+			var prd any
+			var err error
+			if parentID != "" {
+				prd, err = s.autonomousMgr.CreatePRDWithParent(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort, parentID)
+			} else {
+				prd, err = s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
+			}
 			if err != nil {
 				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return

@@ -988,6 +988,7 @@ func (s *Server) toolAutonomousPRDCreate() mcpsdk.Tool {
 		mcpsdk.WithString("model", mcpsdk.Description("LLM model override (e.g. ollama/qwen3.8:27b, opencode/big-pickle). Applied to every task session.")),
 		mcpsdk.WithString("effort", mcpsdk.Description("BL41 effort hint (low/medium/high/max)")),
 		mcpsdk.WithString("kind", mcpsdk.Enum("feature", "bug", "other"), mcpsdk.Description("Optional Automaton kind; omit to derive it from the title and spec")),
+		mcpsdk.WithString("parent_prd_id", mcpsdk.Description("Optional parent Automaton id. The new Automaton inherits the parent's project, Automation, backend, model, tags and priority; an explicit project_dir, backend or model wins. An unknown parent is refused.")),
 	)
 }
 func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1000,6 +1001,9 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 	}
 	if kind := req.GetString("kind", ""); kind != "" {
 		body["kind"] = kind
+	}
+	if parent := strings.TrimSpace(req.GetString("parent_prd_id", "")); parent != "" {
+		body["parent_prd_id"] = parent
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds", body)
 	return llmSetterResult(out, err)

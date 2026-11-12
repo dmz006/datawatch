@@ -5290,6 +5290,7 @@ paths:
                 project_dir: {type: string}
                 backend: {type: string}
                 effort: {type: string}
+                parent_prd_id: {type: string, description: "Optional parent Automaton id. The new Automaton inherits the parent's project, Automation, backend, model, tags and priority; an explicit project_dir, backend or model wins. A parent id stands in for project_dir and project_profile. An unknown parent is a 404 and nothing is created."}
                 kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
                 lane_preference: {type: string, enum: [gpu, claude, any, ""], description: "Optional lane preference: gpu, claude or any. Omit or leave empty for any lane. An unknown value is refused before anything is created"}
       responses:

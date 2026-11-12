@@ -44,6 +44,10 @@ func (f *tmFake) called(m string) bool {
 	return false
 }
 
+func (f *tmFake) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return f.CreatePRD("", "", "", "", "")
+}
+
 func (f *tmFake) CreatePRD(string, string, string, string, string) (any, error) {
 	f.mark("CreatePRD")
 	return nil, nil
