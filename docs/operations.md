@@ -5011,7 +5011,7 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 | Comm channel | `autonomous pending-items [state] [automation-id]` | `autonomous pending-item-add`, `autonomous pending-item-attach`, `autonomous pending-items-refresh`; `automation insert <id> pending_item=<item> <reason>` |
 | PWA | **Pending items** card on the Automation Overview sub-tab, refreshed every 30 seconds | Add form, **Attach Automaton** control and **Read the file registry now** button on the same card |
 
-The routes answer 503 while Automata are disabled and need the autonomous read capability (GET) or write capability (POST) when called by a federated peer; any other method is a 405. An unknown `state` is refused with `400:`, a blank title with `400:`, an unknown item or Automaton with `404:`, and an attach of an item that is not waiting (or an insert of an item that is not waiting, or already in another Automation) with `409:`. The field documentation is in `docs/api/openapi.yaml`.
+The routes answer 503 while Automata are disabled and need the autonomous read capability (GET) or write capability (POST) when called by a federated peer; any other method is a 405. An unknown `state` is refused with `400:`, a blank title, a title over 300 characters or an attach without `automaton_id` with `400:`, an unknown item or Automaton with `404:`, and an attach of an item that is not waiting, of an Automaton that is a template, a child Automaton, already attached to an item or already in an Automation (or an insert of an item that is not waiting, or already in another Automation) with `409:`. The field documentation is in `docs/api/openapi.yaml`.
 
 **Where to see.**
 

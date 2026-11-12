@@ -1672,7 +1672,8 @@ paths:
       summary: Record a waiting pending item
       description: |
         Records a new pending item in the waiting state. The daemon generates the
-        id (8 hex characters). `title` must not be blank. `ref` is an optional
+        id (8 hex characters). `title` must not be blank and must not be longer than 300
+        characters. `ref` is an optional
         outside label, free text. The reply is the new item. Any other
         method is a 405. A federated peer needs the autonomous write capability.
       operationId: autonomousPendingItemCreate
@@ -1685,7 +1686,7 @@ paths:
               type: object
               required: [title]
               properties:
-                title: {type: string, description: "The name of the work; must not be blank"}
+                title: {type: string, description: "The name of the work; must not be blank and at most 300 characters"}
                 ref: {type: string, description: "Optional outside label for the item, for example the id it has in a file registry"}
                 actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
       responses:
@@ -1695,7 +1696,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PendingItem"
-        "400": {description: "400: the title is blank, or the body is not valid JSON"}
+        "400": {description: "400: the title is blank, the title is longer than 300 characters, or the body is not valid JSON"}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
@@ -1715,9 +1716,10 @@ paths:
         is converted the same way. The item moves from waiting to attached. An
         Automation that was blocked on the member resumes when
         `autonomous.automation.pending_item_auto_resume` is on; when it is off the
-        Automation stays blocked and `notes` says so. The Automaton must exist, must
-        not be a template or a child of another Automaton, and must not already
-        belong to an Automation. A federated peer needs the autonomous write
+        Automation stays blocked and `notes` says so. The Automaton must exist (404 otherwise). It
+        must not be a template, a child of another Automaton, already attached to
+        another pending item or already a member of an Automation; each of those is
+        a 409. A missing `automaton_id` is a 400. A federated peer needs the autonomous write
         capability.
       operationId: autonomousPendingItemAttach
       tags: [Autonomous]
@@ -1738,13 +1740,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PendingItemAttachResult"
-        "400": {description: "400: automaton_id is missing, or the Automaton cannot be attached (a template, a child, or already in an Automation)"}
+        "400": {description: "400: automaton_id is missing"}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: "404: the pending item or the Automaton does not exist"}
         "405": {description: Method not allowed; only POST is served}
-        "409": {description: "409: the item is not waiting (attaching twice is refused)"}
+        "409": {description: "409: the item is not waiting (attaching twice is refused), or the Automaton cannot be attached because it is a template, a child Automaton run by its parent, already attached to another pending item, or already a member of an Automation"}
         "503": {description: Autonomous is disabled, or the pending item registry is unavailable}
 
   /api/autonomous/pending-items/refresh:
