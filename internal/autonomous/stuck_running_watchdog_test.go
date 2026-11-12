@@ -1,6 +1,8 @@
 package autonomous
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -236,5 +238,98 @@ func TestStuckRunningWatchdog_ConcurrentStatusChangeClearsEntry(t *testing.T) {
 	defer e.mu.Unlock()
 	if len(e.audits) != 0 {
 		t.Fatalf("audits = %v, want none", e.audits)
+	}
+}
+
+// stuckMixedPRD makes a running PRD whose tasks carry the given statuses.
+func stuckMixedPRD(t *testing.T, m *Manager, statuses ...TaskStatus) *PRD {
+	t.Helper()
+	prd, _ := bl451RunningPRD(t, m, nil, TaskCompleted)
+	prd, _ = m.Store().GetPRD(prd.ID)
+	var tasks []Task
+	for i, st := range statuses {
+		tasks = append(tasks, Task{ID: fmt.Sprintf("mt%d", i), Title: fmt.Sprintf("task-%d", i), Status: st})
+	}
+	prd.Story[0].Tasks = tasks
+	if err := m.Store().SavePRD(prd); err != nil {
+		t.Fatal(err)
+	}
+	return prd
+}
+
+func TestStuckRunningWatchdog_AdvancesCompletedOrCancelled(t *testing.T) {
+	e := newStuckWatchdogEnv(t, 60)
+	prd := stuckMixedPRD(t, e.m, TaskCompleted, TaskCancelled, TaskCancelled)
+	e.m.sweepStuckRunning()
+	e.advance(61 * time.Second)
+	e.m.sweepStuckRunning()
+	p, _ := e.m.Store().GetPRD(prd.ID)
+	if e.refireCount() != 1 {
+		t.Fatalf("refires = %d, want 1", e.refireCount())
+	}
+	var note string
+	for _, d := range p.Decisions {
+		if d.Kind == "stuck_running_cancelled_advance" {
+			note = d.Note
+			if d.Actor != "autonomous" {
+				t.Fatalf("actor = %q", d.Actor)
+			}
+		}
+	}
+	if note == "" {
+		t.Fatal("no stuck_running_cancelled_advance decision")
+	}
+	for _, want := range []string{"task-1", "task-2", "2 cancelled"} {
+		if !strings.Contains(note, want) {
+			t.Fatalf("note %q missing %q", note, want)
+		}
+	}
+	if strings.Contains(note, "PRD") {
+		t.Fatalf("note uses forbidden wording: %q", note)
+	}
+	if bl451HasDecision(p, "stuck_running_refire") {
+		t.Fatal("plain refire decision recorded alongside the advance")
+	}
+	// Not moved within another full bound: falls through to blocked.
+	e.advance(61 * time.Second)
+	e.m.sweepStuckRunning()
+	p, _ = e.m.Store().GetPRD(prd.ID)
+	if p.Status != PRDBlocked || !bl451HasDecision(p, "stuck_running_blocked") {
+		t.Fatalf("status = %s, want blocked after a second bound", p.Status)
+	}
+	if e.refireCount() != 1 {
+		t.Fatalf("refires = %d, want still 1", e.refireCount())
+	}
+}
+
+func TestStuckRunningWatchdog_AllCancelledNotAdvanced(t *testing.T) {
+	e := newStuckWatchdogEnv(t, 60)
+	prd := stuckMixedPRD(t, e.m, TaskCancelled, TaskCancelled)
+	e.m.sweepStuckRunning()
+	e.advance(61 * time.Second)
+	e.m.sweepStuckRunning()
+	p, _ := e.m.Store().GetPRD(prd.ID)
+	if bl451HasDecision(p, "stuck_running_cancelled_advance") {
+		t.Fatal("an all-cancelled Automaton was advanced")
+	}
+	if !bl451HasDecision(p, "stuck_running_refire") {
+		t.Fatal("all-cancelled Automaton lost the plain refire path")
+	}
+}
+
+func TestStuckRunningWatchdog_FailedTaskKeepsOldPath(t *testing.T) {
+	e := newStuckWatchdogEnv(t, 60)
+	prd := stuckMixedPRD(t, e.m, TaskCompleted, TaskCancelled, TaskFailed)
+	e.m.sweepStuckRunning()
+	e.advance(61 * time.Second)
+	e.m.sweepStuckRunning()
+	p, _ := e.m.Store().GetPRD(prd.ID)
+	if bl451HasDecision(p, "stuck_running_cancelled_advance") || !bl451HasDecision(p, "stuck_running_refire") {
+		t.Fatalf("failed-task Automaton not on the plain refire path: %+v", p.Decisions)
+	}
+	e.advance(61 * time.Second)
+	e.m.sweepStuckRunning()
+	if p, _ = e.m.Store().GetPRD(prd.ID); p.Status != PRDBlocked {
+		t.Fatalf("status = %s, want blocked", p.Status)
 	}
 }

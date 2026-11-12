@@ -1016,7 +1016,9 @@ paths:
         `autonomous.generated_artefacts.change_record`, `.gate_report`, `.changelog_draft`, `.parity_draft`, `.tracker_rows`, `.registry_row`, `.combined_docs_task` (true|false, default true; which artefacts an Automaton generates from its change record; applies without restart),
         `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
         Automaton may stay running with every task finished and no live session before the
-        stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
+        stuck-running watchdog re-fires its roll-up once, then blocks it; when only cancelled
+        tasks remain besides completed ones, the first step advances it to the completion review;
+        0 uses the default),
         `autonomous.task_max_attempt_seconds` (whole seconds >= 0, default 0 = off; wall-clock
         cap on one task attempt, recommended 5400),
         `autonomous.task_no_progress_seconds` (whole seconds >= 0, default 0 = off; stops an
