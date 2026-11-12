@@ -2175,7 +2175,7 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 | `project_set_arcs` | write | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |
-| `project_timeline` | read | `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (arc id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one arc id or `none`, unpaged), `limit`, `cursor` |
+| `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (arc id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one arc id or `none`, unpaged), `limit`, `cursor` |
 | `project_policy_effective` | read | `name` (required), `automaton` (optional top tier) |
 | `project_alias_delete` | write | `name` (required); the directory is not touched |
 

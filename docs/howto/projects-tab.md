@@ -356,7 +356,7 @@ datawatch projects timeline core-api --focus <arc-id>                 # one arc,
   `depends_on`. An Automaton spans its created time to its completion time; a
   task spans its start to its completion; an arc spans the earliest Automaton
   start to the latest Automaton end. Rows inside an arc are ordered by
-  completion, then so a dependency sits above its dependent. Automata-level and
+  completion, then adjusted so a dependency sits above its dependent. Automata-level and
   focus replies also carry `edges`, a list of `{from, to, kind: "chain"}` taken
   from the Automation's member order and its on-complete, on-blocked and
   on-failed links, drawn through fork and join members.
@@ -500,7 +500,7 @@ surfaces below.
 | `PUT /api/projects/{name}/arcs` | Replace the ordered arcs (a bare array or `{"arcs": [...]}`); 404 for an unknown project |
 | `GET /api/projects/{name}/rollup?window=7` | Roll-up: arcs in order, Automata, tasks, points, throughput; `window` 1 to 365 days |
 | `GET /api/projects/{name}/history?limit=50&cursor=…` | History page and Gantt rows |
-| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: first and last time per arc, Automaton and task; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, arc or Automaton |
+| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: start, end, status and release per arc, Automaton and task, `depends_on` on tasks and `edges` between Automata; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, arc or Automaton |
 | `GET /api/projects/{name}/policy/effective?automaton=<id>` | Effective policy with the tier of each setting |
 | `DELETE /api/projects/{name}` | Remove the alias; the directory is not touched |
 
@@ -577,7 +577,7 @@ Send these from Signal, Telegram or another connected channel:
 | `project show <name>` | Record fields, one per line; `-` for unset |
 | `project arcs <name>` | Arcs in order |
 | `project progress <name>` | Roll-up: tasks, points and throughput per arc |
-| `project timeline <name> [level=arcs\|automata\|tasks] [parent=<arc>\|none] [automaton=<id>] [focus=<arc>\|none] [limit=<n>] [cursor=<c>]` | One line per row: kind, title, first and last time (`now` while running); says how to continue when more rows exist |
+| `project timeline <name> [level=arcs\|automata\|tasks] [parent=<arc>\|none] [automaton=<id>] [focus=<arc>\|none] [limit=<n>] [cursor=<c>]` | One line per row: kind, title, start and end (`now` while running), then `[status]`, `depends on …` and `release …` when present; Automaton chain edges follow as `from -> to (chain)` lines; says how to continue when more rows exist |
 | `project set <name> <field> <value>` | Set one field: `owner`, `repository`, `default_branch`, `description`, `default_backend`, `major_trigger`, `weekly_share`, `branch_retention_days` |
 | `project policy <name> [automaton]` | Effective policy (see [project-automation-policy](project-automation-policy.md)) |
 
