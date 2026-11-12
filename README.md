@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.154.0 (2026-11-12).** An Automation can hold a place for work that has no Automaton yet: a pending item holds the Automation until an Automaton is attached. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.154.1 (2026-11-12).** A monitoring peer's first push no longer creates a compute node; peers with no node are listed with an Add action. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

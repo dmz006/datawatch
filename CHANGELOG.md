@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.154.1 — Stop a monitoring peer's first push from creating a compute node
+
+### Fixed
+
+- **A monitoring peer's first push no longer creates a compute node.** Until now the first time a `datawatch-stats` peer pushed stats, the daemon created an Ollama compute node from the address the push arrived from, which is not an LLM server. A push now only binds the peer to a node of the same name when one exists and never changes that node's address. A peer with no matching node is listed as **Observed peers with no node** on the Compute page, as `observed_peers` in the node list REST response, in `datawatch compute node list`, in the chat `compute node list` reply and in the `compute_node_list` MCP tool, each with an **Add as a compute node** action that opens the node form with the name filled in and the address empty; nothing is created until you save.
+- **A review report for nodes earlier versions created this way.** **Auto-created nodes that never answered** (`unanswered_auto_created`) lists nodes created automatically from a push whose address has never answered a probe. It only lists: no node is deleted or disabled automatically, and a node leaves the report when its address answers, or when you delete or recreate it.
+- Docs: the compute nodes how-to and the definitions describe observed peers and the report.
+
 ## v9.154.0 — Automation members for work with no Automation
 
 ### Added
