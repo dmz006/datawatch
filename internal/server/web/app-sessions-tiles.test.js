@@ -410,7 +410,7 @@ test('list, tiles and compact all draw the same filtered page of the 300-session
   vm.runInContext('state._sessionsPageLimit = 300;', sb);
 
   // Search applies to the pool before paging, in every mode.
-  vm.runInContext(`state.sessionFilter = 'alpha'; state.sessionsViewMode = "compact"; state._sessionsPageKey = null; state._sessionsPageLimit = 60;`, sb);
+  vm.runInContext(`state.sessionFilter = 'alpha job'; state.sessionsViewMode = "compact"; state._sessionsPageKey = null; state._sessionsPageLimit = 60;`, sb);
   html = paint();
   assert.equal(countTiles(html), 50, 'the search keeps only the 50 alpha sessions');
   assert.ok(!html.includes('_sessionsShowMore'), '50 < one page, so no Show-more');
@@ -418,7 +418,7 @@ test('list, tiles and compact all draw the same filtered page of the 300-session
     assert.ok(!html.includes(`data-sess-id="local/ss${i}"`), `ss${i} (a beta row) is filtered out in compact mode`);
   }
 
-  vm.runInContext(`state.sessionFilter = "alpha"; state.sessionsViewMode = "list";`, sb);
+  vm.runInContext(`state.sessionFilter = "alpha job"; state.sessionsViewMode = "list";`, sb);
   html = paint();
   assert.ok(!html.includes('session-tile-grid'), 'list mode draws cards, not tiles');
   assert.equal(countTiles(html), 0, '... and none of the tile roots remain');

@@ -2851,6 +2851,7 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   state.activeView = view;
+  if (view !== 'sessions' && state._sessionsSheetOpen) sessionsFiltersClose(true);
   window._automationReturnId = null; // set again by openAutomationMemberPRD after it navigates
   // Persist view for refresh recovery
   localStorage.setItem('cs_active_view', view);
@@ -4173,13 +4174,20 @@ function renderSessionsView() {
     DONE_STATES.has(s.state) && s.updated_at && (now - new Date(s.updated_at).getTime()) < RECENT_MS
   );
   const history = state.sessions.filter(s => DONE_STATES.has(s.state));
+  _sessionsSearchCancel();
+  if (!state._sessionsSearchRestored) {
+    state._sessionsSearchRestored = true;
+    if (!state.sessionFilter) state.sessionFilter = _sessionsSearchReadStored();
+  }
   const filterText = (state.sessionFilter || '').toLowerCase();
   // v7.0.0-alpha.22 — session-state filter chips (active / waiting /
   // done / all). Persists in localStorage so the operator's choice
   // survives page reloads. 'all' is the legacy behavior (gated by
   // state.showHistory).
   if (state.sessionStateChip === undefined) {
-    state.sessionStateChip = localStorage.getItem('cs_session_state_chip') || 'all';
+    let storedChip = null;
+    try { storedChip = localStorage.getItem('cs_session_state_chip'); } catch (_) { storedChip = null; }
+    state.sessionStateChip = storedChip || 'all';
   }
   const chip = state.sessionStateChip;
   // Show active + recently completed sessions by default; "Show history" shows all
@@ -4194,15 +4202,8 @@ function renderSessionsView() {
   } else if (chip && chip !== 'all') {
     pool = pool.filter(s => s.state === chip);
   }
-  if (filterText) {
-    pool = pool.filter(s =>
-      (s.name || '').toLowerCase().includes(filterText) ||
-      (s.task || '').toLowerCase().includes(filterText) ||
-      (s.id || '').toLowerCase().includes(filterText) ||
-      (s.backend_family || '').toLowerCase().includes(filterText) ||
-      (s.llm_ref || '').toLowerCase().includes(filterText) ||
-      (s.compute_node_ref || '').toLowerCase().includes(filterText)
-    );
+  if (filterText.trim()) {
+    pool = pool.filter(s => _sessionsSearchMatch(s, filterText));
   }
   if (state.sessionWatchFilter) {
     pool = pool.filter(s => state.watchedSessions.has(s.full_id || s.id)); // GH#172 D61
@@ -4248,7 +4249,8 @@ function renderSessionsView() {
   if (state._filtersCollapsed === undefined) {
     // Mobile parity: default OFF means default-collapsed. Honor any
     // existing localStorage choice; new operators get the collapsed view.
-    const stored = localStorage.getItem('cs_filters_collapsed');
+    let stored = null;
+    try { stored = localStorage.getItem('cs_filters_collapsed'); } catch (_) { stored = null; }
     state._filtersCollapsed = stored === null ? true : stored === '1';
   }
   const collapsed = !!state._filtersCollapsed;
@@ -4304,30 +4306,14 @@ function renderSessionsView() {
   const tagInv = state._sessionTagInventory;
   const tagInvLoaded = !!(tagInv && tagInv.loaded);
   const tagInvEntries = tagInvLoaded ? (tagInv.entries || []) : [];
-  let tagFilterBtn = '', tagFilterPanel = '';
+  let tagHelpLink = '', tagFilterPanelHtml = '';
   if (tagInvLoaded && tagInvEntries.length > 0) {
-    const tagSel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
-    const tagBtnCount = tagSel.length || (tagInvLoaded ? tagInvEntries.length : state.sessions.length);
-    tagFilterBtn = `<button class="backend-filter-badge ${state._tagFilterOpen ? 'active' : ''}${tagSel.length ? ' active' : ''}" onclick="state._tagFilterOpen=!state._tagFilterOpen;renderSessionsView()" title="${escHtml(t('session_tag_filter_tip'))}">${escHtml(t('session_tag_filter_btn', [tagBtnCount]))} ${state._tagFilterOpen ? '▾' : '▸'}</button>
-    <a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
-    tagFilterPanel = `<div class="tag-filter-chips filter-chips-collapse${state._tagFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
+    tagHelpLink = `<a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+    tagFilterPanelHtml = `<div class="tag-filter-chips" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
   }
 
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
-    <div class="session-filter-wrap" style="flex:1.1;">
-      <input type="text" class="session-filter-input" id="sessionFilterInput"
-        placeholder="${t('session_filter_ph')||'Filter sessions…'}" value="${filterVal}"
-        oninput="state.sessionFilter=this.value;state.selectedSessions.clear();renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
-      ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';state.selectedSessions.clear();renderSessionsView()">&#10005;</button>` : ''}
-    </div>
-    ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
-    <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
-    ${tagFilterBtn}
-    <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
-    ${_sessionsGroupControl()}
-    ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
-    <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
-    ${tagFilterPanel}    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
+    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
       ${t('session_tree_btn')||'Tree'}
@@ -4340,6 +4326,14 @@ function renderSessionsView() {
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
+  const sheetHtml = _sessionsSheetHTML({
+    groupBy: _sessionsGroupValidate(state.sessionGroupBy),
+    stateBadges,
+    llmBadges: backendTypes.length > 1 ? backendBadges : '',
+    tagPanel: tagFilterPanelHtml,
+    tagHelp: tagHelpLink,
+  });
+  _sessionsSheetSyncKey();
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
     // Operator-reported (2026-10-07): switched to a federated server and
@@ -4412,6 +4406,7 @@ function renderSessionsView() {
           <h3>${t('sessions_no_active')||'No active sessions'}</h3>
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
+        ${sheetHtml}
       </div>`;
     _injectServerPickerBar(view, renderSessionsView);
     return;
@@ -4431,6 +4426,7 @@ function renderSessionsView() {
     }
   }
   const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
+  state._visibleForFold = groupBy ? visible : [];
   const cards = groupBy
     ? (groupBy.axis === 'automaton'
         ? renderSessionsAutomaton(visible, now, viewMode)
@@ -4442,20 +4438,27 @@ function renderSessionsView() {
             : (viewMode === 'list'
                 ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
                 : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
+  const filtersActive = !!(filterText.trim() || (chip && chip !== 'all') || state.sessionWatchFilter || tagSel);
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    ${renderSessionsModeToggle(viewMode)}
-    ${renderSessionsGroupPicker(groupBy)}
-    ${renderSessionsViewsBar()}
+    <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
-    ${renderSessionsSummaryBar(visible)}<div class="session-list">${cards}</div>
-    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}</div>`;
+    ${renderSessionsSummaryBar(visible)}${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
 
   // Restore filter input focus and cursor position
-  if (filterText) {
+  if (state._sessionsSearchKeep) {
+    const keep = state._sessionsSearchKeep;
+    state._sessionsSearchKeep = null;
     const fi = document.getElementById('sessionFilterInput');
-    if (fi) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
+    if (fi) {
+      fi.focus();
+      const n = fi.value.length;
+      const a = Number.isFinite(keep.s) ? Math.min(keep.s, n) : n;
+      const b = Number.isFinite(keep.e) ? Math.min(keep.e, n) : n;
+      try { fi.setSelectionRange(a, b); } catch (_) { /* not a text input */ }
+    }
   }
   // Load pending schedule badge
   loadGlobalScheduleBadge();
@@ -4481,7 +4484,8 @@ function renderSessionsView() {
     selectBar.remove();
   }
   // BL312 S3 — prepend server picker bar if remote servers are registered
-  _injectServerPickerBar(view, renderSessionsView);
+  // (at phone width it sits in the shared top row instead of its own row)
+  _injectServerPickerBar(_sessionsPickerHost(view), renderSessionsView);
   _sessionTagsEnsure(renderSessionsView, state.sessions);
 }
 
@@ -4534,6 +4538,125 @@ function _sessionsStoreMode(mode, lse) {
   } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
 }
 
+const SESSIONS_SEARCH_KEY = 'cs_sessions_search';
+const SESSIONS_SEARCH_DELAY_MS = 150;
+
+function _sessionsSearchTagTexts(sess) {
+  const ids = [].concat(Array.isArray(sess.tags) ? sess.tags : [], Array.isArray(sess.inherited_tags) ? sess.inherited_tags : []);
+  const out = [];
+  let byId = null;
+  try { byId = (typeof _tagsState !== 'undefined' && _tagsState && _tagsState.byId) ? _tagsState.byId : null; } catch (_) { byId = null; }
+  ids.forEach(id => {
+    if (id === undefined || id === null) return;
+    out.push(String(id));
+    const reg = byId && byId[id];
+    if (reg && reg.name) out.push(String(reg.name));
+  });
+  return out;
+}
+
+// Case-insensitive match over name, id (short and full), backend (family and
+// llm ref), tag text (own and inherited) and state. Empty text matches all.
+function _sessionsSearchMatch(sess, text) {
+  const q = String(text === undefined || text === null ? '' : text).trim().toLowerCase();
+  if (!q) return true;
+  if (!sess) return false;
+  const hay = [
+    sess.name, sess.task, sess.id, sess.full_id, sess.backend_family, sess.llm_ref,
+    sess.compute_node_ref, sess.state,
+  ].concat(_sessionsSearchTagTexts(sess));
+  for (let i = 0; i < hay.length; i++) {
+    if (hay[i] !== undefined && hay[i] !== null && String(hay[i]).toLowerCase().indexOf(q) >= 0) return true;
+  }
+  return false;
+}
+
+function _sessionsSearchCountText(shown, total) {
+  const v = t('sessions_search_count', [shown, total]);
+  if (v === undefined || v === null || v === 'sessions_search_count') return shown + ' of ' + total + ' sessions';
+  return v;
+}
+
+function _sessionsSearchReadStored(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_SEARCH_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string') ? v : '';
+}
+
+function _sessionsSearchWriteStored(text, lse) {
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!ls) return;
+    const v = String(text === undefined || text === null ? '' : text);
+    if (v) { if (typeof ls.setItem === 'function') ls.setItem(SESSIONS_SEARCH_KEY, v); }
+    else if (typeof ls.removeItem === 'function') ls.removeItem(SESSIONS_SEARCH_KEY);
+  } catch (_) { /* storage blocked: the text lives in memory for this page */ }
+}
+
+function _sessionsSearchCancel() {
+  if (state._sessionsSearchTimer) { clearTimeout(state._sessionsSearchTimer); state._sessionsSearchTimer = null; }
+}
+
+// Typing: update the shared filter text now, re-render once after a short
+// one-shot delay. The cursor is restored after the re-render.
+function sessionsSearchInput(el) {
+  const val = el ? String(el.value || '') : '';
+  state.sessionFilter = val;
+  state._sessionsSearchRestored = true;
+  state.selectedSessions.clear();
+  _sessionsSearchWriteStored(val);
+  try {
+    const clr = document.getElementById('sessionsSearchClear');
+    if (clr) clr.hidden = !val;
+  } catch (_) { /* no DOM */ }
+  _sessionsSearchCancel();
+  state._sessionsSearchKeep = { s: el && el.selectionStart, e: el && el.selectionEnd };
+  state._sessionsSearchTimer = setTimeout(() => {
+    state._sessionsSearchTimer = null;
+    if (state.activeView === 'sessions') renderSessionsView();
+  }, SESSIONS_SEARCH_DELAY_MS);
+}
+
+function sessionsSearchClear() {
+  _sessionsSearchCancel();
+  state.sessionFilter = '';
+  state._sessionsSearchRestored = true;
+  state.selectedSessions.clear();
+  _sessionsSearchWriteStored('');
+  state._sessionsSearchKeep = { s: 0, e: 0 };
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+
+function _sessionsPickerHost(view) {
+  try {
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches) {
+      const slot = view && view.querySelector ? view.querySelector('.sessions-topbar-servers') : null;
+      if (slot) return slot;
+    }
+  } catch (_) { /* fall through to the page top */ }
+  return view;
+}
+
+function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
+  const ph = escHtml(_stx('sessions_search_placeholder', 'Search sessions…'));
+  const clrTip = escHtml(_stx('sessions_search_clear', 'Clear search'));
+  const count = filtersActive
+    ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(shown, total))}</div>`
+    : '';
+  return `<div class="sessions-search-row">
+    <div class="session-filter-wrap">
+      <input type="text" class="session-filter-input" id="sessionFilterInput" autocomplete="off" spellcheck="false"
+        placeholder="${ph}" aria-label="${escHtml(_stx('sessions_search_label', 'Search sessions'))}" title="${escHtml(_stx('sessions_search_tip', 'Matches name, id, backend, tags and state'))}" value="${filterVal}"
+        oninput="sessionsSearchInput(this)" />
+      <button type="button" class="session-filter-clear" id="sessionsSearchClear" onclick="sessionsSearchClear()" title="${clrTip}" aria-label="${clrTip}"${filterVal ? '' : ' hidden'}>&#10005;</button>
+    </div>
+    <span class="sessions-filters-slot" id="sessionsFiltersSlot">${_sessionsFiltersButtonHTML()}</span>
+  </div>${count}`;
+}
+
 function _sessionsPageSize() {
   const n = Number(state && Number.isFinite(Number(state._sessionsPageOverride)) ? state._sessionsPageOverride : SESSIONS_TILE_PAGE_SIZE);
   return (Number.isFinite(n) && n > 0) ? Math.floor(n) : SESSIONS_TILE_PAGE_SIZE;
@@ -4580,6 +4703,14 @@ window._sessionsViewModeNormalize = _sessionsViewModeNormalize;
 window._sessionsTileModeDefault = _sessionsTileModeDefault;
 window._sessionsReadStoredMode = _sessionsReadStoredMode;
 window._sessionsStoreMode = _sessionsStoreMode;
+window._sessionsSearchMatch = _sessionsSearchMatch;
+window._sessionsSearchCountText = _sessionsSearchCountText;
+window._sessionsSearchReadStored = _sessionsSearchReadStored;
+window._sessionsSearchWriteStored = _sessionsSearchWriteStored;
+window.SESSIONS_SEARCH_KEY = SESSIONS_SEARCH_KEY;
+window.SESSIONS_SEARCH_DELAY_MS = SESSIONS_SEARCH_DELAY_MS;
+window.sessionsSearchInput = sessionsSearchInput;
+window.sessionsSearchClear = sessionsSearchClear;
 window._sessionsPageSize = _sessionsPageSize;
 window._sessionsViewMode = _sessionsViewMode;
 window._sessionsPagingState = _sessionsPagingState;
@@ -4756,6 +4887,56 @@ function _sessionsGroupToggleCollapse(ckEnc) {
 }
 window._sessionsGroupToggleCollapse = _sessionsGroupToggleCollapse;
 window.toggleSessionGroupCollapse = _sessionsGroupToggleCollapse;
+
+// _sessionsFoldKeys lists every fold key the active grouping renders, nested
+// story headers included.
+function _sessionsFoldKeys(pool, by) {
+  const list = Array.isArray(pool) ? pool : [];
+  if (!by) return [];
+  if (by.axis !== 'automaton') {
+    return _sessionsGroupSessions(list, by).map(g => _sessionsCollapseKey(by, g.key));
+  }
+  const keys = [];
+  const seen = {};
+  list.forEach(sess => {
+    const a = (sess && typeof sess.prd_id === 'string' && sess.prd_id) ? sess.prd_id : SESSIONS_GROUP_UNGROUPED;
+    const bCk = 'automaton|::' + a;
+    const sCk = bCk + '::' + _automatonStoryKey(sess);
+    [bCk, sCk].forEach(k => { if (!seen[k]) { seen[k] = true; keys.push(k); } });
+  });
+  return keys;
+}
+
+function _sessionsAllFolded(keys) {
+  if (!keys.length) return false;
+  const set = _sessionsCollapsedSet();
+  return keys.every(k => set.indexOf(k) >= 0);
+}
+
+function _sessionsFoldControlHTML(pool, by) {
+  const keys = _sessionsFoldKeys(pool, by);
+  if (!keys.length) return '';
+  const folded = _sessionsAllFolded(keys);
+  const label = folded ? _stx('sessions_unfold_all', 'Unfold all') : _stx('sessions_fold_all', 'Fold all');
+  const tip = folded ? _stx('sessions_unfold_all_tip', 'Unfold every group') : _stx('sessions_fold_all_tip', 'Fold every group');
+  return `<div class="sessions-fold-row"><button type="button" class="btn-secondary sessions-fold-all" onclick="_sessionsFoldAllToggle()" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button></div>`;
+}
+
+function _sessionsFoldAllToggle() {
+  const by = _sessionsGroupValidate(state.sessionGroupBy);
+  if (!by) return false;
+  const keys = _sessionsFoldKeys(state._visibleForFold || [], by);
+  if (!keys.length) return false;
+  const cur = _sessionsCollapsedSet();
+  const next = _sessionsAllFolded(keys)
+    ? cur.filter(k => keys.indexOf(k) < 0)
+    : cur.concat(keys.filter(k => cur.indexOf(k) < 0));
+  state._sessionsCollapsed = next;
+  _sessionsCollapseWrite(next);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window._sessionsFoldAllToggle = _sessionsFoldAllToggle;
 
 // ── Per-group Show-more paging ──────────────────────────────────────────
 function _sessionsGroupPageLimit(ck) {
@@ -5157,30 +5338,123 @@ function renderSessionsModeToggle(mode) {
     { key: 'compact', label: _stx('sessions_view_compact', 'Compact'), icon: '▤' },
   ];
   const btns = defs.map(d =>
-    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
   ).join('');
   return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
+}
+
+function _sessionsSummaryLabel(st) {
+  const k = { waiting_input: 'waiting', rate_limited: 'rate_limited' }[st] || st;
+  const fb = String(k).replace(/_/g, ' ');
+  return _stx('session_chip_' + k, fb);
 }
 
 function renderSessionsSummaryBar(sessions) {
   const rows = _sessionsSummaryCounts(sessions);
   if (!rows.length) return '';
-  const dot = {
-    running: 'var(--success,#10b981)',
-    waiting_input: 'var(--warning,#f59e0b)',
-    rate_limited: 'var(--warning,#f59e0b)',
-    complete: 'var(--success,#10b981)',
-    failed: 'var(--error,#ef4444)',
-    killed: 'var(--text2,#9ca3af)',
-  };
   const items = rows.map(r => {
     const cur = r.state === state.sessionStateChip;
-    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(r.state)}')" title="${escHtml(r.state)}: ${r.count}${cur ? '' : ' — filter to this state'}">
-      <span class="sessions-summary-dot" style="color:${dot[r.state] || 'var(--text2,#9ca3af)'}">●</span>${escHtml(r.state)}
-      <span class="sessions-summary-count">${r.count}</span></button>`;
-  }).join('');
+    const next = cur ? 'all' : r.state;
+    const tip = r.state + ': ' + r.count + (cur ? ' — ' + _stx('sessions_summary_clear_tip', 'clear the state filter') : ' — ' + _stx('sessions_summary_filter_tip', 'filter to this state'));
+    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(next)}')" title="${escHtml(tip)}" aria-pressed="${cur ? 'true' : 'false'}" data-state="${escHtml(r.state)}">${escHtml(_sessionsSummaryLabel(r.state))} <span class="sessions-summary-count">${r.count}</span></button>`;
+  }).join('<span class="sessions-summary-sep" aria-hidden="true">·</span>');
   return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
 }
+
+// ── Filters sheet ───────────────────────────────────────────────────────
+// Open state lives in state._sessionsSheetOpen so every re-render redraws the
+// sheet in place. The Escape listener exists only while the sheet is open.
+function _sessionsActiveFilterCount() {
+  let n = 0;
+  try {
+    if (_sessionsGroupValidate(state.sessionGroupBy)) n++;
+    else if (!state.sessionTreeView && typeof _sessionsGroupAxis === 'function' && _sessionsGroupAxis()) n++;
+    const chip = state.sessionStateChip;
+    if (chip && chip !== 'all') n++;
+    const ft = String(state.sessionFilter || '').trim().toLowerCase();
+    if (ft && (state.sessions || []).some(s => s && s.backend_family && String(s.backend_family).toLowerCase() === ft)) n++;
+    const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session && _tagBrowse.session.sel) ? _tagBrowse.session.sel : [];
+    if (sel.length) n++;
+    if (state.sessionWatchFilter) n++;
+  } catch (_) { /* count what we have */ }
+  return n;
+}
+
+function _sessionsFiltersButtonHTML() {
+  const n = _sessionsActiveFilterCount();
+  const label = _stx('sessions_filters_btn', 'Filters');
+  const badge = n > 0 ? `<span class="sessions-filters-badge" id="sessionsFiltersBadge">${n}</span>` : '';
+  const tip = _stx('sessions_filters_tip', 'Group, saved views and status filters');
+  return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersOpen()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
+}
+
+function _sessionsSheetHTML(parts) {
+  if (!state._sessionsSheetOpen) return '';
+  const p = parts || {};
+  const title = _stx('sessions_filters_title', 'Filters');
+  const close = _stx('sessions_filters_close', 'Close');
+  const sec = (h, body) => body ? `<section class="sessions-sheet-sec"><h4>${escHtml(h)}</h4>${body}</section>` : '';
+  const watchOn = !!state.sessionWatchFilter;
+  const watchBtn = `<button type="button" class="backend-filter-badge ${watchOn ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(_stx('session_watch_filter_tip', 'Show watched only'))}" aria-pressed="${watchOn ? 'true' : 'false'}">&#128065; ${state.watchedSessions ? state.watchedSessions.size : 0}</button>`;
+  const statusBody = `<div class="state-filter-chips sessions-sheet-chips">${p.stateBadges || ''}${watchBtn}</div>`
+    + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips">${p.llmBadges}</div>` : '')
+    + (p.tagPanel ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_tags', 'Tags'))} ${p.tagHelp || ''}</div>${p.tagPanel}` : '');
+  const groupBody = renderSessionsGroupPicker(p.groupBy) + _sessionsGroupControl();
+  return `<div class="sessions-sheet-backdrop" id="sessionsSheetBackdrop" onclick="sessionsFiltersBackdrop(event)">
+    <div class="sessions-sheet" role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
+      <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
+      <div class="sessions-sheet-body">
+        ${sec(_stx('sessions_group_by', 'Group by'), groupBody)}
+        ${sec(_stx('sessions_view_title', 'Views'), renderSessionsViewsBar())}
+        ${sec(_stx('sessions_filters_status', 'Status'), statusBody)}
+      </div>
+    </div>
+  </div>`;
+}
+
+function _sessionsSheetKeydown(e) {
+  if (e && (e.key === 'Escape' || e.key === 'Esc')) sessionsFiltersClose();
+}
+
+function _sessionsSheetListen(on) {
+  try {
+    if (on && !state._sessionsSheetListening) {
+      document.addEventListener('keydown', _sessionsSheetKeydown);
+      state._sessionsSheetListening = true;
+    } else if (!on && state._sessionsSheetListening) {
+      document.removeEventListener('keydown', _sessionsSheetKeydown);
+      state._sessionsSheetListening = false;
+    }
+  } catch (_) { /* no DOM */ }
+}
+
+// Called on every render: the listener follows the open state.
+function _sessionsSheetSyncKey() {
+  _sessionsSheetListen(!!state._sessionsSheetOpen && state.activeView === 'sessions');
+}
+
+function sessionsFiltersOpen() {
+  state._sessionsSheetOpen = true;
+  if (state.activeView === 'sessions') renderSessionsView();
+  _sessionsSheetListen(true);
+}
+
+function sessionsFiltersClose(noRender) {
+  state._sessionsSheetOpen = false;
+  _sessionsSheetListen(false);
+  if (!noRender && state.activeView === 'sessions') renderSessionsView();
+}
+
+function sessionsFiltersBackdrop(e) {
+  if (e && e.target && e.currentTarget && e.target === e.currentTarget) sessionsFiltersClose();
+}
+
+window._sessionsActiveFilterCount = _sessionsActiveFilterCount;
+window.sessionsFiltersOpen = sessionsFiltersOpen;
+window.sessionsFiltersClose = sessionsFiltersClose;
+window.sessionsFiltersBackdrop = sessionsFiltersBackdrop;
+window.sessionsFiltersBadgeCount = _sessionsActiveFilterCount;
+window.renderSessionsSummaryBar = renderSessionsSummaryBar;
 
 // Sessions carry no task counts, so progress is lifecycle based: a finished
 // session fills the bar, a failed or stopped one shows how far it got (empty),
@@ -5318,7 +5592,7 @@ function setBackendFilter(backend) {
 // v7.0.0-alpha.22 — session-state filter chips. Persists in localStorage.
 function setSessionStateChip(chip) {
   state.sessionStateChip = chip;
-  localStorage.setItem('cs_session_state_chip', chip);
+  try { localStorage.setItem('cs_session_state_chip', chip); } catch (_) { /* storage blocked: choice lives in memory */ }
   state.selectedSessions.clear();
   // GATE finding (operator 2026-05-10): if filter selects a historical
   // state (complete/failed/killed/cancelled/archived), auto-activate the
@@ -5703,7 +5977,7 @@ function sessionCard(sess, idx, total) {
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
             ${prioBadge}
             ${window.requestWatchChipHtml(sess.model_request)}
-            ${_sessionTagChipsHTML(sess)}
+            ${_sessionCardTagChipsHTML(sess, fullId)}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
@@ -52776,8 +53050,8 @@ function _sessionsGroupControl() {
   return `<span class="backend-filter-badge group-axis-control${cur ? ' active' : ''}" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(_tagT('sessions_group_tip', 'Group the session list by a placement (system) tag'))}"><span>⚙️</span><select style="border:none;background:transparent;color:inherit;font:inherit;font-size:11px;padding:0;max-width:96px;" onchange="setSessionsGroupAxis(this.value)" aria-label="${escHtml(t('sessions_group_by_label') || 'Group by placement')}">${opts}</select></span>`;
 }
 
-function _sessionTagChipsHTML(sess) {
-  if (!sess) return '';
+function _sessionTagChipList(sess) {
+  if (!sess) return [];
   const own = (sess.tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
   const ownIds = new Set(own.map(tg => tg.id));
   const inherited = (sess.inherited_tags || []).filter(id => !ownIds.has(id)).map(id => _tagsState.byId[id]).filter(Boolean);
@@ -52795,9 +53069,53 @@ function _sessionTagChipsHTML(sess) {
   const systemChips = systemNames.map(n => {
     return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(sysTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(n)}</span>`;
   });
-  if (!own.length && !inheritedChips.length && !systemChips.length) return '';
-  return own.map(_tagChipHTML).concat(inheritedChips, systemChips).join('');
+  return own.map(_tagChipHTML).concat(inheritedChips, systemChips);
 }
+
+function _sessionTagChipsHTML(sess) {
+  return _sessionTagChipList(sess).join('');
+}
+
+// ── Phone-width tag collapse on session cards ───────────────────────────
+const SESSIONS_PHONE_QUERY = '(max-width: 640px)';
+const SESSIONS_CARD_TAGS_SHOWN = 2;
+
+function _sessionsPhoneWidth() {
+  try {
+    return typeof window.matchMedia === 'function' && window.matchMedia(SESSIONS_PHONE_QUERY).matches;
+  } catch (_) { return false; }
+}
+
+// _sessionCardTagChipsHTML: at phone width shows the first few chips and a +N
+// chip that expands the card's tags (and collapses them again); the expanded
+// state is per session in page state so re-renders keep it.
+function _sessionCardTagChipsHTML(sess, fullId) {
+  const chips = _sessionTagChipList(sess);
+  if (!chips.length) return '';
+  if (!_sessionsPhoneWidth() || chips.length <= SESSIONS_CARD_TAGS_SHOWN) return chips.join('');
+  const open = !!(state._sessionTagsOpen && state._sessionTagsOpen[fullId]);
+  const extra = chips.length - SESSIONS_CARD_TAGS_SHOWN;
+  const idArg = escHtml(encodeURIComponent(String(fullId || '')));
+  const label = open
+    ? _stx('sessions_tags_less', 'Less')
+    : '+' + extra;
+  const tip = open
+    ? _stx('sessions_tags_collapse_tip', 'Show fewer tags')
+    : _stx('sessions_tags_expand_tip', 'Show all tags');
+  const btn = `<button type="button" class="session-tags-more-chip" onclick="event.stopPropagation();_sessionTagsToggle('${idArg}')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>`;
+  const shown = open ? chips : chips.slice(0, SESSIONS_CARD_TAGS_SHOWN);
+  return `<span class="session-card-tags${open ? ' open' : ''}">${shown.join('')}${btn}</span>`;
+}
+
+function _sessionTagsToggle(idEnc) {
+  let id = '';
+  try { id = decodeURIComponent(String(idEnc || '')); } catch (_) { id = String(idEnc || ''); }
+  if (!id) return;
+  if (!state._sessionTagsOpen) state._sessionTagsOpen = {};
+  if (state._sessionTagsOpen[id]) delete state._sessionTagsOpen[id]; else state._sessionTagsOpen[id] = true;
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionTagsToggle = _sessionTagsToggle;
 
 // _sessionHasTags is true for a session with tag IDs to name (own or
 // inherited) or placement (system) tag names.

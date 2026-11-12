@@ -30,7 +30,11 @@ same groups, counts and state mixes.
 
 ## What it is
 
-Three independent dials on the Sessions page:
+The Sessions page keeps all of its controls in **one toolbar row**: a search
+box, a **Filters** button (with a badge counting what is active), a chip per
+server, and the **List / Tiles / Compact** toggle. Behind the Filters button
+sit the grouping and saved-view controls. Three independent dials come out
+of that:
 
 1. **View mode** — how each session is drawn: `list` (one card per row),
    `tiles` (a grid of work tiles that stacks left-to-right and up-down), or
@@ -47,11 +51,13 @@ Groups are collapsible, remember their collapsed state per device, and the
 group body renders in whatever view mode is active. Every mode and every
 group label is localised in all five locales (en, de, es, fr, ja).
 
+Nothing changed in settings or in server behavior: this is the same page with
+its controls packed into fewer rows. There is no new setting, and the
+daemon, REST, MCP, CLI and comm channel behave exactly as before.
+
 ```
 Sessions
-┌─[ List │ Tiles │ Compact ]   Group by: [ No grouping ▾ ]
-│  Views:  [View name ____]  [+ New view]   [my-cut ✎ ✕]
-│
+┌─[ Search…  ]  [ Filters (2) ]  [ server-a ] [ server-b ]   [ List │ Tiles │ Compact ]
 │  ● running 4   ● waiting_input 2   ● complete 11   ● failed 1   ● killed 3
 │  ────────────────────────────────────────────────────────────
 │  ▾ automation:lane-fill        4  (running 2, waiting_input 1, complete 1)
@@ -82,8 +88,9 @@ per-device UI preference or a read-only API parameter.
 ## Setup
 
 There is nothing to configure. Open the PWA, go to **Sessions**, and the
-mode toggle, the Group-by picker and the Views bar are already at the top
-of the list.
+toolbar row is already at the top of the list: the search box, the
+**Filters** button, the server chips and the mode toggle. **Group by** and
+the saved **Views** are inside the Filters sheet.
 
 If you only need one of the three, jump to the matching section:
 
@@ -92,10 +99,46 @@ If you only need one of the three, jump to the matching section:
 - want to keep a cut for later → [Saved views](#saved-views)
 - want to read the same cut from another channel → [All channels](#all-channels--the-shared-read)
 
+## The toolbar row
+
+Everything you need to find sessions sits in one row at the top of the page:
+
+- **Search box** — type to narrow the list. It matches a session's name, its
+  id, its backend, its tag text and its state, so `claude`, `a1f2`,
+  `automation:` or `waiting` all work. While a search is active the page
+  shows an **N of M** count (for example `3 of 21`): how many sessions match
+  out of how many there are. The search text is remembered on this device,
+  so it is still there when you come back to the page; clear the box to see
+  everything again.
+- **Filters button** — opens the Filters sheet (below). A badge on the
+  button shows how many filters are active, so you can tell at a glance that
+  the list is narrowed even with the sheet closed.
+- **Server chips** — one chip per server; tap a chip to include or leave out
+  that server's sessions.
+- **List / Tiles / Compact** — the mode toggle, described next.
+
+### The Filters sheet
+
+The **Filters** button opens a sheet that holds the controls you use less
+often than search:
+
+- **Group by** — the axis picker described under [Grouping](#grouping).
+- **Views** — your saved views: save the current cut under a name, apply,
+  rename or delete one (see [Saved views](#saved-views)).
+- **Status chips** — the full set of state chips (running, waiting_input,
+  rate_limited, complete, failed, killed), so you can pick a state even when
+  the one-line count above the list does not show it. The same section
+  also holds the **watched only** toggle, the **Backend** chips and, when
+  you use tags, the **Tags** filter.
+
+Close the sheet by tapping outside it, by pressing its close button, or by
+pressing **Escape**. Your choices apply as you make them, so closing needs no
+separate save.
+
 ## View modes
 
-The toggle at the top of the Sessions page has three buttons: **List**,
-**Tiles**, **Compact**.
+The toggle in the toolbar row has three buttons: **List**, **Tiles**,
+**Compact**.
 
 - **List** is the classic one-card-per-row layout. It stays the default on
   phone-width viewports (narrower than 600 px), where the dense rows read
@@ -109,7 +152,8 @@ The toggle at the top of the Sessions page has three buttons: **List**,
   - `backend · model` (e.g. `claude-code · claude-opus`),
   - the node or peer the session runs on,
   - its tags (own + inherited; more than fit collapse into a shared
-    overflow chip),
+    overflow chip — on a phone-width screen the tags collapse to a single
+    **+N** chip, where N is how many tags are hidden),
   - the last-activity time, and
   - a lifecycle progress bar — a finished session fills the bar, a live one
     (running, waiting_input, rate_limited) shows a half bar so it reads as
@@ -134,16 +178,18 @@ Two details worth knowing:
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
 
-### The state summary bar
+### The status counts
 
-Above the list, a summary bar shows one chip per state present, with its
-count, and the total session count at the end (e.g.
-`● running 4   ● waiting_input 2   sessions 21`). Clicking a state chip
-**filters the page to that state**; the **All** chip in the toolbar's
-**State** dropdown clears the selection. The chip choice is remembered per
-device (`cs_session_state_chip`). Picking a historical state (complete,
-failed, killed, …) also auto-enables the History toggle so those sessions
-actually become visible instead of silently filtering to nothing.
+Above the list, one line of status counts shows one chip per state present,
+with its count, and the total session count at the end (e.g.
+`● running 4   ● waiting_input 2   sessions 21`). It takes a single line
+instead of a block of buttons, and the counts still filter: clicking a state
+chip **filters the page to that state**, and clicking it again (or choosing
+**All** in the Filters sheet's status chips) clears the selection. The chip
+choice is remembered per device (`cs_session_state_chip`). Picking a
+historical state (complete, failed, killed, …) also auto-enables the History
+toggle so those sessions actually become visible instead of silently
+filtering to nothing.
 
 ### "Show more" paging
 
@@ -156,7 +202,7 @@ its existing load-more behaviour for the non-paged view.
 
 ## Grouping
 
-The **Group by** picker offers:
+The **Group by** picker (in the Filters sheet) offers:
 
 ```
 No grouping │ State │ Node │ Project │ Tag │ Tag(automation:) │ Tag(compute:) … │ Automaton
@@ -178,9 +224,10 @@ so the picker shows exactly the prefixes you can narrow to — e.g.
 
 Group mechanics, in every mode:
 
-- **Collapse / expand.** Each group header has a caret; your collapsed
-  state is remembered per device and per axis + prefix, so a grouping you
-  live in stays the way you left it.
+- **Collapse / expand.** Each group header is collapsible: tap it to fold or
+  unfold the group. Your fold state is remembered per device and per axis +
+  prefix, so a grouping you live in stays the way you left it. A **fold-all**
+  control next to the groups folds or unfolds every group at once.
 - **Count and state mix.** The header shows the group's session count and a
   per-state mix (e.g. `4 (running 2, waiting_input 1, complete 1)`), so you
   can read "how much of this group is alive" without expanding it.
@@ -219,8 +266,8 @@ On the **automaton** axis the ungrouped group is labelled
 
 ## Saved views
 
-The **Views** bar sits above the list: a "Views" label, a **View name**
-input and a **+ New view** button, plus one chip per saved view:
+Saved views live in the **Views** section of the Filters sheet: a **View
+name** input and a **+ New view** button, plus one chip per saved view:
 
 - **New view** — type a name and click **+ New view**: that captures the
   *current* combination (view mode + group axis + tag prefix + session
@@ -250,9 +297,11 @@ same groups, the same counts and state mixes, wherever you read them:
 
 ### PWA (web UI)
 
-The Sessions page controls above: mode toggle, Group-by picker (with the
-tag-prefix entries), the state summary bar, Show more paging, collapse
-carets and the Views bar. All of it is localised in the five locales — the
+The Sessions page controls above: the one toolbar row (search, Filters with
+its badge, server chips, mode toggle), the Filters sheet (Group by with the
+tag-prefix entries, Views, status chips), the one-line status counts, Show
+more paging, collapsible group headers with the fold-all control and the
+**+N** tag chip on phones. All of it is localised in the five locales — the
 labels you see are the translated ones in your PWA language.
 
 ### REST
@@ -429,12 +478,14 @@ in your tag registry.
 
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
-| View mode (list / tiles / compact) | PWA Sessions page | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize |
+| Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
+| Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
+| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is per-device in the PWA; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
-| Collapse a group | PWA group header caret | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
+| Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
-| State summary bar + state filter | PWA, above the list | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
-| Saved views (mode + axis + prefix + filter) | PWA Views bar | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
+| One-line status counts + state filter | PWA, above the list | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
+| Saved views (mode + axis + prefix + filter) | PWA Filters sheet | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
 | Tile ⋯ menu actions | PWA, per tile | no | Stop / Commands (waiting_input) / Restart / Delete / Summary (if summarizer on) / Watch / Mute |
 | Progress on tiles; done/total on automaton blocks | PWA tile bar; grouped read (CLI, comm) | no | tile bar is lifecycle-based; automaton blocks carry their done/total terminal-session tally |
 
@@ -450,8 +501,12 @@ in your tag registry.
   to **List** — the choice sticks on that device. On phones the default is
   already List.
 - **My saved view isn't on my other device.** Saved views are per device
-  by design; recreate it from the Views bar. The *data* it reads (groups,
+  by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
   counts, mixes) is identical on every channel and every peer.
+- **The list looks short and I did not filter.** Check the badge on the
+  **Filters** button and the search box: a remembered search or an active
+  filter narrows the list (the `N of M` count shows it). Clear the search
+  text and the status chips to see everything.
 - **A group says N but I count fewer rows.** The group body is paged —
   expand with its **Show more** (shown/total) step; the header count is
   the full group, not the rendered page.
