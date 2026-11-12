@@ -104,7 +104,7 @@ func (b *Backoff) SetWithRung(backend string, until time.Time, reason string, so
 		b.entries = map[string]Entry{}
 	}
 	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown, Rung: rung}
-	b.saveLocked()
+	_ = b.saveLocked() // the error is kept in saveErr for the status read
 }
 
 // Clear removes the flag for backend and reports whether one existed.
@@ -114,7 +114,7 @@ func (b *Backoff) Clear(backend string) bool {
 	_, ok := b.entries[backend]
 	delete(b.entries, backend)
 	if ok {
-		b.saveLocked()
+		_ = b.saveLocked() // the error is kept in saveErr for the status read
 	}
 	return ok
 }
@@ -125,7 +125,7 @@ func (b *Backoff) ClearAll() int {
 	defer b.mu.Unlock()
 	n := len(b.entries)
 	b.entries = map[string]Entry{}
-	b.saveLocked()
+	_ = b.saveLocked() // the error is kept in saveErr for the status read
 	return n
 }
 
@@ -172,7 +172,7 @@ func (b *Backoff) SweepExpired(now time.Time) []Entry {
 	}
 	sort.Slice(cleared, func(i, j int) bool { return cleared[i].Backend < cleared[j].Backend })
 	if len(cleared) > 0 {
-		b.saveLocked()
+		_ = b.saveLocked() // the error is kept in saveErr for the status read
 	}
 	return cleared
 }
