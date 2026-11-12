@@ -456,3 +456,25 @@ func TestProjectSetArcsBodyShape(t *testing.T) {
 		t.Errorf("body = %s", cap.bodyRaw)
 	}
 }
+
+func TestProjectTimelineReturnsNewFieldsUnchanged(t *testing.T) {
+	body := `{"project":"acme","level":"automata","rows":[{"kind":"automaton","id":"p1","title":"Alpha","first":"2026-11-01T10:00:00Z","last":null,"start":"2026-11-01T10:00:00Z","end":null,"status":"running","release":"v1.2.0","depends_on":["t0"]}],"edges":[{"from":"p0","to":"p1","kind":"chain"}]}`
+	_, s, done := newRecordServer(t, body)
+	defer done()
+	res := callTool(t, s.handleProjectTimeline, map[string]any{"name": "acme", "level": "automata"})
+	if res.IsError {
+		t.Fatalf("timeline failed: %s", resContentText(t, res))
+	}
+	got := resContentText(t, res)
+	for _, want := range []string{`"start":"2026-11-01T10:00:00Z"`, `"end":null`, `"status":"running"`, `"depends_on":["t0"]`, `"edges":[{"from":"p0","to":"p1","kind":"chain"}]`, `"release":"v1.2.0"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %s in %s", want, got)
+		}
+	}
+	desc := s.toolProjectTimeline().Description
+	for _, want := range []string{"status", "depends_on", "edges", "Automaton"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description lacks %q: %s", want, desc)
+		}
+	}
+}

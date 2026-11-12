@@ -325,7 +325,8 @@ func newProjectsTimelineCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "timeline <name>",
-		Short: "Show when each arc, Automaton and task of a project started and finished",
+		Short: "Show when each arc, Automaton and task of a project started and finished, with status, dependencies and Automaton chain edges",
+		Long:  "Show the project timeline. Each row has start, end, status and release; task rows carry depends_on; Automaton levels and --focus replies carry edges, the chain between Automata. The daemon reply is printed unchanged.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			q := url.Values{}
