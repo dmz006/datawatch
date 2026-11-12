@@ -28284,6 +28284,9 @@ window._tlTimeLabel = _tlTimeLabel;
 // the domain, otherwise to the domain edge). Blocked/waiting intervals are
 // hatched overlays. A solid line marks today, a dashed line the projected
 // finish. No timers, no DOM writes — the surrounding card/tab owns state.
+// _timelineNow — injectable clock (tests set window._timelineNow); defaults to the wall clock.
+window._timelineNow = window._timelineNow || function() { return Date.now(); };
+
 window.timelineGanttSvg = function(automaton, opts) {
   automaton = automaton || {};
   opts = opts || {};
@@ -28310,7 +28313,7 @@ window.timelineGanttSvg = function(automaton, opts) {
   });
   if (today != null) pts.push(today);
   if (projected != null) pts.push(projected);
-  if (pts.length === 0) { const n0 = Date.now(); pts.push(n0 - 86400000, n0 + 86400000); }
+  if (pts.length === 0) { const n0 = window._timelineNow(); pts.push(n0 - 86400000, n0 + 86400000); }
   let d0 = Math.min.apply(null, pts), d1 = Math.max.apply(null, pts);
   if (d1 <= d0) d1 = d0 + 3600000;
   const pad = (d1 - d0) * 0.03;
@@ -28491,9 +28494,9 @@ const TL_MIN_REFETCH_MS = 5000;
 // no timers of its own.
 window.loadTimelineCard = function(force) {
   const st = window._timelineCardState;
-  st.attemptedAt = Date.now();
+  st.attemptedAt = window._timelineNow();
   if (st.inflight) return st.inflight;
-  const fresh = st.data && st.fetchedAt && (Date.now() - st.fetchedAt) < TL_MIN_REFETCH_MS;
+  const fresh = st.data && st.fetchedAt && (window._timelineNow() - st.fetchedAt) < TL_MIN_REFETCH_MS;
   if (fresh && !force) return Promise.resolve(st);
   st.status = 'loading';
   const q = [];
@@ -28506,7 +28509,7 @@ window.loadTimelineCard = function(force) {
   st.inflight = apiFetch(url).then(d => {
     st.data = (d && typeof d === 'object') ? d : null;
     st.error = '';
-    st.fetchedAt = Date.now();
+    st.fetchedAt = window._timelineNow();
     st.status = 'ok';
     return st;
   }).catch(err => {
