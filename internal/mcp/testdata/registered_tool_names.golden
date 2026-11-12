@@ -72,6 +72,7 @@ autonomous_defect_batch_split
 autonomous_defect_batches
 autonomous_defect_intake
 autonomous_defect_tinyfix_check
+autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
 autonomous_held_questions

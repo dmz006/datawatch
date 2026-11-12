@@ -145,6 +145,7 @@ Selected core tools:
 | `autonomous_decision_record_create` / `autonomous_decision_record_update` / `autonomous_decision_record_withdraw` | Manage decision records — the structured operator decision (title, situation, deciding, options with unique ids, default — an option or `hold` — recommendation, label, links); the record is the source, the daemon builds the queue question from it and the answer comes back on it; proxies the POST, PUT and `/withdraw` of `/api/autonomous/decision-records`, needs `autonomous:write` |
 | `autonomous_decision_record_list` / `autonomous_decision_record_get` | List or read decision records: `state` (`open`, `answered` or `withdrawn`), `prd_id`, `limit` (1–1000, default 100); listing also returns the daemon's folder-watch status; read-only, needs `autonomous:read` |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
+| `autonomous_event_kinds` | List every lifecycle event kind a subscription can match, grouped, with each kind's description and whether it wakes the supervisor by default (read-only, no parameters) |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |
 | `autonomous_progress_trend` | Read the progress trend from the saved daily snapshots; optional `days` (1 to 365, default 30) |

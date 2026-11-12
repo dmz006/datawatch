@@ -677,6 +677,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousSubscriptionTest(), tracked(s.handleAutonomousSubscriptionTest))
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
 	mcpSrv.AddTool(s.toolAutonomousEventLog(), tracked(s.handleAutonomousEventLog))
+	mcpSrv.AddTool(s.toolAutonomousEventKinds(), tracked(s.handleAutonomousEventKinds))
 	// Operator question channel (proxy /api/questions — internal/server/questions.go).
 	// The trailing comment is the MCP tool name each AddTool registers.
 	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"

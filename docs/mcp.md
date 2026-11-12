@@ -255,7 +255,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set`, `usage_autolanes_status` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
-| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
+| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`, `autonomous_event_kinds` |
 | Search before create | `autonomous_overlap_search` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -927,6 +927,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   | `limit` | no | Maximum events (default 50, capped at 200) |
 
   Returns `{"events":[...],"next_cursor":<n>,"dropped":<bool>}`. Pass `next_cursor` back as `since_cursor` on the next call; `dropped` is true when events you had not yet seen were evicted because the queue overflowed. Proxies `GET /api/autonomous/events`. The CLI equivalent is `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]`; over a comm channel it is `autonomous events [queue=<name>] [since=<cursor>]` (the queue defaults to one derived from the calling channel, and a channel can only read queues of its own subscriptions).
+- **`autonomous_event_kinds`** — list every lifecycle event kind a subscription can match, grouped by group. Read-only; takes no parameters. Returns the same object as `GET /api/autonomous/event-kinds`: `{"groups":[{"group":"...","kinds":[{"kind":"task.failed","description":"...","wake_default":true}]}]}`. Built-in kinds and kinds registered by extensions both appear; `wake_default` is true when the kind is in the default set that wakes the supervisor. Use it to choose the `kinds` to pass to `autonomous_subscribe`. Example: `autonomous_event_kinds {}`.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
 - **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.
