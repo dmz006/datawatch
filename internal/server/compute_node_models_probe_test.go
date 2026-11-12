@@ -19,9 +19,9 @@ func TestProbeNodeModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/tags":
-			fmt.Fprint(w, `{"models":[{"name":"qwen3:8b"},{"name":""},{"name":"llama3:70b"}]}`)
+			_, _ = fmt.Fprint(w, `{"models":[{"name":"qwen3:8b"},{"name":""},{"name":"llama3:70b"}]}`)
 		case "/api/v1/models":
-			fmt.Fprint(w, `{"data":[{"id":"gpt-x"}]}`)
+			_, _ = fmt.Fprint(w, `{"data":[{"id":"gpt-x"}]}`)
 		default:
 			http.Error(w, "nope", http.StatusInternalServerError)
 		}
@@ -52,7 +52,7 @@ func TestProbeNodeModels(t *testing.T) {
 	if _, _, err := ProbeNodeModels(ctx, &compute.Node{Name: "n", Address: bad.URL}, "ollama"); err == nil || !strings.Contains(err.Error(), "HTTP 502") {
 		t.Fatalf("a non-200 reply is a probe failure, got %v", err)
 	}
-	junk := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "not json") }))
+	junk := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, "not json") }))
 	defer junk.Close()
 	if models, note, err := ProbeNodeModels(ctx, &compute.Node{Name: "n", Address: junk.URL}, "ollama"); err != nil || len(models) != 0 || note != "could not parse probe response" {
 		t.Fatalf("an unparsable reply = %v %q %v", models, note, err)

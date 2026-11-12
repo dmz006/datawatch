@@ -117,7 +117,7 @@ func TestComputePlacementAnswerToolApproveAndDeny(t *testing.T) {
 		if res == nil || res.IsError {
 			t.Fatalf("%s expected success, got %+v", decision, res)
 		}
-		want := decision
+		var want string
 		if decision == "deny" {
 			want = "denied"
 		} else {

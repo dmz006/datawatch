@@ -47,7 +47,7 @@ func tagsNode(t *testing.T, models ...string) *httptest.Server {
 		for _, m := range models {
 			items = append(items, fmt.Sprintf(`{"name":%q}`, m))
 		}
-		fmt.Fprintf(w, `{"models":[%s]}`, strings.Join(items, ","))
+		_, _ = fmt.Fprintf(w, `{"models":[%s]}`, strings.Join(items, ","))
 	}))
 	t.Cleanup(srv.Close)
 	return srv

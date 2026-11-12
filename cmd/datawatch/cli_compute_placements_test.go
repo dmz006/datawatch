@@ -31,9 +31,8 @@ type placementCLICall struct {
 // echoing the decision semantics of the real handlers: 200 for known asks,
 // 404 for unknown IDs, 409 for already-decided ones.
 type placementCLIDaemon struct {
-	mu         sync.Mutex
-	calls      []placementCLICall
-	lastPutKey string // body of the last PUT /api/config
+	mu    sync.Mutex
+	calls []placementCLICall
 }
 
 func withPlacementCLIDaemon(t *testing.T) *placementCLIDaemon {
@@ -123,8 +122,8 @@ func runPlacements(t *testing.T, args ...string) (string, string, error) {
 
 	_, execErr := root.ExecuteC()
 
-	w.Close()
-	_ = <-done
+	_ = w.Close()
+	<-done
 	os.Stdout = oldStdout
 	return out.String(), std.String(), execErr
 }

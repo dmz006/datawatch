@@ -225,6 +225,8 @@ compute_node_remove_model
 compute_node_undrain
 compute_node_update
 compute_pin_settings
+compute_placement_answer
+compute_placement_list
 compute_served_models
 config_set
 configure_identity

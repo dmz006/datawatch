@@ -124,10 +124,10 @@ func (n *smokeOllamaNode) counts() (pulls, success int) {
 func (n *smokeOllamaNode) candidate() compute.PlacementCandidate {
 	return compute.PlacementCandidate{
 		Node: &compute.Node{
-			Name:           n.name,
-			Address:        n.srv.URL,
+			Name:            n.name,
+			Address:         n.srv.URL,
 			NodePinnedModel: n.Pin,
-			AllowModelSwap: n.AllowSwap,
+			AllowModelSwap:  n.AllowSwap,
 		},
 		MemTotalBytes: uint64(n.TotalMemoryGB) * smokeGB,
 		MemFreeBytes:  uint64(n.FreeMemoryGB) * smokeGB,
@@ -395,7 +395,7 @@ func TestSmokeModelPlacement(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET /api/version: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var ver struct{ Version string }
 		if err := json.NewDecoder(resp.Body).Decode(&ver); err != nil {
 			t.Fatalf("decode version: %v", err)
@@ -428,7 +428,7 @@ func TestSmokeModelPlacement(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET /api/ps: %v", err)
 		}
-		defer ps.Body.Close()
+		defer func() { _ = ps.Body.Close() }()
 		body, err := io.ReadAll(io.LimitReader(ps.Body, 4096))
 		if err != nil {
 			t.Fatalf("read /api/ps: %v", err)
