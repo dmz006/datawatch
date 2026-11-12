@@ -346,6 +346,17 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"uncommitted_work_card_title",
 		"settings_automation_uncommitted_work_policy",
 		"settings_automation_uncommitted_work_scope",
+		// Pending items: the group heading and the nine settings labels.
+		"settings_pending_items_group",
+		"settings_automation_pending_item_policy",
+		"settings_automation_pending_item_auto_resume",
+		"settings_automation_pending_item_source_path",
+		"settings_automation_pending_item_source_id_pattern",
+		"settings_automation_pending_item_source_id_column",
+		"settings_automation_pending_item_source_title_column",
+		"settings_automation_pending_item_source_state_column",
+		"settings_automation_pending_item_source_done_values",
+		"settings_automation_pending_item_source_on_missing_row",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

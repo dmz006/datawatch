@@ -132,6 +132,9 @@ var pendingTranslationKeys = map[string]bool{
 	"uncommitted_work_banner":                     true,
 	"settings_automation_uncommitted_work_policy": true,
 	"settings_automation_uncommitted_work_scope":  true,
+	// Pending item settings: the labels and option labels that name an Automaton ship as English until the app translation lands.
+	"settings_automation_pending_item_auto_resume": true,
+	"pending_item_policy_hold":                     true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
