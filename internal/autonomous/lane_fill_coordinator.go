@@ -824,7 +824,7 @@ func (c *Coordinator) laneFillEvidence(ctx context.Context, src PoolEvidenceSour
 func laneFillDegradedView(in []PoolHostDegraded) []LaneFillDegradedHost {
 	out := make([]LaneFillDegradedHost, 0, len(in))
 	for _, d := range in {
-		out = append(out, LaneFillDegradedHost{Host: d.Host, Error: d.Error, Since: d.Since})
+		out = append(out, LaneFillDegradedHost(d))
 	}
 	return out
 }
