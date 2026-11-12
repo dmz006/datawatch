@@ -518,9 +518,9 @@ func TestWriteFailureLeavesIndexUntouched(t *testing.T) {
 	if err := os.Chmod(kindDir, 0o500); err != nil {
 		t.Skip("chmod unsupported")
 	}
-	defer os.Chmod(kindDir, 0o700)
+	defer func() { _ = os.Chmod(kindDir, 0o700) }()
 	if f, err := os.CreateTemp(kindDir, "probe"); err == nil {
-		f.Close()
+		_ = f.Close()
 		t.Skip("running with privileges that ignore directory modes")
 	}
 	if _, err := s.Create(row("Fails")); err == nil {

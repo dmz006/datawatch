@@ -28,7 +28,7 @@ const goldenShippedRegistry = `# Registry
 | 101 | post-ship actions v9.9.9 | Shipped 9.9.9 | 100 |
 `
 
-func planRecordRun(t *testing.T, cfg PostShipSettings, w RecordWriter) (string, error, string) {
+func planRecordRun(t *testing.T, cfg PostShipSettings, w RecordWriter) (string, string, error) {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "REGISTRY.md")
@@ -50,12 +50,12 @@ func planRecordRun(t *testing.T, cfg PostShipSettings, w RecordWriter) (string, 
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
-	return note, err, string(got)
+	return note, string(got), err
 }
 
 func TestPlanRecordWriteThroughOffKeepsReadmePath(t *testing.T) {
 	w := &fakeRecordWriter{}
-	note, err, got := planRecordRun(t, PostShipSettings{WriteThrough: false}, w)
+	note, got, err := planRecordRun(t, PostShipSettings{WriteThrough: false}, w)
 	if err != nil || note != "updated the registry row" {
 		t.Fatalf("note %q err %v", note, err)
 	}
@@ -69,7 +69,7 @@ func TestPlanRecordWriteThroughOffKeepsReadmePath(t *testing.T) {
 
 func TestPlanRecordWriteThroughOnLeavesReadmeByteIdentical(t *testing.T) {
 	w := &fakeRecordWriter{note: "created the plan record x"}
-	note, err, got := planRecordRun(t, PostShipSettings{WriteThrough: true}, w)
+	note, got, err := planRecordRun(t, PostShipSettings{WriteThrough: true}, w)
 	if err != nil || note != "created the plan record x" {
 		t.Fatalf("note %q err %v", note, err)
 	}
@@ -92,7 +92,7 @@ func TestPlanRecordWriteThroughOnLeavesReadmeByteIdentical(t *testing.T) {
 }
 
 func TestPlanRecordWriteThroughNoWriterFallsBackToReadme(t *testing.T) {
-	note, err, got := planRecordRun(t, PostShipSettings{WriteThrough: true}, nil)
+	note, got, err := planRecordRun(t, PostShipSettings{WriteThrough: true}, nil)
 	if err != nil || note != "updated the registry row" {
 		t.Fatalf("note %q err %v", note, err)
 	}
@@ -103,7 +103,7 @@ func TestPlanRecordWriteThroughNoWriterFallsBackToReadme(t *testing.T) {
 
 func TestPlanRecordWriteThroughFailedWriteLeavesReadmeAlone(t *testing.T) {
 	w := &fakeRecordWriter{err: errors.New("disk full")}
-	_, err, got := planRecordRun(t, PostShipSettings{WriteThrough: true}, w)
+	_, got, err := planRecordRun(t, PostShipSettings{WriteThrough: true}, w)
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("err = %v, want the write failure", err)
 	}
@@ -114,7 +114,7 @@ func TestPlanRecordWriteThroughFailedWriteLeavesReadmeAlone(t *testing.T) {
 
 func TestPlanRecordWriteThroughRedactsErrorText(t *testing.T) {
 	w := &fakeRecordWriter{err: errors.New("store said secret=hunter2value and failed")}
-	_, err, _ := planRecordRun(t, PostShipSettings{WriteThrough: true}, w)
+	_, _, err := planRecordRun(t, PostShipSettings{WriteThrough: true}, w)
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -134,7 +134,7 @@ func TestPlanRecordWriteThroughPatternLegacyNumber(t *testing.T) {
 		t.Errorf("patternTitle = %q", got)
 	}
 	w := &fakeRecordWriter{}
-	_, err, _ := planRecordRun(t, PostShipSettings{WriteThrough: true, RegistryRowPattern: "| 101 | post-ship actions v{version}"}, w)
+	_, _, err := planRecordRun(t, PostShipSettings{WriteThrough: true, RegistryRowPattern: "| 101 | post-ship actions v{version}"}, w)
 	if err != nil || len(w.rows) != 1 || w.rows[0].LegacyNumber != 101 {
 		t.Fatalf("rows %+v err %v", w.rows, err)
 	}

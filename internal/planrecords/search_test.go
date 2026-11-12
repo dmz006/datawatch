@@ -77,7 +77,7 @@ func TestSearchRankingTitleFirst(t *testing.T) {
 	if hits[0].Matched != MatchTitle || hits[1].Matched != MatchAlias || hits[2].Matched != MatchBody {
 		t.Fatalf("matched labels %v", hits)
 	}
-	if !(hits[0].Score > hits[1].Score && hits[1].Score > hits[2].Score) {
+	if hits[0].Score <= hits[1].Score || hits[1].Score <= hits[2].Score {
 		t.Fatalf("scores %v", hits)
 	}
 	// exact > prefix > contains
