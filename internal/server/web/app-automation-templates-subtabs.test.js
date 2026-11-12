@@ -41,7 +41,7 @@ function tmplSubtabButtons(html) {
 test('both sub-tabs render in order: Automaton templates first (active by default), standard tasks second', () => {
   const { sb } = freshSandbox();
   const row = tmplSubtabButtons(sb._templatesSubtabsBarHTML());
-  assert.deepEqual(row.map(b => b.key), ['automaton', 'standard'], 'the bar has exactly two buttons in registry order');
+  assert.deepEqual(row.map(b => b.key), ['automaton', 'standard', 'packs'], 'the bar has exactly three buttons in registry order');
   row.forEach((b, i) => {
     assert.equal(b.active, i === 0, b.key + (i === 0 ? ' is active by default' : ' is not active by default'));
     assert.equal(b.selected, i === 0, b.key + ' aria-selected matches');
@@ -99,7 +99,7 @@ test('a fake third registry entry renders as a third button after the existing t
     });
   `, sb);
   const row = tmplSubtabButtons(sb._templatesSubtabsBarHTML());
-  assert.deepEqual(row.map(b => b.key), ['automaton', 'standard', 'third'], 'the third entry renders as a third button in order');
+  assert.deepEqual(row.map(b => b.key), ['automaton', 'standard', 'packs', 'third'], 'the third entry renders as a third button in order');
   row.forEach(b => assert.equal(b.active, b.key === 'automaton', 'existing default unchanged: only ' + (b.active ? b.key : '') + ' is active'));
   sb.switchTemplatesSubtab('third');
   assert.equal(panel.innerHTML, 'third-entry-renderer', 'selecting the third entry runs its renderer');
