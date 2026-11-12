@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.149.0 — Per-node verify_tls option for model pulls
+
+### Added
+
+- **Per-node `verify_tls` option for model pulls.** A compute node now has a `verify_tls` field. When it is on, model pulls to that node verify the node's HTTPS certificate against the system roots. The default is off, so behavior is unchanged for existing nodes (registered nodes are usually on a private network with self-signed certificates). Because updating a node replaces the whole node, omitting `verify_tls` on an update turns it off.
+- The option is on every surface: the node record and config file, the REST compute node calls (always returned, including an explicit false), the MCP compute node add and update tools, the CLI (`--verify-tls`), the chat compute commands, and a "Verify TLS for model pulls" checkbox on the node form in the web page, in all five languages.
+- Docs: the compute nodes how-to, the definitions entry (Compute node TLS verification), the operations notes and the API reference describe the option.
+
 ## v9.148.1 — Repair a failed Automaton in place and grace-period archiving of cancelled Automata
 
 ### Fixed
