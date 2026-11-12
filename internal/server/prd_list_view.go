@@ -77,7 +77,20 @@ func prdBefore(aT time.Time, aID string, bT time.Time, bID string) bool {
 func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if queryBool(r, "full", false) {
-		writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
+		list := s.autonomousMgr.ListPRDs()
+		if aliases := s.projectAliasMap(); len(aliases) > 0 {
+			res := autonomous.NewProjectAliasResolver(aliases)
+			out := make([]any, len(list))
+			for i, raw := range list {
+				out[i] = raw
+				if p, err := toPRD(raw); err == nil && p != nil {
+					out[i] = withProjectField(raw, res.Resolve(p.ProjectProfile, p.ProjectDir))
+				}
+			}
+			writeJSONOK(w, map[string]any{"prds": out})
+			return
+		}
+		writeJSONOK(w, map[string]any{"prds": list})
 		return
 	}
 
@@ -116,6 +129,10 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, perr.Error(), http.StatusBadRequest)
 		return
 	}
+	// ?project=<alias> is the project axis filter: it matches the derived
+	// project alias as well as the project system tag.
+	tagSel, projectWanted := splitProjectFilter(r, tagSel)
+	aliasRes := autonomous.NewProjectAliasResolver(s.projectAliasMap())
 	// Shipped-state read selection (shipped.go). shipped=true|false wins; the
 	// autonomous.shipped.filter_default view (all/shipped/unshipped) sets the
 	// default; status=shipped additionally selects shipments on the *status*
@@ -132,7 +149,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	}
 	statusShipped := statuses[autonomous.ShippedDisplayStatus]
 	delete(statuses, autonomous.ShippedDisplayStatus)
-	filtered := len(statuses) > 0 || active || needle != "" || len(tagSel.Tags) > 0 || shipSet || (statusShipped && shipEnabled)
+	filtered := len(statuses) > 0 || active || needle != "" || len(tagSel.Tags) > 0 || projectWanted != "" || shipSet || (statusShipped && shipEnabled)
 
 	var rows []autonomous.SummaryRow
 	fillTags := s.inheritedTagFiller() // one snapshot for the whole list
@@ -142,6 +159,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		row := autonomous.BuildSummaryRow(prd)
+		row.Project = aliasRes.Resolve(prd.ProjectProfile, prd.ProjectDir)
 		fillTags(&row.SummaryView)
 		st := string(row.Status)
 		if len(statuses) > 0 && !statuses[st] &&
@@ -170,6 +188,9 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if !tagSel.MatchesObjectTags(row.SystemTags, row.Tags) {
+			continue
+		}
+		if !projectFilterMatches(projectWanted, row.Project, row.SystemTags) {
 			continue
 		}
 		rows = append(rows, row)

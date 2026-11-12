@@ -245,18 +245,20 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 		}
 		if detail == "summary" {
 			view := autonomous.BuildSummaryView(p)
+			view.Project = autonomous.ProjectAliasOfPRD(p, s.projectAliasMap())
 			s.fillInheritedTags(&view)
 			writeJSONOK(w, s.withAutomatonCost(view, id))
 			return
 		}
 		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
 		view = autonomous.FilterTasksView(view, tagSel)
+		view.Project = autonomous.ProjectAliasOfPRD(p, s.projectAliasMap())
 		s.fillInheritedTags(&view.SummaryView)
 		s.attachTaskObservations(&view)
 		writeJSONOK(w, s.withAutomatonCost(view, id))
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(prd, id), id), id)))
+			writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPRDProject(s.prdWithObservations(prd, id), prd), id), id)))
 			return
 		}
 		p, err := toPRD(prd)
@@ -265,7 +267,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(capped, capped.ID), capped.ID), capped.ID)))
+		writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPRDProject(s.prdWithObservations(capped, capped.ID), capped), capped.ID), capped.ID)))
 	}
 }
 

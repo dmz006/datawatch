@@ -9,9 +9,13 @@ import "time"
 // decisions, verdicts, verification text or error text, so its size grows
 // with the number of stories and tasks, not with how much text they carry.
 type SummaryView struct {
-	ID            string         `json:"id"`
-	Title         string         `json:"title,omitempty"`
-	ProjectDir    string         `json:"project_dir"`
+	ID         string `json:"id"`
+	Title      string `json:"title,omitempty"`
+	ProjectDir string `json:"project_dir"`
+	// Project is the derived, read-only project alias (ResolveProjectAlias).
+	// It is filled by the server when a list or detail is read and never
+	// stored; empty when the record belongs to no registered project.
+	Project       string         `json:"project,omitempty"`
 	Status        PRDStatus      `json:"status"`
 	Rev           int            `json:"rev"`
 	CreatedAt     time.Time      `json:"created_at"`
