@@ -125,7 +125,7 @@ type Automation struct {
 	// Automaton like every other field.
 	Packs []string `json:"packs,omitempty"`
 
-	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
+	ProjectDir string `json:"project_dir,omitempty"` // informational; per-member budget and routing key on each member's own tree
 
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
@@ -817,7 +817,7 @@ type BudgetPolicy struct {
 	// estimate-only: it can never pause or block (see Gates).
 	CeilingType  string  `json:"ceiling_type"`  // "dollar" | "allocation_pct"
 	CeilingValue float64 `json:"ceiling_value"` // USD, or percent (0-100) of the window's allocation
-	Window       string  `json:"window"`        // "automation" (lifetime) | "day" | "week" | "month" — BL428 llm.<name>.budget windows + lifetime
+	Window       string  `json:"window"`        // "automation" (lifetime) | "day" | "week" | "month" — llm.<name>.budget windows + lifetime
 	Pacing       string  `json:"pacing"`        // "none" | "even"
 	OnBreach     string  `json:"on_breach"`     // "pause" (default) | "block"
 	Backend      string  `json:"backend,omitempty"`
