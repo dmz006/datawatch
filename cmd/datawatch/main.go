@@ -123,7 +123,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.146.1"
+var Version = "9.146.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -12691,7 +12691,7 @@ func newSessionCmd() *cobra.Command {
 		Use:     "new [task]",
 		Aliases: []string{"start"},
 		Short:   "Start a new AI coding session",
-		Args:  cobra.MinimumNArgs(1),
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

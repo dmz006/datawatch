@@ -340,8 +340,12 @@ link, and skips a path that is already gone. The containment check runs on the
 requested path **before any file-system call**, so a path outside the base (an
 absolute path elsewhere, a `..` escape, an empty path or one with a NUL byte) is
 refused with the same "outside the worktree base" text whether or not the target
-exists, and a missing outside path no longer reads as "already gone". A valid
-path inside the base behaves exactly as before. It reports how many entries it
+exists, and a missing outside path no longer reads as "already gone". The check
+is written out in the fix itself, as a plain comparison of the cleaned path
+against the base (and, for an absolute path, against the base's resolved
+location), so no step before it can touch the file system. A path equal to the
+base itself is refused too: the fix works on things inside the base, never on
+the base. A valid path inside the base behaves exactly as before. It reports how many entries it
 changed. It changes permissions only: it removes nothing, so the next cleanup
 pass still applies every check above before it deletes anything.
 

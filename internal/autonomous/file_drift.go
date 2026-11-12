@@ -2,9 +2,12 @@ package autonomous
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,12 +19,48 @@ import (
 // substitute a fake; nil means defaultDriftGitRunner.
 type driftGitRunner func(ctx context.Context, dir string, args ...string) (string, error)
 
-// defaultDriftGitRunner shells out to git with -C dir. Read-only
-// subcommands only (diff, log) — this file never mutates the repo.
-func defaultDriftGitRunner(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) // #nosec G204 -- fixed read-only git subcommands; dir comes from operator-controlled PRD ProjectDir, same trust model as runGitIn (worktree.go)
+// driftGitExec runs git with the given argv and returns its stdout.
+// A plain var so tests can swap it.
+var driftGitExec = func(ctx context.Context, argv []string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", argv...) // #nosec G204 -- fixed read-only git subcommands; dir comes from operator-controlled PRD ProjectDir, same trust model as runGitIn (worktree.go)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.Output()
 	return string(out), err
+}
+
+// hardenedDriftGitArgs is the single place the hardening options are
+// defined: no fsmonitor, no hooks, no optional locks, then -C dir, the
+// subcommand and its arguments. diff also gets --no-ext-diff.
+func hardenedDriftGitArgs(dir string, args []string) []string {
+	out := []string{
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath=",
+		"--no-optional-locks",
+		"-C", dir,
+	}
+	if len(args) == 0 {
+		return out
+	}
+	out = append(out, args[0])
+	if args[0] == "diff" {
+		out = append(out, "--no-ext-diff")
+	}
+	return append(out, args[1:]...)
+}
+
+// validDriftDir reports whether dir is safe to pass to git -C: non-empty,
+// absolute and not starting with a dash.
+func validDriftDir(dir string) bool {
+	return dir != "" && filepath.IsAbs(dir) && !strings.HasPrefix(dir, "-")
+}
+
+// defaultDriftGitRunner shells out to git with hardened options and -C dir.
+// Read-only subcommands only (diff, log) — this file never mutates the repo.
+func defaultDriftGitRunner(ctx context.Context, dir string, args ...string) (string, error) {
+	if !validDriftDir(dir) {
+		return "", fmt.Errorf("invalid git directory %q", dir)
+	}
+	return driftGitExec(ctx, hardenedDriftGitArgs(dir, args))
 }
 
 // CapturePreTaskDirtyFiles returns the sorted, de-duplicated set of
