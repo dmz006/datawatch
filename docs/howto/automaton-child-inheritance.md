@@ -2,6 +2,11 @@
 docs:
   index: true
   topics: [automaton, automation, child, parent, inherit, inheritance, project, model, backend, tags, priority, child_inherit]
+exec_steps:
+  - tool: autonomous_config_get
+    description: Read the autonomous settings, including automation.child_inherit (default on)
+    args: {}
+    read_only: true
 ---
 
 # How-to: A child Automaton starts from its parent's setup
