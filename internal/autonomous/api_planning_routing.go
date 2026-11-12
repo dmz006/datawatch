@@ -12,3 +12,13 @@ func (a *API) SetPlanningRouting(pr config.PlanningRoutingConfig) error {
 	a.M.SetConfig(cfg)
 	return nil
 }
+
+// SetTaskRouting replaces the whole task_routing block on the live
+// config. The caller validates the block first. Only tasks created after
+// the call read the new table.
+func (a *API) SetTaskRouting(tr config.TaskRoutingConfig) error {
+	cfg := a.M.Config()
+	cfg.TaskRouting = tr.Clone()
+	a.M.SetConfig(cfg)
+	return nil
+}

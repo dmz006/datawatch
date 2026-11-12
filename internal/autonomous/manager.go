@@ -150,8 +150,11 @@ type Config struct {
 	PlanningBackend string `json:"planning_backend,omitempty"`
 	// PlanningRouting is the autonomous.planning_routing block: routes the
 	// decompose call to a rule-chosen planner and ladder. Off by default.
-	PlanningRouting     config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
-	VerificationBackend string                       `json:"verification_backend,omitempty"`
+	PlanningRouting config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
+	// TaskRouting is the autonomous.task_routing block: the task-type
+	// routing table and its profiles. Off by default.
+	TaskRouting         config.TaskRoutingConfig `json:"task_routing,omitempty"`
+	VerificationBackend string                   `json:"verification_backend,omitempty"`
 	// ExecutionBackend is the fallback backend used when a task and its
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
