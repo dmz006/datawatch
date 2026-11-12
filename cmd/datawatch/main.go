@@ -7135,6 +7135,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						TLSSkipVerify:      e.TLSSkipVerify,
 						Federated:          e.Federated,
 						HasAutonomousWrite: federation.Check(caps, federation.CapAutonomousWrite),
+						HasAutonomousRead:  federation.Check(caps, federation.CapAutonomousRead),
 					}, true
 				}
 				// Creation check: the store refuses a webhook subscription whose
