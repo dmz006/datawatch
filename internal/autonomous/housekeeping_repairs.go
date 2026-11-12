@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,7 +162,7 @@ func (r *Repairer) Run(ctx context.Context) []RepairRecord {
 	set := r.settings()
 	grace := time.Duration(set.GraceSecondsOrDefault()) * time.Second
 	var added []RepairRecord
-	for _, rep := range r.repairs {
+	for idx, rep := range r.repairs {
 		if ctx.Err() != nil {
 			break
 		}
@@ -170,7 +171,7 @@ func (r *Repairer) Run(ctx context.Context) []RepairRecord {
 		if mode == config.HousekeepingModeOff {
 			continue
 		}
-		added = append(added, r.runGroup(ctx, rep, mode, grace)...)
+		added = append(added, r.runGroup(ctx, rep, idx, mode, grace)...)
 	}
 	if len(added) > 0 {
 		r.persist()
@@ -178,14 +179,16 @@ func (r *Repairer) Run(ctx context.Context) []RepairRecord {
 	return added
 }
 
-func (r *Repairer) runGroup(ctx context.Context, rep Repair, mode string, grace time.Duration) []RepairRecord {
+func (r *Repairer) runGroup(ctx context.Context, rep Repair, idx int, mode string, grace time.Duration) []RepairRecord {
 	group := rep.Group()
+	// ns keeps two repairs of one group from clearing each other's clocks.
+	ns := fmt.Sprintf("%s#%d/", group, idx)
 	now := r.now()
 	findings := rep.Detect(ctx)
 	live := map[string]bool{}
 	var added []RepairRecord
 	for _, f := range findings {
-		key := group + "/" + f.Subject
+		key := ns + f.Subject
 		live[key] = true
 		r.mu.Lock()
 		first, seen := r.firstSeen[key]
@@ -201,7 +204,7 @@ func (r *Repairer) runGroup(ctx context.Context, rep Repair, mode string, grace 
 	}
 	r.mu.Lock()
 	for k := range r.firstSeen {
-		if len(k) > len(group) && k[:len(group)+1] == group+"/" && !live[k] {
+		if strings.HasPrefix(k, ns) && !live[k] {
 			delete(r.firstSeen, k) // gone: a later find is a new one
 			delete(r.alerted, k)
 		}
