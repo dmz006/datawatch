@@ -115,6 +115,17 @@ Each restored flag is recorded three ways:
    `until` and `source`. Read it with `audit_query` (action
    `autonomous_usage_backoff_restored`).
 
+## What to review after a restart
+
+A restored flag is the daemon's saved state, not a fresh reading, so check it:
+
+- Run `usage_backoff_status` and compare each `until` with the usage page. If the
+  limit has already lifted, clear the flag by hand; a cleared flag stays cleared.
+- A flag restored from a burn-guard rung may be stale if the guard config changed
+  while the daemon was down. See [Burn guard](burn-guard.md).
+- Read the **Back-off restored after restart** alert once per restart so held
+  Automaton work is not mistaken for a stall.
+
 ## Troubleshooting
 
 - **Work is waiting after a restart.** Run `usage_backoff_status`. A restored flag
