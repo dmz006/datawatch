@@ -7357,6 +7357,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .lane-bar-fill { display: block; height: 100%; background: var(--accent2, #60a5fa); }
 .lane-fill-queued, .lane-fill-evidence { margin-top: 6px; overflow-wrap: anywhere; }
 .lane-fill-evidence { color: var(--text2); }
+.lane-fill-degraded { margin-top: 8px; padding: 6px 8px; border-left: 3px solid var(--warning, #d9a400); background: rgba(217, 164, 0, 0.08); overflow-wrap: anywhere; }
+.lane-fill-degraded-title { font-weight: 600; }
+.lane-fill-degraded-help { color: var(--text2); font-size: 0.9em; }
 .lane-fill-gap { height: 14px; }
 @media (max-width: 600px) { .lane-row { grid-template-columns: 1fr 64px; } .lane-row-runs { grid-column: 1 / -1; } }
 /* Headline cards: fixed maximum size so nothing stretches on a wide screen. */
