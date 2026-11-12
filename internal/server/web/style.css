@@ -7409,10 +7409,27 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .obs-kg-triple { overflow-wrap: anywhere; }
 .obs-sched-meta { flex-shrink: 0; }
 
-/* Project Gantt: the SVG viewBox is 640 wide, so capping at 720px keeps its
-   text at the authored size on wide screens; below the cap it fills the
-   container. Left-aligned (block, no auto margins). */
-.project-gantt-svg { width: 100%; max-width: 720px; }
+/* Project Gantt: one expandable timeline. The chart is capped at 720px on a
+   wide browser, left-aligned. On a phone the chart keeps a minimum width inside
+   an overflow-x:auto wrapper and the label column stays visible (sticky). */
+.project-gantt-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; margin-bottom: 6px; }
+.project-gantt-range-label { color: var(--text2); }
+.project-gantt-preset { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; font-size: 12px; padding: 2px 8px; }
+.project-gantt-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.project-gantt-range { color: var(--text2); margin-left: auto; }
+.project-gantt-scroll { overflow-x: auto; max-width: 720px; -webkit-overflow-scrolling: touch; }
+.project-gantt-chart { min-width: 520px; max-width: 720px; cursor: grab; touch-action: pan-y; user-select: none; }
+.project-gantt-row { display: flex; align-items: center; height: 22px; }
+.project-gantt-label { position: sticky; left: 0; z-index: 1; flex: 0 0 170px; width: 170px; box-sizing: border-box; background: var(--bg, var(--card, #0f1117)); display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; }
+.project-gantt-label-text { overflow: hidden; text-overflow: ellipsis; }
+.project-gantt-toggle { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 12px; padding: 0 2px; width: 16px; }
+.project-gantt-toggle-spacer { display: inline-block; width: 16px; }
+.project-gantt-track { position: relative; flex: 1 1 auto; height: 14px; border-bottom: 1px dotted var(--border); }
+.project-gantt-axis .project-gantt-track { height: 16px; border-bottom: 1px solid var(--border); }
+.project-gantt-tick { position: absolute; top: 0; font-size: 9px; color: var(--text2); white-space: nowrap; }
+.project-gantt-bar { position: absolute; top: 1px; height: 12px; border-radius: 3px; }
+.project-gantt-now { position: absolute; top: -1px; font-size: 9px; color: var(--text2); }
+.project-gantt-planned { position: absolute; left: 4px; top: 0; font-size: 10px; color: var(--text2); font-style: italic; }
 
 /* Project page: collapsible section cards */
 .project-section-card { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
