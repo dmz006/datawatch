@@ -5341,5 +5341,10 @@
   "dash_card_help_usage_burn": "週の各日に使った使用ポイントを、使用量計算機の日次系列から表示します。",
   "dash_card_help_label": "このカードのヘルプ",
   "projects_section_collapse": "%1$sを折りたたむ",
-  "projects_section_expand": "%1$sを展開する"
+  "projects_section_expand": "%1$sを展開する",
+  "automation_focus_button": "フォーカス",
+  "projects_gantt_focus_title": "フォーカス: %1$s",
+  "projects_gantt_focus_back": "戻る",
+  "projects_gantt_focus_empty": "このオートメーションにはまだオートマトンもタスクもありません。計画済みです。",
+  "projects_gantt_focus_range_text": "最初のタスク %1$s – 最後のタスク %2$s"
 }
