@@ -7015,7 +7015,7 @@ The routes answer 503 while Automata are disabled and need the autonomous read c
 
 ## Child inheritance (a child Automaton starts from its parent)
 
-A child Automaton (one a running Automaton spawns for a task, a fix Automaton filed from a scan, or a defect filed with a parent) starts from its parent's setup instead of from nothing. The full how-to is [howto/automaton-child-inheritance.md](howto/automaton-child-inheritance.md).
+A child Automaton (one a running Automaton spawns for a task, a fix Automaton filed from a scan, or a defect filed with a parent) starts from its parent's setup instead of from nothing. The full how-tos are [howto/child-automaton-inheritance.md](howto/child-automaton-inheritance.md) and [howto/automaton-child-inheritance.md](howto/automaton-child-inheritance.md).
 
 | Key | Meaning | Default | Allowed |
 |---|---|---|---|
