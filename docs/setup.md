@@ -163,7 +163,7 @@ mcp:
 
 then restart. Full walkthrough, the complete capability set, and the audit queries: [howto/self-config-capability.md](howto/self-config-capability.md); the setting's definition: [datawatch-definitions.md — Self-config](datawatch-definitions.md#self-config).
 
-A separate, smaller switch covers the high-impact tools (secrets, identity, daemon restart and reload, plugin install, starting sessions and a few more): `mcp.allow_sensitive_writes`, also **on by default**. Set it to `false` in the same `mcp:` block and restart to have sessions and peers refused those tools; your own Web UI, CLI and REST calls still work. See [howto/self-config-capability.md — Sensitive writes](howto/self-config-capability.md#sensitive-writes-a-separate-switch).
+A separate, smaller switch covers the high-impact tools (secrets, identity, daemon restart and reload, plugin install, starting sessions and a few more): `mcp.allow_sensitive_writes`, also **on by default**. Turn it off with the **Allow sensitive writes** toggle in Settings → General → Self-config, with `datawatch config set mcp.allow_sensitive_writes false`, or by setting it to `false` in the same `mcp:` block and restarting; sessions and peers are then refused those tools, while your own Web UI, CLI and REST calls still work. A session can still change the setting through `config_set` while self-config is on, so close `mcp.allow_self_config` too if only you should control it. See [howto/self-config-capability.md — Sensitive writes](howto/self-config-capability.md#sensitive-writes-a-separate-switch).
 
 ---
 

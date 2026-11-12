@@ -4,7 +4,7 @@ docs:
   topics: [self-config, capability, group, allow_self_config, allow_sensitive_writes, sensitive-writes, audit, hardening, bootstrap]
 exec_steps:
   - tool: get_config
-    description: Read the current configuration first (the mcp section carries allow_self_config, allow_sensitive_writes, self_config_audit_path and self_config_audit_denied; allow_sensitive_writes is absent until an operator sets it, and absent means enabled). Reading is never gated by the alias
+    description: Read the current configuration first (the mcp section carries allow_self_config, allow_sensitive_writes, self_config_audit_path and self_config_audit_denied; allow_sensitive_writes is reported as its effective value, so a config that never set it reads true; absent from the YAML means enabled). Reading is never gated by the alias
     args: {section: "mcp"}
     read_only: true
   - tool: self_config_audit
@@ -306,20 +306,45 @@ trail: `self_config_audit`, `datawatch audit self-config`,
 {"time":"2026-11-11T09:02:17Z","surface":"mcp","tool":"secret_set","class":"sensitive","keys":["name","value"],"caller":"session:goose-b7c1","allowed":false,"reason":"tool secret_set is refused: sensitive writes are disabled for sessions and peers (mcp.allow_sensitive_writes is false). An operator can re-enable them by setting mcp.allow_sensitive_writes to true (or removing the key) in the datawatch config."}
 ```
 
-**Turn it off.** Edit the YAML under `mcp:` and restart the daemon, as for the
-other `mcp:` switches:
+**Turn it off.** Use any of the operator surfaces below. A change made through
+the Web UI, the CLI, REST or the comm channel is applied to the running daemon
+**and saved to the config file**; the gate reads the setting on every call, so
+the next sensitive call from a session or peer is already refused and no
+restart is needed.
+
+| Surface | How |
+|---|---|
+| **Web UI** | Settings → General → **Self-config** card → **Allow sensitive writes** toggle. The row's help text reads: "On: a model session may run secret, identity and daemon-control tools. Off: each such call is refused and audited. Operator-run calls from the PWA, REST and CLI are unaffected." It is translated in English, German, Spanish, French and Japanese |
+| **CLI** | `datawatch config set mcp.allow_sensitive_writes false` (sends `PUT /api/config` to the running daemon); read it back with `datawatch config get mcp.allow_sensitive_writes` |
+| **REST API** | `PUT /api/config` with `{"mcp.allow_sensitive_writes": false}`; `GET /api/config` returns the **effective** value as the boolean `mcp.allow_sensitive_writes` (a config that never set the key reads `true`) |
+| **Comm channel** | `configure mcp.allow_sensitive_writes=false` |
+| **YAML** | the `mcp:` block, then restart the daemon (a hand edit is only read at start) |
 
 ```yaml
 mcp:
   allow_sensitive_writes: false
 ```
 
-**Turn it back on.** Remove the key or set it to `true`, and restart.
+**Turn it back on.** Use the same surface with `true`, or remove the key from
+the YAML and restart. The Web UI, CLI, REST and comm channel write an explicit
+`true`; that reads the same as an absent key.
 
-Where this setting can be changed today: the YAML file only. The Settings
-card, the `datawatch config set` CLI, `PUT /api/config` and the `config_set`
-MCP tool do not handle `mcp.allow_sensitive_writes` yet — the daemon's config
-patch path ignores it as an unknown key — so edit the YAML and restart. See the operator review notes in the
+Write the value as exactly `true` or `false`. The daemon reads the strings
+`true`, `yes` and `1` as on and **anything else as off**, so a value such as
+`True` or `on` typed into the CLI or a comm `configure` command turns the class
+off. Check the result with `datawatch config get mcp.allow_sensitive_writes`
+after changing it.
+
+**A session can change this setting too — review before relying on it.**
+`config_set` sends the key through `PUT /api/config`, and only
+`mcp.allow_self_config` is bootstrap-protected. While `allow_self_config` is on
+(the default), a session that holds `config:write` can call `config_set` with
+`mcp.allow_sensitive_writes` and `false`, or `true`. So closing the sensitive
+class does not stop a self-configuring session from opening it again. To make
+the switch operator-only, also close `mcp.allow_self_config` (see
+[Hardening](#hardening-the-documented-steps)). Every such attempt is in the
+audit trail as an ordinary `config` record with the key name and its value. See
+the operator review notes in the
 [operations guide](../operations.md#sensitive-writes-what-sessions-and-peers-may-not-do).
 
 ## Migration notes (from the old single gate)
@@ -345,7 +370,7 @@ ability to scope and audit more precisely.
 | `mcp.allow_self_config` | bool | enabled | **No — bootstrap-protected.** YAML/CLI/Web UI/REST (operator) only |
 | `mcp.self_config_audit_path` | string | `<data dir>/audit/config-self-modify.jsonl` | Only while the alias is on (it is a config-write like any other) |
 | `mcp.self_config_audit_denied` | bool | on | Same as above |
-| `mcp.allow_sensitive_writes` | bool | enabled (absent) | No. It is read from the YAML only (see [Sensitive writes](#sensitive-writes-a-separate-switch)); no session surface writes it |
+| `mcp.allow_sensitive_writes` | bool | enabled (absent) | **Yes, while the alias is on.** It is changed like any other setting: YAML, CLI, Web UI, REST and comm `configure` for the operator, and `config_set` for a session — it is not bootstrap-protected (see [Sensitive writes](#sensitive-writes-a-separate-switch)) |
 
 ## See also
 

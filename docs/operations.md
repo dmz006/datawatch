@@ -3150,25 +3150,51 @@ secret material in an argument cannot be recognised by its name. Refusals are
 recorded under `mcp.self_config_audit_denied` like all other refusals. The
 audit is written outside the gate: a refusal is visible in the trail.
 
-**Changing it.** Edit `mcp.allow_sensitive_writes` in the YAML and restart the
-daemon. Re-enabling is removing the key or setting `true`.
+**Changing it.** Any operator surface can set it:
+
+- Web UI: Settings → General → **Self-config** card → **Allow sensitive writes**
+  (the help text is translated in the five locales);
+- CLI: `datawatch config set mcp.allow_sensitive_writes false`, and
+  `datawatch config get mcp.allow_sensitive_writes` to read it back;
+- REST: `PUT /api/config` with `{"mcp.allow_sensitive_writes": false}`;
+  `GET /api/config` returns the effective boolean under `mcp`;
+- comm channel: `configure mcp.allow_sensitive_writes=false`;
+- YAML: edit the `mcp:` block and restart.
+
+A change through the Web UI, CLI, REST or comm channel is applied to the
+running daemon and saved to the config file. The gate reads the setting on
+every call, so no restart is needed. Re-enabling is setting `true`, or removing
+the key from the YAML and restarting. Write exactly `true` or `false`: the
+daemon reads `true`, `yes` and `1` as on and any other text (`True`, `on`) as
+off.
 
 **Operator review before relying on it.** These points follow from how the
 setting is wired today and need an operator decision or a follow-up:
 
-1. The setting is YAML-only. The CLI `datawatch config set`, `PUT /api/config`,
-   the Settings screen and the `config_set` tool do not handle
-   `mcp.allow_sensitive_writes`; the patch path logs an unknown-key no-op. A
-   session calling `config_set` for it would not change it, but unlike
-   `mcp.allow_self_config` it is not named in the bootstrap protection either.
-2. There is no PWA control, no locale string, no OpenAPI field and no mobile
-   parity issue in this repository yet, so the Settings → General card does not show the switch.
+1. A session can change the switch. `config_set` goes through
+   `PUT /api/config`, which now handles `mcp.allow_sensitive_writes`, and unlike
+   `mcp.allow_self_config` the key is not named in the bootstrap protection. While
+   `mcp.allow_self_config` is on (the default), a session holding `config:write`
+   can set the key back to `true`, so `false` alone does not keep a
+   self-configuring session out of the class. Decide whether the key should be
+   bootstrap-protected like `allow_self_config`; until then, pair
+   `allow_sensitive_writes: false` with `allow_self_config: false` when the
+   goal is operator-only control. The attempt is audited as a `config` record.
+2. The Web UI row sits in the Self-config card and is translated in the five
+   locales, and the OpenAPI spec now describes the field. No mobile parity
+   issue for the new toggle exists in this repository, so Android and iPhone
+   clients do not show it yet; file one with the datawatch-app project before
+   telling operators it is available on mobile.
 3. The gate sits in the MCP tool-handler chain only. The REST and comm-channel
    routes that do the same things (for example a secret write over REST or
    `send_input` over a comm channel) do not pass through this switch; this
    change did not examine them, so check them before treating `false` as a
    complete lock-down.
-4. The refusal and audit wording above is the code's current text; confirm it
+4. The daemon's own MCP server reads the live setting. A separate stdio MCP
+   process started with `datawatch mcp` loads the config file when it starts, so
+   it picks up a saved change only after that process restarts. This was read
+   from the code, not exercised end to end.
+5. The refusal and audit wording above is the code's current text; confirm it
    before it is quoted in operator runbooks.
 
 Walk-through and a sample audit record:
