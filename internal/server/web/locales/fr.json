@@ -1516,7 +1516,7 @@
   "session_tag_chip_tip": "%1$s — %2$d sessions",
   "session_tag_clear_tip": "Retirer le filtre d'étiquettes",
   "session_tree_orphaned": "orphelin — le parent n'existe plus",
-  "session_tree_view_tip": "Basculer la vue arborescente — regroupe les sessions par filiation parent/enfant",
+  "session_tree_view_tip": "Basculer la vue arborescente — regroupe les sessions par filiation parent/enfant (mode Liste uniquement)",
   "sessions_add_server": "Ajouter un serveur…",
   "sessions_all_servers": "Tous les serveurs",
   "sessions_cancel_selection": "Annuler la sélection",

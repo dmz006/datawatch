@@ -1467,7 +1467,7 @@
   "session_tag_help_tip": "Open the Automata & tags howto — tag axes, filters, and the tag browser",
   "session_tag_chip_tip": "%1$s — %2$d sessions",
   "session_tag_clear_tip": "Remove the tag filter",
-  "session_tree_view_tip": "Toggle tree view — groups sessions by parent/child lineage",
+  "session_tree_view_tip": "Toggle tree view — groups sessions by parent/child lineage (List mode only)",
   "session_tree_orphaned": "orphaned — parent no longer exists",
   "session_llm_ref_title": "LLM registry name",
   "session_select_title": "Select sessions",

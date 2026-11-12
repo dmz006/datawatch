@@ -1516,7 +1516,7 @@
   "session_tag_chip_tip": "%1$s — %2$d sesiones",
   "session_tag_clear_tip": "Quitar el filtro de etiquetas",
   "session_tree_orphaned": "huérfano — el padre ya no existe",
-  "session_tree_view_tip": "Alternar vista de árbol — agrupa sesiones por linaje padre/hijo",
+  "session_tree_view_tip": "Alternar vista de árbol — agrupa sesiones por linaje padre/hijo (solo en modo Lista)",
   "sessions_add_server": "Añadir servidor…",
   "sessions_all_servers": "Todos los servidores",
   "sessions_cancel_selection": "Cancelar selección",
