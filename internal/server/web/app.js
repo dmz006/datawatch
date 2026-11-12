@@ -2829,6 +2829,13 @@ function navigate(view, sessionId, fromPopstate) {
     _automationState.subtab = _AUTOMATION_DEFAULT_SUBTAB;
     view = 'autonomous';
   }
+  // Projects is the first sub-tab of Automata, not a view of its own. The old
+  // name still arrives from stored history entries and saved links; the
+  // project name stays in the URL hash, which renderProjectsView reads.
+  if (view === 'projects') {
+    _automataState.tab = 'projects';
+    view = 'autonomous';
+  }
   // Close the new-session modal on any navigation (Escape or nav tap).
   if (document.getElementById('newSessionModal')) closeNewSessionModal();
 
@@ -2965,6 +2972,10 @@ function navigate(view, sessionId, fromPopstate) {
         _automataState.selectMode = false;
         _automataState.selected.clear();
       }
+      // Leaving the Automata view ends every loader and timer its sub-tabs
+      // (Projects included) started, so nothing polls while hidden.
+      if (typeof _automationStopLoaders === 'function') _automationStopLoaders();
+      if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
     }
     backBtn.style.display = 'none';
     nav.style.display = 'flex';
@@ -3009,11 +3020,6 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailBreadcrumb = [];
       _automataDetailPRD = null;
       _automationState.detailId = null;
-      renderAutonomousView();
-    } else if (view === 'projects') {
-      headerTitle.textContent = t('nav_projects') || 'Projects';
-      _automataState.tab = 'projects';
-      state.activeView = 'autonomous';
       renderAutonomousView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
@@ -3711,9 +3717,10 @@ function projectsHistoryMore() {
 // selected project, repainting after each so the arcs show before the history.
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
-    if (_projectsActive()) _projectsPaint();
-    return _projectsLoadHistory(false);
-  }).then(() => _projectsLoadLinks());
+    if (!_projectsActive()) return null;
+    _projectsPaint();
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null));
+  });
 }
 
 function renderProjectsView() {
@@ -3722,7 +3729,7 @@ function renderProjectsView() {
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   _projectsPaint();
-  return _projectsLoad().then(() => _projectsLoadSelected()).then(() => {
+  return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
     // Paint again only while the Projects tab is still the active view.
     if (_projectsActive()) _projectsPaint();
   });
@@ -3730,9 +3737,11 @@ function renderProjectsView() {
 
 function _projectsLoad() {
   return apiFetch('/api/projects').then(list => {
+    if (!_projectsActive()) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
   }).catch(err => {
+    if (!_projectsActive()) return;
     _projectsState.list = _projectsState.list || [];
     _projectsState.error = (err && err.message) || String(err);
   });
@@ -45541,6 +45550,11 @@ document.addEventListener('DOMContentLoaded', () => {
       _automataState.tab = 'automation';
       _initView = state._autonomousEnabled === false ? 'sessions' : 'autonomous';
     }
+    // A stored 'projects' view or a #projects hash restores into the Automata
+    // Projects sub-tab; navigate maps the old view name onto it.
+    // A projects hash wins over a stored 'autonomous' view (Projects visits
+    // persist 'autonomous') as well as over no stored view.
+    if ((!_initView || _initView === 'autonomous') && _projectsHashParse(_projectsCurrentHash()) !== null) _initView = 'projects';
     navigate(_initView || 'sessions', _initSession || undefined);
 
     // A saved link to the Automation list or one Automation lands on the
