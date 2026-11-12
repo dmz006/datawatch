@@ -77,6 +77,19 @@ directly.
   Automaton/Automation names, case-insensitively.
 - **Load more** fetches the next page of older events.
 
+**On a phone**
+
+The Automata sub-tab bar, including **Events**, stays on one line and scrolls
+sideways instead of wrapping; the active tab scrolls into view. See
+[Automation tab](automation-tab.md) for the phone layout.
+
+**Events and the Inbox scope.** The Events stream is not scoped by the
+project picked on the Projects sub-tab: it lists every project until you use
+the **Project** filter above. The **Inbox** badge and its cards follow the
+selected project instead, and the Overview counts everything waiting on you.
+That scope is a display rule of the web app only; the REST, CLI and comm reads
+below always return every event.
+
 **On every other surface**
 
 | Surface | Read | Parameters |
