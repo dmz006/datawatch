@@ -76,7 +76,9 @@ Project  "core-api"
 ## Setup
 
 1. **Register the project.** Give it a name and an absolute directory. The alias
-   is what every surface uses afterwards.
+   is what every surface uses afterwards. In the web app you can do this with the
+   **Manage projects** form on the Projects sub-tab (see
+   [Manage projects in the web app](#manage-projects-in-the-web-app)); the CLI form is:
 
    ```bash
    datawatch projects upsert core-api --dir /srv/projects/core-api --backend claude-code --description "Public REST API"
@@ -453,6 +455,15 @@ the lane defaults. Use REST, MCP or the CLI for those.
   same reason; rename it only if you also redirect the links that point here.
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
+- **Empty-state link.** The empty Projects picker used to show an **Open Settings**
+  button that went to Project policy. This page now describes the **Manage
+  projects** form as the place to start, and the button is no longer listed.
+  Confirm that is the intended behavior in the shipped web app.
+- **Edit keeps the record.** The page says editing keeps the policy, arcs, owner,
+  target and other record fields. That follows the shipped form's behavior as
+  documented in the change; confirm it on a project that has a policy and arcs.
+- **Mobile parity.** The Manage projects form is web-only; the Android and iPhone
+  apps need the matching add, edit and remove controls (tracked in datawatch-app).
 
 ## Related
 
