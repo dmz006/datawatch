@@ -239,3 +239,43 @@ func TestBranchRefresh_OpenAPIListsRoute(t *testing.T) {
 		}
 	}
 }
+
+type branchRefreshStatsSpy struct {
+	branchRefreshSpy
+	stats autonomous.BranchRefreshStats
+}
+
+func (b *branchRefreshStatsSpy) BranchRefreshStats() autonomous.BranchRefreshStats { return b.stats }
+
+func getBranchRefreshStats(s *Server, method string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.handleBranchRefreshStats(rec, httptest.NewRequest(method, "/api/autonomous/branch-refresh/stats", nil))
+	return rec
+}
+
+func TestBranchRefreshStats_Route(t *testing.T) {
+	spy := &branchRefreshStatsSpy{stats: autonomous.BranchRefreshStats{Enabled: true, BehindLimit: 5, Tracked: 3, Clean: 1, Conflict: 1, Error: 1, Stopped: 1, OverrideOn: 2}}
+	s := &Server{autonomousMgr: spy, cfg: &config.Config{}}
+	rec := getBranchRefreshStats(s, http.MethodGet)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got autonomous.BranchRefreshStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != spy.stats {
+		t.Fatalf("got %+v want %+v", got, spy.stats)
+	}
+	if rec = getBranchRefreshStats(s, http.MethodPost); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST: want 405, got %d", rec.Code)
+	}
+	// A manager without the numbers answers 501; no manager answers 503.
+	s2 := &Server{autonomousMgr: &branchRefreshSpy{}, cfg: &config.Config{}}
+	if rec = getBranchRefreshStats(s2, http.MethodGet); rec.Code != http.StatusNotImplemented {
+		t.Fatalf("no statser: want 501, got %d", rec.Code)
+	}
+	if rec = getBranchRefreshStats(&Server{cfg: &config.Config{}}, http.MethodGet); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("no manager: want 503, got %d", rec.Code)
+	}
+}

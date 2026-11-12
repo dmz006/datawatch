@@ -119,10 +119,11 @@ the setting in effect for that Automaton.
 
 The Automaton page's Overview tab shows the same state on the **Branch
 refresh** card: the last refresh time, the commits behind main, the last result
-(*Clean*, *Conflict*, *Skipped*, *Error* or *No refresh yet*) and the override
-select. The daemon does not record a *Skipped* result today, so you will not see
-it unless a later release starts to. The card does not show whether refreshing
-is stopped; read `branch_refresh.stopped` on the Automaton `GET` reply for that.
+(*Clean*, *Conflict*, *Skipped*, *Error* or *No refresh yet*), whether refreshing
+is *Active* or *Stopped by a conflict*, and the override select. The daemon
+does not record a *Skipped* result today, so you will not see it unless a later
+release starts to. The stopped state is also `branch_refresh.stopped` on the
+Automaton `GET` reply.
 
 ## When the merge conflicts
 
@@ -140,24 +141,42 @@ questions.
 
 | Option | What it does to refreshing |
 |---|---|
-| **resolve by hand** | Intended to stay stopped until you reset it (no reset is available yet) |
-| **retry later** | Intended to allow refreshing again, so the next gap tries the merge again |
+| **resolve by hand** | Refreshing stays stopped until you reset it (see below) |
+| **retry later** | Refreshing is allowed again, so the next gap tries the merge again |
 | **leave the branch alone** (the default) | The branch is untouched and refreshing stays stopped |
 
-> **Review needed.** Answering the question does not change the Automaton yet.
-> The code that applies the chosen option exists but is not connected to the
-> question answer, so refreshing stays stopped whichever option you pick, and
-> *retry later* does not allow it again.
->
-> Nothing else restarts it either. Changing the override on the Automaton, or
-> bringing its branch up to date by hand, does **not** clear the stop: the stop
-> is cleared only by the answer handler that is not connected yet. Until it is,
-> a stopped Automaton is not refreshed again, so plan to merge its branch with
-> the base yourself, as you would with refresh off. Decide whether to connect
-> the answer before relying on refresh for Automata that may hit a conflict.
+Your answer is applied to the Automaton at once and written to its Decisions
+list as a **branch_refresh** entry that names the question. An answer that
+names none of the three options (text only) changes nothing: refreshing stays
+stopped. If you change your mind, answer the question again with the new
+option; the latest answer wins.
+
+**Resetting a stopped Automaton.** After you have merged the base into the
+branch by hand, set the Automaton's branch refresh override again, with any
+value, from the Branch refresh card, `datawatch autonomous branch-refresh <id>
+enabled|disabled|inherit`, chat `autonomous branch-refresh`, MCP
+`autonomous_prd_set_branch_refresh` or the REST route. Setting it clears the
+stop and adds a **branch_refresh** entry to the Decisions list; to keep the
+Automaton's current behaviour, set it to the value it already has (`inherit`
+when it has no override). The next gap then checks how far behind the branch is
+as usual.
 
 If the daemon has no question store when a conflict happens, it logs the
 conflicting files and still stops refreshing.
+
+## Watching refreshes across Automata
+
+`datawatch autonomous branch-refresh-stats` (chat `autonomous
+branch-refresh-stats`, MCP `autonomous_branch_refresh_stats`, REST
+`GET /api/autonomous/branch-refresh/stats`) shows the daemon setting and limit,
+how many Automata have a recorded refresh and how each ended (`clean`,
+`conflict`, `skipped`, `error`), how many are **stopped** by a conflict, and how
+many carry an override. A stopped count above zero means an Automaton is waiting
+for your answer or your reset. The same numbers are in the live stats broadcast
+(`branch_refresh_clean`, `branch_refresh_conflict`, `branch_refresh_error`,
+`branch_refresh_stopped`) and the Prometheus gauges
+`datawatch_branch_refresh_automata{result}` and
+`datawatch_branch_refresh_stopped`.
 
 ## Related
 

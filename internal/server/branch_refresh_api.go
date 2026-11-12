@@ -3,6 +3,7 @@
 // GET payload.
 //
 //	POST /api/autonomous/prds/{id}/branch-refresh   {"enabled": true|false|null}
+//	GET  /api/autonomous/branch-refresh/stats
 //	PUT  /api/config  autonomous.branch_refresh_enabled, autonomous.branch_refresh_behind_limit
 //
 // The override wins over the daemon setting: true refreshes the Automaton even
@@ -36,6 +37,12 @@ type branchRefreshOverrideSetter interface {
 	SetBranchRefreshOverride(id string, v *bool) error
 }
 
+// branchRefreshStatser is the optional autonomous-manager surface for the
+// branch refresh numbers; a fake without it answers 501.
+type branchRefreshStatser interface {
+	BranchRefreshStats() autonomous.BranchRefreshStats
+}
+
 // BranchRefreshRESTOperation is one branch refresh REST route, read by the
 // parity test.
 type BranchRefreshRESTOperation struct {
@@ -49,6 +56,7 @@ type BranchRefreshRESTOperation struct {
 func BranchRefreshRESTOperations() []BranchRefreshRESTOperation {
 	return []BranchRefreshRESTOperation{
 		{"set_override", http.MethodPost, "/api/autonomous/prds/{id}/branch-refresh"},
+		{"stats", http.MethodGet, "/api/autonomous/branch-refresh/stats"},
 	}
 }
 
@@ -56,6 +64,30 @@ func BranchRefreshRESTOperations() []BranchRefreshRESTOperation {
 // PUT /api/config (and so the CLI, the comm channel and MCP config_set).
 func BranchRefreshConfigKeys() []string {
 	return []string{branchRefreshEnabledKey, branchRefreshLimitKey}
+}
+
+// handleBranchRefreshStats serves GET /api/autonomous/branch-refresh/stats:
+// the daemon setting and limit, how many Automata have a recorded refresh by
+// result, how many are stopped and how many carry an override.
+func (s *Server) handleBranchRefreshStats(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	st, ok := s.autonomousMgr.(branchRefreshStatser)
+	if !ok {
+		http.Error(w, "branch refresh stats not supported by this manager", http.StatusNotImplemented)
+		return
+	}
+	writeJSONOK(w, st.BranchRefreshStats())
 }
 
 // handleBranchRefreshOverride serves POST .../prds/{id}/branch-refresh. The

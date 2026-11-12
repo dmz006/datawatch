@@ -13,7 +13,7 @@ import (
 
 func (s *Server) toolAutonomousPRDSetBranchRefresh() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_branch_refresh",
-		mcpsdk.WithDescription("Set the branch refresh override of one Automaton: enabled=true or false forces the between-task refresh of its branch from the base branch on or off; clear=true removes the override so the daemon setting autonomous.branch_refresh_enabled applies. The daemon-wide settings autonomous.branch_refresh_enabled and autonomous.branch_refresh_behind_limit are set with config_set."),
+		mcpsdk.WithDescription("Set the branch refresh override of one Automaton: enabled=true or false forces the between-task refresh of its branch from the base branch on or off; clear=true removes the override so the daemon setting autonomous.branch_refresh_enabled applies. Setting the override also resets a refresh a merge conflict stopped, so the next gap tries the merge again. The daemon-wide settings autonomous.branch_refresh_enabled and autonomous.branch_refresh_behind_limit are set with config_set."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("true or false to force the refresh on or off for this Automaton; omit when clear=true")),
 		mcpsdk.WithBoolean("clear", mcpsdk.Description("true removes the override so the daemon setting applies")),
@@ -39,4 +39,19 @@ func (s *Server) handleAutonomousPRDSetBranchRefresh(_ context.Context, req mcps
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}
 	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (s *Server) toolAutonomousBranchRefreshStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_branch_refresh_stats",
+		mcpsdk.WithDescription("Read the branch refresh numbers: the daemon setting autonomous.branch_refresh_enabled and the behind limit, how many Automata have a recorded refresh by result (clean, conflict, skipped, error), how many have refreshing stopped by a conflict, and how many carry a per-Automaton override. Read-only. Proxies GET /api/autonomous/branch-refresh/stats."),
+	)
+}
+
+func (s *Server) handleAutonomousBranchRefreshStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const tool = "autonomous_branch_refresh_stats"
+	respBody, err := s.proxyGet("/api/autonomous/branch-refresh/stats", nil)
+	if err != nil {
+		return toolError(tool, err), nil
+	}
+	return textOK(string(respBody)), nil
 }

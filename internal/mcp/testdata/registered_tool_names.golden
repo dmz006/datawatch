@@ -55,6 +55,7 @@ automation_set_verification_llm
 automation_skip_member
 automation_update
 autonomous_attention_list
+autonomous_branch_refresh_stats
 autonomous_cleanup_status
 autonomous_config_get
 autonomous_config_set

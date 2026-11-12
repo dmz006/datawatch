@@ -146,6 +146,13 @@ type SystemStats struct {
 	SafeDeleteSlowReports     uint64 `json:"safe_delete_slow_reports,omitempty"`
 	SafeDeleteRefreshFailures uint64 `json:"safe_delete_refresh_failures,omitempty"`
 
+	// Branch refresh (autonomous.branch_refresh_enabled): Automata by the
+	// result of their latest refresh, and how many are stopped by a conflict.
+	BranchRefreshClean    int `json:"branch_refresh_clean,omitempty"`
+	BranchRefreshConflict int `json:"branch_refresh_conflict,omitempty"`
+	BranchRefreshError    int `json:"branch_refresh_error,omitempty"`
+	BranchRefreshStopped  int `json:"branch_refresh_stopped,omitempty"`
+
 	// Agent tracing (tracing.* settings): store totals and write counters.
 	// Present only while tracing is on. Populated by the trace stats callback.
 	TraceEnabled      bool   `json:"trace_enabled,omitempty"`

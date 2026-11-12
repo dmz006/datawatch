@@ -285,6 +285,7 @@ Subcommands:
 		newAutonomousPRDSetNotifyEventsCmd(),
 		newAutonomousPRDSetGitCmd(),
 		newAutonomousBranchRefreshCmd(),
+		newAutonomousBranchRefreshStatsCmd(),
 		newAutonomousPRDSetSkillsCmd(),
 		newAutonomousTypesListCmd(),
 		newAutonomousTypeRegisterCmd(),
@@ -2040,7 +2041,9 @@ func newAutonomousBranchRefreshCmd() *cobra.Command {
 		Long: "Set the branch refresh override of one Automaton. enabled refreshes it even when the daemon\n" +
 			"setting is off, disabled never refreshes it, inherit clears the override so\n" +
 			"autonomous.branch_refresh_enabled applies. The daemon settings are set with\n" +
-			"datawatch config set autonomous.branch_refresh_enabled / autonomous.branch_refresh_behind_limit.",
+			"datawatch config set autonomous.branch_refresh_enabled / autonomous.branch_refresh_behind_limit.\n" +
+			"Setting the override also resets a refresh that a merge conflict stopped, so the next gap tries\n" +
+			"the merge again.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			var v string
@@ -2055,6 +2058,20 @@ func newAutonomousBranchRefreshCmd() *cobra.Command {
 				return fmt.Errorf("mode must be enabled, disabled or inherit, got %q", args[1])
 			}
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/branch-refresh", []byte(`{"enabled":`+v+`}`))
+		},
+	}
+}
+
+func newAutonomousBranchRefreshStatsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "branch-refresh-stats",
+		Short: "Show the branch refresh numbers (setting, Automata by result, stopped count)",
+		Long: "Show the daemon's branch refresh setting and limit, how many Automata have a recorded refresh\n" +
+			"by result (clean, conflict, skipped, error), how many have refreshing stopped by a conflict and how\n" +
+			"many carry a per-Automaton override. Reads GET /api/autonomous/branch-refresh/stats.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return daemonGet("/api/autonomous/branch-refresh/stats")
 		},
 	}
 }

@@ -15,7 +15,7 @@ func TestParseBranchRefreshMode(t *testing.T) {
 }
 
 func TestBranchRefreshCommVerbs(t *testing.T) {
-	if v := BranchRefreshCommVerbs(); len(v) != 1 || v[0] != "branch-refresh" {
+	if v := BranchRefreshCommVerbs(); len(v) != 2 || v[0] != "branch-refresh" || v[1] != "branch-refresh-stats" {
 		t.Fatalf("got %v", v)
 	}
 }

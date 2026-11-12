@@ -3633,6 +3633,41 @@ paths:
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
 
+  /api/autonomous/branch-refresh/stats:
+    get:
+      summary: Branch refresh numbers
+      description: |
+        Returns the daemon setting `autonomous.branch_refresh_enabled` and the
+        behind limit in effect (`behind_limit`, 0 reads as 5), how many Automata
+        have a recorded refresh (`tracked`) and how many of them ended in each
+        result (`clean`, `conflict`, `skipped`, `error`), how many have
+        refreshing stopped by a conflict (`stopped`) and how many carry a
+        per-Automaton override (`override_on`, `override_off`). Needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousBranchRefreshStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The branch refresh numbers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  behind_limit: {type: integer}
+                  tracked: {type: integer}
+                  clean: {type: integer}
+                  conflict: {type: integer}
+                  skipped: {type: integer}
+                  error: {type: integer}
+                  stopped: {type: integer}
+                  override_on: {type: integer}
+                  override_off: {type: integer}
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the numbers}
+        "503": {description: Autonomous is disabled}
   /api/autonomous/prds/{id}/branch-refresh:
     post:
       summary: Set or clear the branch refresh override of an Automaton
@@ -3645,6 +3680,8 @@ paths:
         `branch_refresh` (the last refresh, null when none has run),
         `branch_refresh_override` (true, false or null) and
         `branch_refresh_enabled` (the setting in effect for this Automaton).
+        Setting the override also resets a refresh that a merge conflict
+        stopped, so the next gap tries the merge again.
         Needs the autonomous write capability when called by a federated peer.
       operationId: autonomousPRDSetBranchRefreshOverride
       tags: [Autonomous]
