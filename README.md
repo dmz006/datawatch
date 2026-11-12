@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.146.2 (2026-11-12).** The file drift check and the undeclared-edit check run git with the file-system monitor, hooks directory and external diff program switched off, so a program named in a project's own git configuration is never started. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.146.3 (2026-11-12).** Path checks in the Automata package sit inline where the path is used, and the process start time read for a verification script run is bounded, addressing five open code scanner alerts; whether they close is known only after the next scanner run on main. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

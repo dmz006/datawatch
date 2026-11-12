@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.146.3 — Five open code scanner alerts addressed with inline path guards and a tick bound
+
+### Security
+
+- **Five open code scanner alerts are addressed with inline path guards and a bound on a start-time conversion.** The path checks in the cleanup **Fix permissions** action, the task-commit file list, the uncommitted-work check and the daemon-only-change check now sit inline at the point where the path is used, in the form the scanner recognises: a path with a NUL byte or a non-local form (absolute, or one that escapes upward with `..`) is refused before any file-system call. The process start time read for a recorded verification script is bounded before it is converted to a duration, so a huge value in a stat line cannot overflow; a start time that cannot be read, or is implausibly large, makes the recorded process untrusted, so a recycled process id is never waited on as if it were the script. Behavior for valid input is unchanged. Whether the scanner alerts close is only known after the next scanner run on main. Migration: none.
+  - **For the operator to review:** a path the guards reject is still skipped as before, and a recorded verification run whose start time cannot be read now runs from the start instead of being waited on. See [uncommitted work](docs/howto/automaton-uncommitted-work.md), [worktree cleanup](docs/howto/automaton-worktree-cleanup.md) and [restarting with work running](docs/howto/restart-with-work-running.md).
+
 ## v9.146.2 — Drift checker git calls hardened against repository-configured programs
 
 ### Security
