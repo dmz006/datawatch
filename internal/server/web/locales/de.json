@@ -966,7 +966,7 @@
   "projects_links_arc_issues": "datawatch-app-Issues",
   "projects_links_none": "keine erfasst",
   "projects_show_empty": "Leere Zeilen und Abschnitte anzeigen",
-  "projects_show_empty_help": "Leere Felder, die Zeilen „keine erfasst“ und der leere Ereignisstrom sind standardmäßig ausgeblendet. Damit werden sie angezeigt.",
+  "projects_show_empty_help": "Leere Felder, die Zeilen „keine erfasst“ und der leere Ereignisstrom sind standardmäßig ausgeblendet. Damit werden sie in jedem Unter-Tab angezeigt.",
   "projects_links_loading": "Lade…",
   "projects_links_failed": "Konnte nicht laden:",
   "projects_page_priority": "Priorität",

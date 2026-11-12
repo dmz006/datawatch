@@ -231,8 +231,21 @@ not a project, and it has no page sub-tabs.
 
 #### The page sub-tabs
 
+- **Seven in a fixed order.** Overview, Arcs, Gantt, Unassigned, History, Policy
+  and Events, left to right.
 - **One body at a time.** Choose a page sub-tab to show its body; the others are
-  not drawn. The strip scrolls sideways on a narrow screen.
+  not drawn. The strip scrolls sideways on a phone, so every sub-tab stays
+  reachable on a narrow screen.
+- **Picker and checkbox stay put.** The **Project** picker and the **Show empty
+  lines and sections** checkbox sit above the strip and do not change when you
+  switch page sub-tabs.
+- **Events is hidden while empty.** The Events sub-tab is not in the strip while
+  the project has nothing to show there.
+- **Policy is read-only.** It shows the effective policy and the merge pipeline,
+  with **Open settings** links into Settings where you change them.
+- **The old Projects address opens Overview.** The old Projects link and the
+  `#projects` address land on the Projects sub-tab with **Overview** chosen in the
+  picker.
 - **Remembered.** The page sub-tab you last chose is remembered per viewer in the
   browser (`cs_projects_subtab`), not by the daemon, so it has no REST, MCP, CLI,
   chat or configuration form. It applies to whichever project you open next, and a
