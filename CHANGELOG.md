@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.154.4 — Skills mapping of every datawatch feature
+
+### Documentation
+
+- **Skills: finding, installing, writing and covering every datawatch feature.** A new how-to, `skills-find-install-write`, covers finding a skill in a registry, installing it, writing one (the SKILL.md fields, the rules for a generic skill, USAGE.md and test cases), reading the coverage matrix and its gaps, and keeping the matrix current. A feature inventory and a coverage matrix map every datawatch feature to the skills that cover it, two staging skills ship as test data with format tests, and `scripts/skills-coverage-extract.sh` and `scripts/skills-coverage-check.sh` keep the matrix honest.
+
 ## v9.154.3 — Projects sub-tab: fix Open settings link
 
 ### Fixed
