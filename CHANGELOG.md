@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.148.0 — Arc dashboard view
+
+### Added
+
+- **An arc view on the dashboard.** One arc (an Automation) is shown as its stages in the order they run: bugs, then features, then the final stage, each with how many pieces of work it holds, how many are done, running and blocked, and a percent done. A stage with blocked or failed work is named with a plain-language reason. Maintenance work is shown beside the arc as counts only and never counts as a stage. The view also shows how busy the shared Claude and pi lanes are, with queued work counted by priority, and how much of the plan is used in points and tokens. It shows no billed dollar figure, because the plan is flat. The view only reads: it never starts, pauses, unblocks or reorders anything.
+- **The arc summary on every surface.** REST `GET /api/dashboard/arc` (optional `arc` query, default is the first arc with staged work), the MCP tool `dashboard_arc_get`, the CLI `datawatch dashboard arc` (`--arc`, `--json`) and the chat verb `dashboard arc`. A part the daemon cannot read reports itself unavailable with a reason and the rest of the summary still renders. The web page renders the view as a dashboard card, with strings in all five languages.
+- Docs: a new how-to, `dashboard-arc-view.md`, with the dashboard how-tos, the definitions, the API and MCP mapping, the OpenAPI spec and the parity status updated to match.
+
 ## v9.147.2 — Lane fill tolerates an unreachable compute node that holds nothing
 
 ### Fixed

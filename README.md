@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.147.2 (2026-11-12).** An unreachable compute node that holds no work is now a degraded warning and no longer blocks the GPU lanes; a node holding a lease still blocks. New setting autonomous.lane_fill.host_down_after_minutes (default 10 minutes, 0 keeps the old behavior). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.148.0 (2026-11-12).** The dashboard has an arc view: one arc shown as its stages in order (bugs, features, final stage) with progress, a blocked stage reason, the maintenance queue, shared lane load and plan usage in points and tokens, on REST, MCP, the CLI, chat and the web page. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
