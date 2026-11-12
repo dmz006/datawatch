@@ -140,6 +140,44 @@ Example: a row holding one `claude-code` session (an `allowance` entry), one
 `dollars` (the aider spend alone), `points` (the claude-code spend alone) and
 `none` (the ollama tokens and time).
 
+## What api, allowance and local mean
+
+Every LLM registry entry carries a `billing_mode`. It says how that entry is
+paid for, and the report keeps each kind of spend in its own unit:
+
+| `billing_mode` | Meaning | Unit in the report | Row reads |
+|---|---|---|---|
+| `api` | Metered: every call is billed per token. | `dollars`, at your configured rates | `api_metered` |
+| `allowance` | A flat plan allowance that resets on a schedule; calls draw on it and nothing is billed per call. | `points` and `percent` of the plan's monthly price | `bundled_plan` |
+| `local` | Local inference on your own hardware, no per-call charge. | `none`: tokens, sessions and time only | `free_local` |
+
+### How the value resolves
+
+For each backend in a row the daemon takes the first of these that has a value:
+
+1. **The entry's own `billing_mode`.** It always wins.
+2. **The `usage.billing` profile** for the entry's kind: `bundled_plan` reads as
+   `allowance`, `api_metered` as `api`, `free_local` as `local`.
+3. **The kind default**: `claude-code` is `allowance`; `ollama`, `openwebui` and
+   `shell` are `local`; every other kind is `api`.
+
+If none of the three has a value the row keeps the assumed default and says so
+with the “(assumed — no usage.billing entry)” label. The profile still supplies
+the plan, the monthly price and the reset the point figures use, so an
+`allowance` entry needs a profile with a `monthly_price` before the report can
+show points. Setting the value is covered in
+[Set the billing mode of an LLM](llm-registry.md#set-the-billing-mode-of-an-llm).
+
+### The migration
+
+When the daemon loads its configuration it writes the resolved value, from
+steps 2 and 3 above, onto every LLM entry that has none. Behavior does not
+change: a row reads the same before and after, because the written value is the
+one the report already resolved. An entry that already has a value is never
+touched, and a second load changes nothing. After the migration the entry shows
+its mode in the Settings page, `GET /api/llms`, `llm_list` and the YAML, and
+changing the profile's `mode` no longer moves that entry.
+
 ## The billing profiles
 
 Which mode a row is read against comes from each backend's LLM entry
@@ -402,6 +440,28 @@ The **Overview** of an Automaton's detail view in the web UI shows the same row 
 
 All five read methods answer from the same engine call over the daemon's
 recorded sessions, so the same window and grouping give the same rows.
+
+## Billing mode and the usage charts on every surface
+
+The billing mode field and the combined usage report are reachable the same way
+on every family of surface. The table lists what each one touched; the mobile
+apps are tracked in the parity issue in the `datawatch-app` repository.
+
+| Surface | Billing mode | Usage charts |
+|---|---|---|
+| **REST** | `billing_mode` on `POST /api/llms`, `PUT /api/llms/{name}` and `PUT /api/config` (`llms.<name>.billing_mode`); returned by `GET /api/llms`, `GET /api/llms/{name}` and `GET /api/config`; row fields `billing_mode`, `billing_label`, `unit_totals` and `totals_by_unit` on `GET /api/cost/report` | `GET /api/cost/series`, `GET /api/cost/tool-usage` and `GET /api/cost/failures` |
+| **MCP** | `billing_mode` on `llm_add` and `llm_update`; read back with `llm_get` and `llm_list`; the same row fields on `cost_report` | `cost_charts` (read-only) |
+| **CLI** | `datawatch llm add\|update <name> --billing-mode <mode>`; `datawatch config set llms.<name>.billing_mode <mode>`; the `totals by unit` block of `datawatch cost report` | `datawatch cost charts [--group-by <g>] [--window <d>] [--json]` |
+| **Comm channel** | `llm add\|update <name> billing_mode=<mode>`; `configure llm.<name>.billing_mode=<mode>` | `cost charts [group_by=<g>] [window=<d>]` |
+| **YAML / config** | `billing_mode:` on each entry under `llms`; the fallback profile under `usage.billing.<provider>` | No setting of its own: the default window comes from `cost_report.default_window_days` |
+| **PWA** | **Billing mode** on the Settings → Compute → LLM edit form, with help text, in all five locales | The four chart cards in the **Progress and cost** tab of the Automata page; their reasons surface at the top of the **Events** tab |
+| **Android, iPhone** | Not changed here; tracked in the parity issue | Not changed here; tracked in the parity issue |
+
+The chart routes take `group_by` and `window`; the series and tool-usage routes
+also take `bucket` (`hour` or `day`). Cost over time and tool usage group by
+`automaton`, `project` or `model`; retries and failure categories group by
+`project`, `automation` or `automaton`. The full contracts are in
+[`docs/api/cost.md`](../api/cost.md) and the OpenAPI file.
 
 ## What it does not do
 
