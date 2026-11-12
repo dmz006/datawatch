@@ -1077,6 +1077,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 		return nil
 	}
+	// Nothing completed (every task cancelled): there is no work to judge,
+	// so the Automaton is neither judged nor completed.
+	var completedN int
+	m.store.WithLock(func() { completedN, _ = completedAndCancelled(prd) })
+	if completedN == 0 {
+		return m.store.SavePRD(prd)
+	}
 	if blocked, err := m.runPRDCompletionProjectRulesCheck(prd); err != nil {
 		return err
 	} else if blocked {
@@ -1093,6 +1100,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// Merge the task change records and write the enabled generated
 	// artefacts before the review so it can read them.
 	m.writeGeneratedArtefacts(prd)
+	m.recordCancelledTasksSkipped(prd)
 	if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
 		return err
 	} else if blocked {
@@ -3300,12 +3308,21 @@ func anyNonTerminalTasksRemain(prd *PRD) bool {
 	return false
 }
 
-// storyRollupStatus is StoryFailed when any task failed, else StoryCompleted.
+// storyRollupStatus is StoryFailed when any task failed, StoryCancelled (the
+// existing terminal, non-failing status; shown as skipped) when every task
+// was cancelled, else StoryCompleted.
 func storyRollupStatus(s *Story) StoryStatus {
+	cancelled := 0
 	for _, t := range s.Tasks {
 		if t.Status == TaskFailed {
 			return StoryFailed
 		}
+		if t.Status == TaskCancelled {
+			cancelled++
+		}
+	}
+	if len(s.Tasks) > 0 && cancelled == len(s.Tasks) {
+		return StoryCancelled
 	}
 	return StoryCompleted
 }

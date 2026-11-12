@@ -3587,7 +3587,9 @@ autonomous:
   # Stuck-running watchdog bound, in seconds. An Automaton that stays in
   # running with every task finished, no live worker session and no live
   # executor for this long has its completion roll-up re-fired once; if it is
-  # still stuck after a second full bound it is moved to blocked. 0 or unset
+  # still stuck after a second full bound it is moved to blocked. When every task is
+  # completed or cancelled (at least one completed) the first step advances it to the
+  # completion review and records the skipped cancelled tasks. 0 or unset
   # falls back to the 900s default (NormalizeStuckRunningSeconds).
   stuck_running_seconds: 900
   # Automata checks. Each mode is off, shadow (record the finding only) or on.

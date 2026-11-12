@@ -1016,7 +1016,9 @@ paths:
         `autonomous.generated_artefacts.change_record`, `.gate_report`, `.changelog_draft`, `.parity_draft`, `.tracker_rows`, `.registry_row`, `.combined_docs_task` (true|false, default true; which artefacts an Automaton generates from its change record; applies without restart),
         `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
         Automaton may stay running with every task finished and no live session before the
-        stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
+        stuck-running watchdog re-fires its roll-up once, then blocks it; when only cancelled
+        tasks remain besides completed ones, the first step advances it to the completion review;
+        0 uses the default),
         `autonomous.task_max_attempt_seconds` (whole seconds >= 0, default 0 = off; wall-clock
         cap on one task attempt, recommended 5400),
         `autonomous.task_no_progress_seconds` (whole seconds >= 0, default 0 = off; stops an
@@ -4610,6 +4612,40 @@ paths:
       responses:
         "200": {description: "Rejudge complete. The reply message says whether a new review ran on the head commit (the new verdict and outcome are in the Automaton's decision log) or the stored verdict was reused because the head commit and the rules text are unchanged since it was made (no new review ran, no verdict added)"}
         "400": {description: "Refused: unknown Automaton, not PRDBlocked, a task not completed (the message names the first offending task and its status), or no verdict was produced — each refusal says why"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "POST-only action"}
+
+  /api/autonomous/prds/{id}/remove_task:
+    post:
+      summary: Remove one task from a story
+      description: |
+        Deletes one task from a story without re-running decompose. Accepted
+        while the Automaton is needs_review, revisions_asked, cancelled or
+        failed. While the Automaton is running, a task that is not running and
+        not queued (cancelled, completed, failed, blocked or never started) can
+        also be removed; the other tasks stop depending on it and the story
+        status is recomputed. A running, queued or waiting task is refused
+        with an error naming its state. Records a `remove_task` decision.
+        Needs the autonomous write capability when called by a federated peer;
+        any other method is rejected with 405.
+      operationId: autonomousPRDRemoveTask
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id, task_id]
+              properties:
+                story_id: {type: string}
+                task_id: {type: string}
+                actor: {type: string, description: "Who asked; recorded on the decision. Default the operator."}
+      responses:
+        "200": {description: "Task removed; the reply is the updated Automaton"}
+        "400": {description: "Refused: unknown Automaton, story or task, Automaton status locked, or the task is running, queued or waiting while the Automaton is running (the message names the task state)"}
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "405": {description: "POST-only action"}
 

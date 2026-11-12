@@ -3604,7 +3604,9 @@ type AutonomousConfig struct {
 	// StuckRunningSeconds — default 900 seconds. How long a PRD may sit in
 	// running with every task terminal, no live session and no live executor
 	// before the stuck-running watchdog re-fires the completion rollup once;
-	// a second full bound in the same state moves it to blocked. A zero or
+	// a second full bound in the same state moves it to blocked. When every
+	// task is completed or cancelled (at least one completed) the first step
+	// advances it to the completion review, skipping the cancelled tasks. A zero or
 	// negative value uses the default (see NormalizeStuckRunningSeconds).
 	StuckRunningSeconds int `yaml:"stuck_running_seconds,omitempty" json:"stuck_running_seconds,omitempty"`
 	// TaskMaxAttemptSeconds is the wall-clock cap on one task attempt. 0 (the

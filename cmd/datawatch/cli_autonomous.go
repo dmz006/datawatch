@@ -1556,7 +1556,7 @@ func newAutonomousPRDRemoveTaskCmd() *cobra.Command {
 	var storyID, taskID string
 	cmd := &cobra.Command{
 		Use:   "prd-remove-task <prd-id> --story <story-id> --task <task-id>",
-		Short: "Remove one task from a story without re-running decompose (distinct from cancel-task, which stops a running/queued task without removing it)",
+		Short: "Remove one task from a story without re-running decompose (distinct from cancel-task, which stops a running/queued task without removing it). While the Automaton is running, a task that is not running and not queued can be removed",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"story_id": storyID, "task_id": taskID, "actor": "operator"})

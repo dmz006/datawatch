@@ -35,6 +35,17 @@ const stuckRunningCaller = "autonomous.stuck-running"
 // a second full bound it moves to blocked through commitRollupStatus, so a
 // concurrent writer wins, with a Decision (stuck_running_blocked), an audit
 // record and the PRD status event. The bound is read live each pass.
+//
+// Advance: when the only thing keeping the Automaton from completing is
+// cancelled tasks (every task completed or cancelled, at least one of each),
+// the first-bound pass advances it instead of only re-firing: it re-fires the
+// completion rollup, which runs the completion review and completes or blocks
+// the Automaton on the verdict, and records a stuck_running_cancelled_advance
+// Decision naming the skipped cancelled tasks. An Automaton whose tasks are
+// all cancelled is never advanced this way. The advance only uses the refire
+// hook, so it never kills, signals or ends a session. If the advance does not
+// move the status within another full bound, the Automaton falls through to the
+// blocked path above.
 func (m *Manager) sweepStuckRunning() {
 	m.mu.Lock()
 	listFn, refireFn, liveFn, auditFn := m.sessionListerFn, m.stuckRefireFn, m.stuckExecLiveFn, m.auditFn
@@ -103,6 +114,8 @@ func (m *Manager) sweepStuckRunning() {
 			continue
 		}
 		refired := m.stuckRefired[id]
+		var cancelledTitles []string
+		m.readLocked(func() { cancelledTitles = prdCancelledOnlyTitles(prd) })
 		if !refired {
 			m.stuckRefired[id] = true
 		}
@@ -111,10 +124,16 @@ func (m *Manager) sweepStuckRunning() {
 		m.noteCondition(KindAutomatonStuckRunning, prd, true)
 
 		if !refired {
+			kind := "stuck_running_refire"
 			note := fmt.Sprintf("running with every task terminal, no live session or executor for %s; re-firing the completion rollup once, then blocking if still stuck after another %s",
 				age.Round(time.Second), bound)
+			if len(cancelledTitles) > 0 {
+				kind = "stuck_running_cancelled_advance"
+				note = fmt.Sprintf("running with every task completed or cancelled for %s; advancing to the completion review, skipping %d cancelled tasks: %s",
+					age.Round(time.Second), len(cancelledTitles), strings.Join(cancelledTitles, ", "))
+			}
 			log.Printf("[autonomous] stuck-running: prd=%s: %s", id, note)
-			m.recordStuckDecision(id, "stuck_running_refire", note)
+			m.recordStuckDecision(id, kind, note)
 			started, err := refireFn(id)
 			if err != nil {
 				log.Printf("[autonomous] stuck-running: prd=%s refire: %v", id, err)
@@ -125,6 +144,9 @@ func (m *Manager) sweepStuckRunning() {
 		}
 
 		reason := fmt.Sprintf("stuck running: every task terminal and no live session or executor for %s after the completion rollup was re-fired once", age.Round(time.Second))
+		if len(cancelledTitles) > 0 {
+			reason = stuckRunningCancelledReason(age.Round(time.Second), cancelledTitles)
+		}
 		old, ok := m.commitRollupStatus(prd, PRDRunning, rev, PRDBlocked, "stuck_running", reason)
 		m.mu.Lock()
 		delete(m.stuckSeen, id)
@@ -158,6 +180,15 @@ func (m *Manager) sweepStuckRunning() {
 	m.mu.Unlock()
 }
 
+// stuckRunningCancelledReason is the one-line blocked reason when cancelled
+// tasks are the blocker: it names them and states that cancelled tasks are
+// skipped, the Automaton advances to its completion review after the grace
+// period, and a cancelled task can be removed while the Automaton is running.
+func stuckRunningCancelledReason(age time.Duration, titles []string) string {
+	return fmt.Sprintf("stuck running: every task terminal for %s, blocked by %d cancelled tasks: %s; cancelled tasks are skipped, the Automaton advances to its completion review after the grace period, and a cancelled task can be removed while the Automaton is running",
+		age, len(titles), strings.Join(titles, ", "))
+}
+
 // recordStuckDecision appends a Decision to the PRD, re-fetched from the store,
 // and saves it. It never touches Status.
 func (m *Manager) recordStuckDecision(prdID, kind, note string) {
@@ -172,4 +203,29 @@ func (m *Manager) recordStuckDecision(prdID, kind, note string) {
 	if err := m.store.SavePRD(p); err != nil {
 		log.Printf("[autonomous] stuck-running: save prd %s: %v", prdID, err)
 	}
+}
+
+// prdCancelledOnlyTitles returns the titles of the cancelled tasks when every
+// task of p is completed or cancelled with at least one of each, and nil
+// otherwise (a failed or live task, no completed task, or nothing cancelled).
+// The caller holds the read lock.
+func prdCancelledOnlyTitles(p *PRD) []string {
+	var titles []string
+	completed := 0
+	for _, s := range p.Story {
+		for _, t := range s.Tasks {
+			switch t.Status {
+			case TaskCompleted:
+				completed++
+			case TaskCancelled:
+				titles = append(titles, t.Title)
+			default:
+				return nil
+			}
+		}
+	}
+	if completed == 0 {
+		return nil
+	}
+	return titles
 }

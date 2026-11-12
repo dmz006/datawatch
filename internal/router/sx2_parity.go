@@ -1126,7 +1126,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous add-task", prettyJSON(out))
 	case "remove-task", "remove_task":
 		if len(args) < 4 {
-			r.reply("autonomous remove-task failed", "usage: autonomous remove-task <prd-id> <story-id> <task-id>")
+			r.reply("autonomous remove-task failed", "usage: autonomous remove-task <prd-id> <story-id> <task-id> (while the Automaton is running, a task that is not running and not queued can be removed)")
 			return
 		}
 		body, _ := json.Marshal(map[string]string{"story_id": args[2], "task_id": args[3], "actor": "operator"})
