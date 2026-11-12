@@ -192,13 +192,18 @@ Like the console, the read never 5xxs: a part this daemon cannot read reports
 `available: false` with a `reason`, and `dashboard.console.enabled=false`
 hides the whole summary the same way.
 
+The PWA shows the same data as the opt-in **Arc** card on the Dashboard view.
+The full guide — what each part shows, the response body, the web card and how
+usage is shown in points and tokens — is
+[The arc view on the dashboard](dashboard-arc-view.md).
+
 ## Where to see it
 
 | You want … | Where |
 |---|---|
 | The roll-up itself | the PWA Dashboard view (five console cards), `datawatch dashboard console`, `dashboard_console_get` (MCP), `GET /api/dashboard/console`, or the `dashboard console` chat verb |
 | The data behind one section | the section's PWA anchor — `#questions`, `#held-questions`, `#lanes`, `#usage`, `#releases` |
-| The arc summary | `datawatch dashboard arc`, `dashboard_arc_get` (MCP), `GET /api/dashboard/arc`, or the `dashboard arc` chat verb |
+| The arc summary | the **Arc** card on the PWA Dashboard view, `datawatch dashboard arc`, `dashboard_arc_get` (MCP), `GET /api/dashboard/arc`, or the `dashboard arc` chat verb — see [the arc view](dashboard-arc-view.md) |
 | The switches | Settings → General (`dashboard.*` keys), YAML, `datawatch config set`, or `PUT /api/config` |
 
 ## Notes and limits
