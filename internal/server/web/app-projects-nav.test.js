@@ -158,7 +158,7 @@ test('with no projects the tab points at Settings and shows no picker', async ()
   await flushAsync();
   assert.match(out.view, /id="projectsNone"/);
   assert.match(out.view, /No projects yet\. Add one in Settings, then pick it here\./);
-  assert.match(out.view, /onclick="navigate\('settings'\)"/);
+  assert.match(out.view, /onclick="_projectsOpenSettings\('project_policy'\)"/);
   assert.doesNotMatch(out.view, /id="projectsPicker"/);
 });
 

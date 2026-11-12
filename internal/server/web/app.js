@@ -3125,7 +3125,7 @@ function _projectsPaint() {
   if (list && list.length === 0 && !err) {
     view.innerHTML = `<div id="projectsView" style="padding:16px;">
       <div id="projectsNone" style="color:var(--text2);font-size:14px;line-height:1.5;">${escHtml(t('projects_none') || 'No projects yet.')}
-        <button class="btn-secondary" style="margin-left:8px;" onclick="navigate('settings')">${escHtml(t('projects_none_settings_action') || 'Open Settings')}</button>
+        <button class="btn-secondary" style="margin-left:8px;" onclick="_projectsOpenSettings('project_policy')">${escHtml(t('projects_none_settings_action') || 'Open Settings')}</button>
       </div></div>`;
     return;
   }
@@ -3310,15 +3310,40 @@ function _projectsSafeLink(v) {
   return /^https?:\/\//i.test(s) ? s : '';
 }
 
-// _projectsOpenSettings opens Settings and scrolls to a section that has an
-// element id (settings-sec-<key>). An empty key just opens Settings.
-function _projectsOpenSettings(sectionKey) {
+// _projectsOpenSettings opens Settings on the tab that owns the section, expands
+// the section when it is collapsed, and scrolls it into view. The tab defaults
+// to 'automata'. The section element is built when Settings renders, so the
+// scroll retries briefly until the element is in the page. An empty key just
+// opens Settings on that tab.
+// The merge pipeline settings are the 'Merge pipeline' group in the Automata
+// 'gc_autonomous' card.
+const MERGE_PIPELINE_SETTINGS_SECTION = 'gc_autonomous';
+
+function _projectsOpenSettings(sectionKey, tab) {
+  const tabName = tab || 'automata';
+  try { _settingsTab = tabName; } catch (_) { /* tab state unavailable */ }
+  try { localStorage.setItem('cs_settings_tab', tabName); } catch (_) { /* storage unavailable */ }
   try { navigate('settings'); } catch (_) { return; }
   if (!sectionKey) return;
-  setTimeout(() => {
+  if (settingsCollapsed[sectionKey]) {
+    settingsCollapsed[sectionKey] = false;
+    try { localStorage.setItem('cs_settings_collapsed', JSON.stringify(settingsCollapsed)); } catch (_) { /* storage unavailable */ }
+  }
+  let tries = 0;
+  const reveal = () => {
     const el = document.getElementById('settings-sec-' + sectionKey);
-    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth' });
-  }, 200);
+    if (el) {
+      if (el.style && el.style.display === 'none') {
+        el.style.display = '';
+        const chev = document.getElementById('settings-chev-' + sectionKey);
+        if (chev) chev.textContent = '▼';
+      }
+      if (el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (++tries < 20) setTimeout(reveal, 100);
+  };
+  setTimeout(reveal, 0);
 }
 
 function _projectsSettingsLinkHTML(sectionKey, label) {
@@ -3360,7 +3385,7 @@ function _projectPolicyEffectiveHTML(pl, err) {
 // opens Settings, where the merge pipeline settings are.
 function _projectMergePipelineHTML(mp, err) {
   const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_merge_heading'))}</div>`;
-  const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML('', t('projects_links_merge_settings'))}</div>`;
+  const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML(MERGE_PIPELINE_SETTINGS_SECTION, t('projects_links_merge_settings'))}</div>`;
   let inner;
   if (err) {
     inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_links_failed') + ' ' + err)}</div>`;
