@@ -81,7 +81,7 @@ Sessions that report only cache tokens now count, so a row can have zero `tokens
 
 ### Card purposes
 
-Every card has a one-line purpose and a help entry (a link to the card reference). The app should show the purpose line under the card title. Keys are `dash_card_purpose_<card>` and `dash_card_help_<card>`; the help text is one shared sentence. The series cards also carry `dash_series_purpose_*`, `dash_series_now_*` and `dash_series_next_*` lines (purpose, current state, next action).
+Every card has a one-line purpose and a help entry (a link to the card reference). The app should show the purpose line under the card title. Keys are `dash_card_purpose_<card>` and `dash_card_help_<card>`; each help text is written per card: what the card shows, where its data comes from and when it is hidden (the exact English text is in `dash_card_help_<card>` of the locale bundle). The series cards also carry `dash_series_purpose_*`, `dash_series_now_*` and `dash_series_next_*` lines (purpose, current state, next action).
 
 | Key | EN value |
 |---|---|
@@ -110,7 +110,7 @@ Every card has a one-line purpose and a help entry (a link to the card reference
 | `dash_card_purpose_defects_per_day` | Defects found and fixed each day. | same English text as a placeholder for now |
 | `dash_card_purpose_cost_report` | Token spend grouped by Automaton, Automation, backend or week. | same English text as a placeholder for now |
 
-Help keys, all with the same value ("What this card shows, where its data comes from and why it can be hidden."), plus `dash_card_help_label` ("Help for this card"): `dash_card_help_console_questions`, `dash_card_help_console_held`, `dash_card_help_console_lanes`, `dash_card_help_console_usage`, `dash_card_help_console_ci_release`, `dash_card_help_integration_status`, `dash_card_help_tree`, `dash_card_help_orbital`, `dash_card_help_events`, `dash_card_help_sparklines`, `dash_card_help_gantt`, `dash_card_help_heatmap`, `dash_card_help_guardrails`, `dash_card_help_ekg`, `dash_card_help_smoke`, `dash_card_help_memory_scope`, `dash_card_help_websearch_usage`, `dash_card_help_work_map`, `dash_card_help_lane_utilization`, `dash_card_help_throughput_forecast`, `dash_card_help_verifier_health`, `dash_card_help_release_train`, `dash_card_help_review_backlog`, `dash_card_help_defects_per_day`, `dash_card_help_cost_report`, `dash_card_help_label`.
+Help keys, each with its own per-card text (what the card shows, its data source and its hide rule; read the value from the bundle), plus `dash_card_help_label` ("Help for this card"): `dash_card_help_console_questions`, `dash_card_help_console_held`, `dash_card_help_console_lanes`, `dash_card_help_console_usage`, `dash_card_help_console_ci_release`, `dash_card_help_integration_status`, `dash_card_help_tree`, `dash_card_help_orbital`, `dash_card_help_events`, `dash_card_help_sparklines`, `dash_card_help_gantt`, `dash_card_help_heatmap`, `dash_card_help_guardrails`, `dash_card_help_ekg`, `dash_card_help_smoke`, `dash_card_help_memory_scope`, `dash_card_help_websearch_usage`, `dash_card_help_work_map`, `dash_card_help_lane_utilization`, `dash_card_help_throughput_forecast`, `dash_card_help_verifier_health`, `dash_card_help_release_train`, `dash_card_help_review_backlog`, `dash_card_help_defects_per_day`, `dash_card_help_cost_report`, `dash_card_help_label`.
 
 ### New locale keys
 
