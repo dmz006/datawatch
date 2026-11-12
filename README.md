@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.155.0 (2026-11-12).** An interval chart of your Automata across all projects: every task as a bar, blocked stretches and a projected finish. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.156.0 (2026-11-12).** The dashboard cards now read real data: a lane pulse, a work map, six opt-in series cards, a reconciled cost report, and the timeline, CI and release, live events and activity cards fixed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
