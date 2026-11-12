@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.139.2 (2026-11-11).** A resumed Automaton task is leased from the backend its session really runs on, and a mismatched lease is released and retaken with an alert. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.140.0 (2026-11-11).** A task whose finished work cannot merge into the Automaton branch now shows why, is retried on a timer (autonomous.parallel.merge_retry_seconds) and holds the next task. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
