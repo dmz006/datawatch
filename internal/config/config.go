@@ -3903,6 +3903,10 @@ type AutonomousConfig struct {
 	// AutonomousDecisionsConfig below.
 	Decisions AutonomousDecisionsConfig `yaml:"decisions" json:"decisions"`
 
+	// PlanRecords — the plans-and-backlog record keys
+	// (autonomous.plan_records.*). See AutonomousPlanRecordsConfig below.
+	PlanRecords AutonomousPlanRecordsConfig `yaml:"plan_records" json:"plan_records"`
+
 	// MergeShadow — the shadow merge plan knobs (autonomous.merge_shadow).
 	// See MergeShadowConfig in merge_shadow.go.
 	MergeShadow MergeShadowConfig `yaml:"merge_shadow" json:"merge_shadow"`
@@ -6244,6 +6248,70 @@ func (q AutonomousQuestionsConfig) EffectiveReturnPath() bool {
 	return q.ReturnPath == nil || *q.ReturnPath
 }
 
+// AutonomousPlanRecordsConfig is autonomous.plan_records, the keys that tune
+// the plans-and-backlog records (registry rows and findings kept by the
+// daemon). Enabled and ImportConflictPolicy are pointers because their
+// defaults are not the zero value: nil means the key is absent and the
+// Effective* helper returns the default. WriteThrough defaults to off, so a
+// pointer is used only to tell an explicit false from an absent key. No field
+// carries omitempty, so an explicit false survives a round trip and a PUT.
+type AutonomousPlanRecordsConfig struct {
+	// Enabled is the master switch for the plan-records routes (default true).
+	Enabled *bool `yaml:"enabled" json:"enabled"`
+	// WriteThrough mirrors record changes back into the docs (default false).
+	WriteThrough *bool `yaml:"write_through" json:"write_through"`
+	// ImportConflictPolicy is suffix, rename or skip (default suffix): what an
+	// import does with a title or row number that is already taken.
+	ImportConflictPolicy *string `yaml:"import_conflict_policy" json:"import_conflict_policy"`
+}
+
+// Plan-records import conflict policies and defaults.
+const (
+	PlanRecordsPolicySuffix = "suffix"
+	PlanRecordsPolicyRename = "rename"
+	PlanRecordsPolicySkip   = "skip"
+
+	DefaultPlanRecordsEnabled              = true
+	DefaultPlanRecordsWriteThrough         = false
+	DefaultPlanRecordsImportConflictPolicy = PlanRecordsPolicySuffix
+)
+
+// EffectiveEnabled reports whether the plan-records routes are on. Absent is on.
+func (p AutonomousPlanRecordsConfig) EffectiveEnabled() bool {
+	return decisionBool(p.Enabled, DefaultPlanRecordsEnabled)
+}
+
+// EffectiveWriteThrough reports whether write-through is on. Absent is off.
+func (p AutonomousPlanRecordsConfig) EffectiveWriteThrough() bool {
+	return decisionBool(p.WriteThrough, DefaultPlanRecordsWriteThrough)
+}
+
+// EffectiveImportConflictPolicy returns the import conflict policy; "suffix"
+// when absent or empty.
+func (p AutonomousPlanRecordsConfig) EffectiveImportConflictPolicy() string {
+	return decisionString(p.ImportConflictPolicy, DefaultPlanRecordsImportConflictPolicy)
+}
+
+// ValidatePlanRecordsImportConflictPolicy refuses a policy other than suffix,
+// rename or skip (empty reads as suffix).
+func ValidatePlanRecordsImportConflictPolicy(policy string) error {
+	switch policy {
+	case "", PlanRecordsPolicySuffix, PlanRecordsPolicyRename, PlanRecordsPolicySkip:
+		return nil
+	}
+	return fmt.Errorf("autonomous.plan_records.import_conflict_policy: invalid value %q (valid values: %q, %q, %q, or empty for %q)",
+		policy, PlanRecordsPolicySuffix, PlanRecordsPolicyRename, PlanRecordsPolicySkip, DefaultPlanRecordsImportConflictPolicy)
+}
+
+// validate refuses any autonomous.plan_records value outside its valid range.
+// The config file load and every surface that rides it share this rule.
+func (p AutonomousPlanRecordsConfig) validate() error {
+	if p.ImportConflictPolicy != nil {
+		return ValidatePlanRecordsImportConflictPolicy(*p.ImportConflictPolicy)
+	}
+	return nil
+}
+
 // AutonomousDecisionsConfig is autonomous.decisions, the keys that tune the
 // decision record (a structured record of one operator decision: title,
 // situation, options with their tradeoffs, a recommendation and a forced
@@ -8407,6 +8475,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Decisions.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.PlanRecords.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Identity.validate(); err != nil {
