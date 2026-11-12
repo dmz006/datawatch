@@ -607,8 +607,29 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 	changed := 0
 	var errs []string
 	for _, orig := range paths {
-		p, ok := lexicalInsideBase(orig, cleanBase, realBase)
-		if !ok {
+		// Containment check, inline and purely lexical: no filesystem call
+		// happens on the requested path before it passes.
+		if orig == "" || strings.ContainsRune(orig, 0) {
+			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
+			continue
+		}
+		candidate := filepath.Clean(orig)
+		roots := []string{cleanBase}
+		if filepath.IsAbs(candidate) {
+			roots = append(roots, realBase)
+		} else {
+			candidate = filepath.Join(cleanBase, candidate)
+		}
+		p := ""
+		for _, root := range roots {
+			rel, rerr := filepath.Rel(root, candidate)
+			if rerr != nil || rel == "." || !filepath.IsLocal(rel) {
+				continue
+			}
+			p = candidate
+			break
+		}
+		if p == "" {
 			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
 			continue
 		}
