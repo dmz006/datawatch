@@ -27225,6 +27225,10 @@ function selectServer(name) {
   if (target === (prev || null)) return;
   _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
   state.activeServer = target;
+  // Remember the choice for the next boot (see _serverChoiceSettleBoot).
+  // A no-op re-select returned above, so it writes nothing and re-fetches
+  // nothing.
+  _serverChoiceSave(state.activeServer);
   loadServers();
   renderServerHeaderLine();
   if (state.activeServer !== prev) {
@@ -27444,6 +27448,97 @@ function _pickerServers() {
     ? state.servers.servers
     : (Array.isArray(state.servers) ? state.servers : []);
   return raw.filter(s => s && s.enabled !== false);
+}
+
+// ── Header dropdown choice persistence (localStorage) ───────────────────────
+// The header dropdown's server choice ('all', a peer name, or '' for this
+// server) is saved on this device under one key and restored at boot. Same
+// pattern as the sessions group-by key (dw_sessions_group_by): one constant,
+// one guarded read, one guarded write. Every storage access is wrapped in
+// try/catch — when localStorage is blocked or unavailable the choice simply
+// lives in memory for the page's lifetime, exactly as the app behaved before
+// this existed.
+const SERVER_CHOICE_STORE_KEY = 'dw_server_choice';
+
+function _serverChoiceStorage() {
+  try { return (typeof localStorage !== 'undefined' && localStorage) ? localStorage : null; } catch (_) { return null; }
+}
+
+// _serverChoiceRead → the saved choice: 'all', a peer name, or '' (this
+// server); null when nothing was saved or storage is unusable. Never throws.
+function _serverChoiceRead() {
+  try {
+    const ls = _serverChoiceStorage();
+    if (!ls) return null;
+    const raw = ls.getItem(SERVER_CHOICE_STORE_KEY);
+    if (raw === null) return null;                // never saved
+    if (raw === '' || raw === 'all') return raw;  // this server / all
+    if (typeof raw === 'string' && raw.length > 0) return raw; // peer name (validated at boot)
+    return null;
+  } catch (_) { return null; }
+}
+
+// _serverChoiceSave(value) persists the choice in the shape the dropdown
+// uses ('all' | peer name | '' for this server). Never throws: blocked
+// storage simply leaves the choice in memory.
+function _serverChoiceSave(value) {
+  try {
+    const ls = _serverChoiceStorage();
+    if (!ls) return;
+    ls.setItem(SERVER_CHOICE_STORE_KEY, (value === 'all') ? 'all' : (value ? String(value) : ''));
+  } catch (_) { /* storage blocked: the choice stays in memory */ }
+}
+
+// Boot commit — the one-round rule. _serverChoiceSettleBoot resolves the
+// boot choice BEFORE the first connect()/session-fetch round of boot runs,
+// so applying it never costs a second refresh round:
+//   * 'all' and this server ('' or unset) apply immediately — they need no
+//     list lookup, and state.activeServer starts as null anyway;
+//   * a saved peer name is validated against the server list before the app
+//     commits to it: when the name is not in the list (peer removed or
+//     disabled) the choice falls back to All and that fallback is saved, so
+//     a stale choice does not survive the next reload.
+// The list lookup joins the fetch loadServerListEager() already started
+// earlier in the same DOMContentLoaded handler (_onServerListReady
+// piggybacks on it while state._serversLoading is set), so it never fires a
+// second /api/servers round. If the list never arrives within the bound the
+// choice is treated as unvalidatable and falls back to All rather than
+// holding boot open. This commits state.activeServer directly instead of
+// going through selectServer() — at boot there is nothing to reconnect yet
+// and the app's one connect()/navigate() round has not run, so the
+// selectServer() path would double it and fire its toast.
+const _SERVER_CHOICE_SETTLE_TIMEOUT_MS = 6000;
+
+function _serverChoiceSettleBoot() {
+  const choice = _serverChoiceRead();
+  if (choice === null || choice === '') {
+    state.activeServer = null; // this server (boot default)
+    return Promise.resolve(null);
+  }
+  if (choice === 'all') {
+    state.activeServer = 'all';
+    return Promise.resolve('all');
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (name) => {
+      if (settled) return;
+      settled = true;
+      state.activeServer = name;
+      resolve(name);
+    };
+    _onServerListReady(() => {
+      if (_pickerServers().some(s => s.name === choice)) {
+        finish(choice); // validated: the saved peer is still listed and enabled
+      } else {
+        _serverChoiceSave('all'); // stale: peer removed or disabled
+        finish('all');
+      }
+    });
+    // The list never arrived (the local daemon's /api/servers is down or
+    // slow): do not hold boot open — an unvalidatable choice is All.
+    setTimeout(() => { _serverChoiceSave('all'); finish('all'); }, _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
+  });
 }
 
 // Returns the <select id="serverDropdown"> markup for the header dropdown.
@@ -49843,10 +49938,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load i18n bundle before rendering — non-blocking on the WS connect.
   // navigate() reads from t() so the bundle must be present before the
   // first render. Falls through to English on fetch failure.
-  initI18n().finally(() => {
+  initI18n().finally(async () => {
     document.documentElement.setAttribute('lang', window._i18n.current);
     // A tag selection restored from storage counts from the first paint, in the loaded language.
     _tagsMenuRefresh();
+    // Server dropdown choice persistence: commit the choice saved on this
+    // device BEFORE the first connect()/session-fetch round below, so the
+    // boot round already runs against it — one round, no second refresh. A
+    // saved peer name is validated against the server list first; a stale
+    // one falls back to All (and saves that). See _serverChoiceSettleBoot
+    // for the full one-round rule.
+    try { await _serverChoiceSettleBoot(); } catch (_) { /* storage unusable: boot defaults unchanged */ }
     // If no token is stored, probe health to see if auth is required before
     // spinning up the WS. When it is, replace the splash with a token-entry
     // prompt so visitors without credentials don't see an endless loading

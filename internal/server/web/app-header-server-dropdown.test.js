@@ -10,10 +10,11 @@
 //      many peers (12) and peer names containing quotes or backslashes
 //      (the name travels in the escHtml-escaped option value);
 //   3. choosing an entry goes through the single generic onchange
-//      (onServerDropdownChange → selectServer) exactly once, and the
-//      choice is remembered across header re-renders in the same browser
-//      page session (server choice is in-memory state, as before the
-//      dropdown existed — no localStorage key);
+//      (onServerDropdownChange → selectServer) exactly once, the choice
+//      is remembered across header re-renders, and it is saved to
+//      localStorage under dw_server_choice ('all' / a peer name / '' for
+//      this server) so the next boot restores it — a stale peer name
+//      falls back to All, and blocked storage never throws;
 //   4. no .server-picker-bar chip row or .sessions-topbar-servers element
 //      is rendered anywhere, Sessions page included;
 //   5. the control has an accessible name and native select keyboard
@@ -307,4 +308,158 @@ test('rendering settles without touching tmux-adjacent state or re-firing handle
   await flushAsync(30);
   assert.equal(sb.__calls.length, 1, 'settled: still exactly one selectServer call');
   assert.equal(active(sb), PEER);
+});
+
+// ── 6. The choice is persisted (dw_server_choice) and restored at boot ────
+
+// Counts writes to the choice key while the real storage map still records
+// them, so a test can assert both "nothing extra was written" and "the map
+// holds the right value".
+function spyWrites(sb) {
+  const writes = [];
+  const realSet = sb.localStorage.setItem.bind(sb.localStorage);
+  sb.localStorage.setItem = (k, v) => { writes.push([k, v]); realSet(k, v); };
+  return writes;
+}
+
+test('the choice key and shape: dw_server_choice = "all" | peer name | ""', () => {
+  const sb = loadApp();
+  assert.equal(vm.runInContext('SERVER_CHOICE_STORE_KEY', sb), 'dw_server_choice', 'one constant names the key');
+  vm.runInContext("_serverChoiceSave('all')", sb);
+  assert.equal(sb.localStorage.getItem('dw_server_choice'), 'all');
+  assert.equal(vm.runInContext('_serverChoiceRead()', sb), 'all');
+  vm.runInContext(`_serverChoiceSave(${JSON.stringify(PEER)})`, sb);
+  assert.equal(sb.localStorage.getItem('dw_server_choice'), PEER);
+  assert.equal(vm.runInContext('_serverChoiceRead()', sb), PEER);
+  vm.runInContext("_serverChoiceSave('')", sb);
+  assert.equal(sb.localStorage.getItem('dw_server_choice'), '', 'this server is the empty string');
+  assert.equal(vm.runInContext("_serverChoiceRead()", sb), '');
+});
+
+test('selectServer saves the choice: peer, All, and back to local', () => {
+  const sb = loadApp();
+  const writes = spyWrites(sb);
+  choose(sb, PEER);
+  assert.deepEqual(writes, [['dw_server_choice', PEER]], 'choosing a peer writes the peer name');
+  choose(sb, 'all');
+  assert.deepEqual(writes[1], ['dw_server_choice', 'all'], 'choosing All writes "all"');
+  choose(sb, '');
+  assert.deepEqual(writes[2], ['dw_server_choice', ''], 'returning to local writes ""');
+});
+
+test('a no-op re-select writes nothing new and re-fetches nothing', () => {
+  const sb = loadApp();
+  const writes = spyWrites(sb);
+  choose(sb, PEER);
+  choose(sb, PEER); // same entry again: the handler fires, selectServer is a no-op
+  assert.deepEqual(sb.__calls, [PEER, PEER], 'one handler pass per gesture');
+  assert.deepEqual(writes, [['dw_server_choice', PEER]], 'the no-op re-select writes nothing');
+  assert.equal(active(sb), PEER);
+});
+
+test('blocked localStorage never throws: read, save, and a full switch', () => {
+  const sb = loadApp();
+  sb.localStorage = {
+    getItem() { throw new Error('blocked'); },
+    setItem() { throw new Error('blocked'); },
+    removeItem() { throw new Error('blocked'); },
+  };
+  assert.equal(vm.runInContext('_serverChoiceRead()', sb), null, 'read degrades to "nothing saved"');
+  vm.runInContext("_serverChoiceSave('all')", sb); // must not throw
+  const before = sb.__calls.length;
+  choose(sb, PEER); // the real selectServer runs its save against blocked storage
+  assert.equal(active(sb), PEER, 'the switch still lands (in-memory, as before persistence existed)');
+  assert.equal(sb.__calls.length, before + 1);
+});
+
+// Boot commit — _serverChoiceSettleBoot. The DOMContentLoaded handler is a
+// no-op in the sandbox, so these call the settle step directly, the way the
+// boot sequence does (before the first connect()/session-fetch round).
+test('boot: nothing saved → this server (the default)', async () => {
+  const sb = loadApp();
+  assert.equal(sb.localStorage.getItem('dw_server_choice'), null, 'no saved choice');
+  vm.runInContext('_serverChoiceSettleBoot()', sb);
+  await flushAsync(20);
+  assert.equal(active(sb), null, 'local is the default');
+});
+
+test('boot: a saved "" restores this server, a saved "all" restores All', async () => {
+  const sb1 = loadApp();
+  sb1.localStorage.setItem('dw_server_choice', '');
+  vm.runInContext('_serverChoiceSettleBoot()', sb1);
+  await flushAsync(20);
+  assert.equal(active(sb1), null);
+
+  const sb2 = loadApp();
+  sb2.localStorage.setItem('dw_server_choice', 'all');
+  vm.runInContext('_serverChoiceSettleBoot()', sb2);
+  await flushAsync(20);
+  assert.equal(active(sb2), 'all');
+});
+
+// The one-round rule, peer path: the saved peer is validated against the
+// server list, and the list lookup must join the one in-flight
+// /api/servers fetch instead of firing a second one.
+test('boot: a saved peer in the list commits, using exactly one /api/servers round', async () => {
+  const sb = loadApp();
+  // Force the real first-load path: the list is not fetched yet (the
+  // load-bearing state.servers === undefined signal).
+  vm.runInContext('state.servers = undefined; state._serversLoading = false;', sb);
+  const urls = [];
+  sb.fetch = (url) => {
+    urls.push(String(url));
+    return Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ servers: [{ name: PEER, label: PEER, enabled: true, url: 'https://x' }] }),
+    });
+  };
+  sb.localStorage.setItem('dw_server_choice', PEER);
+  vm.runInContext('_serverChoiceSettleBoot()', sb);
+  await flushAsync(30);
+  assert.equal(active(sb), PEER, 'the saved peer is committed before the boot round');
+  assert.equal(urls.filter(u => u.includes('/api/servers')).length, 1, 'exactly one /api/servers round');
+});
+
+test('boot: a stale saved peer falls back to All and saves that fallback', async () => {
+  const sb = loadApp();
+  vm.runInContext('state.servers = undefined; state._serversLoading = false;', sb);
+  sb.fetch = () => Promise.resolve({
+    ok: true,
+    // The saved peer is gone from the list (removed or disabled).
+    json: () => Promise.resolve({ servers: [{ name: PEER, label: PEER, enabled: true, url: 'https://x' }] }),
+  });
+  sb.localStorage.setItem('dw_server_choice', 'ghost-peer');
+  vm.runInContext('_serverChoiceSettleBoot()', sb);
+  await flushAsync(30);
+  assert.equal(active(sb), 'all', 'unvalidatable choice → All');
+  assert.equal(sb.localStorage.getItem('dw_server_choice'), 'all', 'the fallback is saved, so it does not survive the next reload');
+});
+
+test('boot: a peer choice that cannot be validated in time falls back to All and does not hold boot open', async () => {
+  const sb = loadApp();
+  vm.runInContext('state.servers = undefined; state._serversLoading = false;', sb);
+  // The list never arrives (the fetch hangs): the settle bound must fire
+  // instead of leaving the Promise pending. Fire the bound synchronously so
+  // the test does not race a real timer against the harness's ticks.
+  sb.fetch = () => new Promise(() => {}); // never settles
+  sb.setTimeout = (fn) => { fn(); return 0; }; // the bound, fired inline
+  sb.localStorage.setItem('dw_server_choice', PEER);
+  vm.runInContext('_serverChoiceSettleBoot()', sb);
+  await flushAsync(30);
+  assert.equal(active(sb), 'all', 'timeout → All, boot proceeds');
+  assert.equal(sb.localStorage.getItem('dw_server_choice'), 'all');
+});
+
+test('a header render after boot commit shows the restored entry selected', () => {
+  const sb = loadApp();
+  sb.localStorage.setItem('dw_server_choice', PEER);
+  vm.runInContext("state.activeServer = 'all'", sb); // pre-commit state
+  // _onServerListReady runs its callback via setTimeout when the list is
+  // already loaded — the sandbox timer is a no-op, so fire it inline.
+  sb.setTimeout = (fn) => { fn(); return 0; };
+  vm.runInContext('_serverChoiceSettleBoot()', sb);
+  assert.equal(active(sb), PEER, 'the commit is synchronous once the list is known');
+  const html = vm.runInContext('renderServerDropdown(); __sel.innerHTML', sb);
+  assert.equal(selectedOption(html), PEER, 'first paint is already on the restored server');
+  assert.equal(sb.__sel.value, PEER);
 });
