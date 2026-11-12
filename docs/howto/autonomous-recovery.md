@@ -126,16 +126,40 @@ autonomous_prd_cancel_task(id="<prd_id>", task_id="<task_id>", reason="...")
 
 ## Cancelled tasks at completion
 
-A cancelled task no longer keeps an Automaton in `running`. When every task
-is completed or cancelled and at least one is completed, the completion review
-runs and the Automaton completes or blocks on its verdict. The review records
-one `cancelled_tasks_skipped` decision naming the cancelled tasks (once, even
-if the rollup is re-fired). A story whose tasks are all cancelled shows as
-cancelled (skipped) and does not fail the Automaton; a story with any failed
-task is still failed. If every task is cancelled there is nothing to judge, so
-the Automaton is neither judged nor completed: reset a task, remove the
-cancelled ones, or cancel the Automaton. An Automaton that was already stuck
-this way is advanced by the [stuck-running watchdog](#stuck-running-watchdog).
+A cancelled task is a deliberate final outcome: you stopped it on purpose, so
+the Automaton skips it instead of waiting for it. A cancelled task no longer
+keeps an Automaton in `running`.
+
+- **When the review runs.** When every task is completed or cancelled and at
+  least one is completed, the completion review runs and the Automaton
+  completes or blocks on its verdict.
+- **The decision log names the skipped tasks.** The review records one
+  `cancelled_tasks_skipped` decision that lists the cancelled tasks by title
+  (once, even if the rollup is re-fired).
+- **A story of only cancelled tasks is skipped.** It shows as cancelled
+  (skipped) and does not fail the Automaton.
+- **A story whose other tasks are completed is completed.** The cancelled
+  task inside it is left out of the roll-up. A story with any failed task is
+  still failed.
+- **Every task cancelled means nothing to judge.** The Automaton is neither
+  judged nor completed: reset a task, remove the cancelled ones, or cancel the
+  Automaton.
+- **A stuck Automaton is advanced for you.** An Automaton that was already
+  sitting in `running` this way is advanced by the
+  [stuck-running watchdog](#stuck-running-watchdog) after its grace period,
+  the setting `autonomous.stuck_running_seconds` (default `900`, 15 minutes).
+  The decision it records is `stuck_running_cancelled_advance`. If the
+  Automaton is blocked instead, the reason names the cancelled tasks (see
+  [the supervisor watch](automation-supervisor-watch.md#the-stuck-running-message)).
+- **Removing a cancelled task.** While the Automaton is running, a task that
+  is not running and not queued can be removed, on every surface: the web
+  page (the task's Remove control), REST
+  (`POST /api/autonomous/prds/{id}/remove_task`), MCP
+  (`autonomous_prd_remove_task`), the CLI
+  (`datawatch autonomous prd-remove-task`) and the messaging channel
+  (`autonomous remove-task <id> <story-id> <task-id>`). Other tasks stop
+  depending on the removed one. A running, queued or waiting task is refused
+  with an error naming its state.
 
 ## Repairing a failed Automaton in place
 
