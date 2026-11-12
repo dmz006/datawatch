@@ -200,6 +200,10 @@ session:
   # BL40: running sessions older than this are reported as stale via
   # GET /api/sessions/stale. 0 disables. Default 1800 (30 min).
   stale_timeout_seconds: 1800
+  # How often, in minutes, the daemon finalises session records whose
+  # process is gone. Default 10. 0 turns the scheduled runs off (the
+  # start-up run always happens). A negative value falls back to 10.
+  finalise_interval_minutes: 10
   # BL30: when true, hitting a rate limit on any backend pauses new
   # session creation until the cooldown elapses or the operator clears
   # it via DELETE /api/cooldown. Default false.
