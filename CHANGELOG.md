@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.151.0 — Weekly dependency update Automation replacing dependabot version updates
+
+### Changed
+
+- **Dependabot now opens security pull requests only.** Every ecosystem in `.github/dependabot.yml` (Go modules, Docker, GitHub Actions) sets `open-pull-requests-limit: 0`, which switches off version-update pull requests and leaves security updates on. `make lint` runs a new check, `check-dependabot-security-only`, that fails when a limit is missing or non-zero, an ecosystem is missing, or an `ignore:` key appears.
+
+### Added
+
+- **A weekly dependency update Automation replaces the version-update pull requests.** Once a week a built-in Automation opens one Automaton that updates Go modules, Docker base images and GitHub Actions together, including Docker `FROM` lines built from build arguments that Dependabot cannot see. Updates are classified as patch, minor or major, majors are capped per run, and each run ends with a summary table.
+- **Three settings.** `autonomous.automation.dependency_update.enabled` (default on), `.schedule` (default `monday 05:00`, weekday and local time) and `.max_majors` (default 5, range 0 to 20). They are on every surface: the config file, `GET` and `PUT /api/config`, the CLI `config set`, the chat `configure` verb, the MCP `config_set` tool and Settings in the web page, in all five languages.
+- **Status and reporting.** The MCP tool `dependency_update_status` returns the settings, the next run and the last run with its outcome. Each run appears on the Automata Events tab as one check row (none when nothing was updated); an alert is raised only when a run needs the operator.
+- Docs: a new how-to, `automation-dependency-update.md`, with the operations notes, the definitions, the MCP list and the events how-to updated to match.
+
 ## v9.150.0 — Measured headroom check for a verifier cap above 1
 
 ### Added
