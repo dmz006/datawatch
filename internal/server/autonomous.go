@@ -1038,7 +1038,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				killSessions()
-				s.audit(r.Context(), "delete", "automaton", id, withKillDetail(map[string]any{"hard": true, "memory_strategy": memStrat, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions})) // GH#201 Phase 4
+				s.audit(r.Context(), "delete", "automaton", id, withKillDetail(map[string]any{"hard": true, "memory_strategy": memStrat, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
 				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions, "memory_strategy": memStrat}))
 				return
 			}
@@ -1047,7 +1047,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			killSessions()
-			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions})) // GH#201 Phase 4
+			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
 			got, _ := s.autonomousMgr.GetPRD(id)
 			s.writeAutonomousCancelResult(w, r, got, len(sessionIDs), liveSessions, withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
 		case http.MethodPatch:

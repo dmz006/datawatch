@@ -1203,7 +1203,7 @@ func (s *Server) handleAutonomousPRDRun(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutonomousPRDCancel() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_cancel",
-		mcpsdk.WithDescription("BL24 — cancel + archive a PRD. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on)."),
+		mcpsdk.WithDescription("Cancel and archive an Automaton. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }
