@@ -220,6 +220,74 @@ curl -s 'http://127.0.0.1:8929/api/cost/series?group_by=project&window=7d'
 curl -s 'http://127.0.0.1:8929/api/cost/series?group_by=model&window=24h&bucket=hour'
 ```
 
+## Tool usage (GET /api/cost/tool-usage)
+
+How many tool calls the spend ledger saw over time, one line per Automaton,
+project or model. It takes the same `group_by`, `window` and `bucket` params
+as the cost series and returns the same shape of `buckets[]` and zero-filled
+`groups[].points[]`, with `tool_calls` as the value instead of tokens.
+
+The ledger records one tool-call count per session and never the name of the
+tool, so there is **no per-tool-name breakdown**. Every payload says so in
+`tool_names_note`; nothing is estimated or invented.
+
+| Field | Meaning |
+|-------|---------|
+| `groups[].key` | The Automaton, project or model; spend with no owner lands under `unattributed`. A group with no sessions in the window is omitted, so an empty window gives `groups: []` |
+| `groups[].sessions`, `groups[].tool_calls` | The line's sessions and tool calls over the window |
+| `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tool_calls` |
+| `total_tool_calls`, `total_sessions` | The same totals across all groups |
+| `tool_names_note` | States that only counts are recorded, not tool names |
+| `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the activity that is unknown rather than zero |
+
+Errors: `400` for a bad `group_by`, `window` or `bucket`, or a window and
+bucket that need more than 1000 points per line; `503` when the manager is not
+available.
+
+```bash
+curl -s 'http://127.0.0.1:8929/api/cost/tool-usage?group_by=project&window=7d'
+curl -s 'http://127.0.0.1:8929/api/cost/tool-usage?group_by=model&window=24h&bucket=hour'
+```
+
+## Failures and retries (GET /api/cost/failures)
+
+Failed, stalled and cancelled task attempts, counted per failure category and
+per week, for each project, Automation or Automaton. Each attempt is dated by
+when it ended, or when it started if it never recorded an end; an attempt with
+neither is counted in `undated_attempts` and left out of the weeks. Weeks run
+Monday 00:00 UTC to Sunday.
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `group_by` | `project` \| `automation` \| `automaton` | `project` |
+| `window` | how far back from now: `30d`, `12w` | 12 weeks |
+
+`project` is the Automaton's project tag, or its project directory's name when
+it has no tag. An Automaton belongs to an Automation through its own
+`automation_id` or through the Automation's member list. Attempts with no
+project, Automation or Automaton under the chosen grouping land under
+`unattributed`.
+
+| Field | Meaning |
+|-------|---------|
+| `weeks[]` | Every week start (UTC) in the window, in order |
+| `groups[].key`, `groups[].label` | The project name, Automation or Automaton id, and its readable title where one exists |
+| `groups[].attempts`, `groups[].tasks` | Attempts in the window and the distinct tasks they belong to |
+| `groups[].categories[]` | Attempts per failure category (`infra`, `content`, and `uncategorized` when an attempt recorded none), most frequent first |
+| `groups[].weeks[]` | One entry per week in `weeks[]`, zero-filled: `start`, `attempts`, and `categories` for that week |
+| `groups[].top_summaries[]` | Up to five most frequent failure summaries with their category and count; summaries are trimmed to one line and cut at 200 characters |
+| `groups[].retries` | The sum of each task's current automatic retry count, counted once per task. The count restarts when a task is reset, so it is a floor |
+| `categories[]`, `total_attempts`, `total_tasks`, `total_retries` | The same across all groups |
+| `undated_attempts`, `retry_note` | Attempts with no time, and what `retries` counts |
+
+Errors: `400` for a bad `group_by` or `window`; `503` when the Automaton
+manager is not available.
+
+```bash
+curl -s 'http://127.0.0.1:8929/api/cost/failures'
+curl -s 'http://127.0.0.1:8929/api/cost/failures?group_by=automation&window=8w'
+```
+
 ---
 
 # Billing profiles (`usage.billing`)

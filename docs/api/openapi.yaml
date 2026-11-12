@@ -7100,6 +7100,50 @@ paths:
         "200": {description: OK}
         "400": {description: Bad group_by, window or bucket}
         "503": {description: Manager not available}
+  /api/cost/tool-usage:
+    get:
+      summary: Tool-call counts over time, bucketed by hour or day
+      operationId: costToolUsage
+      tags: [Cost]
+      description: |
+        Tool calls from the spend ledger, one line per Automaton, project or
+        model, with one zero-filled point per bucket in `buckets`. The ledger
+        records a tool-call count per session and never a tool name, so there
+        is no per-tool-name breakdown; `tool_names_note` says so on every
+        response. A line with no sessions in the window is omitted, so an
+        empty window returns an empty `groups` list. `unknown_spend_note` and
+        `unknown_before` name activity the ledger cannot see when the window
+        reaches past its horizon.
+      parameters:
+        - {name: group_by, in: query, required: false, schema: {type: string, enum: [automaton, project, model], default: automaton}}
+        - {name: window, in: query, required: false, schema: {type: string}, description: "How far back from now: a duration such as 36h, 7d or 2w. Default is cost_report.default_window_days."}
+        - {name: bucket, in: query, required: false, schema: {type: string, enum: [hour, day]}, description: "Point width. Default is hour for windows up to 48 hours and day beyond. A window and bucket that need more than 1000 points are rejected."}
+      responses:
+        "200": {description: OK}
+        "400": {description: Bad group_by, window or bucket}
+        "503": {description: Manager not available}
+  /api/cost/failures:
+    get:
+      summary: Failed attempts and retries per category and week
+      operationId: costFailures
+      tags: [Cost]
+      description: |
+        Failed, stalled and cancelled task attempts counted per failure
+        category and per week (Monday 00:00 UTC to Sunday), one line per
+        project, Automation or Automaton. Each line carries its attempts,
+        distinct tasks, per-category counts, a zero-filled `weeks` list that
+        lines up with the top-level `weeks`, its most frequent failure
+        summaries, and `retries`: the sum of each task's current automatic
+        retry count, counted once per task. An attempt with no time is counted
+        in `undated_attempts` and left out of the weeks. A line with no
+        attempts in the window is omitted.
+      parameters:
+        - {name: group_by, in: query, required: false, schema: {type: string, enum: [project, automation, automaton], default: project}}
+        - {name: window, in: query, required: false, schema: {type: string}, description: "How far back from now: a duration such as 30d or 12w. Default is 12 weeks."}
+      responses:
+        "200": {description: OK}
+        "400": {description: Bad group_by or window}
+        "503": {description: Automaton manager not available}
   /api/cost/usage:
     get:
       summary: Per-session usage + cost detail
