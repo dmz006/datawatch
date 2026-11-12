@@ -18777,7 +18777,7 @@ function renderTask(prd, story, task, editable) {
     ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">
          ${showTaskEditor ? specEditBtn : ''}
          ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
-         ${editable ? `<button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="Remove this task">&#128465;</button>` : ''}
+         ${(editable || (prd.status === 'running' && (['cancelled','completed','failed','blocked'].indexOf(task.status) >= 0 || (task.status === 'pending' && !task.session_id)))) ? `<button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="${escHtml((window._t && window._t('prd_remove_task_running_hint')) || 'Remove this task (a running Automaton accepts a task that is not running and not queued)')}">&#128465;</button>` : ''}
        </span>`
     : (specEditable
       ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">${specEditBtn}</span>`

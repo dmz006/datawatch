@@ -4263,6 +4263,40 @@ paths:
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "405": {description: "POST-only action"}
 
+  /api/autonomous/prds/{id}/remove_task:
+    post:
+      summary: Remove one task from a story
+      description: |
+        Deletes one task from a story without re-running decompose. Accepted
+        while the Automaton is needs_review, revisions_asked, cancelled or
+        failed. While the Automaton is running, a task that is not running and
+        not queued (cancelled, completed, failed, blocked or never started) can
+        also be removed; the other tasks stop depending on it and the story
+        status is recomputed. A running, queued or waiting task is refused
+        with an error naming its state. Records a `remove_task` decision.
+        Needs the autonomous write capability when called by a federated peer;
+        any other method is rejected with 405.
+      operationId: autonomousPRDRemoveTask
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id, task_id]
+              properties:
+                story_id: {type: string}
+                task_id: {type: string}
+                actor: {type: string, description: "Who asked; recorded on the decision. Default the operator."}
+      responses:
+        "200": {description: "Task removed; the reply is the updated Automaton"}
+        "400": {description: "Refused: unknown Automaton, story or task, Automaton status locked, or the task is running, queued or waiting while the Automaton is running (the message names the task state)"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "POST-only action"}
+
   /api/autonomous/tags:
     get:
       summary: List Automata tags

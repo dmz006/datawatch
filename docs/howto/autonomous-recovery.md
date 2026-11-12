@@ -132,6 +132,11 @@ structural edits as one in `needs_review`: add or remove a task, add, remove
 or edit a story, repair dependencies, or request a revision. Completed task
 specs stay immutable.
 
+A running Automaton also lets you remove one task that is not running and not
+queued (cancelled, completed, failed, blocked or never started). Other tasks
+stop depending on it. A running, queued or waiting task is refused with an
+error naming its state.
+
 1. Read the Automaton (`autonomous_prd_get`) and note the failed task and the
    gate's findings.
 2. Add a task that corrects exactly those findings (`autonomous_prd_add_task`).
