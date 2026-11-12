@@ -2875,6 +2875,14 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		})
 		return emitSaved(old)
 	}
+	// The child inherits from the parent where the task set nothing itself
+	// (child_inherit.go): a task's own backend, model and directory win, and
+	// the project directory is the repository, never a worktree path.
+	m.inheritFromParent(child, parent, childExplicit{
+		ProjectDir: t.ProjectDir != "",
+		Backend:    t.Backend != "",
+		Model:      t.Model != "",
+	})
 	m.store.WithLock(func() { t.ChildPRDID = child.ID })
 	old = t.Status
 	m.store.WithLock(func() {
