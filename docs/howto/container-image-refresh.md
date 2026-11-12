@@ -82,7 +82,8 @@ bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/b
 No workflow carries a `TRIVY_VERSION:` value or a literal tag of its own, so
 `release.yaml`, `containers.yaml` and `image-refresh.yaml` can no longer drift
 apart (they used to pin `v0.73.0`, `v0.70.0` and `v0.73.0`). The kind smoke
-workflow installs helm the same way: pinned, with a retrying download.
+workflow installs helm the same way: pinned, with a retrying download (see
+[Helm in the kind smoke workflow](#helm-in-the-kind-smoke-workflow)).
 
 **To bump Trivy,** edit `scripts/trivy-version.txt` only. A scan that begins
 failing or passing after the bump is the new Trivy's doing, not drift.
@@ -101,8 +102,46 @@ it against fixture trees.
   not newly red.
 - Confirm the guard is wired into `make lint` and `ci.yaml` in the merged
   change; check by running `make lint` and reading `ci.yaml`.
-- The helm pin in the kind smoke workflow is its own version; this page
-  covers only the Trivy pin.
+- The helm pin in the kind smoke workflow is its own version, in
+  `scripts/helm-version.txt`; the guard above covers only the Trivy pin.
+  See the next section.
+
+## Helm in the kind smoke workflow
+
+The "Install kind + kubectl + helm" step of `.github/workflows/kind-smoke.yaml`
+used to pipe the moving `get-helm-3` script into `bash`. It now follows the
+Trivy pattern:
+
+```bash
+sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin
+```
+
+- **One pin.** The Helm version is the single `vX.Y.Z` tag in
+  `scripts/helm-version.txt` (currently `v3.17.3`). To bump Helm, edit that
+  file only; the workflow holds no literal tag.
+- **Pinned download.** `scripts/ci-install-helm.sh <tag> <install-dir>` fetches
+  `https://get.helm.sh/helm-<tag>-linux-amd64.tar.gz` for that exact tag.
+- **Retries.** 5 attempts, 10 s apart, on any error, with a 20 s connect and a
+  120 s total timeout.
+- **No pipe-to-shell.** The archive goes to a temp file first, then only
+  `linux-amd64/helm` is unpacked and installed into the install directory
+  (mode 0755). Temp files are removed on exit.
+- **Fails loudly.** A persistent download failure exits non-zero with curl's
+  status and the URL on stderr (`error: failed to download helm archive (curl
+  exit status N): <url>`), so the step goes red. Missing arguments exit 2 with
+  a usage line.
+
+Coverage: `bash scripts/tests/ci-install-helm_test.sh` (fake curl, no network).
+
+**Operator review.**
+
+- The helm script does not verify a checksum of the archive, and no guard
+  script checks the helm pin the way `check-trivy-version-single.sh` checks the
+  Trivy one. Decide whether either is wanted.
+- The kind smoke workflow has not been run since this change; confirm the next
+  run's install step is green.
+- The kind and kubectl downloads in the same step are unchanged (kind is
+  pinned to `v0.24.0`; kubectl follows `stable.txt`).
 
 ## Running it by hand
 

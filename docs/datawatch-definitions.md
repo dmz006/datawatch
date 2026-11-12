@@ -2783,3 +2783,7 @@ The **daily report** is `.datawatch/reports/plans-tidy-daily-report.md`, written
 ### Trivy version pin
 
 The **Trivy version pin** is `scripts/trivy-version.txt`, a file holding one `vX.Y.Z` tag. It is the only place the CI Trivy version is set: every workflow that installs Trivy reads it and passes it to `scripts/ci-install-trivy.sh`. `scripts/check-trivy-version-single.sh` fails when a workflow carries its own pin. See [howto/container-image-refresh.md](howto/container-image-refresh.md#how-ci-installs-trivy).
+
+### Helm version pin
+
+The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y.Z` tag. The kind smoke workflow reads it and passes it to `scripts/ci-install-helm.sh`, which downloads that exact Helm release with retries and installs it without piping into a shell. It is separate from the Trivy version pin, and no guard script checks it. See [howto/container-image-refresh.md](howto/container-image-refresh.md#helm-in-the-kind-smoke-workflow).

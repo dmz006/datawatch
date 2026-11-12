@@ -2591,8 +2591,19 @@ persistent-failure and usage-error paths).
 `release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
 `bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin`;
 no workflow holds a `TRIVY_VERSION:` value or a literal tag. To bump Trivy,
-edit that one file. The kind smoke workflow installs helm the same way, pinned
-and with a retrying download.
+edit that one file.
+
+**Helm in the kind smoke workflow.** `kind-smoke.yaml` no longer pipes the
+moving `get-helm-3` script into `bash`. It runs
+`sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin`.
+The Helm tag is pinned in `scripts/helm-version.txt` (currently `v3.17.3`); the
+script downloads that release archive from `get.helm.sh` to a temp file (5
+retries, 10 s apart, 20 s connect and 120 s total timeouts), unpacks only
+`linux-amd64/helm`, and on a persistent failure exits non-zero naming curl's
+status and the URL. Coverage: `bash scripts/tests/ci-install-helm_test.sh`. The
+Helm pin is separate from the Trivy pin and `check-trivy-version-single.sh` does
+not cover it. Operator review: the archive checksum is not verified, and the
+kind smoke workflow has not run since the change.
 
 `bash scripts/check-trivy-version-single.sh` enforces this (bad or missing
 version file, a literal pin in a workflow, an installer caller that never reads
