@@ -127,7 +127,9 @@ often than search:
   rename or delete one (see [Saved views](#saved-views)).
 - **Status chips** — the full set of state chips (running, waiting_input,
   rate_limited, complete, failed, killed), so you can pick a state even when
-  the one-line count above the list does not show it.
+  the one-line count above the list does not show it. The same section
+  also holds the **watched only** toggle, the **Backend** chips and, when
+  you use tags, the **Tags** filter.
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
