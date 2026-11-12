@@ -4779,7 +4779,13 @@ edits as one that is waiting in `needs_review`:
 - request a revision.
 
 **Completed task specs stay immutable.** Only tasks that have not completed
-can be edited or removed; a finished task keeps the spec it ran with.
+can be edited or removed; a finished task keeps the spec it ran with. On a
+failed Automaton the text of a task can be edited only when that task failed
+the pre-spawn scope lint; a task that failed for any other reason keeps its
+spec, so fix it by adding a task and resetting the failed one instead.
+Requesting a revision moves the Automaton to `revisions_asked`.
+
+A running or completed Automaton still refuses these edits.
 
 **Resetting a task reopens the Automaton.** Resetting a task on a failed
 Automaton moves the Automaton back to `running`. A task added while the
