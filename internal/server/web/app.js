@@ -4701,7 +4701,7 @@ function _sessionTagResultsHTML() {
     const head = `<button type="button" class="sessions-tag-axis-head" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" onclick="sessionTagAxisToggle('${g.key}')"><span class="sessions-tag-caret" aria-hidden="true">${open ? '&#9662;' : '&#9656;'}</span><span class="sessions-tag-axis-name">${escHtml(label)}</span><span class="badge-count">${g.entries.length}</span></button>`;
     if (!open) return `<div class="sessions-tag-axis" data-axis="${g.key}">${head}</div>`;
     const more = (!searching && g.entries.length > SESSION_TAG_AXIS_PREVIEW)
-      ? `<button type="button" class="sessions-tag-more" onclick="sessionTagAxisShowAll('${g.key}')">${escHtml(ui.expanded[g.key] ? _stx('sessions_filters_tag_show_fewer', 'Show fewer') : _stx('sessions_filters_tag_show_all', 'Show all (%1$s)').replace('%1$s', String(g.entries.length)))}</button>`
+      ? `<button type="button" class="sessions-tag-more" aria-expanded="${ui.expanded[g.key] ? 'true' : 'false'}" onclick="sessionTagAxisShowAll('${g.key}')">${escHtml(ui.expanded[g.key] ? _stx('sessions_filters_tag_show_fewer', 'Show fewer') : _stx('sessions_filters_tag_show_all', 'Show all (%1$s)').replace('%1$s', String(g.entries.length)))}</button>`
       : '';
     return `<div class="sessions-tag-axis" data-axis="${g.key}">${head}<div class="sessions-tag-chips">${shown.map(_sessionTagChipHTML).join('')}${more}</div></div>`;
   }).join('');
@@ -6878,6 +6878,46 @@ function _sessionsFiltersButtonHTML() {
   return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersOpen()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sessions Filters sheet — chip / toggle group checklist (audited 2026-11-09).
+// Everything this sheet renders, its KIND, and what the Kind requires.
+//
+//   KIND definitions:
+//   • Selection group — the Status/Backend standard: several values allowed
+//     (an empty set means "all"); a second click on an active chip clears that
+//     one chip; an "All" chip (or an equivalent Clear action) clears the whole
+//     group; and the current selection shows up in the compact summary line
+//     above the list. aria-pressed on each chip.
+//   • Single-choice    — exactly one value; picking the default choice resets it.
+//   • On/off toggle    — a boolean; a second click on "on" returns it to "off"
+//     (the default). aria-pressed on the control.
+//   • Disclosure       — expands/collapses a block; aria-expanded reflects it.
+//   All are native <button>/<select>, so keyboard Enter/Space (and arrow keys
+//   for the select) work without extra handlers.
+//
+//   Group                      Kind              Notes
+//   ─────────────────────────  ────────────────  ─────────────────────────────
+//   Group by                   single-choice     a native <select>; default =
+//                                                "No grouping" (pick it to reset)
+//   Saved Views                actions           apply / rename / delete — not a
+//                                                filter toggle, so out of scope
+//   Status (state) chips       selection group   "All" clears it; in summary;
+//                                                setSessionStateChip
+//   Watched-only               on/off            off is default; aria-pressed
+//   Backend (LLM) chips        selection group   "All" clears it; in summary;
+//                                                setBackendFilter
+//   Tag chips                  selection group   multi-axis; second click clears;
+//                                                Clear / "Clear all" empties;
+//                                                in summary; sessionTagChipToggle
+//   Tag axis headers           disclosure        aria-expanded; collapse/reopen
+//   Tag "Show all / fewer"     disclosure        aria-expanded (matches headers)
+//   Automaton picker           selection listbox role=listbox of role=option;
+//                                                aria-selected; second click clears
+//   Tag any/all mode           single-choice (on/off) "any" is default; second
+//                                                click returns to it; aria-pressed
+//   Compact summary line       (all selection      one removable chip per picked
+//      groups)                    groups)          value + "Clear all"
+// ─────────────────────────────────────────────────────────────────────────────
 function _sessionsSheetHTML(parts) {
   if (!state._sessionsSheetOpen) return '';
   const p = parts || {};
