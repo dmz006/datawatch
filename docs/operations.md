@@ -785,6 +785,22 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
 
+#### Usage charts and the combined usage report
+
+Beside the report, three read-only views draw the same recorded spend and the task attempts over time: **cost over time** (`GET /api/cost/series`, grouped by Automaton, project or model, bucketed by hour or day), **tool usage** (`GET /api/cost/tool-usage`, the same grouping, with a count of tool calls per group and never a tool name, because the ledger records only a count per session) and **retries and failure categories** (`GET /api/cost/failures`, grouped by project, Automation or Automaton, counted per week and per category). The cost view keeps billing units apart exactly as the report does: money is a separate line per unit (dollars on an `api` entry, points and percent on an `allowance` entry, nothing on a `local` entry) and is never added across units; with no rate or monthly price set, or `show_usd_estimates` off, only tokens are drawn. The same 31-day ledger limit applies, and a window that reaches past it reports the spend as unknown, not zero. Retries count each task once and restart when a task is reset, so the figure is a floor.
+
+The combined usage report joins the three bodies: `datawatch cost charts [--group-by <g>] [--window <d>] [--json]`, the comm channel `cost charts [group_by=<g>] [window=<d>]` and the read-only MCP `cost_charts` tool (`analytics:read`). A grouping one view does not know leaves that view on its default and the report says so. The Automata page shows the four chart cards (cost over time, tool usage, retries and failure categories, combined report) in the cost area of its **Progress and cost** tab; a card with no data or no view is not drawn and its reason and next action appear at the top of the **Events** tab. There is no new setting: the views read the existing `cost_report.*` keys and each LLM entry's `billing_mode`. Reading guidance: [howto/cost-report.md](howto/cost-report.md#the-chart-cards-on-the-automata-page); reference: [api/cost.md](api/cost.md#cost-series-get-apicostseries).
+
+| Surface | How |
+|--------|-----|
+| **CLI** | `datawatch cost charts [--group-by automaton\|project\|model\|automation] [--window 7d] [--json]` |
+| **Web UI** | The four chart cards on the Automata page, **Progress and cost** tab; grouping, window and tokens-or-money controls above them |
+| **REST API** | `GET /api/cost/series`, `GET /api/cost/tool-usage`, `GET /api/cost/failures` |
+| **MCP** | `cost_charts` (read-only) |
+| **Comm channel** | `cost charts [group_by=<g>] [window=<d>]` |
+
+**Still to review (operator):** the cards were built from tests and the REST bodies, not checked on a live daemon with real spend. Confirm on the **Progress and cost** tab that the card order and placement suit you, that a bundled-plan entry and an `api` entry draw as separate money charts with the right unit labels, and that a hidden card's reason shows in **Events**. The `model` grouping is the backend name (the ledger records no finer model name), and the web UI offers Project, Automation and Automaton only.
+
 ### Worker start-up size
 
 Each worker attempt records the size of the starting context it was launched with
