@@ -111,7 +111,7 @@ POST   /api/automations/{id}/stages/rename   rename every member stage named `fr
 
 # Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
 GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
-POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert | mcp_queue | webhook | peer, plus any sink type a plugin registered. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
+POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, peer?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert | mcp_queue | webhook | peer, plus any sink type a plugin registered. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
 DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown) — also accepted as DELETE /api/autonomous/subscriptions?id={id}. One-shot subscriptions are also auto-deleted by the engine after their first delivery. Changes take effect live — the engine re-attaches on store changes, no restart
 ```
 
@@ -123,6 +123,15 @@ persisted lifecycle subscriptions (`<data_dir>/lifecycle_subscriptions.json`):
 `guardrail_warn`, `prd.updated`, the question kinds and the opt-in
 condition, capacity, budget and judge kinds — the full list is under
 *Lifecycle event kinds* below),
+`filter.peer` (optional) selects only the events a federation peer forwarded to
+this daemon, by the peer's registered name (1–64 letters, digits, `.`, `_`, `-`;
+otherwise `400`). A forwarded event carries `peer`, which the receiver sets from
+the authenticated peer identity of the request and never from the payload; a
+locally originated event, or a forward delivered by an admin caller, has none and
+never matches a `peer` filter. The same field is the `peer` parameter of the MCP
+lifecycle events resource. No CLI flag, comm verb, `autonomous_subscribe` field
+or PWA control sets it yet.
+
 `filter.level` narrows to `prd` or `task` events, and the `sink` is
 where matching events are delivered (`comm` = the notify pipeline, `session`
 = a datawatch-managed session, `topic` = the push-topic bus, `alert` = the

@@ -15,6 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Docs for subscribable events brought in line with what shipped.** The event kind listing (REST, MCP, CLI, comm channel, web subscription form), the subscription preview route and the MCP resource subscription path are now described in the subscriptions how-to, the operations guide, the definitions, the autonomous API reference, the comm command reference, the API-to-MCP mapping and the OpenAPI reference. The statements that no REST, CLI or comm surface lists the kinds, and that every picker carries a built-in copy, were removed. The how-to and definitions now state that the preview route accepts only the Events log's kinds, so the web form's last-day count does not work for lifecycle kinds yet.
 
+- **Docs for the peer name, the peer filter and peer-down behavior.** The subscriptions how-to, the lifecycle webhooks and peer forwarding how-to, the definitions, the operations guide, the autonomous API reference and the OpenAPI reference now describe the `peer` field on a forwarded event, the `peer` subscription filter (set through REST and the MCP lifecycle events resource; the CLI, comm verb, `autonomous_subscribe` tool and web form do not have it yet), and the guarantee that a peer that hangs or refuses connections never blocks local delivery. They state that the peer event subscription exists in the daemon code but that no setting, command, route or tool starts it yet, so it does not read any peer's events on a running daemon.
+
 ## v9.136.0 — Supervisor wake settings
 
 ### Added

@@ -5154,6 +5154,7 @@ paths:
                     level: {type: string}
                     prd_id: {type: string}
                     task_id: {type: string}
+                    peer: {type: string, description: "Registered name of a federation peer (1-64 letters, digits, . _ -). Matches only events that peer forwarded to this daemon; a locally originated event never matches. 400 when malformed."}
                 sink:
                   type: object
                   description: "comm, session, topic, alert or mcp_queue target."
@@ -5255,6 +5256,8 @@ paths:
         `since` on the next call. `dropped` is true when events the caller had not
         yet seen were evicted from the queue. Requires the `autonomous:read`
         capability. 503 when the daemon runs without the subscription engine.
+        A federation peer holding that capability can read this queue; the
+        daemon's peer event subscription does so, though nothing starts it yet.
       operationId: autonomousEventsPending
       tags: [Autonomous]
       parameters:

@@ -76,7 +76,7 @@ Every subscription is **filter → sink → optional action**:
 
 | Part | What it is |
 |---|---|
-| **Filter** | `kinds` (event kinds; repeatable) and/or `level` (`prd` or `task`), plus optional scope to one Automaton (`prd_id`) or one task (`task_id`). At least one of `kinds` / `level` is required. |
+| **Filter** | `kinds` (event kinds; repeatable) and/or `level` (`prd` or `task`), plus optional scope to one Automaton (`prd_id`), one task (`task_id`) or one federation peer (`peer`, see [Events from a federation peer](#events-from-a-federation-peer)). At least one of `kinds` / `level` is required. |
 | **Sink** | One of: `comm` (router fan-out), `session` (a datawatch session), `topic` (SSE / mobile-push topic bus), `alert` (in-app alert store), `mcp_queue` (a named pending-events queue that a client polls). Each has a `target`; for `mcp_queue` it is the queue name. |
 | **Action** *(optional)* | `send_input` with text (max 4096 chars), only with a `session` sink — the text is typed into the target session on every match. |
 | **Flags** | `one_shot` (delete after first *successful* delivery), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
@@ -387,7 +387,10 @@ most 32. Existing delivery (comm, session, topic, alert and queue sinks, and
 the supervisor wake) behaves the same with the setting on or off.
 
 The notification carries the subscribed `uri` and the event's `event_id`,
-`kind`, `prd_id` and `task_id`; read the resource for the recent events. With the setting off the server
+`kind`, `prd_id` and `task_id`; read the resource for the recent events. Add
+`&peer=<registered peer name>` to the URI to receive only the events that
+federation peer forwarded (see
+[Events from a federation peer](#events-from-a-federation-peer)). With the setting off the server
 advertises nothing new and refuses `resources/subscribe`. The full parameter
 list and the places to set it are in the [MCP reference](../mcp.md#resource-subscriptions).
 Because nothing is stored, a client that is offline when an event fires does
@@ -643,6 +646,69 @@ Every set/clear is audit-logged (action `autonomous_notify_events_changed`)
 with the old and new lists; the Automaton entry also records which tier
 the resolved set came from after the change.
 
+## Events from a federation peer
+
+When another datawatch daemon forwards an event to this one (see
+[peer forwarding](automaton-lifecycle-webhooks.md#peer-forwarding)), the event
+carries `peer`: the **registered name** of the sending peer. This daemon sets it
+from the authenticated peer identity of the request, never from the body, so a
+`peer` value inside the payload is ignored. Events that started on this daemon,
+and forwards delivered by an admin caller (who is not a registered peer), have
+no `peer`.
+
+A subscription filter can select on it. Add `"peer": "hub-east"` to the filter
+and only the events that `hub-east` forwarded match; a local event never
+matches a non-empty `peer`. The rest of the filter works as before, and the
+notify-event gate still applies.
+
+```json
+{
+  "filter": {"kinds": ["task.failed", "prd.blocked"], "peer": "hub-east"},
+  "sink": {"type": "alert", "target": "hub-east-failures"}
+}
+```
+
+- The `peer` name must be 1–64 letters, digits, `.`, `_` or `-`, the same rule
+  as a peer sink target. Anything else is refused when the subscription is
+  created.
+- `peer` is accepted in the `filter` body of `POST` and `PUT
+  /api/autonomous/subscriptions` and as the `peer` query parameter of the MCP
+  [lifecycle events resource](../mcp.md#resource-subscriptions). The
+  `autonomous_subscribe` MCP tool, the CLI `autonomous subscribe` command, the
+  comm verb and the PWA form have no `peer` field yet, so a stored
+  subscription that filters on a peer is created with REST.
+- A peer filter matches nothing until a peer actually forwards events here:
+  `autonomous.notify.forwarding.enabled` must be on at this daemon (the switch
+  covers both directions) and the sender needs a peer subscription that names
+  this daemon.
+- The event JSON, the `mcp_queue` events and the webhook envelopes show the same
+  `peer` field, so your own code can tell where an event came from.
+
+### A peer being down never blocks local delivery
+
+Forwarding is best-effort and runs beside local delivery, never in front of it.
+If a peer hangs (accepts a connection and never answers) or refuses
+connections, every local sink (comm, session, topic, alert, `mcp_queue`,
+webhook, and the built-in alert, topic and comm sinks) still receives each
+local event in the normal time, once. The retries for the dead peer run on
+their own schedule, and when the peer comes back the exchange resumes with no
+daemon restart. Events dropped while it was away are not replayed: forwarding
+has no outbox.
+
+### Reading a peer's events (not switched on by any setting yet)
+
+The daemon code also has the opposite direction: a **peer event subscription**
+that reads a registered peer's pending-events queue
+(`GET /api/autonomous/events`) with that peer's stored bearer token and feeds
+each event into local dispatch with `peer` set. Nothing in this release starts
+it: there is no setting, command, REST route, MCP tool or PWA control for it, so
+you cannot turn it on yet. The glossary entry and the rules it will follow
+(needs `autonomous:read` on the peer, lifecycle events only, no echo loops) are
+in [datawatch-definitions.md](../datawatch-definitions.md#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
+and [operations.md](../operations.md#outbound-webhook-sink-and-peer-forwarding-ships-disabled).
+Until it is wired, use peer forwarding (the sending peer pushes) to get a
+peer's events onto this daemon.
+
 ## Storage, audit & restart behavior
 
 - Persisted at `<data_dir>/lifecycle_subscriptions.json`, encrypted at
@@ -678,8 +744,15 @@ the resolved set came from after the change.
 - **Text arrived but looks wrong** — verify the `lifecycle-sub`
   source tag in the session input history; `send_input` types verbatim,
   4096-char cap.
-- **`webhook` sink is refused** — by design in this release; outbound
-  webhooks arrive in a later phase.
+- **`webhook` or `peer` sink is refused** — both ship off. Turn on
+  `autonomous.notify.webhook.enabled` or `autonomous.notify.forwarding.enabled`
+  (see [lifecycle webhooks and peer forwarding](automaton-lifecycle-webhooks.md)).
+- **A `peer` filter never matches** — the filter selects only events a
+  registered peer forwarded to this daemon. Check that
+  `autonomous.notify.forwarding.enabled` is on here, that the sender has a peer
+  subscription naming this daemon, and that the name in the filter is the
+  peer's registered name (`datawatch federation peer list`). Events that started
+  on this daemon never match.
 - **Polling a queue returns nothing** — confirm a subscription with sink
   `mcp_queue` and the *same* queue name exists
   (`datawatch autonomous subscriptions`), that the events you expect match
