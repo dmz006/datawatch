@@ -29,8 +29,10 @@ A record whose process is gone is finalised as `complete` (its output
 ends with a `DATAWATCH_COMPLETE:` line) or `killed` (anything else).
 Only such a record carries `ended_at` (RFC 3339 time it was finalised)
 and `end_note` (`process gone, finalised`) in the session JSON; both
-are omitted on every other session. Nothing applies this rule to
-stored records yet, so neither field is returned today. See
+are omitted on every other session. The finaliser applies the rule to
+both the records the daemon holds and the saved `session.json` files, but
+the daemon does not run it yet, so neither field is returned today and no
+endpoint reports the last run. See
 [Gone session records](../howto/sessions-deep-dive.md#gone-session-records).
 
 ## Surface

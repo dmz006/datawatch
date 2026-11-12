@@ -38,7 +38,7 @@ A directory under `~/.datawatch/sessions/<full_id>/` containing:
 
 ```
 output.log     ← full append-only tmux output (ANSI preserved)
-state.json     ← session metadata (state, last-channel-event, ...)
+session.json   ← session metadata (state, last-channel-event, ...)
 tracking/      ← per-input record kept by the Tracker
 wakeup.log     ← what was injected into L0/L1 layers at start
 response.md    ← (optional) last LLM response captured for /copy + alerts
@@ -75,7 +75,7 @@ non-empty line (colour codes stripped) begins with `DATAWATCH_COMPLETE:`, the
 record becomes `complete`. Otherwise it becomes `killed`: no marker, a marker
 followed by more output, or an empty or missing log all read as the process
 vanishing before it finished. The record also gets two fields in
-`state.json` and the session JSON:
+`session.json` and the session JSON:
 
 | Field | Value |
 |---|---|
@@ -86,18 +86,63 @@ Both fields are absent on every session that was not finalised this way. To
 see how any other session ended, read the daemon journal and the session's
 `timeline.md`, as before.
 
+### The finaliser
+
+The finaliser is the pass that applies this rule. One run has two parts, in
+this order:
+
+1. **Records the daemon holds.** Every record still in `running`,
+   `waiting_input`, `stalled` or `rate_limited` is judged. A `gone` record is
+   finalised; a `live`, `foreign` or already final one is left as it is. The
+   terminal pane is checked once more just before the write, so a pane that
+   appeared in the meantime saves the record. The record, its `output.log` and
+   its project folder are kept; only the state, `ended_at` and `end_note`
+   change, and the daemon's own state-change handling runs as for any other
+   change of state.
+2. **Saved session folders.** Each `~/.datawatch/sessions/<id>/session.json`
+   that still says one of those four states is finalised too, so a folder
+   does not keep saying `running` after the process is gone.
+   - If the daemon holds a record for that id, the record decides. A live,
+     foreign or still-gone record leaves the folder alone, and a final record
+     has its state, `ended_at` and `end_note` copied into the folder.
+   - If the daemon holds no record (never stored, or archived), the folder
+     is judged by what it saved: it is left alone while its terminal pane
+     exists or its recorded subprocess still runs the task, and a folder from
+     another host is never judged. Otherwise it is finalised from the end of
+     its own `output.log` by the same rule as above.
+   - Only `session.json` is rewritten (to a temporary file, then renamed over
+     the old one). Every other file in the folder is left as it was, and a
+     `session.json` that cannot be read is skipped and counted, never fatal.
+
+A run does nothing when the terminal pane listing fails for any reason other
+than "no server running": a broken listing is never read as every pane being
+gone. The run keeps one summary in memory, replaced by the next run: when it
+ran, how many records and folders it finalised, how many it left as they were,
+and whether the pane listing worked for both parts. A run that finalises
+something writes one line to the daemon journal with the counts and nothing
+else.
+
+Runs are scheduled by the finaliser loop. It runs once as soon as it starts
+(the start-up run), then again after each interval. The interval is read again
+on every cycle, so a change applies without a restart; an interval of zero or
+less switches scheduled runs off, and the loop then only re-reads the interval
+once a minute. It stops when the daemon shuts down.
+
 **What to check.** `datawatch sessions get <id> | jq '.state, .ended_at, .end_note'`
 shows whether a record was finalised this way. A `killed` record with the end
 note means the output did not end with a completion line; read
 `output.log` before restarting it (`restart:<id>` spawns a fresh session seeded
-from the prior one).
+from the prior one). For a folder, `jq '.state, .ended_at, .end_note'
+~/.datawatch/sessions/<id>/session.json` shows the same three fields.
 
-**Status today.** The registry, the judgement, the final-state rule and the
-two fields are in place, and subprocess sessions are registered as runners.
-Nothing yet calls the judgement or the final-state rule on its own: no sweep,
-daemon start or API finalises a record with it, so you will not see `ended_at`
-or `end_note` on a record yet, and a restart still treats a missing terminal
-pane as described in
+**Status today.** The registry, the judgement, the final-state rule, the two
+fields, both finaliser passes, the combined run with its summary and the
+scheduler are in place in the session package, and subprocess sessions are
+registered as runners. The daemon does not start the finaliser yet: nothing
+starts the loop, no setting supplies its interval, and no REST, CLI, MCP or
+chat command shows the last run's summary. So you will not see `ended_at` or
+`end_note` on a record or a folder yet, and a restart still treats a missing
+terminal pane as described in
 [operations — Restart safety](../operations.md#restart-safety). Chat-mode and
 other non-pane sessions are not registered as runners yet.
 
