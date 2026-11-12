@@ -2621,6 +2621,7 @@
   "automation_subtab_setup": "Setup and policy",
   "automation_subtab_housekeeping": "Housekeeping",
   "automation_subtab_inbox_badge_label": "%1$s waiting on you",
+  "automation_subtab_inbox_badge_label_all": "%1$s waiting on you across all projects",
   "automation_status_draft": "Draft",
   "automation_status_active": "Active",
   "automation_status_paused": "Paused",
