@@ -518,6 +518,46 @@ func (s *Server) handleProjectHistory(_ context.Context, req mcpsdk.CallToolRequ
 	return textOK(string(out)), nil
 }
 
+// toolProjectTimeline exposes GET /api/projects/{name}/timeline: when each
+// arc, Automaton and task of a project started and finished, one level at a time.
+func (s *Server) toolProjectTimeline() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_timeline",
+		mcpsdk.WithDescription(
+			"Project timeline: first and last time of each arc, Automaton and task, one level at a time (arcs by default). Rows still running have no last time. Paged with limit and the cursor from the previous page. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithString("level", mcpsdk.Description("Which rows to return: arcs (default), automata or tasks.")),
+		mcpsdk.WithString("parent", mcpsdk.Description("With level automata: the arc id whose Automata to list, or none for Automata no arc holds.")),
+		mcpsdk.WithString("automaton", mcpsdk.Description("With level tasks: the Automaton id whose tasks to list.")),
+		mcpsdk.WithString("focus", mcpsdk.Description("One arc id (or none): returns that arc's Automata and their tasks in a single unpaged reply.")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Maximum rows per page (the daemon's default applies when omitted).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Opaque cursor from the previous page's next_cursor. Omit for the first page.")),
+	)
+}
+func (s *Server) handleProjectTimeline(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_timeline", "name is required"), nil
+	}
+	q := url.Values{}
+	for _, k := range []string{"level", "parent", "automaton", "focus", "cursor"} {
+		if v := req.GetString(k, ""); v != "" {
+			q.Set(k, v)
+		}
+	}
+	if v, ok := req.GetArguments()["limit"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return toolErrorf("project_timeline", "limit must be a whole number"), nil
+		}
+		q.Set("limit", fmt.Sprintf("%d", int(f)))
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/timeline", q)
+	if err != nil {
+		return toolError("project_timeline", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
 // toolProjectSetArcs exposes PUT /api/projects/{name}/arcs: it replaces the
 // project's ordered arc list and returns the project record.
 func (s *Server) toolProjectSetArcs() mcpsdk.Tool {

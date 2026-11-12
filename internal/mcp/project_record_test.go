@@ -67,6 +67,7 @@ func TestProjectRecordToolNames(t *testing.T) {
 	cases := map[string]string{
 		"project_rollup":   s.toolProjectRollup().Name,
 		"project_history":  s.toolProjectHistory().Name,
+		"project_timeline": s.toolProjectTimeline().Name,
 		"project_set_arcs": s.toolProjectSetArcs().Name,
 	}
 	for want, got := range cases {
@@ -94,6 +95,16 @@ func TestProjectRecordToolSchemas(t *testing.T) {
 	for _, p := range []string{"limit", "cursor"} {
 		if hist.InputSchema.Properties[p] == nil {
 			t.Errorf("project_history missing %s", p)
+		}
+	}
+
+	tl := s.toolProjectTimeline()
+	if req := requiredSet(tl.InputSchema.Required); !req["name"] || len(req) != 1 {
+		t.Errorf("project_timeline required = %v; want name only", tl.InputSchema.Required)
+	}
+	for _, p := range []string{"level", "parent", "automaton", "focus", "limit", "cursor"} {
+		if tl.InputSchema.Properties[p] == nil {
+			t.Errorf("project_timeline missing %s", p)
 		}
 	}
 
@@ -313,6 +324,53 @@ func TestProjectHistoryHandlerValidation(t *testing.T) {
 		t.Error("missing name must be an error")
 	}
 	if res := callTool(t, s.handleProjectHistory, map[string]any{"name": "acme", "limit": 2.5}); !res.IsError {
+		t.Error("fractional limit must be an error")
+	}
+}
+
+// ----- project_timeline ----------------------------------------------------
+
+func TestProjectTimelineHandler(t *testing.T) {
+	cap, s, done := newRecordServer(t, `{"project":"acme","rows":[]}`)
+	defer done()
+
+	res := callTool(t, s.handleProjectTimeline, map[string]any{
+		"name": "my project", "level": "tasks", "automaton": "p1", "parent": "none",
+		"focus": "a1", "limit": float64(25), "cursor": "abc123",
+	})
+	if res.IsError {
+		t.Fatalf("timeline failed: %s", resContentText(t, res))
+	}
+	if cap.method != http.MethodGet || cap.path != "/api/projects/my project/timeline" {
+		t.Errorf("got %s %s", cap.method, cap.path)
+	}
+	for _, want := range []string{"level=tasks", "automaton=p1", "parent=none", "focus=a1", "limit=25", "cursor=abc123"} {
+		if !strings.Contains(cap.rawQuery, want) {
+			t.Errorf("%s not forwarded; query = %q", want, cap.rawQuery)
+		}
+	}
+	if !strings.Contains(resContentText(t, res), `"project":"acme"`) {
+		t.Errorf("body not returned: %s", resContentText(t, res))
+	}
+}
+
+func TestProjectTimelineHandlerNoOptions(t *testing.T) {
+	cap, s, done := newRecordServer(t, `{}`)
+	defer done()
+	if res := callTool(t, s.handleProjectTimeline, map[string]any{"name": "acme"}); res.IsError {
+		t.Fatalf("timeline failed: %s", resContentText(t, res))
+	}
+	if cap.rawQuery != "" {
+		t.Errorf("no options sent query %q", cap.rawQuery)
+	}
+}
+
+func TestProjectTimelineHandlerValidation(t *testing.T) {
+	s := &Server{}
+	if res := callTool(t, s.handleProjectTimeline, map[string]any{}); !res.IsError {
+		t.Error("missing name must be an error")
+	}
+	if res := callTool(t, s.handleProjectTimeline, map[string]any{"name": "acme", "limit": 2.5}); !res.IsError {
 		t.Error("fractional limit must be an error")
 	}
 }

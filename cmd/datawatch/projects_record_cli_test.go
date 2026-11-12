@@ -23,11 +23,12 @@ const acmeRollup = `{"project":"acme","window_days":7,"arcs":[],"total":{}}`
 // fakeProjectsDaemon answers the project REST routes the record verbs use and
 // records what the CLI sent.
 type fakeProjectsDaemon struct {
-	mu           sync.Mutex
-	posted       []map[string]any
-	rollupWindow string
-	historyQuery string
-	paths        []string
+	mu            sync.Mutex
+	posted        []map[string]any
+	rollupWindow  string
+	historyQuery  string
+	timelineQuery string
+	paths         []string
 }
 
 func (f *fakeProjectsDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,9 @@ func (f *fakeProjectsDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/projects/acme/history":
 		f.historyQuery = r.URL.RawQuery
 		_, _ = w.Write([]byte(`{"project":"acme","items":[],"gantt":[]}`))
+	case r.Method == http.MethodGet && r.URL.Path == "/api/projects/acme/timeline":
+		f.timelineQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"project":"acme","rows":[]}`))
 	default:
 		http.Error(w, "project not found", http.StatusNotFound)
 	}
@@ -88,7 +92,7 @@ func (f *fakeProjectsDaemon) postCount() int {
 
 func TestProjectsRecordSubcommandsRegistered(t *testing.T) {
 	cmd := newProjectsCmd()
-	want := map[string]bool{"show": false, "set": false, "arcs": false, "history": false}
+	want := map[string]bool{"show": false, "set": false, "arcs": false, "history": false, "timeline": false}
 	for _, sub := range cmd.Commands() {
 		if _, ok := want[sub.Name()]; ok {
 			want[sub.Name()] = true
@@ -350,5 +354,34 @@ func TestProjectsShowWithoutWindowOmitsQuery(t *testing.T) {
 	}
 	if f.rollupWindow != "" {
 		t.Errorf("rollup window = %q, want none so the daemon default applies", f.rollupWindow)
+	}
+}
+
+func TestProjectsTimelinePassesFlags(t *testing.T) {
+	f := &fakeProjectsDaemon{}
+	if err := runProjectsCmd(t, f, "timeline", "acme", "--level", "tasks", "--parent", "none",
+		"--automaton", "p1", "--focus", "a1", "--limit", "5", "--cursor", "abc"); err != nil {
+		t.Fatalf("timeline: %v", err)
+	}
+	want := "automaton=p1&cursor=abc&focus=a1&level=tasks&limit=5&parent=none"
+	if f.timelineQuery != want {
+		t.Errorf("timeline query = %q, want %q", f.timelineQuery, want)
+	}
+	f2 := &fakeProjectsDaemon{}
+	if err := runProjectsCmd(t, f2, "timeline", "acme"); err != nil {
+		t.Fatalf("timeline: %v", err)
+	}
+	if f2.timelineQuery != "" {
+		t.Errorf("timeline with no flags sent query %q", f2.timelineQuery)
+	}
+	if err := runProjectsCmd(t, &fakeProjectsDaemon{}, "timeline", "ghost"); err == nil {
+		t.Error("an unknown project must be an error")
+	}
+	cmd := newProjectsCmd()
+	tl, _, _ := cmd.Find([]string{"timeline", "acme"})
+	for _, flag := range []string{"level", "parent", "automaton", "focus", "limit", "cursor"} {
+		if tl.Flags().Lookup(flag) == nil {
+			t.Errorf("timeline is missing the --%s flag", flag)
+		}
 	}
 }

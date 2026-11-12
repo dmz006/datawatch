@@ -470,6 +470,7 @@ project_policy_effective
 project_rollup
 project_set_arcs
 project_summary
+project_timeline
 project_upsert
 proxy_config_get
 proxy_config_set
