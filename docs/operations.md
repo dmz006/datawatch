@@ -7640,3 +7640,17 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 ### Android / iPhone
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
+
+## Plan records: store and import
+
+The plans-and-backlog records that used to live as numbered rows in `docs/plans/README.md` and as findings files are now held by a file-backed store, with a one-time importer that reads the old files. Terms are in [datawatch-definitions.md](datawatch-definitions.md#plan-records).
+
+**Current reach.** The store and importer are library code. This release adds no REST route, MCP tool, CLI command, comm verb, web app view or configuration setting for them, so an operator cannot run an import or read a record yet. `docs/plans/README.md` and the findings files remain the working registry; the import never writes to them.
+
+**Storage.** One JSON file per record under `<data dir>/plan-records/<kind>/<uid>.json`, written through a temporary file and an atomic rename. The files are the source of truth; the index is rebuilt from them when the store opens. With secure mode on, every record is sealed with the same file sealing the other per-record data files use. Only `kind`, `project`, `state`, `id`, `uid`, `legacy_number`, `created_at`, `updated_at` and `closed_at` stay readable without the key; the title, body and every other field exist only in the sealed payload.
+
+**Import rules.** The project must be a registered project alias (an unknown alias is refused with a message to register it first), and its directory must sit under an allowed project root (`server.allowed_project_roots` plus the built-in roots). The default project is `datawatch`. Rows and findings are imported read-only and idempotently; the conflict policy (`suffix`, `rename`, `skip`) applies to every conflict in one pass. A real run writes one summary audit event, `plan_record_imported`.
+
+**Derived project field.** Automaton and Automation reads now carry a read-only `project` field derived from the registered project aliases. It is computed per read and never stored; with no matching alias the field is omitted. Progress counting by project is unchanged: a record with no project still counts under the none key.
+
+**Rollback.** Nothing reads the store yet, so there is nothing to roll back. Removing the `plan-records` directory under the data dir discards every imported record; the original files are untouched.
