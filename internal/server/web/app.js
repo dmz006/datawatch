@@ -3072,7 +3072,7 @@ const _PROJECTS_OVERVIEW = '';
 // hist is the paged history of the project named by hist.name: items so far,
 // next is the cursor for the following page ('' when none), error is its load
 // failure. histBusy guards a Load more click against a second request.
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false };
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false, subtab: '' };
 const _PROJECTS_HISTORY_PAGE = 20;
 // _projectsLinks holds the read-only replies for the selected project (name):
 // its effective policy, its merge pipeline and its event stream. A reply for a
@@ -3447,7 +3447,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   };
   const strip = _projectsSubtabStripHTML(active, hasEvents);
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
 }
 
 // ── Projects sub-tab strip ──────────────────────────────────────────────────
@@ -3475,7 +3475,7 @@ function _projectsActiveSubtab(hasEvents) {
 function _projectsSubtabStripHTML(active, hasEvents) {
   const tabs = _PROJECTS_SUBTABS.filter(k => k !== 'events' || hasEvents);
   return `<div class="projects-subtabs" role="tablist" aria-label="${escHtml(t('projects_subtabs_label'))}">` +
-    tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
+    tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" aria-controls="projectsSubtabBody" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
 }
 function selectProjectsSubtab(k) {
   if (!_projectsSubtabValid(k)) k = 'overview';

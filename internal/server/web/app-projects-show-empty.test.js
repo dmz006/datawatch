@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript, makeStubElement } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, pageAllSubtabs } = require('./testutil_browser_stub');
 
 function load() {
   const view = makeStubElement(() => {});
@@ -70,7 +70,7 @@ function sections(sb) {
 
 test('preference off: a project with no data shows no none-recorded line and no empty sections', () => {
   const sb = loadWith(null, false);
-  const page = sb._projectPageHTML(BARE, BARE_ROLL, '', null);
+  const page = pageAllSubtabs(sb, BARE, BARE_ROLL, '', null);
   assert.ok(!page.includes('none recorded'), 'no none-recorded line');
   for (const l of EMPTY_LABELS) assert.ok(!page.includes(l), l + ' hidden');
   assert.equal(sb._projectEventStreamHTML({ events: [] }, ''), '', 'no empty event stream section');
@@ -86,7 +86,7 @@ test('preference off: a project with no data shows no none-recorded line and no 
 
 test('preference on: the same project shows every empty line and section with plain labels', () => {
   const sb = loadWith(null, true);
-  const page = sb._projectPageHTML(BARE, BARE_ROLL, '', null);
+  const page = pageAllSubtabs(sb, BARE, BARE_ROLL, '', null);
   for (const l of EMPTY_LABELS) assert.ok(page.includes(l), l + ' shown');
   assert.ok(page.includes('none recorded'));
   assert.ok(page.includes('Plan documents:') || page.includes('none recorded'));
@@ -131,8 +131,8 @@ test('a project with data in every field renders the same with the preference of
   const events = { events: [{ at: '2026-11-09T10:00:00Z', kind: 'automaton_started', level: 'info', automation_id: 'a1' }] };
   const off = loadWith(null, false);
   const on = loadWith(null, true);
-  const page = off._projectPageHTML(full, roll, '', null);
-  assert.equal(page, on._projectPageHTML(full, roll, '', null), 'page identical');
+  const page = pageAllSubtabs(off, full, roll, '', null);
+  assert.equal(page, pageAllSubtabs(on, full, roll, '', null), 'page identical');
   for (const s of ['dana', '/work/acme', 'claude-code', 'main', 'hello', '20%', 'v2', 'all green', 'First step', 'Loose step', 'https://example.com/plan', 'https://example.com/design', 'datawatch-app #7'])
     assert.ok(page.includes(s), s);
   assert.ok(!page.includes('none recorded'));
@@ -148,13 +148,13 @@ test('a project with data in every field renders the same with the preference of
 test('a missing weekly share is an Events entry only when the project has an arc', () => {
   for (const showEmpty of [false, true]) {
     const sb = loadWith(null, showEmpty);
-    const withArc = sb._projectPageHTML({ name: 'acme', arcs: [{ automation_id: 'a1' }] }, BARE_ROLL, '', null);
+    const withArc = pageAllSubtabs(sb, { name: 'acme', arcs: [{ automation_id: 'a1' }] }, BARE_ROLL, '', null);
     const ev = withArc.slice(withArc.indexOf('id="projectEvents"'));
     assert.ok(withArc.includes('id="projectEvents"'), 'events block present');
     assert.ok(ev.includes('Weekly share is not set.'), 'entry for the missing share');
-    const noArcs = sb._projectPageHTML({ name: 'acme' }, { arcs: [] }, '', null);
+    const noArcs = pageAllSubtabs(sb, { name: 'acme' }, { arcs: [] }, '', null);
     assert.ok(!noArcs.includes('Weekly share is not set.'), 'no entry without arcs');
-    const withShare = sb._projectPageHTML({ name: 'acme', weekly_share: 10 }, BARE_ROLL, '', null);
+    const withShare = pageAllSubtabs(sb, { name: 'acme', weekly_share: 10 }, BARE_ROLL, '', null);
     assert.ok(!withShare.includes('Weekly share is not set.'), 'no entry when set');
   }
 });
