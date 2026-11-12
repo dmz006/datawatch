@@ -7738,6 +7738,20 @@ Planning routing chooses the planner for each Automaton decompose by rule. It is
 
 **Roll out in shadow mode first.** Set `enabled: true` and `shadow: true`; the routed decision is recorded for every decompose and the planner does not change. Read the would-route counts in the scorecard, compare them with what you expect, then set `shadow: false`. The scorecard and its gate report carry counts, planner names and rule and class names only, never plan or finding text. The full guide is [howto/automata-planning-routing.md](howto/automata-planning-routing.md).
 
+## Task-type routing table
+
+Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards.
+
+| Surface | Access |
+|---|---|
+| YAML | `autonomous.task_routing` in `datawatch.yaml` (`enabled`, `active_profile`, `profiles`) |
+| REST | `GET /api/config`; `PUT /api/config` with `autonomous.task_routing.enabled`, `.active_profile` or the whole block |
+| MCP | `get_config` (section `autonomous`), `config_set` |
+
+A bad block is rejected whole; a row naming an Opus or Fable model needs `allow_premium_model` on that row. Each task records its routing result and the Automaton's decision log gets a `task_routing` entry. The full guide is [howto/automata-task-routing.md](howto/automata-task-routing.md).
+
+**Operator review.** Profile save, switch, delete, export and import and the per-Automaton dry run exist in the daemon but have no REST route, CLI command, MCP tool, comm verb or web UI yet, so the parity set is incomplete (only YAML, REST config and MCP config reach the block). Turn routing on only after checking the shipped `default` profile's backends and models suit your nodes.
+
 ## Plugin services: lifecycle semantics
 
 The [plugins guide](plugins.md) is the concept reference for service-kind plugins; this section is the operations contract for them — who owns the process, what the daemon does and never does.

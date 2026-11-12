@@ -1,0 +1,113 @@
+---
+docs:
+  index: true
+  topics: [automata, autonomous, task, routing, llm, model, profile]
+exec_steps:
+  - tool: get_config
+    description: Read the autonomous settings, including the autonomous.task_routing block (enabled, active profile and the profile tables)
+    args: {section: "autonomous"}
+    read_only: true
+---
+
+# Automata task routing: the right LLM for each task
+
+When an Automaton is decomposed, every task it gets needs a worker LLM (and
+optionally a verification LLM). By default a task uses the Automaton's LLM, or
+the global default. **Task routing** adds a table that maps each *task type*
+(a documentation task, a locale-string task, a daemon code task and so on) to
+a backend and model, so a mechanical task can go to a cheap local model and a
+code task to a stronger one.
+
+Task routing is **off by default**. Nothing changes for you until you turn it
+on. The backends and models in the shipped table are the operator's starting
+choice, not a rule; other users may change them freely.
+
+## How a task gets its LLM
+
+1. The task is **classified** into one task type. The order is fixed:
+   the task's own kind (a smoke or final-gate task is `final_gate`, and a task
+   made from a template keeps that template's type), then ordered keyword rules
+   over the title and the spec, then the default type `daemon_backend_code`.
+2. A task that lists a non-test Go file under `internal/` is never classified
+   as a mechanical type. The tie goes to the code type.
+3. The **active profile** row for that type is written into the task's own
+   backend, model, effort and verification fields.
+
+The task types are `docs_set`, `changelog_entry`, `parity_issue_draft`,
+`bounded_load_step`, `version_note`, `locale_strings`, `tests`,
+`formatting_cleanup`, `ui_code`, `daemon_backend_code`, `mcp_api_surface`,
+`merge_conflict_repair`, `final_gate` and `review_repair`.
+
+## What always wins over the table
+
+The most specific choice wins: a task LLM set by an operator, then a story LLM,
+then an Automaton LLM, then the routing table, then the global default. The
+table applies only where none of the others is set. It also never touches:
+
+- a task that was edited by hand (edit, set task LLM, set task verification
+  LLM by anyone other than the router);
+- a task that has started, finished or has a live session. Applying never
+  kills, restarts or signals a session.
+
+A planner re-run re-applies the table only to tasks the router itself routed
+and nobody edited. Switching the active profile changes only tasks created
+afterwards.
+
+## Rows, profiles and the shipped table
+
+A **row** holds a worker backend and model, an optional verification backend and
+model (empty means the global verifier policy), an effort, an optional second
+choice used when the first choice is refused, and `allow_premium_model`. A
+**profile** is a named table of rows; one profile is active.
+
+The shipped `default` profile sends the mechanical types (`docs_set`,
+`changelog_entry`, `parity_issue_draft`, `locale_strings`, `formatting_cleanup`,
+`tests`, `version_note`, `bounded_load_step`) to `pi-prompt` with
+`ollama/qwen3.8:27b`, and the code types (`ui_code`, `daemon_backend_code`,
+`mcp_api_surface`, `merge_conflict_repair`, `review_repair`) to `claude-code`
+with `sonnet`. `final_gate` has an empty row, so it uses the default. No shipped
+row names an Opus or Fable model and every verification field is empty. A config
+with no `task_routing` block gets this table with routing off.
+
+## Validation
+
+A block is checked before it is used and a bad one is rejected with nothing
+applied. The checks are: the active profile exists; every row's task type is
+known; every backend is known to the LLM registry; every model pairs with its
+backend (the same rule the task and story LLM setters use); a model with no
+backend is refused; and a row naming an Opus or Fable model is refused unless
+that row sets `allow_premium_model: true`. On a REST config write, a name that
+fails is skipped and reported, and the rest of the change still applies.
+
+## Seeing what was decided
+
+Each task records a routing result: its type, the profile and row used, how it
+was classified (`template_kind`, `title_spec` or `default`), what was chosen,
+whether the second choice was used, or the reason nothing was applied (for
+example "task LLM set by operator", "story LLM set", "Automaton LLM set",
+"routing disabled", "hand edited", "task already started"). The same outcome is
+written to the Automaton's decision log as a `task_routing` entry by the
+`task-router` actor.
+
+## Access from every surface
+
+| Surface | How |
+|---------|-----|
+| YAML | Edit the `autonomous.task_routing` block in `datawatch.yaml` (see `docs/config-reference.yaml`), then reload. |
+| REST API | `GET /api/config` shows `autonomous.task_routing`. `PUT /api/config` accepts `autonomous.task_routing.enabled`, `autonomous.task_routing.active_profile` and the whole `autonomous.task_routing` block. |
+| MCP | `get_config` (section `autonomous`) reads the block; `config_set` writes the keys above. |
+| CLI, comm channel, web UI | No dedicated task-routing command or card yet. Use the config commands. |
+
+Profile save, switch, delete, export and import, and the per-Automaton dry run
+(what a profile would assign to each task, with nothing changed) exist in the
+daemon but have no endpoint, command or tool yet. See the review notes in
+[operations.md](../operations.md#task-type-routing-table).
+
+## Check it worked
+
+1. `get_config` with section `autonomous` shows `task_routing` with
+   `enabled: true` and your active profile.
+2. Decompose a test Automaton, then open a task. Its routing result names the
+   type, the profile and the backend and model chosen.
+3. Set an LLM on one task by hand, decompose again, and confirm that task keeps
+   your choice.
