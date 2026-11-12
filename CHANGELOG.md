@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.154.0 — Automation members for work with no Automation
+
+### Added
+
+- **An Automation can now hold a place for work that has no Automaton yet.** Record a pending item (a named piece of work, with an optional outside label) and insert it as a member of an Automation. When the Automation reaches it, the Automation waits there and says which item it is waiting for, instead of failing; everything after it stays behind it. Attach an Automaton to the item and the member becomes an ordinary Automaton member in its place, the Automation carries on by itself (switchable), and the item is marked done when that Automaton completes. Attach from the PWA (the new **Pending items** card on the Automation Overview and the **Waiting for an Automaton** badge on a member), `POST /api/autonomous/pending-items/{id}/attach`, the MCP tool `autonomous_pending_item_attach`, `datawatch autonomous pending-item-attach` or the chat verb `autonomous pending-item-attach`; the same four surfaces also list, add and refresh items. The daemon can also copy pending items from a table in a file you keep, which it only reads and never writes: set the file path, how to recognise an item id, which columns hold the id, title and state, which words mean done, and what to do when a row disappears. Nothing in that reader assumes a numbering scheme or a file name. Nine new settings under `autonomous.automation` control it all (`pending_item_policy` of `hold` or `skip`, `pending_item_auto_resume`, and seven `pending_item_source.*` keys), each reachable from the config file, `PUT /api/config`, MCP, the CLI, the chat channel and the PWA settings.
+
 ## v9.153.0 — Compact Sessions page controls on a phone
 
 ### Changed
