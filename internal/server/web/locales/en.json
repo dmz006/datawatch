@@ -5345,6 +5345,6 @@
   "automation_focus_button": "Focus",
   "projects_gantt_focus_title": "Focus: %1$s",
   "projects_gantt_focus_back": "Back",
-  "projects_gantt_focus_empty": "This Automation has no Automata or tasks yet. It is planned.",
+  "automation_gantt_focus_empty": "This Automation has no Automata or tasks yet. It is planned.",
   "projects_gantt_focus_range_text": "First task %1$s – last task %2$s"
 }

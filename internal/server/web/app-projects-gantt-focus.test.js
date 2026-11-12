@@ -234,10 +234,10 @@ test('focus code never kills or signals a session and calls no write route', () 
 });
 
 test('the locale keys exist in all five locales', () => {
-  const keys = ['automation_focus_button', 'projects_gantt_focus_title', 'projects_gantt_focus_back', 'projects_gantt_focus_empty', 'projects_gantt_focus_range_text'];
+  const keys = ['automation_focus_button', 'projects_gantt_focus_title', 'projects_gantt_focus_back', 'automation_gantt_focus_empty', 'projects_gantt_focus_range_text'];
   for (const code of ['en', 'de', 'es', 'fr', 'ja']) {
     const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', code + '.json'), 'utf8'));
     for (const k of keys) assert.ok(typeof b[k] === 'string' && b[k], code + ' ' + k);
-    assert.doesNotMatch(b.projects_gantt_focus_title + b.projects_gantt_focus_empty, /\bPRD\b/);
+    assert.doesNotMatch(b.projects_gantt_focus_title + b.automation_gantt_focus_empty, /\bPRD\b/);
   }
 });

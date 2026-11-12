@@ -3935,7 +3935,7 @@ function _projectsGanttRangeRows(g) {
 // The two surfaces that draw the Gantt: the project page and the focus page. The
 // draw code reads its handler names, element ids and row cap from one of these.
 const _PROJECTS_GANTT_UI = { preset: 'projectsGanttPreset', toggle: 'projectsGanttToggle', more: 'projectsGanttMore', wheel: 'projectsGanttWheel', down: 'projectsGanttDown', axisId: 'projectGanttAxis', chartId: 'projectGanttChart', rangeId: 'projectGanttRange', rangeTextKey: 'projects_gantt_range_text', emptyKey: 'projects_gantt_empty', cap: _PROJECTS_GANTT_MAX_ROWS, focusButtons: true };
-const _PROJECTS_FOCUS_UI = { preset: 'projectsFocusPreset', toggle: 'projectsFocusToggle', more: 'projectsFocusToggle', wheel: 'projectsFocusWheel', down: 'projectsFocusDown', axisId: 'projectFocusAxis', chartId: 'projectFocusChart', rangeId: 'projectFocusRange', rangeTextKey: 'projects_gantt_focus_range_text', emptyKey: 'projects_gantt_focus_empty', cap: Infinity, focusButtons: false };
+const _PROJECTS_FOCUS_UI = { preset: 'projectsFocusPreset', toggle: 'projectsFocusToggle', more: 'projectsFocusToggle', wheel: 'projectsFocusWheel', down: 'projectsFocusDown', axisId: 'projectFocusAxis', chartId: 'projectFocusChart', rangeId: 'projectFocusRange', rangeTextKey: 'projects_gantt_focus_range_text', emptyKey: 'automation_gantt_focus_empty', cap: Infinity, focusButtons: false };
 
 // _projectGanttPalette reads the theme colours the Gantt draws with, falling
 // back to the dashboard defaults where the page has no computed style.
@@ -39941,7 +39941,7 @@ registerAutomationCardSlot('events', {
 // one line each, with a "?" that opens docs/howto/cost-report.md.
 //
 // Helper extended: the Projects Gantt helpers. _costChartsLinesSVG and
-// _costChartsBarsSVG extend _projectGanttSVG (same 640-wide viewBox, the same
+// _costChartsBarsSVG extend _projectGanttPalette (same 640-wide viewBox, the same
 // five dated ticks along the top, the palette from _projectGanttPalette) with
 // a value axis, and take their polyline scaling from _sparkline. No chart
 // library is added.
@@ -40058,7 +40058,7 @@ function costChartsLines(body, pick, keep) {
 }
 
 // _costChartsLinesSVG draws lines on a shared time axis, extending
-// _projectGanttSVG: a unit caption row, then the five dated ticks, then the
+// _projectGanttPalette: a unit caption row, then the five dated ticks, then the
 // plot with the largest value and zero on the left.
 function _costChartsLinesSVG(spec) {
   const W = 640, PAD_L = 52, PAD_R = 8, CAP_Y = 10, TICK_Y = 23, TOP = 30, PLOT_H = 110, H = TOP + PLOT_H + 4;

@@ -1056,11 +1056,11 @@
   "projects_gantt_preset_7d": "7 días",
   "projects_gantt_range_text": "%1$s a %2$s",
   "projects_gantt_planned": "Planificado",
-  "projects_gantt_no_arc": "Automatas sin arco",
+  "projects_gantt_no_arc": "Autómatas sin arco",
   "projects_gantt_expand": "Expandir %1$s",
   "projects_gantt_collapse": "Contraer %1$s",
   "projects_gantt_load_more": "Cargar más",
-  "projects_gantt_empty": "Aún no hay arcos ni Automatas con actividad.",
+  "projects_gantt_empty": "Aún no hay arcos ni autómatas con actividad.",
   "projects_gantt_bounded": "Mostrando %1$s de %2$s filas.",
   "projects_gantt_running": "ahora",
   "projects_history_loading": "Cargando historial…",
@@ -5345,6 +5345,6 @@
   "automation_focus_button": "Enfocar",
   "projects_gantt_focus_title": "Enfoque: %1$s",
   "projects_gantt_focus_back": "Volver",
-  "projects_gantt_focus_empty": "Esta automatización aún no tiene autómatas ni tareas. Está planificada.",
+  "automation_gantt_focus_empty": "Esta automatización aún no tiene autómatas ni tareas. Está planificada.",
   "projects_gantt_focus_range_text": "Primera tarea %1$s – última tarea %2$s"
 }
