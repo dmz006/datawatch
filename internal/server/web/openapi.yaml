@@ -10099,6 +10099,15 @@ components:
                   host: {type: string}
                   model: {type: string}
             error: {type: string, description: "Why the last poll could not read the pool; empty when it could"}
+            degraded:
+              type: array
+              description: Pool hosts that could not be read but hold no work and have been unreachable past autonomous.lane_fill.host_down_after_minutes; they do not block the lanes. Empty when nothing is degraded.
+              items:
+                type: object
+                properties:
+                  host: {type: string}
+                  error: {type: string}
+                  since: {type: string, format: date-time, description: When the host first failed}
         decisions:
           type: array
           description: Planner decisions, newest first

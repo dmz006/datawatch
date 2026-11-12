@@ -20404,6 +20404,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
     { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
     { key: 'autonomous.lane_fill.count_verifier_wait', label: 'Lane fill count verifier wait (on by default)', labelKey: 'settings_lane_fill_count_verifier_wait', type: 'toggle' },
+    { key: 'autonomous.lane_fill.host_down_after_minutes', label: 'Lane fill treats a node as down after (minutes unreachable with no work on it, 0 = never, default 10)', labelKey: 'settings_lane_fill_host_down_after_minutes', type: 'number', placeholder: '10', min: 0, step: 1, default: '10' },
     { key: 'autonomous.lane_fill.stale_after_hours', label: 'Lane fill stale after (hours an Automaton may sit queued before it is refused as stale, 0 = never, default 72)', labelKey: 'settings_lane_fill_stale_after_hours', type: 'number', placeholder: '72', min: 0, step: 1, default: '72' },
     { key: 'autonomous.lane_fill.require_confirmed_proposal', label: 'Lane fill require confirmed proposal (an implementation Automaton needs a confirmed proposal, on by default)', labelKey: 'settings_lane_fill_require_confirmed_proposal', type: 'toggle', default: true },
     { key: 'autonomous.lane_fill.check_main_carries', label: 'Lane fill check main carries the work (refuse an Automaton whose work the main branch already has, on by default)', labelKey: 'settings_lane_fill_check_main_carries', type: 'toggle', default: true },
@@ -32073,6 +32074,21 @@ function _resourceHelpHtml(textKey, href) {
     `<a class="usage-help-docs" href="${escHtml(href)}" target="_blank" rel="noopener">${escHtml(t('usage_page_help_docs'))}</a></span></span>`;
 }
 const LANE_FILL_DOCS_HREF = '/diagrams.html#docs/howto/automata-resources.md';
+// _laneFillDegradedHtml is the block of pool hosts that could not be read but
+// do not block the lanes. It is empty when there are none, and kept apart from
+// the lane blockers.
+function _laneFillDegradedHtml(list) {
+  const hosts = Array.isArray(list) ? list.filter(h => h && typeof h === 'object') : [];
+  if (!hosts.length) return '';
+  const now = Date.now();
+  const rows = hosts.map(h => {
+    const since = Date.parse(h.since);
+    const mins = isFinite(since) ? Math.max(0, Math.floor((now - since) / 60000)) : 0;
+    return `<div class="lane-fill-degraded-host">${escHtml(t('lane_fill_degraded_host', [String(h.host || ''), String(h.error || ''), String(mins)]))}</div>`;
+  }).join('');
+  return `<div class="lane-fill-degraded" role="status"><div class="lane-fill-degraded-title">${escHtml(t('lane_fill_degraded_title'))}</div>` +
+    `<div class="lane-fill-degraded-help">${escHtml(t('lane_fill_degraded_help'))}</div>${rows}</div>`;
+}
 window.laneFillCardHtml = function(status, cap) {
   // A card that is off, empty or never read is not drawn.
   if (!status || typeof status !== 'object') return '';
@@ -32088,13 +32104,14 @@ window.laneFillCardHtml = function(status, cap) {
     ? t('lane_fill_evidence_error', [ev.error])
     : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
   const evidence = `<div class="lane-fill-evidence">${escHtml(evidenceLine)}</div>`;
+  const degraded = _laneFillDegradedHtml(ev.degraded);
   // The recent decisions log is not part of this card: its data is on the
   // Events tab. The idle lane alerts stay, in their own block below the lanes.
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
   const alertsHtml = alerts.length
     ? `<div class="lane-fill-gap" aria-hidden="true"></div>` + _laneFillSection(t('lane_fill_alerts_heading'), alerts.map(_laneFillAlertHtml).join('')) : '';
   return `<div class="prd-capacity-card lane-fill-card lane-card">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
-    `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + alertsHtml + `</div>`;
+    `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + degraded + alertsHtml + `</div>`;
 };
 
 // ── Headline cards (progress, cost, forecast) ───────────────────────────────
