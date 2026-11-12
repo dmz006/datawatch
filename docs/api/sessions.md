@@ -30,9 +30,10 @@ ends with a `DATAWATCH_COMPLETE:` line) or `killed` (anything else).
 Only such a record carries `ended_at` (RFC 3339 time it was finalised)
 and `end_note` (`process gone, finalised`) in the session JSON; both
 are omitted on every other session. The finaliser applies the rule to
-both the records the daemon holds and the saved `session.json` files, but
-the daemon does not run it yet, so neither field is returned today and no
-endpoint reports the last run. See
+both the records the daemon holds and the saved `session.json` files. The
+daemon starts it at boot and runs it every `session.finalise_interval_minutes`
+(default 10; 0 = no scheduled runs; set it through `PUT /api/config`, and
+`GET /api/config` returns it). No endpoint reports the last run yet. See
 [Gone session records](../howto/sessions-deep-dive.md#gone-session-records).
 
 ## Surface
@@ -326,6 +327,7 @@ session:
   auto_git_commit: false
   kill_sessions_on_exit: false
   stale_timeout_seconds: 1800
+  finalise_interval_minutes: 10 # minutes between runs that finalise gone session records; 0 = scheduled runs off
   task_delivery_window_seconds: 60 # max wait per attempt for the Claude prompt before redelivery
   task_delivery_attempts: 3    # redelivery attempts before the task fails
   schedule_settle_ms: 1500
