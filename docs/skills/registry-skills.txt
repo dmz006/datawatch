@@ -1,0 +1,8 @@
+# Published community skill names, one per line.
+# Refresh: list the skills of the connected registry (MCP tool skills_registry_available,
+# or the Skills page) and replace the names below, keeping one name per line.
+image-reviewer
+imap-mcp
+polity-topology
+sandbox-permissions
+sibling-runner

@@ -6872,6 +6872,7 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 The read is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the watch is wired. It returns `enabled`, `poll_seconds`, `no_progress_minutes` and `observations`; each observation carries `session_id`, `automaton_id`, `task_id`, `role`, `node`, `model`, `state`, `last_change`, `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (left out when empty) and `summary`. With the watch off the list is empty.
 
 **Limits.** A large model can take many minutes to give a first response, and until then it reads as `idle`; raise `no_progress_minutes` for slow hardware and attach an observer to the node so GPU activity can show the work. The time without progress starts at the first poll that sees the session.
+
 ## Automaton protected paths (a task may not change the rules without a decision)
 
 A worker can edit any file inside the project, including the file that holds the project's rules, the supervisor rules, the code owners file and the workflow files, and the review that should catch it used to read the rules from the same tree the worker changed. Protected paths close that gap with two parts: a **gate** that, after a worker attempt, compares the task's directory with the base commit and acts when a protected path changed that the Automaton is not authorised for, and a **base-commit rules read** that gives the rules review the rules as they were before the work started. Neither is tied to one repository: the gate runs read-only git in the task's own directory and works for any project. The operator guide is [howto/automaton-protected-paths.md](howto/automaton-protected-paths.md).
@@ -7803,3 +7804,6 @@ web usage cards do not read it yet. See
 [howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
 [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and
 [howto/usage-calculator.md](howto/usage-calculator.md#unit-labels-on-the-usage-page).
+## Skills coverage check
+
+Run `bash scripts/skills-coverage-check.sh` before a release and after any change that adds or removes an MCP tool, how-to, route, command or setting. It prints `ok: skills coverage` or one `FAIL:` line per drift and exits non-zero. Fix a drift by updating `docs/skills/inventory.yaml` and `docs/skills/coverage-matrix.yaml`. `docs/skills/registry-skills.txt` is refreshed by hand from the connected registry's skill list. Its failure-mode tests run with `bash tests/ci/test-skills-coverage-check.sh`. Operator guide: [howto/skills-sync.md](howto/skills-sync.md).

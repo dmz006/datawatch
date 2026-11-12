@@ -129,6 +129,38 @@ $EDITOR ~/.datawatch/profiles/projects/datawatch-dev.yaml
 6. Or attach skills to a Project Profile via Settings → Agents →
    Project Profiles → edit a profile → Skills field.
 
+## Check that the skills still cover every feature
+
+`docs/skills/inventory.yaml` lists every MCP tool, how-to, REST route, command and
+setting, and `docs/skills/coverage-matrix.yaml` maps each entry to the skills that
+cover it. A check script fails when either file drifts from the code:
+
+```sh
+bash scripts/skills-coverage-check.sh     # prints "ok: skills coverage" or one FAIL line per drift
+bash tests/ci/test-skills-coverage-check.sh   # the check's own failure-mode tests
+```
+
+It fails when a new tool or how-to is missing from the inventory, an inventory entry
+has no matrix row, a row names an unknown entry, or a row names a skill that is in
+neither `docs/skills/staging/` nor `docs/skills/registry-skills.txt`.
+
+Staged skills (drafts waiting to be published to the community registry) are authored in
+`internal/skills/testdata/staging/`, one folder per skill with `SKILL.md`, `USAGE.md` and
+`tests/cases.yaml`. That folder is not embedded in the binary and not pinned to a registry
+revision. `go test ./internal/skills/` (`staging_skills_test.go`) checks each folder's format
+and scans every file for content that must not leave the project. Currently staged:
+`session-lifecycle` and `durable-session-notes`.
+
+> **Operator review:** the coverage check script still looks for staged skills in
+> `docs/skills/staging/`, which does not exist, so a matrix row that names a staged skill
+> only passes once that skill is listed in `registry-skills.txt`. Decide whether to point
+> the script at `internal/skills/testdata/staging/` or move the staging folder.
+
+`registry-skills.txt` is the list of published community skill names, one per line.
+When the connected registry gains or drops a skill, list it (MCP `skills_registry_available`
+or the Skills page) and replace the names in that file; the check then accepts matrix
+rows that name it.
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)
