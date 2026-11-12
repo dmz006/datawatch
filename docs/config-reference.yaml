@@ -4785,11 +4785,11 @@ cost_report:
 packs:
   # Turn the pack feature on. Default false.
   # Turning it on should need at least one enabled skills registry source (the
-  # community registry by default). That check is in the packs package and is
-  # (packs.CheckEnable) and is not yet run when this key is set, so the daemon
-  # does not enforce it yet. With this key false, only "builtin" applies.
-  # Install, trust and auto-accept are not exposed on any surface yet; see
-  # docs/howto/automata-standard-tasks.md#installable-packs-backend-only-not-yet-wired.
+  # community registry by default). Turning it on through a surface is refused
+  # (HTTP 409) by that check (packs.CheckEnable); a hand edit of this file
+  # skips it. With this key false, only "builtin" applies.
+  # Install, accept, remove, the inputs and the settings are on REST, MCP,
+  # CLI, the comm channel and the web Settings card; see docs/howto/packs.md.
   enabled: false
   # The packs in use, in order. Each name is "builtin" (the standard tasks and
   # Automaton templates compiled into the binary, always valid; the repository's
