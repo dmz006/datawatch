@@ -202,9 +202,11 @@ its own mode).
 - **Load failure.** If the read fails, a "Load failed" line shows where the table
   would be (with the error) and clears any stale list; a failed reload never leaves
   an old list behind.
-- **Phone width.** The sub-tab bar wraps inside its own container, each row stacks
-  into its labelled cells (title, kind, summary, when, on/off, mode) and the body
-  keeps a side gutter, so nothing scrolls sideways.
+- **Phone width.** The sub-tab bar stays on one row and scrolls sideways inside its
+  own container, with a soft fade on the side that still hides tabs (see
+  [Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width)).
+  Each table row stacks into its labelled cells (title, kind, summary, when, on/off,
+  mode) and the body keeps a side gutter, so the page itself never scrolls sideways.
 - **Choice persisted.** The sub-tab you leave it on (Automaton templates or
   Standard tasks) is the one it opens on next time; a fresh install with no stored
   choice opens **Automaton templates**.
