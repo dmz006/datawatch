@@ -130,3 +130,125 @@ test('_alertsCounts: empty alert list per session still counts the session', () 
   assert.equal(c.all, 0);
   assert.equal(c.sessions, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Render-level consistency (e73d0006): the full _alertsBuildHtml output.
+// The pure helpers above prove the counting math; these pin the painted
+// markup: on every tab the heading number == the "all" chip number, and
+// the per-category chips sum to it; tab buttons carry the SESSION counts
+// (active tabs: sessions holding alerts; historical: ended sessions;
+// system: the system alert count).
+// Fixture: 8 alerts across exactly 6 ACTIVE sessions (one with several,
+// one with each of the rest), 1 alert on a failed (historical) session,
+// 1 system alert.
+// ---------------------------------------------------------------------------
+
+const EN = require('./locales/en.json');
+
+const RSESSIONS = [
+  { id: 'r-0', name: 'alpha', state: 'running' },
+  { id: 'r-1', name: 'bravo', state: 'running' },
+  { id: 'r-2', name: 'charlie', state: 'running' },
+  { id: 'r-3', name: 'delta', state: 'running' },
+  { id: 'r-4', name: 'echo', state: 'running' },
+  { id: 'r-5', name: 'foxtrot', state: 'running' },
+  { id: 'r-9', name: 'zulu', state: 'failed' },   // historical
+];
+const RALERTS = [
+  // r-0: three alerts (error + warn + info)
+  { id: 'a1', level: 'error', title: 'build failed', session_id: 'r-0', created_at: '2026-01-01T00:00:08Z' },
+  { id: 'a2', level: 'warn', title: 'slow step', session_id: 'r-0', created_at: '2026-01-01T00:00:07Z' },
+  { id: 'a3', level: 'info', title: 'checkpoint ok', session_id: 'r-0', created_at: '2026-01-01T00:00:06Z' },
+  // r-1..r-5: one each → 6 active sessions, 8 alerts total
+  { id: 'a4', level: 'error', title: 'crash', session_id: 'r-1', created_at: '2026-01-01T00:00:05Z' },
+  { id: 'a5', level: 'warn', title: 'retry storm', session_id: 'r-2', created_at: '2026-01-01T00:00:04Z' },
+  { id: 'a6', level: 'error', title: 'timeout', session_id: 'r-3', created_at: '2026-01-01T00:00:03Z' },
+  { id: 'a7', level: 'warn', title: 'memory high', session_id: 'r-4', created_at: '2026-01-01T00:00:02Z' },
+  { id: 'a8', level: 'info', title: 'all green', session_id: 'r-5', created_at: '2026-01-01T00:00:01Z' },
+  // historical: failed session
+  { id: 'a9', level: 'error', title: 'late failure', session_id: 'r-9', created_at: '2025-12-31T23:59:00Z' },
+  // system
+  { id: 'a10', level: 'warn', title: 'pipeline degraded', source: 'system', created_at: '2026-01-01T00:00:00Z' },
+];
+
+function renderTab(tab) {
+  const s = loadAppJS();
+  s._i18n.bundle = EN;
+  s.__data = RALERTS;
+  s.__ses = RSESSIONS;
+  vm.runInContext(`state.sessions = __ses; window._alertsTabSel = ${JSON.stringify(tab)};`, s);
+  return vm.runInContext(`_alertsBuildHtml({ data: __data, cmds: [], hasMore: false, total: 10 })`, s);
+}
+
+// The five chip buttons in the top bar, left to right: all/prompt/error/
+// warn/info. The topBar sits between the heading (🔔 …) and the search box.
+function topBarChips(html) {
+  const i = html.indexOf('🔔');
+  const j = html.indexOf('alertsSearchInput');
+  assert.ok(i >= 0 && j > i, 'topBar with heading + search box present');
+  const region = html.slice(i, j);
+  const chips = [...region.matchAll(/ ×(\d+)</g)].map((m) => Number(m[1]));
+  assert.equal(chips.length, 5, 'five category chips: all + four categories');
+  return chips;   // [all, prompt, error, warn, info]
+}
+
+function headingNumber(html) {
+  // Heading is `🔔 ${t(headingKey, headingVars)}`. The three forms are
+  // "N alerts in M active sessions" / "N alerts in M historical sessions" /
+  // "N system alert(s)" — so the only token common to all is the count right
+  // after the bell. (The system form has the word "system" between the number
+  // and "alert", a plain \`🔔 N alert\` pattern can't match it.)
+  const m = /🔔\s+(\d+)/.exec(html);
+  assert.ok(m, 'the 🔔 heading with its alert total is painted');
+  return Number(m[1]);
+}
+
+function tabCount(html, label) {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp('<span class="alert-session-label">' + esc + '</span>\\s*\\((\\d+)\\)').exec(html);
+  assert.ok(m, 'tab button "' + label + ' (N)" is painted');
+  return Number(m[1]);
+}
+
+test('active tab: heading == "all" chip == sum of categories; tab counts the 6 active sessions', () => {
+  const html = renderTab('active');
+  const heading = headingNumber(html);
+  const [all] = topBarChips(html);
+  const chips = topBarChips(html);
+  assert.equal(heading, 8, 'heading says 8 alerts — the 8 active-tab alerts');
+  assert.equal(all, heading, 'the "all" chip matches the heading');
+  assert.deepEqual(chips, [8, 0, 3, 3, 2], 'chips: all=8, prompt=0, error=3, warn=3, info=2');
+  assert.equal(chips.slice(1).reduce((a, b) => a + b, 0), all,
+    'prompt+error+warn+info sum to the "all" chip (== heading)');
+  assert.equal(tabCount(html, EN.alerts_tab_active_sessions), 6, 'tab label counts the 6 active sessions');
+});
+
+test('historical tab: 1 alert in 1 session; heading == all chip == chip sum', () => {
+  const html = renderTab('historical');
+  const heading = headingNumber(html);
+  const chips = topBarChips(html);
+  assert.equal(heading, 1);
+  assert.equal(chips[0], 1, 'all chip');
+  assert.equal(chips.slice(1).reduce((a, b) => a + b, 0), heading, 'categories sum to the heading');
+  assert.equal(chips[1], 0, 'no prompts');
+  assert.equal(chips[2], 1, 'the "late failure" alert is an error');
+  assert.equal(tabCount(html, EN.alerts_tab_historical_sessions), 1, 'tab label counts the 1 historical session');
+});
+
+test('system tab: 1 system alert; heading == all chip == chip sum', () => {
+  const html = renderTab('system');
+  const heading = headingNumber(html);
+  const chips = topBarChips(html);
+  assert.equal(heading, 1);
+  assert.equal(chips[0], 1);
+  assert.equal(chips.slice(1).reduce((a, b) => a + b, 0), heading);
+  assert.equal(chips[3], 1, 'the "pipeline degraded" alert is a warn');
+  assert.equal(tabCount(html, EN.alerts_tab_system_alerts), 1, 'tab label counts the 1 system alert');
+});
+
+test('active tab heading reads the localized one/many form with both numbers', () => {
+  const html = renderTab('active');
+  assert.ok(html.includes(EN.alerts_heading_active_many.replace('%1$d', '8').replace('%2$d', '6')),
+    'heading = "8 alerts in 6 active sessions" (localized many-form with alert + session counts)');
+});
+
