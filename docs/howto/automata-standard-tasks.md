@@ -229,8 +229,33 @@ The `packs` config block has two keys: `packs.enabled`, off by default, and
 `packs.active`, the ordered list of packs in use, which defaults to `["builtin"]`.
 An entry is `builtin` or the name of an installed pack. The packs library has a check
 that packs may be enabled only when at least one skills registry source is connected
-and enabled; the community registry is that source by default. The check is not yet
-run when you set `packs.enabled: true`.
+and enabled; the community registry is that source by default. The check is
+`packs.CheckEnable` (`internal/packs/enable_gate.go`): it looks only at the list of
+registry sources it is given and refuses with "packs need at least one connected skills
+registry source; connect one in the skills registry settings" when none is enabled. The
+daemon does not call it yet, so setting `packs.enabled: true` is not refused today.
+
+### Which packs apply to an Automaton
+
+`packs.ActivePacks` (`internal/packs/order.go`) returns the ordered pack list for one
+Automaton:
+
+- **Packs off.** When `packs.enabled` is `false` the answer is always `["builtin"]`,
+  whatever any list says.
+- **First defined list wins.** When packs are on, the Automaton's own list is used if it
+  has entries; otherwise the project's list; otherwise the global `packs.active`. The
+  lists are **not merged**.
+- **Nothing defined.** When all three are empty the answer is the global default,
+  `["builtin"]`.
+
+An Automaton's own list is the `packs` field on the Automaton (JSON `packs`, omitted
+when empty). It is assigned with `Automation.SetPacks`, which trims each name, drops
+empty names and later repeats, and keeps the order given (it is a priority order and is
+never sorted). **Not wired yet:** no REST, MCP, CLI, comm or PWA call sets the field, and
+the resolver is not yet given the result of `ActivePacks`. A per-project pack list was
+planned and is **not** in the config today: the project entry has no `packs` key, so
+`ActivePacks` has no project list to read until one is added. Operator review needed:
+confirm that the project list belongs on the project entry in config.
 
 ### What a pack needs to pass
 
@@ -334,8 +359,12 @@ yet:
   runs as a model session. The glossary's **Standard task** entries describe per-template
   modes (`llm`, `daemon`, `off`) with notes and changelog defaulting to `daemon`. Confirm
   which describes the running daemon before relying on either.
-- **Packs are not wired.** The install, trust, auto-accept and enable-check rules are in
-  the `internal/packs` package only. Nothing calls them from the daemon, so the
+- **Per-project pack list is missing.** `packs.ActivePacks` takes a project list, but the
+  project config entry has no `packs` key (it was removed from the change as out of
+  scope). Only the Automaton's own list and the global `packs.active` can exist today.
+  Operator review needed: decide whether to add the project key and where it is edited.
+- **Packs are not wired.** The install, trust, auto-accept, enable-check and
+  list-order rules are in the `internal/packs` package only. Nothing calls them from the daemon, so the
   `packs.enabled` switch is not enforced, `packs.active` is not validated, and no surface
   installs or accepts a pack. See the [Installable packs](#installable-packs-backend-only-not-yet-wired)
   section and [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
