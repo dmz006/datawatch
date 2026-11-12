@@ -130,11 +130,47 @@ often than search:
 - **Status chips** — the full set of state chips (running, waiting_input,
   rate_limited, complete, failed, killed). The same section
   also holds the **watched only** toggle, the **Backend** chips and, when
-  you use tags, the **Tags** filter.
+  you use tags, the **Tags** filter (described next).
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
 separate save.
+
+#### The Tags filter
+
+A busy daemon carries hundreds of tags — one per Automaton, stage and task —
+so the Tags section does not draw one chip per tag. It is built like this:
+
+- **Search tags** — a box at the top narrows the chips as you type (case
+  insensitive; it matches the tag's value, its axis, your tag's name and the
+  full tag name). Typing keeps the cursor in the box. While you search every
+  matching group is open and shows all of its matches.
+- **Groups** — chips sit under collapsible headers in a fixed order: **Kind**,
+  **Role**, **Lane**, **Compute node**, **Project**, **Your tags**, **Other**.
+  Each header shows how many tags it holds; tap it to fold or unfold the
+  group. Each group shows its first six chips (the busiest first) and a
+  **Show all (N)** control; **Show fewer** folds it back. A selected chip is
+  always shown, even beyond the first six.
+- **Counts** — the number on a chip is how many sessions in the list you are
+  looking at carry that tag (own, inherited and placement tags together), not
+  the daemon-wide inventory count. A tag no listed session carries is left
+  out unless you have it selected, so you can always deselect it.
+- **No chips for Automatons, stages and tasks** — the per-Automaton,
+  per-stage and per-task system tags (`automaton:`, `stage:`, `task:`,
+  `story:`) never get a chip. Reach one Automaton through the **Automaton**
+  picker under the chips instead: type in **Find an Automaton** to narrow by
+  title or id, then tap a row. Rows show the title first and the id small
+  beside it; selected rows come first, and about eight rows show until you
+  narrow the search. For stages and tasks use [Grouping](#grouping).
+- **Any / all and Clear** — the match mode and the clear action sit below the
+  picker and work as before.
+
+With the sheet closed, the selected tags show as a compact row of small
+chips above the session list, each with a **✕** to remove just that tag (an
+Automaton shows its title, not its id) and a **Clear all** control. The row
+is absent when no tag is selected, and a stored selection or an active tag
+filter is not changed by any of this: it is how the Tags section is drawn,
+with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ## View modes
 
@@ -352,7 +388,8 @@ same groups, the same counts and state mixes, wherever you read them:
 
 The Sessions page controls above: the one toolbar row (search, Filters with
 its badge, server chips, mode toggle), the Filters sheet (Group by with the
-tag-prefix entries, Views, status chips), Show
+tag-prefix entries, Views, status chips, and the grouped, searchable Tags
+filter with the Automaton picker and the selected-filter row), Show
 more paging, collapsible group headers with the fold-all control and the
 **+N** tag chip on phones. All of it is localised in the five locales — the
 labels you see are the translated ones in your PWA language.
