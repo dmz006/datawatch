@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.162.3 — Tidy the Alerts page on a phone
+
+### Fixed
+
+- **Alert cards no longer clip on a phone.** At 320 to 390 px wide, a long session name or a long alert line ran under the card edge. The card header now wraps, and long unbroken words and alert bodies break inside the card instead of being cut off.
+- **The Alerts counts agree.** The tab buttons, the "N alerts" heading, the category chips and the row badges now come from one categorisation and one counting helper. The tab buttons say what they count: sessions on the two session tabs, alerts on the System tab. The "alert" and "alerts" word in the heading uses the translated strings.
+
+### Changed
+
+- **The Alerts list now treats 2 minutes as “stale”, and its ↻ refresh button really refetches.** The stale marker on Alerts (the `Data may be out of date` row) now shows when the last refresh failed or the data is older than a fixed 2 minutes, instead of the list-wide default of 5 minutes — a short, fixed window that is independent of Alerts' own 30-second poll, so a normally-refreshing list never carries the marker. The other list cards (Sessions, Automata, Automations, …) keep the 5-minute rule. The ↻ button in the Alerts toolbar now triggers one immediate loader refetch of the visible server's Alerts — the card repaints in place (cached rows stay, the fetch runs behind them) — instead of only repainting what was on screen; if no loader for that server exists yet it falls back to the full render. There is no new endpoint and no new setting. There is also no new locale key: the button's `alerts_refresh_btn` label was already in the English, German, Spanish, French, and Japanese bundles.
+- **The Alerts tab "?" now lives in the shared header, like every other view.** The help glyph on the Alerts tab moved out of the list's meta row into the header help link next to the search icon: on the Alerts tab it points at the Alerts how-to with the tab's own help tooltip ("Open the Alerts howto — explains alert rules, quick replies, and notifications"), and on every other view the header link keeps its generic "Open documentation for this view" tooltip. There is no longer a second "?" inside the Alerts content.
+
+### Removed
+
+- **The ticking “Last updated N s ago” line on the list cards.** The PWA's list cards (Sessions, Alerts, the Automata and Automation tabs, and every other card that loads a list) no longer show a last-updated line that counts up every second, and the one-second refresh timer behind it is gone. The row above a list now appears only when it has something to say: the `Cached` badge, the small `Loading…` while a refresh runs, or the `Data may be out of date` marker. The stale marker now shows when the last refresh failed or the data is older than 5 minutes, and the Sessions progress card's stale banner lost its age text with it. The removed label (`last_updated_ago`) is out of the English, German, Spanish, French and Japanese bundles. The tabs' own polling intervals are unchanged.
+
 ## v9.162.2 — Usage back-off flags survive a daemon restart
 
 ### Fixed

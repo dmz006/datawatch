@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.162.2 (2026-11-12).** Usage back-off flags are saved and reloaded across a daemon restart, and boot-time resume starts no sessions for a paused backend. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.162.3 (2026-11-12).** The Alerts page is tidied for a phone: the help control sits in the page header, the ticking Last updated line is gone from the list cards, clipped alert cards are fixed and the counts agree. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
