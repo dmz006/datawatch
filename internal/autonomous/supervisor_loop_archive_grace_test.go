@@ -215,3 +215,34 @@ func TestSupervisorLoopArchiveGraceNoDecisionEarnsFullGrace(t *testing.T) {
 		t.Errorf("still cancelled 61 minutes after first sight, want archived")
 	}
 }
+
+// Cancelling through the API and running a loop pass at once must not archive
+// the record: the cancelled status and its cancel decision land in one locked
+// block, so the pass always measures grace from the real cancel time.
+func TestSupervisorLoopArchiveGraceAPICancelThenImmediatePass(t *testing.T) {
+	h, steps := slUnsetGraceRig(t)
+	api := NewAPI(h.m)
+	if err := api.Cancel(h.prds[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := h.m.Store().GetPRD(h.prds[0].ID)
+	has := false
+	for _, d := range p.Decisions {
+		if d.Kind == "cancel" {
+			has = true
+		}
+	}
+	if !has {
+		t.Fatal("API.Cancel left no cancel decision")
+	}
+	steps.now = time.Now
+	resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords)
+	if slStatus(t, h, 0) != PRDCancelled {
+		t.Fatalf("record archived right after cancel, want held for the default grace")
+	}
+	slSetClock(t, steps, time.Now().Add(61*time.Minute))
+	resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords)
+	if slStatus(t, h, 0) == PRDCancelled {
+		t.Errorf("still cancelled 61 minutes after cancel, want archived")
+	}
+}
