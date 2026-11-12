@@ -704,6 +704,12 @@ A node leaves the report when:
 - you delete it; or
 - you delete it and add it again as a normal node.
 
+**Operator review after upgrading:**
+
+- Run `datawatch compute node list` and check both sections. Any node under *Auto-created nodes that never answered* was created from a push connection's source address and may not be an LLM server.
+- Peers under *Observed peers with no node* were never nodes and need no action unless you want to route work to them.
+- The daemon-startup sweep still removes auto-created nodes whose bound peer no longer exists. Nothing else deletes nodes for you.
+
 ```sh
 # See observed peers and the unanswered report.
 datawatch compute node list
