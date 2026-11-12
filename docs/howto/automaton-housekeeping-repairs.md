@@ -47,6 +47,26 @@ mechanical step the [supervisor loop](supervisor-loop.md) already has:
 | `lane_fill` | The running lane count differs from the wanted count, inside the lane bounds. | Corrects the lane count to the wanted one. |
 | `leftovers` | Leftover files crossed the disk cleanup alert threshold. | Runs the cleanup sweep, which only refreshes the cleanup status and raises the disk alert. |
 
+The `task_chain` group also has three repairs for stuck task chains, each run in
+`on` and only reported in `report`:
+
+- **Dependent reset.** A task that failed only because a task it depends on
+  failed is reset (a plain reset, never a force-cancel) once every dependency is
+  done, and not before.
+- **Stale docs mirror.** A final gate that failed because the gitignored embedded
+  docs mirror (`internal/server/web/docs`) is out of date runs `make sync-docs`
+  in the Automaton worktree, then the gate is retried once.
+- **Leaked file.** A leaked marker or stray file that blocks a finish is
+  identified. Only if it is untracked and inside the Automaton worktree is it
+  removed with `git clean -f`, and then the task is retried once.
+
+Each refuses, records a skipped entry and raises one alert when the failure
+reason is ambiguous, a second retry would be needed, or the file is tracked.
+Their undo hints: the dependent reset is undone by cancelling the task again;
+the docs sync only refreshes a gitignored copy, so cancel the retried gate to
+stop it; for a removed stray file, restore it from the worker's session output
+if needed and cancel the retried task to stop it.
+
 The judge re-run, review start, lease re-adoption, placement re-run and worktree
 pruning rows in the table are not written yet.
 
