@@ -253,12 +253,11 @@ func (m *Manager) laneUtilizationTasks(execution string, start, now time.Time) [
 		return nil
 	}
 	type rawTask struct {
-		task    Task
-		story   Story
-		prd     PRD
-		stage   string
-		queued  time.Time
-		running bool
+		task   Task
+		story  Story
+		prd    PRD
+		stage  string
+		queued time.Time
 	}
 	var raws []rawTask
 	prds := m.store.ListPRDs()
