@@ -15557,16 +15557,216 @@ window.llmTest = function(name) {
   }).catch(e => showError('LLM test failed: ' + name, String(e.message||e)));
 };
 
+// ── compute detail: headroom block + per-node verifier cap control ────────
+// The node detail modal (Settings → Compute → Compute Nodes) shows the
+// node's last headroom measurement — its age, freshness under the
+// configured max age, the cap it supports — with a Measure now button on
+// the REST measure endpoint, plus a Save-gated "Parallel verifiers"
+// field. All strings go through t(); the new keys live in the five
+// bundles. The helpers are pure (they decode an already-fetched body and
+// return an HTML string) so they are testable without a server.
+
+// formatComputeHeadroomAge renders an elapsed-seconds figure as a short
+// age string. Pure: a number in, a string out, every word through t().
+function formatComputeHeadroomAge(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  if (h > 0) return t('compute_headroom_age_h', [h, m, r]);
+  if (m > 0) return t('compute_headroom_age_m', [m, r]);
+  return t('compute_headroom_age_s', [r]);
+}
+window.formatComputeHeadroomAge = formatComputeHeadroomAge;
+
+// buildComputeNodeHeadroomBody renders one stored measurement (the
+// /headroom GET view: free MB, per-request MB, resident model, age and
+// freshness under the configured max age, and the cap it supports).
+// A null body is the not-measured line.
+function buildComputeNodeHeadroomBody(m) {
+  if (!m || typeof m !== 'object') {
+    return `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(t('compute_headroom_none'))}</div>`;
+  }
+  const row = (k, v) => (v == null || v === '') ? '' :
+    `<div style="display:flex;justify-content:space-between;gap:10px;min-width:0;margin-top:2px;">
+      <span style="font-size:11px;color:var(--text2);flex:none;">${escHtml(t(k))}</span>
+      <span style="font-size:11px;text-align:right;overflow-wrap:anywhere;">${v}</span>
+    </div>`;
+  const fmtMB = (n) => (typeof window.computeFormatFreeMem === 'function')
+    ? window.computeFormatFreeMem(n) : ((n == null || !Number.isFinite(Number(n))) ? '' : Number(n).toLocaleString() + ' MB');
+  const fresh = m.fresh === true;
+  const cap = (m.supported_cap === 0)
+    ? escHtml(t('compute_headroom_unbounded'))
+    : (m.supported_cap != null) ? String(m.supported_cap) : '';
+  return [
+    row('compute_headroom_measured_at', m.measured_at ? escHtml(m.measured_at) : ''),
+    row('compute_headroom_age', escHtml(formatComputeHeadroomAge(m.age_seconds)) + ' — ' + escHtml(t(fresh ? 'compute_headroom_fresh' : 'compute_headroom_stale'))),
+    row('compute_headroom_max_age', (m.max_age_hours != null) ? escHtml(t('compute_headroom_max_age_value', [m.max_age_hours])) : ''),
+    row('compute_headroom_free_mb', m.free_mb != null ? escHtml(fmtMB(m.free_mb)) : ''),
+    row('compute_headroom_per_request_mb', m.per_request_mb != null ? escHtml(fmtMB(m.per_request_mb)) : ''),
+    row('compute_headroom_resident_model', m.resident_model ? escHtml(m.resident_model) : ''),
+    row('compute_headroom_supported_cap', cap),
+  ].join('');
+}
+window.buildComputeNodeHeadroomBody = buildComputeNodeHeadroomBody;
+
+// buildComputeNodeHeadroomBlock is the full read-only Headroom section of
+// the node detail modal: the title, a Measure now button, and the stored
+// measurement (or the not-measured line). The element ids are stable so
+// computeHeadroomMeasure can re-render in place between poll redraws.
+function buildComputeNodeHeadroomBlock(name, m) {
+  return `<div style="margin:10px 0;padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:0;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;font-weight:700;color:var(--text2);">${escHtml(t('compute_headroom_title'))}</span>
+      <button id="compute_detail_headroom_btn" class="btn-secondary" style="margin-left:auto;font-size:11px;padding:2px 8px;" onclick="window.computeHeadroomMeasure('${escHtml(name)}')" title="${escHtml(t('compute_headroom_btn_title'))}">${escHtml(t('compute_headroom_btn'))}</button>
+    </div>
+    <div id="compute_detail_headroom_body">${buildComputeNodeHeadroomBody(m)}</div>
+    <div id="compute_detail_headroom_msg" style="font-size:11px;margin-top:4px;"></div>
+  </div>`;
+}
+window.buildComputeNodeHeadroomBlock = buildComputeNodeHeadroomBlock;
+
+// computeHeadroomMeasure fires the one on-demand measurement on the node
+// (POST /headroom — refused server-side while the node is busy or its
+// model is not pull-allowed), then re-renders the stored measurement in
+// place. The refusal text is shown inline and as an error toast.
+window.computeHeadroomMeasure = function(name) {
+  const btn = document.getElementById('compute_detail_headroom_btn');
+  const body = document.getElementById('compute_detail_headroom_body');
+  const msg = document.getElementById('compute_detail_headroom_msg');
+  const setMsg = (text, color) => { if (msg) { msg.style.color = color; msg.textContent = text; } };
+  if (btn) { btn.disabled = true; btn.textContent = t('compute_headroom_measuring'); }
+  setMsg('', '');
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/headroom', { method: 'POST' })
+    .then(() => apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/headroom'))
+    .then(m => {
+      if (body) body.innerHTML = buildComputeNodeHeadroomBody(m);
+      setMsg(t('compute_headroom_measured'), 'var(--success,#10b981)');
+      showToast(t('compute_headroom_measured'), 'success', 2000);
+    })
+    .catch(e => {
+      const text = String((e && e.message) || e);
+      setMsg(t('compute_headroom_refused', [text]), 'var(--error,#ef4444)');
+      showError(t('compute_headroom_refused', [text]));
+    })
+    .then(() => { if (btn) { btn.disabled = false; btn.textContent = t('compute_headroom_btn'); } });
+};
+
+// buildComputeNodeCapControl is the per-node "Parallel verifiers" field:
+// the node's verifier_slots (blank when unset), a hint about the write
+// gate, and a Save button on the shared node-update endpoint. The input
+// id is stable so the poll guard and the save handler can find it.
+function buildComputeNodeCapControl(name, detail) {
+  const cur = (detail && typeof detail === 'object' && detail.verifier_slots != null)
+    ? String(detail.verifier_slots) : '';
+  return `<div style="margin:10px 0;padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:0;">
+    <div style="font-size:11px;font-weight:700;color:var(--text2);">${escHtml(t('compute_cap_title'))}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+      <input id="compute_detail_verifier_slots" type="number" min="0" class="form-input" style="width:110px;" value="${escHtml(cur)}" />
+      <span style="font-size:11px;color:var(--text2);">${escHtml(t('compute_cap_label'))}</span>
+      <button id="compute_detail_verifier_slots_save" class="btn-secondary" style="margin-left:auto;font-size:11px;padding:2px 8px;" onclick="window.computeSaveDetailVerifierSlots('${escHtml(name)}')">${escHtml(t('compute_cap_save'))}</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_cap_hint'))}</div>
+    <div id="compute_detail_verifier_slots_msg" style="font-size:11px;margin-top:4px;"></div>
+  </div>`;
+}
+window.buildComputeNodeCapControl = buildComputeNodeCapControl;
+
+// computeDetailSkipRedraw is the poll-survival guard: the modal body
+// re-renders on every poll, but the verifier cap input must keep the
+// value the operator typed. While the input is focused, or while it
+// holds anything different from the saved setting, the redraw is
+// skipped; once it matches the saved setting again, redraws resume.
+function computeDetailSkipRedraw(detail, input, focused) {
+  if (!input) return false;
+  if (focused) return true;
+  const cur = (detail && typeof detail === 'object' && detail.verifier_slots != null)
+    ? String(detail.verifier_slots) : '';
+  return String(input.value == null ? '' : input.value) !== cur;
+}
+window.computeDetailSkipRedraw = computeDetailSkipRedraw;
+
+// computeSaveDetailVerifierSlots sends the same node update every other
+// surface uses (PUT /api/compute/nodes/{name} with the node record):
+// verifier_slots set to the typed value, blank = unset. A write-gate
+// refusal (409) shows the server's refusal — the node, the measured free
+// memory and the shortfall — inline and as an error toast, and the
+// effective cap stays what the measurement supports.
+window.computeSaveDetailVerifierSlots = function(name) {
+  const input = document.getElementById('compute_detail_verifier_slots');
+  const btn = document.getElementById('compute_detail_verifier_slots_save');
+  const msg = document.getElementById('compute_detail_verifier_slots_msg');
+  const setMsg = (text, color) => { if (msg) { msg.style.color = color; msg.textContent = text; } };
+  if (!input) return;
+  const s = String(input.value || '').trim();
+  let value = null; // blank = unset → server-side default
+  if (s !== '') {
+    const v = parseInt(s, 10);
+    if (!Number.isFinite(v) || v < 0) {
+      setMsg(t('compute_cap_error'), 'var(--error,#ef4444)');
+      showError(t('compute_cap_error'));
+      return;
+    }
+    value = v;
+  }
+  if (btn) btn.disabled = true;
+  setMsg('', '');
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name))
+    .then(rec => {
+      if (!rec || typeof rec !== 'object') throw new Error('no record');
+      rec.verifier_slots = value;
+      return apiFetch('/api/compute/nodes/' + encodeURIComponent(name), {
+        method: 'PUT',
+        body: JSON.stringify(rec),
+      });
+    })
+    .then(() => {
+      setMsg(t('compute_cap_saved'), 'var(--success,#10b981)');
+      showToast(t('compute_cap_saved'), 'success', 2000);
+    })
+    .catch(e => {
+      const line = t('compute_cap_refused', [String((e && e.message) || e)]);
+      setMsg(line, 'var(--error,#ef4444)');
+      showError(line);
+    })
+    .then(() => { if (btn) btn.disabled = false; });
+};
+
 window.computeShowDetail = function(name) {
   if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
-  const fetchOnce = () => apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/detail')
-    .then(d => {
+  // The headroom measurement is a separate read (GET /headroom): 404 until
+  // the node has been measured, which the block renders as the
+  // not-measured line — an expected state, not a failure.
+  const headroomUrl = _apiPath('/api/compute/nodes/' + encodeURIComponent(name) + '/headroom');
+  const fetchOnce = () => Promise.all([
+    apiFetch(_apiPath('/api/compute/nodes/' + encodeURIComponent(name) + '/detail')),
+    apiFetch(headroomUrl).then(m => (m && typeof m === 'object') ? m : null).catch(() => null),
+  ])
+    .then(([d, m]) => {
+      if (!d || typeof d !== 'object') {
+        // v7.0.0-alpha.14 (#232) — surface the real server-side reason in
+        // a modal so it's actionable, not buried in a toast.
+        showModal({
+          title: '📡 ' + name + ' — detail unavailable',
+          body: `<div style="font-size:13px;color:var(--text);padding:6px 0;">${escHtml(t('compute_detail_unavailable', [name]))}</div>`,
+        });
+        if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
+        return;
+      }
+      // Poll-survival: the "Parallel verifiers" input keeps the value the
+      // operator typed — while it is focused or differs from the saved
+      // setting this redraw (and only this redraw) is skipped.
+      const capInput = document.getElementById('compute_detail_verifier_slots');
+      if (computeDetailSkipRedraw(d, capInput, document.activeElement === capInput)) return;
       // PRD 35070001 — the executor/verifier slots, the free GPU memory,
       // the headroom check and the suggestion read above the raw JSON; a
       // body without them (monitoring off) shows the JSON as before.
       const slotsSection = (typeof window.computeNodeDetailSlotsHtml === 'function')
         ? window.computeNodeDetailSlotsHtml(d) : '';
-      const body = slotsSection + `<pre style="font-size:10px;max-height:60vh;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;color:var(--text);">${escHtml(JSON.stringify(d, null, 2))}</pre>
+      const body = slotsSection
+        + buildComputeNodeHeadroomBlock(name, m)
+        + buildComputeNodeCapControl(name, d)
+        + `<pre style="font-size:10px;max-height:60vh;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;color:var(--text);">${escHtml(JSON.stringify(d, null, 2))}</pre>
         <div style="font-size:10px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_detail_polling')||'Live polling every 1s while modal is open. Close to stop.')}</div>`;
       showModal({ title: '📡 ' + name + ' — ' + (t('compute_detail_title')||'live detail'), body });
     })
@@ -20047,6 +20247,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.planning_routing.shadow', label: 'Record planning routing without applying it (shadow)', labelKey: 'planning_routing_field_shadow', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
+    // Verifier headroom gates: a verifier cap above 1 and a verifier_slots write above 1
+    // need a fresh measurement with this much free memory left. 0 or unset is the default.
+    { key: 'autonomous.verifier_min_free_mem_mb', label: 'Verifier min free memory (MB; unset = 1024, 0 = check off)', labelKey: 'settings_verifier_min_free_mem_mb', type: 'number', placeholder: '1024' },
+    { key: 'autonomous.verifier_headroom_max_age_hours', label: 'Verifier headroom max age (hours; 0 or unset = 24)', labelKey: 'settings_verifier_headroom_max_age_hours', type: 'number', placeholder: '24' },
     { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },

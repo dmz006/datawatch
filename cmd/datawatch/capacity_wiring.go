@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -851,6 +852,38 @@ type verifierNodeRecord struct {
 	headroomOK     bool
 	headroomReason string
 	suggested      *int
+	// capRefusal is the CapRefusal text when the configured verifier cap
+	// was clamped to 1 by the measurement gate; empty when the cap is applied.
+	capRefusal string
+}
+
+// verifierCapGate is the admission half of the measurement gate: the store
+// every surface shares plus the live floor and freshness bound. The floor and
+// the age are read on each sync through the config accessors, the same ones
+// the verifier_slots write gate reads, so a config change reaches both.
+type verifierCapGate struct {
+	Store     *compute.HeadroomStore
+	MinFreeMB func() int
+	MaxAge    func() time.Duration
+	Now       func() time.Time
+}
+
+// newVerifierCapGate builds the admission gate over store, reading the floor
+// and the age from cfg each time it is consulted.
+func newVerifierCapGate(store *compute.HeadroomStore, cfg *config.Config) verifierCapGate {
+	return verifierCapGate{
+		Store:     store,
+		MinFreeMB: func() int { return cfg.Autonomous.EffectiveVerifierMinFreeMB() },
+		MaxAge:    func() time.Duration { return cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() },
+		Now:       time.Now,
+	}
+}
+
+// resolve is the cap the node's verifier pool takes: configured, clamped to 1
+// unless the shared measurement supports it. The refusal is returned so the
+// caller can record and log it.
+func (g verifierCapGate) resolve(node string, configured int) (int, *compute.CapRefusal) {
+	return compute.ResolveVerifierCap(g.Store, node, configured, g.MinFreeMB(), g.MaxAge(), g.Now())
 }
 
 // verifierNodeCache is the mutex-guarded store of the records: the syncPools
@@ -914,6 +947,9 @@ type VerifierNodeState struct {
 	HeadroomOK     bool
 	HeadroomReason string
 	SuggestedCap   *int
+	// CapRefusal is the measurement gate's refusal text when the configured
+	// verifier cap was clamped to 1; empty when no refusal applies.
+	CapRefusal string
 }
 
 // VerifierNodeStateOf reports one compute node's last cached verifier
@@ -932,6 +968,7 @@ func (c *verifierNodeCache) VerifierNodeStateOf(name string) (VerifierNodeState,
 		HeadroomOK:     rec.headroomOK,
 		HeadroomReason: rec.headroomReason,
 		SuggestedCap:   rec.suggested,
+		CapRefusal:     rec.capRefusal,
 	}, true
 }
 
@@ -967,15 +1004,25 @@ type verifierObserverRead func(name string) (compute.NodeObservation, bool)
 // returned nothing is recorded as no data, so the headroom gate fails open
 // on it. Extracted from syncPools so it is unit-testable without a live
 // daemon; the 10s syncPools ticker re-runs it on registry change.
-func syncVerifierPools(led *capacity.Ledger, cache *verifierNodeCache, read verifierObserverRead, nodes []verifierNodeInfo) {
+func syncVerifierPools(led *capacity.Ledger, cache *verifierNodeCache, gate verifierCapGate, read verifierObserverRead, nodes []verifierNodeInfo) {
 	for _, in := range nodes {
-		cap := compute.EffectiveVerifierSlots(in.node.VerifierSlots, in.hosting)
+		configured := compute.EffectiveVerifierSlots(in.node.VerifierSlots, in.hosting)
+		// The admission gate: a cap above 1 is applied only when the shared
+		// measurement supports it; otherwise the pool takes 1 and the refusal
+		// is recorded and logged once per change.
+		cap, refusal := gate.resolve(in.node.Name, configured)
 		led.SetLimit(capacity.VerifierPool(in.node.Name), cap)
 		rec := verifierNodeRecord{
 			verifierCap:    cap,
 			executorCap:    in.executor,
 			headroomOK:     true, // no data fails open
 			headroomReason: "no observer data",
+		}
+		if refusal != nil {
+			rec.capRefusal = refusal.Error()
+		}
+		if prev, ok := cache.lookup(in.node.Name); rec.capRefusal != "" && (!ok || prev.capRefusal != rec.capRefusal) {
+			log.Printf("[capacity] verifier_slots %d on node %s held at 1: %s", configured, in.node.Name, rec.capRefusal)
 		}
 		if obs, ok := read(in.node.Name); ok {
 			rec.hasData = true
@@ -996,7 +1043,7 @@ func syncVerifierPools(led *capacity.Ledger, cache *verifierNodeCache, read veri
 // limits current with config, compute nodes and LLMs, refreshes GPU
 // backpressure, reaps leaked leases and raises long-wait alerts. It returns
 // the ledger so the pin keepers can tell when a node is in use.
-func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string), nodeAlerts autonomous.NodeLoadAlerts) *capacity.Ledger {
+func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, gate verifierCapGate, alertFn func(title, body string), nodeAlerts autonomous.NodeLoadAlerts) *capacity.Ledger {
 	var gpuMu sync.Mutex
 	gpuUtil := map[string]float64{}
 	// servedModel is the size of the model each node last had loaded. syncPools
@@ -1441,7 +1488,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 					obsByName[n.Name] = &o
 				}
 			}
-			syncVerifierPools(led, verifierHeadroom, func(name string) (compute.NodeObservation, bool) {
+			syncVerifierPools(led, verifierHeadroom, gate, func(name string) (compute.NodeObservation, bool) {
 				o, ok := obsByName[name]
 				if !ok {
 					return compute.NodeObservation{}, false

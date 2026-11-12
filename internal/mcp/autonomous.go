@@ -246,6 +246,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Content auto-fix retries per Automaton (default 1). When the completion review still blocks after these are spent, the Automaton goes to needs_review with the findings attached.")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
 		mcpsdk.WithNumber("verifier_diff_max_bytes", mcpsdk.Description("BL366 — max bytes of git diff injected into verifier prompt (0 = 8192 default)")),
+		mcpsdk.WithNumber("verifier_min_free_mem_mb", mcpsdk.Description("Free GPU memory (MB) a node must keep with extra verifier slots running; gates verifier caps above 1 and verifier_slots writes above 1. Unset = 1024 default; 0 turns the check off. Negative values are refused.")),
+		mcpsdk.WithNumber("verifier_headroom_max_age_hours", mcpsdk.Description("How old, in hours, a headroom measurement may be and still count as fresh for the verifier cap gates. 0 or unset = the default of 24 hours. Negative values are refused.")),
 		mcpsdk.WithBoolean("quality_gates_enabled", mcpsdk.Description("BL367 — enable quality gates by default for all PRDs")),
 		mcpsdk.WithString("quality_gates_test_command", mcpsdk.Description("BL367 — default test command for quality gates (e.g. 'go test ./...')")),
 		mcpsdk.WithNumber("quality_gates_timeout", mcpsdk.Description("BL367 — default gate timeout in seconds (0 = no limit)")),
@@ -382,6 +384,22 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	// BL366 — verifier diff max bytes.
 	if v := req.GetFloat("verifier_diff_max_bytes", -1); v >= 0 {
 		body["verifier_diff_max_bytes"] = int(v)
+	}
+	// Verifier headroom gates: a present negative value is refused with a tool
+	// error, not dropped, so the caller sees the refusal the descriptions name.
+	// Presence is checked on the arguments, so 0 is forwarded (0 = check off for
+	// the floor, default 24 hours for the age).
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"verifier_min_free_mem_mb", "verifier_headroom_max_age_hours"} {
+			if _, ok := args[k]; !ok {
+				continue
+			}
+			v := req.GetFloat(k, 0)
+			if v < 0 {
+				return mcpsdk.NewToolResultError(k + " must be >= 0"), nil
+			}
+			body[k] = int(v)
+		}
 	}
 	// BL304: accept new planning_* params; also check legacy decomposition_* for back-compat.
 	for _, pair := range [][2]string{

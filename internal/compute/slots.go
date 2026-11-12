@@ -29,6 +29,14 @@ type NodeObservation struct {
 	// served, kept by the caller for the same reason as LastModelBytes.
 	CPUModelBytes     []uint64
 	LastCPUModelBytes uint64
+
+	// ResidentModel is the name of the model the node has loaded, when the
+	// observer reports it. Empty means the observer does not say, and the
+	// headroom probe asks the node instead.
+	ResidentModel string
+	// PerRequestBytes is the observer's per-process memory cost of one
+	// parallel request, when it reports one. Zero means not reported.
+	PerRequestBytes uint64
 }
 
 // NodeSlots returns how many workers a compute node takes at once.

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/trace"
 	"github.com/dmz006/datawatch/internal/workerprofile"
@@ -3617,6 +3618,18 @@ type AutonomousConfig struct {
 	// prompt for evidence grounding (BL366). 0 = 8192. Raise for large
 	// PRDs; lower to reduce token cost.
 	VerifierDiffMaxBytes int `yaml:"verifier_diff_max_bytes,omitempty" json:"verifier_diff_max_bytes,omitempty"`
+	// VerifierMinFreeMemMB is the free GPU memory (MB) a node must still
+	// have, with the extra verifier slots running, before a verifier cap
+	// above 1 is admitted and before a verifier_slots write above 1 is
+	// accepted. Unset (nil) means the default of 1024 MB; an explicit 0
+	// turns the floor off. Read through EffectiveVerifierMinFreeMB, which
+	// reuses compute.EffectiveVerifierMinFreeMB — the only default.
+	VerifierMinFreeMemMB *int `yaml:"verifier_min_free_mem_mb,omitempty" json:"verifier_min_free_mem_mb,omitempty"`
+	// VerifierHeadroomMaxAgeHours is how old, in hours, a headroom
+	// measurement may be and still count as fresh for the verifier cap
+	// gates. 0 or unset means the default of 24 hours; a negative value is
+	// a config error. Read through EffectiveVerifierHeadroomMaxAge.
+	VerifierHeadroomMaxAgeHours int `yaml:"verifier_headroom_max_age_hours,omitempty" json:"verifier_headroom_max_age_hours,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
@@ -4248,6 +4261,32 @@ func (a AutonomousConfig) BranchRefreshLimit() int {
 		return 5
 	}
 	return a.BranchRefreshBehindLimit
+}
+
+// VerifierHeadroomMaxAgeHoursDefault is the default of
+// autonomous.verifier_headroom_max_age_hours: a headroom measurement older
+// than this many hours is stale for the verifier cap gates.
+const VerifierHeadroomMaxAgeHoursDefault = 24
+
+// EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
+// gates use: autonomous.verifier_min_free_mem_mb when set (0 = check off),
+// otherwise the default of 1024. It delegates to
+// compute.EffectiveVerifierMinFreeMB, so the default lives in one place.
+// The admission gate and the verifier_slots write gate both read this.
+func (a AutonomousConfig) EffectiveVerifierMinFreeMB() int {
+	return compute.EffectiveVerifierMinFreeMB(a.VerifierMinFreeMemMB)
+}
+
+// EffectiveVerifierHeadroomMaxAge is the headroom freshness bound the
+// verifier cap gates use: autonomous.verifier_headroom_max_age_hours, with
+// 0 or unset reading the default of 24 hours. The admission gate and the
+// verifier_slots write gate both read this.
+func (a AutonomousConfig) EffectiveVerifierHeadroomMaxAge() time.Duration {
+	hours := a.VerifierHeadroomMaxAgeHours
+	if hours <= 0 {
+		hours = VerifierHeadroomMaxAgeHoursDefault
+	}
+	return time.Duration(hours) * time.Hour
 }
 
 // PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.
@@ -8265,6 +8304,12 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("autonomous.capacity_adoption_wait_seconds: %d must be >= 0", cfg.Autonomous.CapacityAdoptionWaitSeconds)
+	}
+	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
+		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)
+	}
+	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
+		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be >= 0 (0 or unset = default %d hours)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)

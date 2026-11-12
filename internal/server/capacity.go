@@ -94,12 +94,21 @@ func (s *HTTPServer) InferenceRegistry() *inference.Registry {
 // busiest GPU's utilisation. ok is false when the detail could not be read; a
 // node whose detail has no GPUs returns ok with an empty GPU list.
 func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, ok bool) {
-	if s.api == nil || s.api.computeReg == nil {
+	if s.api == nil {
+		return obs, false
+	}
+	return s.api.nodeObservation(name)
+}
+
+// nodeObservation is the Server-level reader behind NodeObservation. The
+// headroom measurement probe reads through it too, so both share one reader.
+func (s *Server) nodeObservation(name string) (obs compute.NodeObservation, ok bool) {
+	if s.computeReg == nil {
 		return obs, false
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/compute/nodes/"+name+"/detail", nil)
-	s.api.serveComputeNodeDetail(rec, req, name)
+	s.serveComputeNodeDetail(rec, req, name)
 	if rec.Code != http.StatusOK {
 		return obs, false
 	}

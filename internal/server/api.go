@@ -359,6 +359,14 @@ type Server struct {
 
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
+	// headroomStore is the daemon's one verifier headroom-measurement store
+	// (nil until wired); the verifier_slots write gate reads it.
+	headroomStore *compute.HeadroomStore
+	// headroomProbe overrides the on-demand measurement transport (nil = the
+	// Ollama probe over the observer). headroomClock fixes the measurement
+	// clock for tests (nil = serverNow).
+	headroomProbe compute.HeadroomProbe
+	headroomClock func() time.Time
 	// servedModels reads and caches what each compute node serves; modelHostCheck
 	// answers the served-models route's model check. Both are nil until wired.
 	servedModels   *compute.ServedModelsCache
@@ -6783,18 +6791,20 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// resolveDriftMode), matching EffectiveTaskOverrideStatuses above.
 			"drift_mode": effectiveDriftMode(s.cfg.Autonomous.DriftMode),
 			// Undeclared-edit enforcement: off|warn|block; unset/unknown renders "warn".
-			"undeclared_edit_mode":      effectiveUndeclaredEditMode(s.cfg.Autonomous.UndeclaredEditMode),
-			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
-			"task_max_attempt_seconds":  s.cfg.Autonomous.TaskMaxAttemptSeconds,
-			"task_no_progress_seconds":  s.cfg.Autonomous.TaskNoProgressSeconds,
-			"preserve_attempt_work":     s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
-			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
-			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
-			"security_scan":             s.cfg.Autonomous.SecurityScan,
-			"per_story_approval":        s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
-			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
-			"scope_lint":                s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
-			"planning_routing":          s.cfg.Autonomous.PlanningRouting,
+			"undeclared_edit_mode":            effectiveUndeclaredEditMode(s.cfg.Autonomous.UndeclaredEditMode),
+			"stale_task_seconds":              s.cfg.Autonomous.StaleTaskSeconds,
+			"task_max_attempt_seconds":        s.cfg.Autonomous.TaskMaxAttemptSeconds,
+			"task_no_progress_seconds":        s.cfg.Autonomous.TaskNoProgressSeconds,
+			"preserve_attempt_work":           s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
+			"auto_fix_retries":                s.cfg.Autonomous.AutoFixRetries,
+			"verifier_diff_max_bytes":         s.cfg.Autonomous.VerifierDiffMaxBytes,
+			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
+			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
+			"security_scan":                   s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
+			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
+			"planning_routing":                s.cfg.Autonomous.PlanningRouting,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -8053,6 +8063,20 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "git.secret_scan.allow_list.fingerprints: "+strings.TrimSpace(fp)+" is not a 16- or 64-char hex fingerprint (sha256 of the secret)", http.StatusBadRequest)
 				return
 			}
+		}
+	}
+	// Verifier headroom keys: a negative value is a validation error (400), the
+	// same refusal config load gives. 0 or unset means the default.
+	if raw, ok := patch["autonomous.verifier_min_free_mem_mb"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.verifier_min_free_mem_mb: must be a whole number >= 0 (0 turns the check off; unset = 1024)", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["autonomous.verifier_headroom_max_age_hours"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.verifier_headroom_max_age_hours: must be a whole number >= 0 (0 or unset = default 24 hours)", http.StatusBadRequest)
+			return
 		}
 	}
 	if err := validateRulesContextPatch(s.cfg.Autonomous.RulesContext, patch); err != nil {
@@ -10614,6 +10638,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.verifier_diff_max_bytes":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierDiffMaxBytes = n
+			}
+		case "autonomous.verifier_min_free_mem_mb":
+			// Unset (nil) = the default of 1024; an explicit 0 turns the check off.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierMinFreeMemMB = &n
+			}
+		case "autonomous.verifier_headroom_max_age_hours":
+			// 0 or unset = the default of 24 hours.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierHeadroomMaxAgeHours = n
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)

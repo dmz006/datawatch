@@ -44,6 +44,7 @@ ordered failover. See docs/plans/2026-05-08-v7.0.0-plan.md § 5.`,
 	cmd.AddCommand(newComputeMigrateCmd())
 	cmd.AddCommand(newComputePinCmd())
 	cmd.AddCommand(newComputePlacementCmd())
+	cmd.AddCommand(newComputeHeadroomCmd())
 	return cmd
 }
 
@@ -304,7 +305,9 @@ func newComputeNodeCmd() *cobra.Command {
 		Use:   "versions <name>",
 		Short: "The node's reported backend version and which capability minimums it meets",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0] + "/versions") },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/versions")
+		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "health <name>",
@@ -589,6 +592,36 @@ func validateComputeDrainUntil(until string) error {
 		return fmt.Errorf("--until must be an RFC3339 timestamp (got %q)", until)
 	}
 	return nil
+}
+
+// newComputeHeadroomCmd exposes the node's verifier headroom: a fresh idle
+// measurement (measure) and the stored measurement (get). Both call the
+// node's /headroom REST route, the same service the other surfaces use.
+func newComputeHeadroomCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "headroom",
+		Short: "Verifier headroom: measure a node while idle, or show the stored measurement",
+		Long: "Verifier headroom commands.\n\n" +
+			"  datawatch compute headroom measure <node>   measure the node now while idle and store it (refused while busy)\n" +
+			"  datawatch compute headroom get <node>       show the stored measurement, its age and the cap it supports (read only)",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "measure <node>",
+		Short: "Measure the node's headroom now (idle nodes only) and store it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/compute/nodes/"+args[0]+"/headroom", nil)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "get <node>",
+		Short: "Show the stored headroom measurement for the node (read only)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/headroom")
+		},
+	})
+	return cmd
 }
 
 func splitCSV(s string) []string {

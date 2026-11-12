@@ -237,6 +237,8 @@ var MCPToolCap = map[string]string{
 	"compute_node_delete":                  CapComputeWrite,
 	"compute_node_detach_observer":         CapComputeWrite,
 	"compute_node_detail":                  CapComputeRead,
+	"compute_node_headroom_get":            CapComputeRead,
+	"compute_node_headroom_measure":        CapComputeWrite,
 	"compute_node_drain":                   CapComputeWrite,
 	"compute_node_get":                     CapComputeRead,
 	"compute_node_backend_versions":        CapComputeRead,

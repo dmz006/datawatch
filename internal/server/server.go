@@ -1018,6 +1018,22 @@ func (s *HTTPServer) SetComputeRegistry(r *compute.Registry) {
 	}
 }
 
+// SetHeadroomStore wires the daemon's one verifier headroom-measurement store
+// into the REST server; the verifier_slots write gate reads it.
+func (s *HTTPServer) SetHeadroomStore(st *compute.HeadroomStore) {
+	if s.api != nil {
+		s.api.SetHeadroomStore(st)
+	}
+}
+
+// HeadroomStore returns the wired headroom-measurement store (nil when not set).
+func (s *HTTPServer) HeadroomStore() *compute.HeadroomStore {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.HeadroomStore()
+}
+
 // ComputeRegistry returns the wired registry (nil when not set).
 // alpha.26 #238 — main.go uses this to run the leaked-auto-node sweep
 // from the peer-registry init block without holding a separate ref.

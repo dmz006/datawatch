@@ -17,6 +17,8 @@
 //	compute placement             → list pending placement asks
 //	compute placement approve <id> → approve an ask (one-shot)
 //	compute placement deny <id>    → deny an ask (one-shot)
+//	compute headroom <node>       → stored headroom measurement (read only)
+//	compute headroom measure <node> → measure the node now while idle, then store it
 
 package router
 
@@ -43,6 +45,8 @@ const computeUsage = `Usage:
   compute placement                                list pending placement asks (missing-model "ask" policy)
   compute placement approve <id>                    approve a placement ask (one-shot)
   compute placement deny <id>                       deny a placement ask (one-shot)
+  compute headroom <node>                          show the stored headroom measurement (read only)
+  compute headroom measure <node>                  measure the node now while idle and store it
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
@@ -72,7 +76,8 @@ Common kv pairs:
   tags=<csv>                  cost_per_hour=<usd>
   session_slots=<N>           (0 = derive from observer GPU data)
   verifier_slots=<N>          (worker slots for verifiers; leave out = 1 if
-                               the node hosts a local engine, else 0; 0 = none)
+                               the node hosts a local engine, else 0; 0 = none;
+                               above 1 needs a fresh headroom measurement)
   verifier_min_free_mem_mb=<N>(free GPU MB required before a verifier slot
                                starts; leave out = 1024 MB; 0 = check off)
   verifier_context_mb=<N>     (context MB one verifier slot holds, for the
@@ -116,6 +121,14 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			arg = strings.TrimSpace(parts[1])
 		}
 		r.handleComputePlacementCmd(arg)
+		return
+	}
+	if verb == "headroom" {
+		arg := ""
+		if len(parts) > 1 {
+			arg = strings.TrimSpace(parts[1])
+		}
+		r.handleComputeHeadroomCmd(arg)
 		return
 	}
 	if verb != "node" {
@@ -298,6 +311,51 @@ func (r *Router) handleComputeCmd(cmd Command) {
 
 // handleComputePinCmd reads or sets pin_check_seconds. With no argument it
 // replies with the current value; with a whole number it PUTs /api/config.
+// handleComputeHeadroomCmd runs `compute headroom <node>` (the stored view,
+// GET) and `compute headroom measure <node>` (a fresh idle measurement, POST).
+// Both call the node's /headroom REST route, the same service the REST, MCP
+// and CLI surfaces use.
+func (r *Router) handleComputeHeadroomCmd(arg string) {
+	fields := strings.Fields(arg)
+	if len(fields) == 0 {
+		r.reply("compute headroom", headroomUsage)
+		return
+	}
+	if strings.EqualFold(fields[0], "measure") {
+		if len(fields) != 2 {
+			r.reply("compute headroom measure", "Usage: compute headroom measure <node>")
+			return
+		}
+		node := fields[1]
+		out, err := r.commJSON(http.MethodPost, "/api/compute/nodes/"+node+"/headroom", "")
+		if err != nil {
+			r.reply("compute headroom measure "+node, err.Error())
+			return
+		}
+		r.reply("compute headroom measure "+node, prettyJSON(out))
+		return
+	}
+	if len(fields) != 1 {
+		r.reply("compute headroom", headroomUsage)
+		return
+	}
+	node := fields[0]
+	out, err := r.commGet("/api/compute/nodes/"+node+"/headroom", nil)
+	if err != nil {
+		r.reply("compute headroom "+node, err.Error())
+		return
+	}
+	r.reply("compute headroom "+node, prettyJSON(out))
+}
+
+// headroomUsage is the help text for the headroom verb. A measurement runs
+// only on an idle node (a busy node is refused) and only when asked for.
+const headroomUsage = `Usage:
+  compute headroom <node>            show the stored headroom measurement (read only)
+  compute headroom measure <node>    measure the node now while it is idle and store it
+A measurement is refused while the node holds a lease (busy) and when its
+resident or probe model is not on the model-pull consent list.`
+
 func (r *Router) handleComputePinCmd(arg string) {
 	if arg == "" {
 		out, err := r.commGet("/api/config", nil)
