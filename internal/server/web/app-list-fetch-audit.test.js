@@ -113,6 +113,7 @@ const ETAG_NO_CACHE = 'Left alone: no limit or summary form exists on the server
 
 const ALLOWLIST = [
   { endpoint: '/api/sessions/aggregated', fn: '_loadAllServersSessions', trigger: 'tab open (All-servers view), reconnect', reason: FAN_OUT },
+  { endpoint: '/api/sessions/aggregated', fn: '_loadPeerSessionsForNodes', trigger: 'node group-by is on and peers exist', reason: FAN_OUT },
   { endpoint: '/api/alerts/aggregated', fn: '_alertsFetch', trigger: 'tab open, 30 s timer (All-servers branch)', reason: FAN_OUT },
   { endpoint: '/api/autonomous/prds/aggregated', fn: '_dashFetchPRDs', trigger: 'dashboard open, timer (All-servers branch)', reason: 'Left alone: no paged form on the aggregated route.' },
   { endpoint: '/api/autonomous/prds/aggregated', fn: '_automataFetchAll', trigger: 'tab open, 30 s timer (All-servers branch)', reason: 'Left alone: no paged form on the aggregated route.' },

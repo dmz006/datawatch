@@ -4342,6 +4342,8 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`): no daemon setting. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
 tag. The `autonomous.tags` block sets which view opens first, which statuses

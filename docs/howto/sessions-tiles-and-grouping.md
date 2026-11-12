@@ -38,7 +38,7 @@ of that:
 
 1. **View mode** — how each session is drawn: `list` (one card per row),
    `tiles` (a grid of work tiles that stacks left-to-right and up-down), or
-   `compact` (a dense two-row grid).
+   `compact` (the same tile grid drawn at a smaller size).
 2. **Group by** — none, or one axis: `tag`, `state`, `node`, `project` or
    `automaton`. On the tag axis you can narrow to a tag prefix, so only tags
    under that prefix form groups and everything else collects in the
@@ -79,7 +79,9 @@ Sessions
 - For the **automaton** axis: sessions that belong to an Automaton
   (spawned by one). Sessions without one land in the ungrouped group.
 - For the **node** axis: multi-node or peer hosts are the interesting case;
-  a single local host will show one group plus an ungrouped group.
+  a single local host will show one group (named by its hostname) plus an
+  ungrouped group. Federation peers must be connected for their sessions to
+  appear under their own node in the web UI (see [the node axis](#the-node-axis-in-the-web-ui)).
 
 No configuration to enable and no new settings: the feature is a pure
 presentation cut over the existing session list, and every dial below is a
@@ -166,9 +168,14 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
     **Watch for updates**, and **Mute notifications**.
   The menu stays visible in every grid mode precisely because the tile
   carries menu items.
-- **Compact** is the same tiles in a fixed dense two-row grid — fewer rows
-  of information per session, for scanning long lists — and unlike tiles it
-  keeps that density on resizes instead of following the viewport width.
+- **Compact** is the same tile grid as Tiles at a smaller size: the same
+  tiles, with the same content (name, state chip, `backend · model`, node,
+  tags, last-activity time and lifecycle bar) and the same **⋯ overflow
+  menu**, laid out in the same multi-column grid with smaller tiles, tighter
+  padding and smaller type, so more sessions fit on screen. It never turns
+  into rows: on resizes it stays a tile grid instead of following the
+  viewport width. In **list** mode the sessions stay a row list: the one
+  card per row layout, one session per row.
 
 Two details worth knowing:
 
@@ -208,6 +215,9 @@ The **Group by** picker (in the Filters sheet) offers:
 No grouping │ State │ Node │ Project │ Tag │ Tag(automation:) │ Tag(compute:) … │ Automaton
 ```
 
+Each option groups on exactly one thing, and a session with no match for the
+chosen option falls in the **ungrouped** group (it sorts last).
+
 The tag entries after `Tag` are built from the prefixes present in your tag
 registry (your automation:/stage:/kind: tags plus the placement auto-tags),
 so the picker shows exactly the prefixes you can narrow to — e.g.
@@ -224,12 +234,12 @@ placement choice saved before this change is picked up once and carried over.
 
 | Axis | What groups | Notes |
 |---|---|---|
-| `tag` | the first matching tag (own tags + inherited) | A session with several tags lands in exactly one group (the first in the sorted tag list). Sessions with no matching tag collect in the **ungrouped** group. |
+| `tag` | the first matching tag (own tags + inherited) | A session with several tags lands in exactly one group (the first in the sorted tag list; tags are trimmed and a repeated tag counts once). Sessions with no matching tag collect in the **ungrouped** group. |
 | `tag` + prefix | the first tag carrying that prefix | Only tags with the prefix (e.g. `automation:`) form groups; everything else goes to the ungrouped group. This is how you get the "just the automation cut" or "just the compute-node cut". |
 | `state` | the session's state | One group per state (running, waiting_input, complete, …) — handy for a quick "what is stuck" scan. |
-| `node` | the session's hostname / server / compute node | The ungrouped group catches sessions without a node ref. |
-| `project` | the datawatch project the session belongs to | Read in this order: the project of the session's Automaton (its worktree is mapped back to the repository it belongs to and matched against the registered projects); then a `project:` tag on the session (several tags: the first in sorted order); then the registered project of the session's own working folder, mapped the same way, so a session in a worktree lands with the repository's sessions. When an Automaton is known but no project resolves, the group is that Automaton's title, never the worktree folder. The working folder is used only when no project or Automaton is known; a session with none of these lands in the ungrouped group. The same rule applies on REST, MCP, CLI, the comm verb and the PWA. |
-| `automaton` | the Automaton the session belongs to | **Sub-task nesting**: sessions sit under the Automaton block, and inside it under their story block. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. |
+| `node` | the node that runs the session | Lists sessions from every node, this daemon and federation peers, each under the node that runs it. In the web UI a peer's session lands under the peer's name and every session of this daemon under its real hostname; the header shows the node's name. In the grouped read (REST, MCP, CLI, comm) the key is the session's hostname, and a session with no hostname of its own is keyed under this daemon's hostname because it ran here. The ungrouped group catches only a row with no node name at all. See [the node axis](#the-node-axis-in-the-web-ui). |
+| `project` | the datawatch project the session belongs to | Read in this order: the project of the session's Automaton (its worktree is mapped back to the repository it belongs to and matched against the registered projects); then a `project:` tag on the session (several tags: the first in sorted order); then the registered project of the session's own working folder, mapped the same way, so a session in a worktree lands with the repository's sessions. When an Automaton is known but no project resolves, the group is that Automaton's title, never the worktree folder. The working folder is used only when no project or Automaton is known (trailing slashes are dropped, so `/work/app` and `/work/app/` form one group); a session with none of these lands in the ungrouped group. The same rule applies on REST, MCP, CLI, the comm verb and the PWA. |
+| `automaton` | the Automaton the session belongs to | **Story and task nesting**: sessions sit under the Automaton block, and inside it under their story block, with the task sessions nested in their story. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. In the web UI, an Automaton's task sessions that run on a federation peer are included too (see [the node axis](#the-node-axis-in-the-web-ui)). |
 
 Group mechanics, in every mode:
 
@@ -241,10 +251,49 @@ Group mechanics, in every mode:
   per-state mix (e.g. `4 (running 2, waiting_input 1, complete 1)`), so you
   can read "how much of this group is alive" without expanding it.
 - **Body.** The group's sessions render in the active view mode — list
-  cards, tiles or compact rows — and the body pages with its own **Show
+  cards, tiles or compact tiles — and the body pages with its own **Show
   more** step (shown/total) when it is longer than a page.
 - **Sorting.** Groups sort by key, and the ungrouped group always sorts
-  last.
+  last — in the web UI and in the grouped read alike. Inside an Automaton
+  block the root story (shown as **Story**) leads, then the other stories by id.
+- **Header title.** In the web UI a group header on the **automaton**,
+  **project** and **node** axes shows the record's human title — the
+  Automaton's title, the project's name, the node's name — never the raw id.
+  The id stays as small secondary text beside the title and in the header's
+  tooltip. When no title is known yet (the lists load in the background on
+  first use of the axis) or the title equals the id, the header shows the id
+  alone. The grouped read on the other channels still carries the plain key.
+
+### The node axis in the web UI
+
+Grouping by node has to cover more than this daemon, so the web UI treats
+it specially:
+
+- **Where a session lands.** A session read from a federation peer is
+  tagged with the peer's name and lands in that peer's group. Every other
+  session is this daemon's own and lands under its real hostname (the row's
+  own, else the hostname the page learnt from the daemon's health read).
+  The aggregated read's internal `local` tag is never a group name, so this
+  daemon's sessions are not split in two and never appear under "local".
+- **How the node label is chosen.** For a peer's session the label is the
+  peer's name. For this daemon's own sessions it is the session's own
+  hostname, else the hostname the page learnt from the daemon's health
+  read. The header then shows the node's registered name when the compute
+  node list knows that name, id or hostname, and the plain label otherwise.
+  Only a row with neither a peer name nor any hostname falls in the
+  ungrouped group.
+- **Peers are loaded on demand.** While the page is in local mode and the
+  node axis or the Automaton axis is selected (an Automaton's task sessions
+  may run on a peer), the Sessions page also reads the aggregated
+  sessions list and merges the peers' rows in. They refresh with the
+  page's regular refreshes and are dropped again as soon as you switch to
+  any other axis (or to an applied saved view on another axis; the node and Automaton axes keep them), so the
+  plain local list is unchanged. The read is read-only; if it fails the
+  page keeps the rows it holds.
+- **Not the same as the grouped read.** The REST, MCP, CLI and comm
+  `group_by=node` read covers this daemon's own sessions only and keys on
+  the session's hostname, so a peer's sessions appear there only on that
+  peer. Read the peer's daemon (or use the web UI) for its group.
 
 ### The automaton axis, in detail
 

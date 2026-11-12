@@ -1489,6 +1489,7 @@ function handleMessage(msg) {
       if (state.activeServer === 'all') {
         _loadAllServersSessions();
       } else {
+        if (_sessionsNodeAxisNeedsPeers()) _loadPeerSessionsForNodes();
         // Rows, not the whole list: the frame covers only the default view
         // (finished sessions older than the window are never sent), so
         // _applySessionsFrame keeps what REST fetched for history.
@@ -4106,9 +4107,47 @@ function _restSessionIds() {
 function _applySessionsFrame(rows) {
   const framed = new Set(rows.map(r => r && r.full_id).filter(Boolean));
   const rest = _restSessionIds();
-  state.sessions = state.sessions.filter(s => framed.has(s.full_id) || rest.has(s.full_id));
+  // Peer rows (tagged with their server by the aggregated read) are not part
+  // of this daemon's frame; they are refreshed by _loadPeerSessionsForNodes.
+  state.sessions = state.sessions.filter(s => framed.has(s.full_id) || rest.has(s.full_id) || _isPeerRow(s));
   rows.forEach(_mergeSessionRow);
 }
+// _isPeerRow is true for a row read from a federated peer.
+function _isPeerRow(s) {
+  return !!(s && typeof s.server === 'string' && s.server && s.server !== 'local' && s.server !== 'all');
+}
+// _sessionsNodeAxisNeedsPeers: in local mode the list read covers only this
+// daemon, so while sessions are grouped by node or by Automaton (whose task
+// sessions may run on a peer) the peers' sessions come from the aggregated
+// read as well.
+function _sessionsNodeAxisNeedsPeers() {
+  const by = _sessionsGroupValidate(state.sessionGroupBy);
+  return !!(by && (by.axis === 'node' || by.axis === 'automaton') && _sessionsLocalMode());
+}
+// _loadPeerSessionsForNodes merges the peers' rows from the aggregated read
+// into state.sessions (this daemon's own rows are left as they are) and drops
+// peer rows that are gone. Read-only; a failed read keeps what is held.
+function _loadPeerSessionsForNodes() {
+  if (!_sessionsNodeAxisNeedsPeers()) return Promise.resolve();
+  return fetch(_apiPath('/api/sessions/aggregated'), { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!Array.isArray(data) || !_sessionsNodeAxisNeedsPeers()) return;
+      const peers = data.filter(_isPeerRow);
+      state.sessions = state.sessions.filter(x => !_isPeerRow(x)).concat(peers);
+      if (state.activeView === 'sessions') renderSessionsView();
+    })
+    .catch(() => {});
+}
+// _sessionsSyncPeerRows follows the group axis: node axis loads peers, any
+// other axis drops them again so the plain local list is unchanged.
+function _sessionsSyncPeerRows() {
+  if (!_sessionsLocalMode()) return;
+  if (_sessionsNodeAxisNeedsPeers()) { _loadPeerSessionsForNodes(); return; }
+  if (state.sessions.some(_isPeerRow)) state.sessions = state.sessions.filter(x => !_isPeerRow(x));
+}
+window._sessionsSyncPeerRows = _sessionsSyncPeerRows;
+window._loadPeerSessionsForNodes = _loadPeerSessionsForNodes;
 function _mergeSessionRow(row) {
   if (!row) return;
   applySessionUpdate(row);
@@ -4158,6 +4197,7 @@ function loadSessionsList() {
     clearTimeout(l.timer);
     if (l.error || !state.connected) l.timer = setTimeout(() => { if (state.activeView === 'sessions') loadSessionsList(); }, SESSIONS_POLL_MS);
     if (rows.length) onSessionsUpdated();
+    if (_sessionsNodeAxisNeedsPeers()) _loadPeerSessionsForNodes();
     if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
     if (state.activeView === 'sessions') {
       renderSessionsView();
@@ -4605,6 +4645,7 @@ function renderSessionsView() {
       state._sessionsGroupPage = {};
     }
   }
+  _sessionsGroupTitlesEnsure(groupBy);
   const groupAxis = '';
   state._visibleForFold = groupBy ? visible : [];
   const cards = groupBy
@@ -4676,8 +4717,9 @@ function renderSessionsView() {
 // The mode is per-device (localStorage, try/catch because storage can be
 // blocked) and defaults by viewport when the device has never chosen one:
 // phone widths open as the list, everything wider opens as tiles. `compact`
-// is the dense two-row grid; the normal tile grid still follows the width-based
-// mode on resizes via _tileSyncModes, while compact keeps its density there.
+// is the same tile grid as tiles (full tile markup, multi-column) drawn at a
+// smaller size; the normal tile grid still follows the width-based mode on
+// resizes via _tileSyncModes, while compact stays a tile grid there.
 // Tags, filter and search apply before rendering, so they work in every mode.
 // _stx: t() with an English fallback — t() returns the key itself on a miss, so
 // the fallback applies when the key is absent from every bundle.
@@ -4990,8 +5032,10 @@ function _sessionsGroupSave() {
 // on its card. No matching tag → ungrouped.
 function _sessionsTagPlacement(sess, tagPrefix) {
   const src = sess || {};
+  const seen = {};
   const tags = [].concat(src.tags || [], src.inherited_tags || [])
-    .filter(t => typeof t === 'string' && t).sort();
+    .map(t => (typeof t === 'string') ? t.trim() : '')
+    .filter(t => t && !seen[t] && (seen[t] = true)).sort();
   if (tagPrefix) {
     for (let i = 0; i < tags.length; i++) {
       if (tags[i].indexOf(tagPrefix) === 0) return tags[i];
@@ -5021,14 +5065,49 @@ function _sessionsProjectName(sess) {
   return names.length ? names[0] : '';
 }
 
+// _sessionsNodeKey names the node that runs a session: a peer's row (the
+// aggregated read tags it with the peer's name in `server`) lands under that
+// peer name; every other row is this daemon's own and lands under its real
+// hostname (the row's own, else the one the page learnt from /api/health).
+// 'local' is only the aggregated read's tag, never a label, so it can neither
+// split the local node in two nor stand in for its hostname.
+function _sessionsNodeKey(s) {
+  const server = (typeof s.server === 'string') ? s.server : '';
+  if (server && server !== 'local' && server !== 'all') return server;
+  if (typeof s.hostname === 'string' && s.hostname) return s.hostname;
+  let lh = '';
+  try { lh = (typeof _localHostname === 'string' && _localHostname) ? _localHostname : ''; } catch (_) { lh = ''; }
+  if (lh && (!server || server === 'local')) return lh;
+  return SESSIONS_GROUP_UNGROUPED;
+}
+window._sessionsNodeKey = _sessionsNodeKey;
+
+// _sessionsProjectKey is the project group key: the session's project_dir
+// with trailing slashes dropped, so one folder never splits in two over a
+// trailing slash. The server reads the same key.
+function _sessionsProjectKey(s) {
+  const dir = (typeof s.project_dir === 'string') ? s.project_dir.trim() : '';
+  const key = (dir.length > 1) ? dir.replace(/\/+$/, '') : dir;
+  return key || SESSIONS_GROUP_UNGROUPED;
+}
+window._sessionsProjectKey = _sessionsProjectKey;
+
+// _sessionsKeyCompare orders group keys the way the server does: plain key
+// order, with the ungrouped bucket always last.
+function _sessionsKeyCompare(a, b) {
+  if (a === b) return 0;
+  if (a === SESSIONS_GROUP_UNGROUPED) return 1;
+  if (b === SESSIONS_GROUP_UNGROUPED) return -1;
+  return (a < b) ? -1 : 1;
+}
+
 function _sessionsGroupKeyFor(sess, by) {
   const s = sess || {};
   switch (by.axis) {
     case 'state':
       return (typeof s.state === 'string' && s.state) ? s.state : 'unknown';
     case 'node':
-      return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
-        : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
+      return _sessionsNodeKey(s);
     case 'project':
       // The server resolves the project (owning Automaton's project, project
       // tag, registered folder match, Automaton title, folder) and sends it
@@ -5038,7 +5117,7 @@ function _sessionsGroupKeyFor(sess, by) {
       if (typeof s.project === 'string' && s.project) return s.project;
       return _sessionsProjectName(s)
         || ((typeof s.prd_id === 'string' && s.prd_id) ? s.prd_id
-          : ((typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED));
+          : ((typeof s.project_dir === 'string' && s.project_dir) ? _sessionsProjectKey(s) : SESSIONS_GROUP_UNGROUPED));
     case 'tag':
       return _sessionsTagPlacement(s, by.tagPrefix);
     case 'automaton':
@@ -5064,6 +5143,76 @@ function _sessionsGroupLabel(key, by) {
   return String(key);
 }
 
+// _sessionsGroupTitleMaps holds the id -> human title lookups for the record
+// axes (Automaton, project, node). Filled best-effort from the Automata,
+// projects and ComputeNodes lists; a miss simply falls back to the id.
+function _sessionsGroupTitleMaps() {
+  if (!state._sessionsGroupTitles) state._sessionsGroupTitles = { automaton: {}, project: {}, node: {}, loaded: {} };
+  return state._sessionsGroupTitles;
+}
+
+// _sessionsGroupTitleInfo resolves a group key to { title, id }. The title is
+// the record's human name when known (the session rows' own prd_title first,
+// then the cached lists); the id is kept for secondary text / a tooltip.
+// title is '' when no title is known, so callers fall back to the id.
+function _sessionsGroupTitleInfo(key, by, sessions) {
+  const id = String(key);
+  if (key === SESSIONS_GROUP_UNGROUPED || !by) return { title: '', id };
+  const maps = _sessionsGroupTitleMaps();
+  let title = '';
+  if (by.axis === 'automaton') {
+    (sessions || []).some(s => {
+      const v = s && (s.prd_title || s.automaton_title);
+      if (typeof v === 'string' && v) { title = v; return true; }
+      return false;
+    });
+    if (!title) title = maps.automaton[id] || '';
+  } else if (by.axis === 'project') {
+    title = maps.project[id.replace(/\/+$/, '')] || '';
+  } else if (by.axis === 'node') {
+    title = maps.node[id] || '';
+  }
+  title = (typeof title === 'string') ? title.trim() : '';
+  if (title === id) title = '';
+  return { title, id };
+}
+
+// _sessionsGroupTitlesEnsure loads the title lists for the active record axis
+// once, then repaints. A failed load latches so it cannot loop.
+function _sessionsGroupTitlesEnsure(by) {
+  if (!by || ['automaton', 'project', 'node'].indexOf(by.axis) < 0) return;
+  const maps = _sessionsGroupTitleMaps();
+  if (maps.loaded[by.axis]) return;
+  maps.loaded[by.axis] = true;
+  let req = null;
+  if (by.axis === 'automaton') {
+    req = apiFetch('/api/autonomous/prds').then(d => {
+      const prds = Array.isArray(d) ? d : (d && Array.isArray(d.prds) ? d.prds : []);
+      prds.forEach(p => { if (p && p.id && p.title) maps.automaton[p.id] = String(p.title); });
+    });
+  } else if (by.axis === 'project') {
+    req = apiFetch('/api/projects').then(list => {
+      (Array.isArray(list) ? list : []).forEach(p => {
+        if (p && p.name && p.dir) maps.project[String(p.dir).replace(/\/+$/, '')] = String(p.name);
+      });
+    });
+  } else {
+    req = apiFetch('/api/compute/nodes').then(d => {
+      ((d && d.nodes) || []).forEach(n => {
+        if (!n || !n.name) return;
+        maps.node[n.name] = String(n.name);
+        if (n.id) maps.node[n.id] = String(n.name);
+        if (n.hostname) maps.node[n.hostname] = String(n.name);
+      });
+    });
+  }
+  Promise.resolve(req).then(() => {
+    if (state.activeView === 'sessions' && typeof renderSessionsView === 'function') renderSessionsView();
+  }).catch(() => { /* ids stay as the fallback */ });
+}
+window._sessionsGroupTitleInfo = _sessionsGroupTitleInfo;
+window._sessionsGroupTitlesEnsure = _sessionsGroupTitlesEnsure;
+
 function _sessionsGroupStateMix(sessions) {
   try { return _sessionsSummaryCounts(sessions); } catch (_) { return []; }
 }
@@ -5085,8 +5234,12 @@ function _sessionsGroupSessions(pool, by) {
     g.count++;
     g.sessions.push(sess);
   });
-  groups.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
-  groups.forEach(g => { g.mix = _sessionsGroupStateMix(g.sessions); });
+  groups.sort((a, b) => _sessionsKeyCompare(a.key, b.key));
+  groups.forEach(g => {
+    g.mix = _sessionsGroupStateMix(g.sessions);
+    const info = _sessionsGroupTitleInfo(g.key, by, g.sessions);
+    if (info.title) { g.label = info.title; g.idText = info.id; }
+  });
   return groups;
 }
 window._sessionsGroupValidate = _sessionsGroupValidate;
@@ -5238,11 +5391,12 @@ function _sessionsGroupShowMoreInGroupHTML(ck, paging) {
   </div>`;
 }
 
-function _sessionsSgpHeaderHTML(ck, label, count, mix, collapsed, cssClass) {
+function _sessionsSgpHeaderHTML(ck, label, count, mix, collapsed, cssClass, idText) {
   const caret = collapsed ? '▸' : '▾';
-  return `<button type="button" class="${cssClass}" onclick="_sessionsGroupToggleCollapse('${escHtml(encodeURIComponent(ck))}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+  const idHtml = idText ? `<small class="sgp-id" style="font-size:10px;color:var(--text2);font-weight:normal;margin-left:6px;">${escHtml(idText)}</small>` : '';
+  return `<button type="button" class="${cssClass}" onclick="_sessionsGroupToggleCollapse('${escHtml(encodeURIComponent(ck))}')" aria-expanded="${collapsed ? 'false' : 'true'}"${idText ? ` title="${escHtml(label + ' (' + idText + ')')}"` : ''}>
     <span class="sgp-caret">${caret}</span>
-    <span class="sgp-label">${escHtml(label)}</span>
+    <span class="sgp-label">${escHtml(label)}</span>${idHtml}
     <span class="sgp-count">${escHtml(String(count))}</span>
     <span class="sgp-mix-row">${_sessionsGroupMixHTML(mix)}</span>
   </button>`;
@@ -5267,7 +5421,7 @@ function renderSessionsGrouped(pool, by, nowMs, viewMode) {
     const shown = g.sessions.slice(0, lim);
     const paging = { shownCount: shown.length, total: g.sessions.length, hasMore: lim < g.sessions.length };
     return `<section class="sessions-group${isCollapsed ? ' collapsed' : ''}" data-sessions-group="${escHtml(ck)}">
-      ${_sessionsSgpHeaderHTML(ck, g.label, g.count, g.mix, isCollapsed, 'sessions-group-header')}
+      ${_sessionsSgpHeaderHTML(ck, g.label, g.count, g.mix, isCollapsed, 'sessions-group-header', g.idText)}
       ${isCollapsed ? '' : `<div class="sessions-group-body">
         ${_sessionsGroupBody(mode, shown, nowMs)}
         ${_sessionsGroupShowMoreInGroupHTML(ck, paging)}
@@ -5293,12 +5447,12 @@ function renderSessionsAutomaton(pool, nowMs, viewMode) {
   const blocks = [];
   const bIndex = {};
   list.forEach(sess => {
-    const key = (sess && typeof sess.prd_id === 'string' && sess.prd_id) ? sess.prd_id : SESSIONS_GROUP_UNGROUPED;
+    const key = _sessionsGroupKeyFor(sess, { axis: 'automaton' });
     let b = bIndex[key];
     if (!b) { b = { key, sessions: [] }; bIndex[key] = b; blocks.push(b); }
     b.sessions.push(sess);
   });
-  blocks.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  blocks.sort((a, b) => _sessionsKeyCompare(a.key, b.key));
   const collapsed = {};
   try {
     _sessionsCollapsedSet().forEach(k => { collapsed[k] = true; });
@@ -5313,7 +5467,9 @@ function renderSessionsAutomaton(pool, nowMs, viewMode) {
       if (!st) { st = { key: sk, sessions: [] }; sIndex[sk] = st; stories.push(st); }
       st.sessions.push(sess);
     });
-    stories.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+    // The root block (sessions with no story) leads, then the story ids.
+    stories.sort((a, b) => (a.key === 'root') ? (b.key === 'root' ? 0 : -1)
+      : (b.key === 'root') ? 1 : (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     if (!stories.length) stories.push({ key: 'root', sessions: [] });
     const storyHtml = stories.map(st => {
       const sCk = 'automaton|::' + b.key + '::' + st.key;
@@ -5326,10 +5482,11 @@ function renderSessionsAutomaton(pool, nowMs, viewMode) {
     }).join('');
     const bCk = 'automaton|::' + b.key;
     const bCol = !!collapsed[bCk];
+    const aInfo = _sessionsGroupTitleInfo(b.key, { axis: 'automaton' }, b.sessions);
     const autoLabel = (b.key === SESSIONS_GROUP_UNGROUPED)
-      ? _stx('sessions_auto_ungrouped', 'Not part of an Automaton') : b.key;
+      ? _stx('sessions_auto_ungrouped', 'Not part of an Automaton') : (aInfo.title || b.key);
     return `<section class="automaton-block${bCol ? ' collapsed' : ''}" data-automaton-block="${escHtml(bCk)}">
-      ${_sessionsSgpHeaderHTML(bCk, autoLabel, b.sessions.length, _sessionsGroupStateMix(b.sessions), bCol, 'automaton-header')}
+      ${_sessionsSgpHeaderHTML(bCk, autoLabel, b.sessions.length, _sessionsGroupStateMix(b.sessions), bCol, 'automaton-header', aInfo.title ? aInfo.id : '')}
       ${bCol ? '' : `<div class="automaton-body">${storyHtml}</div>`}
     </section>`;
   }).join('');
@@ -5408,6 +5565,7 @@ function setSessionGroupBy(value) {
   state._sessionsGroupPage = {};
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
+  _sessionsSyncPeerRows();
   if (state.activeView === 'sessions') renderSessionsView();
 }
 window.setSessionGroupBy = setSessionGroupBy;
@@ -5491,6 +5649,7 @@ function applySavedView(id) {
   state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
+  _sessionsSyncPeerRows();
   if (state.activeView === 'sessions') renderSessionsView();
   return true;
 }
@@ -5777,12 +5936,14 @@ function renderSessionTile(sess, nowMs) {
 }
 window.renderSessionTile = renderSessionTile;
 
-// Both density variants draw through the same grid; compact is a fixed dense
-// row mode while tiles follows the width-based mode (and keeps following it
-// on resizes, see _tileSyncModes).
+// Both variants draw the same full tile markup in the same multi-column grid;
+// compact is the same tile grid at a smaller size (the session-tile-grid-compact
+// class scales it in CSS) and is pinned to data-tile-mode="tile" so it never
+// becomes the compact or line row layout. Tiles follows the width-based mode
+// (and keeps following it on resizes, see _tileSyncModes).
 function renderSessionTileGrid(innerHTML, mode) {
   const compact = (mode === 'compact');
-  const gridMode = compact ? 'compact' : _tileRowMode(_tileViewportWidth());
+  const gridMode = compact ? 'tile' : _tileRowMode(_tileViewportWidth());
   return `<div class="work-tile-grid session-tile-grid${compact ? ' session-tile-grid-compact' : ''}" data-tile-mode="${gridMode}">${innerHTML}</div>`;
 }
 window.renderSessionTileGrid = renderSessionTileGrid;
@@ -58373,7 +58534,7 @@ function _tileGridHTML(innerHTML, scope) {
 
 // _tileSyncModes re-applies the row mode to every grid on screen after a
 // resize, so the layout follows the window without a re-render. A session
-// grid the operator pinned to `compact` keeps its density there.
+// compact-size tile grid is skipped, so it is never rewritten to compact or line.
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
   document.querySelectorAll('.work-tile-grid').forEach(el => {

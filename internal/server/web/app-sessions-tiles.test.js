@@ -339,13 +339,14 @@ test('a hostile session name and node are escaped on the tile', () => {
 
 // ── the two grid variants ───────────────────────────────────────────────────
 
-test('compact is a fixed dense grid, tiles follows the viewport width mode', () => {
+test('compact is the same tile grid at a smaller size, tiles follows the viewport width mode', () => {
   const sb = loadApp();
   setRegistry(sb);
   const s = makeSessions(1)[0];
   const compact = sb.renderSessionTileGrid(sb.renderSessionTile(s, NOW), 'compact');
   assert.match(compact, /class="work-tile-grid session-tile-grid session-tile-grid-compact"/);
-  assert.match(compact, /data-tile-mode="compact"/);
+  // compact is now a smaller tile grid, so it is pinned to data-tile-mode="tile" (it used to pin the row mode "compact").
+  assert.match(compact, /data-tile-mode="tile"/);
   sb.innerWidth = 1280;
   const wide = sb.renderSessionTileGrid(sb.renderSessionTile(s, NOW), 'tiles');
   assert.equal(wide.includes('session-tile-grid-compact'), false);
@@ -360,7 +361,7 @@ test('compact is a fixed dense grid, tiles follows the viewport width mode', () 
   sb.document.querySelectorAll = sel => (sel === '.work-tile-grid' ? grids : []);
   sb.innerWidth = 500;
   sb._tileSyncModes();
-  assert.equal(grids[0].dataset.tileMode, undefined, 'the pinned compact grid keeps its density');
+  assert.equal(grids[0].dataset.tileMode, undefined, 'the compact-size tile grid is left untouched');
   assert.equal(grids[1].dataset.tileMode, 'compact', '... while the tiles grid follows the width');
 });
 
