@@ -29,7 +29,7 @@ function loadView({ projects = [], fail = false, hash = '' } = {}) {
   const out = { view: '' };
   const view = makeStubElement(h => { out.view = h; });
   view.insertAdjacentHTML = (pos, h) => { out.view = h + out.view; };
-  const sandbox = buildSandbox({ byId: { view }, initialHash: hash });
+  const sandbox = buildSandbox({ byId: { automataPanel: view, view }, initialHash: hash });
   sandbox.fetch = (url) => {
     if (String(url).includes('/api/projects')) {
       if (fail) return Promise.resolve({ ok: false, status: 500, statusText: 'x', text: () => Promise.resolve('<b>down</b>'), json: () => Promise.reject(new Error('x')) });
@@ -41,7 +41,7 @@ function loadView({ projects = [], fail = false, hash = '' } = {}) {
   loadScript(APP, sandbox);
   bindBundle(sandbox);
   // The Projects tab is the active view: a load only repaints while it is.
-  vm.runInContext("state.activeView = 'projects'", sandbox);
+  vm.runInContext("state.activeView = 'autonomous'; _automataState.tab = 'projects'", sandbox);
   return { sb: sandbox, out, view };
 }
 
@@ -50,20 +50,15 @@ const PROJECTS = [
   { name: 'zeta', dir: '/work/zeta' },
 ];
 
-test('index.html has a top-level Projects nav button that routes to the view', () => {
+test('index.html has no top-level Projects nav button; Projects is the first Automata sub-tab', () => {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-  assert.match(html, /<button id="navBtnProjects" class="nav-btn" data-view="projects" onclick="navigate\('projects'\)"/);
-  assert.match(html, /data-i18n="nav_projects"/);
-  // The Automata button stays, and Projects sits after it in the nav.
-  assert.ok(html.indexOf('id="navBtnProjects"') > html.indexOf('id="navBtnAutonomous"'));
-});
-
-test('navigate routes the projects view to renderProjectsView under the Projects title', () => {
+  assert.ok(html.indexOf('id="navBtnProjects"') < 0);
   const js = fs.readFileSync(APP, 'utf8');
-  assert.match(js, /} else if \(view === 'projects'\) \{\s*headerTitle\.textContent = t\('nav_projects'\) \|\| 'Projects';\s*renderProjectsView\(\);/);
+  assert.match(js, /const _AUTOMATA_TABS = \['projects', 'automation', 'automata', 'events', 'templates'\];/);
   const { sb } = loadView();
   assert.equal(typeof sb.renderProjectsView, 'function');
   assert.equal(typeof sb.selectProjectsView, 'function');
+  assert.equal(sb._projectsActive(), true);
 });
 
 test('the #projects hash round-trips the Overview and a project name', () => {
