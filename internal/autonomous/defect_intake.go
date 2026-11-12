@@ -118,6 +118,21 @@ func (m *Manager) intakeDefect(prd *PRD) {
 	if prd == nil {
 		return
 	}
+	// A defect with a known parent starts from the parent's setup. Creation
+	// paths that set a parent have done this already (inheritFromParent is
+	// once per child), so this covers a defect whose parent was set another way.
+	// A child that joined its parent's Automation is not offered elsewhere.
+	if prd.ParentPRDID != "" {
+		if parent, ok := m.store.GetPRD(prd.ParentPRDID); ok {
+			m.inheritFromParent(prd, parent, childExplicit{})
+		}
+		if m.automations != nil && EffectiveKind(prd, nil) == PRDKindBug {
+			if owner := m.automations.OwnerOf(prd.ID); owner != "" {
+				m.recordDefectIntake(prd, DefectIntakeSkipped, m.DefectIntakeAutomation(), "already a member of Automation "+owner+" through its parent")
+				return
+			}
+		}
+	}
 	// Intake only handles bug filings; anything else is skipped whatever
 	// the setting says.
 	if EffectiveKind(prd, nil) != PRDKindBug {

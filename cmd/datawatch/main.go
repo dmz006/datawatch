@@ -4746,8 +4746,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				MergePendingMode:         acfgIn.Automation.MergePendingMode,
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 				MergedMemberPolicy:       acfgIn.Automation.MergedMemberPolicy,
-				CreateSearchMode:         acfgIn.Automation.CreateSearchMode,
-				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
+				// ChildInherit is a pointer: nil (unset) reads the on default.
+				ChildInherit:          acfgIn.Automation.ChildInherit,
+				CreateSearchMode:      acfgIn.Automation.CreateSearchMode,
+				CreateSearchThreshold: acfgIn.Automation.CreateSearchThreshold,
 				// Cleanup keys: the effective defaults (report, 24, 10, 85)
 				// resolve in the manager's Effective* accessors, so the bridge
 				// copies raw values and lets unset stay unset.
