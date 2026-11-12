@@ -4805,21 +4805,34 @@ function renderSessionsView() {
   const paging = _sessionsPagingState(visible, state._sessionsPageLimit);
   const viewMode = _sessionsViewMode();
 
-  const filterVal = escHtml(state.sessionFilter || '');
-  // Collect unique backend types from all sessions for compact filter badges
-  const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
-  const backendShort = {
-    'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
-    'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
-    'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
-    'council-virtual': '🎭 Council', // GH#172 D64
+  // Sheet/control stability kit (operator rule: "the filters sheet must not
+  // re-render while it is open"): every full repaint below goes through
+  // paint(). While the sheet (or the search box) is live, paint() keeps the
+  // OPERATOR'S live nodes — same value, same focus, same scroll, same
+  // listeners — and refreshes what changed in place instead: state-chip
+  // counts, the Group-by select's options, the saved-view chips. A patch
+  // that would touch a control that currently has focus is deferred and
+  // flushed exactly once when the control is released (focusout/blur/
+  // change/click/'dw-settle'). See the kit above: the _sheet* helpers.
+  const sheetSnapBefore = _sheetCapture('sessionsSheetBackdrop');
+  const searchSnapBefore = _sheetCapture('sessionFilterInput');
+  const paint = (html) => {
+    view.innerHTML = html;
+    _sheetRestore(view, searchSnapBefore, (root) => {
+      if (typeof root.value === 'string' && root.value !== filterVal) {
+        try { root.value = filterVal; } catch (_) { /* harness: no value */ }
+      }
+    });
+    if (sheetSnapBefore) _sheetRestore(view, sheetSnapBefore, _sessionsSheetLivePatch);
+    _injectServerPickerBar(view, renderSessionsView);
   };
-  const backendBadges = backendTypes.map(bt => {
-    const isActive = filterText === bt.toLowerCase();
-    const label = backendShort[bt] || bt;
-    const count = state.sessions.filter(s => s.backend_family === bt).length;
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
-  }).join('');
+
+  const filterVal = escHtml(state.sessionFilter || '');
+  // Backend badges — shared helper so the open sheet's in-place patch uses
+  // byte-identical markup (see _sessionsSheetLlmChips).
+  const _llmInfo = _sessionsSheetLlmChips();
+  const backendTypes = _llmInfo.types;
+  const backendBadges = _llmInfo.html;
   // B44 — search/filter icon toggle, parity with datawatch-app sessions
   // list. DEFAULT OFF (filters hidden, session list takes full window);
   // click the magnifying-glass to reveal. State persists in
@@ -4848,33 +4861,14 @@ function renderSessionsView() {
   const llmCount = backendTypes.length;
   const llmActiveLabel = filterText && backendTypes.find(bt => bt.toLowerCase() === filterText) ? filterText : '';
   const llmBtnLabel = llmActiveLabel ? `LLM: ${escHtml(llmActiveLabel)}` : `LLM (${llmCount})`;
-  // State badges — every real state, not just buckets.
-  const realStateChips = [
-    {key: 'all',          label: t('session_chip_all'),          color: 'var(--text2)'},
-    {key: 'running',      label: t('session_chip_running'),      color: 'var(--success,#10b981)'},
-    {key: 'waiting_input',label: t('session_chip_waiting'),      color: 'var(--warning,#f59e0b)'},
-    {key: 'stalled',      label: t('session_chip_stalled'),      color: 'var(--error,#ef4444)'},
-    {key: 'rate_limited', label: t('session_chip_rate_limited'), color: 'var(--error,#ef4444)'},
-    {key: 'complete',     label: t('session_chip_complete'),     color: 'var(--text2)'},
-    {key: 'failed',       label: t('session_chip_failed'),       color: 'var(--error,#ef4444)'},
-    {key: 'killed',       label: t('session_chip_killed'),       color: 'var(--text2)'},
-  ];
-  const stateCounts = {};
-  realStateChips.forEach(c => {
-    if (c.key === 'all') stateCounts.all = state.sessions.length;
-    else stateCounts[c.key] = state.sessions.filter(s => s.state === c.key).length;
-  });
-  // GATE finding (operator 2026-05-10): only show state chips that have
-  // entries in the current list — 0-count chips are confusing. 'all'
-  // always visible. The currently-active filter ALSO stays visible even
-  // if 0 (so operator can see what they picked + back out).
-  const visibleStateChips = realStateChips.filter(c => c.key === 'all' || stateCounts[c.key] > 0 || chip === c.key);
+  // State chips — shared helper so the open sheet's in-place patch uses
+  // byte-identical markup (see _sessionsSheetStateChips).
+  const _stateChipInfo = _sessionsSheetStateChips();
+  const stateCounts = _stateChipInfo.counts;
+  const visibleStateChips = _stateChipInfo.chips;
   const stateActiveKey = (chip && chip !== 'all') ? chip : '';
   const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (${visibleStateChips.length - 1})`;
-  const stateBadges = visibleStateChips.map(c => {
-    const isActive = chip === c.key;
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
-  }).join('');
+  const stateBadges = _stateChipInfo.html;
   // Tag filter — chip list grouped by axis, drawn from the tag inventory
   // (GET /api/sessions/tags). Shown only while some session carries a tag:
   // an empty control would just be noise. Selection lives in
@@ -4924,7 +4918,7 @@ function renderSessionsView() {
     if (state.activeServer && state.activeServer !== 'all' && fcs && fcs.server === state.activeServer) {
       if (fcs.phase === 'error') {
         _ensureLocalHostname(); // GH#194 -- so "Back to %1$s" shows the real name on the next render if not already cached
-        view.innerHTML = `
+        paint(`
           <div class="view-content" style="position:relative;">
             <div class="empty-state">
               <span class="empty-state-icon">⚠️</span>
@@ -4932,8 +4926,7 @@ function renderSessionsView() {
               <p>${escHtml(t('fed_conn_error_body', [state.activeServer, fcs.message]) || `${state.activeServer}: ${fcs.message}`)}</p>
               <button class="btn-primary" onclick="selectServer(null)" style="margin-top:10px;">${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>
             </div>
-          </div>`;
-        _injectServerPickerBar(view, renderSessionsView);
+          </div>`);
         return;
       }
       // 'connecting' or 'loading_sessions' reach here now (GH#235 parity
@@ -4948,11 +4941,10 @@ function renderSessionsView() {
       const fcsLabel = fcs.phase === 'loading_sessions'
         ? (t('fed_conn_loading_sessions', [state.activeServer]) || `Loading sessions from ${state.activeServer}…`)
         : (t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`);
-      view.innerHTML = `
+      paint(`
         <div class="view-content" style="position:relative;">
           ${loadingEyeBlock(fcsLabel, 'panel')}
-        </div>`;
-      _injectServerPickerBar(view, renderSessionsView);
+        </div>`);
       return;
     }
     // GH#172 D60 — until the first data arrives an empty state looks like
@@ -4965,17 +4957,16 @@ function renderSessionsView() {
       const failed = sl.error
         ? `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(sl.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`
         : `<div class="list-state-loading-label" role="status">${escHtml(t('loading'))}</div>`;
-      view.innerHTML = `
+      paint(`
         <div class="view-content" style="position:relative;">
           <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
           ${failed}
           <div class="session-list">${sl.error ? '' : skeletonCard.repeat(3)}</div>
-        </div>`;
-      _injectServerPickerBar(view, renderSessionsView);
+        </div>`);
       if (!sl.error && !sl.loading) loadSessionsList();
       return;
     }
-    view.innerHTML = `
+    paint(`
       <div class="view-content" style="position:relative;">
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
         ${disconnectedBannerHtml}
@@ -4987,8 +4978,7 @@ function renderSessionsView() {
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
         ${sheetHtml}
-      </div>`;
-    _injectServerPickerBar(view, renderSessionsView);
+      </div>`);
     return;
   }
 
@@ -5024,14 +5014,14 @@ function renderSessionsView() {
                 ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
                 : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
   const filtersActive = !!(filterText.trim() || (chip && chip !== 'all') || state.sessionWatchFilter || tagSel);
-  view.innerHTML = `<div class="view-content" style="position:relative;">
+  paint(`<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
     <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
     ${_sessionTagSelectedSummaryHTML()}
     ${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
-    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`);
 
   // Restore filter input focus and cursor position
   if (state._sessionsSearchKeep) {
@@ -6160,9 +6150,8 @@ function toggleSavedViewRename(id) {
 }
 window.toggleSavedViewRename = toggleSavedViewRename;
 
-function renderSessionsViewsBar(views) {
-  const list = Array.isArray(views) ? views : _savedViews();
-  const chips = list.map(v => {
+function _savedViewsChipsHTML(list) {
+  return (Array.isArray(list) ? list : []).map(v => {
     const id = String(v.id);
     return `<span class="svs-chip" data-saved-view="${escHtml(id)}">
       <button type="button" class="svs-apply" title="${escHtml(_stx('sessions_view_apply', 'Apply'))}" onclick="applySavedView('${escHtml(id)}')">${escHtml(v.name)}</button>
@@ -6174,13 +6163,18 @@ function renderSessionsViewsBar(views) {
       <button type="button" class="svs-delete" title="${escHtml(_stx('sessions_view_delete', 'Delete'))}" onclick="deleteSavedView('${escHtml(id)}')">✕</button>
     </span>`;
   }).join('');
+}
+
+function renderSessionsViewsBar(views) {
+  const list = Array.isArray(views) ? views : _savedViews();
+  const chips = _savedViewsChipsHTML(list);
   return `<div class="sessions-saved-views">
     <span class="svs-title">${escHtml(_stx('sessions_view_title', 'Views'))}</span>
     <span class="svs-save-row" data-svs-save-row>
       <input type="text" class="svs-input" data-saved-view-name="new" maxlength="${SESSIONS_VIEW_NAME_MAX}" placeholder="${escHtml(_stx('sessions_view_name_ph', 'View name'))}">
       <button type="button" class="svs-save" onclick="submitSavedViewSave()">+ ${escHtml(_stx('sessions_view_new', 'New view'))}</button>
     </span>
-    ${chips}
+    <span id="sessionsSavedViewsChips">${chips}</span>
   </div>`;
 }
 window.renderSessionsViewsBar = renderSessionsViewsBar;
@@ -6210,6 +6204,299 @@ function renderSessionsModeToggle(mode) {
   ).join('');
   return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
 }
+
+window.renderSessionsViewsBar = renderSessionsViewsBar;
+window._savedViewsRead = _savedViewsRead;
+window._savedViewsWrite = _savedViewsWrite;
+window._savedViewsChipsHTML = _savedViewsChipsHTML;
+
+// ── Sheet/control stability kit ─────────────────────────────────────────
+// Rule (operator: "the filters sheet must not re-render while it is open"):
+// while the sheet — or any other block that owns a select/input — is
+// in use, a refresh (WS push, timer, saved-view apply) must NEVER destroy
+// its DOM. `renderSessionsView` is the one paint path that can rebuild the
+// sheet, so every paint goes through:
+//   1. `_sheetCapture` — remember the live nodes, focus, scrolled offsets;
+//   2. the fresh paint (each former `view.innerHTML = ...` is a `paint(...)`);
+//   3. `_sheetRestore` — move the operator's live sheet back into the same
+//      position (same node ⇒ same value, same focus, same listeners),
+//      restore scroll, then refresh what changed *in place*:
+//        - state chips + Watch badge counts;
+//        - Group-by select options, keeping its selection;
+//        - saved-view chip list;
+//      and only touch a control that currently has focus (open select,
+//      focused input) if the patch is DEFERRED and flushed ONCE when the
+//      control is released (focusout / blur / change / click / 'dw-settle').
+// The search box gets the same protection via the shared kit (value +
+// focus + caret, deferred the same way). Other live panels (daemon log
+// status, settings auto-lanes status, burn-guard card, presence dot) only
+// rewrite text nodes and keep their controls, and reuse this kit's defer
+// rule where a patch could race an in-use control.
+function _sheetFind(root, pred) {
+  if (!root || typeof pred !== 'function') return null;
+  try { if (pred(root)) return root; } catch (_) { /* keep walking */ }
+  const kids = root.children || [];
+  for (let i = 0; i < kids.length; i++) {
+    const hit = _sheetFind(kids[i], pred);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function _sheetEngaged(root) {
+  if (!root) return false;
+  if (root.__dwEngaged) return true;
+  try {
+    const a = (typeof document !== 'undefined') ? document.activeElement : null;
+    if (!a) return false;
+    if (a === root) return true;
+    if (typeof root.contains === 'function' && root.contains(a)) return true;
+  } catch (_) { /* no DOM */ }
+  return false;
+}
+
+// Engagement tracking: a focus landing inside the block marks it engaged
+// (open select, input being typed); focus leaving clears the flag and
+// flushes any patches that were deferred for exactly this reason.
+function _sheetHook(root) {
+  if (!root || root.__dwHooked || typeof root.addEventListener !== 'function') return;
+  root.__dwHooked = true;
+  const inBlock = (el) => {
+    if (!el) return false;
+    if (el === root) return true;
+    if (typeof root.contains === 'function') { try { return !!root.contains(el); } catch (_) { /* fall through */ } }
+    return true; // unknown target: keep the block engaged (safe side)
+  };
+  try {
+    root.addEventListener('focusin', (e) => {
+      const target = e && (e.target || e);
+      if (inBlock(target)) {
+        root.__dwEngaged = true;
+        try { if (target && target !== root) root.__dwFocusEl = target; } catch (_) { /* ignore */ }
+      }
+    });
+  } catch (_) { /* no DOM */ }
+  try {
+    root.addEventListener('focusout', (e) => {
+      const next = e && (e.relatedTarget || null);
+      if (inBlock(next)) return; // focus moved to another control in the block
+      root.__dwEngaged = false;
+      _sheetSettleFire(root);
+    });
+  } catch (_) { /* no DOM */ }
+}
+
+function _sheetSettleFire(root) {
+  const q = (root && root.__dwPending) || [];
+  if (root) root.__dwPending = [];
+  for (let i = 0; i < q.length; i++) {
+    try { q[i](root); } catch (_) { /* one bad patch must not block the rest */ }
+  }
+}
+
+function _sheetWireSettle(root) {
+  if (!root || root.__dwSettleWired || typeof root.addEventListener !== 'function') return;
+  root.__dwSettleWired = true;
+  for (const ev of ['focusout', 'blur', 'change', 'click', 'dw-settle']) {
+    try { root.addEventListener(ev, () => _sheetSettleFire(root)); } catch (_) { /* no DOM */ }
+  }
+}
+
+// Defers while a control inside `root` is engaged (focused): `fn` runs now
+// otherwise it is queued and flushed exactly once on release (see
+// _sheetHook/_sheetWireSettle). Patches always go through the LIVE root
+// node — never replacing its selects/inputs, only rewriting their text,
+// options and chip rows.
+function _sheetPatch(root, fn) {
+  if (!root || typeof fn !== 'function') return false;
+  _sheetHook(root);
+  if (_sheetEngaged(root)) {
+    (root.__dwPending = root.__dwPending || []).push(fn);
+    _sheetWireSettle(root);
+    return false;
+  }
+  // Patch signature: patchFn(root) — the live node the patch writes into.
+  try { fn(root); } catch (_) { /* patch failed; the next paint retries */ }
+  return true;
+}
+
+function _sheetCapture(rootId, rootOverride) {
+  let root = rootOverride || null;
+  if (!root) { try { root = document.getElementById(rootId); } catch (_) { root = null; } }
+  if (!root) return null;
+  const snap = { id: rootId, root, scrolls: [] };
+  const targets = [root].concat(root.children || []);
+  for (let k = 0; k < targets.length; k++) {
+    const el = targets[k];
+    try { if (el && typeof el.scrollTop === 'number') snap.scrolls.push({ el, top: el.scrollTop }); } catch (_) { /* ignore */ }
+  }
+  try {
+    let a = null;
+    if (typeof document !== 'undefined') a = document.activeElement;
+    snap.focusEl = null;
+    if (a && (a === root || (typeof root.contains === 'function' && root.contains(a)))) {
+      snap.focusEl = a;
+      snap.wasFocused = true;
+    }
+    if (typeof root.value === 'string') {
+      snap.value = root.value;
+      try {
+        if (typeof root.selectionStart === 'number' && typeof root.selectionEnd === 'number') {
+          snap.selStart = root.selectionStart;
+          snap.selEnd = root.selectionEnd;
+        }
+      } catch (_) { /* ignore */ }
+    }
+    _sheetHook(root);
+  } catch (_) { /* keep the structural capture */ }
+  return snap;
+}
+
+function _sheetRestore(view, snap, patchFn) {
+  if (!snap || !snap.root) return null;
+  const root = snap.root;
+  let fresh = null;
+  try { fresh = document.getElementById(snap.id); } catch (_) { fresh = null; }
+  if (fresh !== root) {
+    // The repaint made a replacement node — move the operator's live node
+    // back into the same position so its value, focus, listeners and DOM
+    // identity all survive.
+    if (fresh && fresh.parentNode && typeof fresh.parentNode.replaceChild === 'function') {
+      fresh.parentNode.replaceChild(root, fresh);
+    } else {
+      try { if (root.parentNode && typeof root.remove === 'function') root.remove(); } catch (_) { /* not connected */ }
+      if (view && typeof view.appendChild === 'function') view.appendChild(root);
+    }
+  }
+  // Restore scrolled offsets (a repaint resets them to 0).
+  for (const s of (snap.scrolls || [])) {
+    try { if (s.el) s.el.scrollTop = s.top; } catch (_) { /* harness: no scroll */ }
+  }
+  // Re-focus (and the caret, for inputs) — the repaint drops it.
+  if (snap.focusEl && typeof snap.focusEl.focus === 'function') {
+    try {
+      snap.focusEl.focus();
+      if (typeof snap.focusEl.setSelectionRange === 'function' && typeof snap.selStart === 'number' && typeof snap.selEnd === 'number') {
+        const n = String(snap.focusEl.value || '').length;
+        snap.focusEl.setSelectionRange(Math.min(snap.selStart, n), Math.min(snap.selEnd, n));
+      }
+    } catch (_) { /* harness: focus is a no-op */ }
+  }
+  if (typeof patchFn === 'function') _sheetPatch(root, patchFn);
+  return root;
+}
+
+// Shared chip markup so the full paint and the in-place patch always agree
+// byte-for-byte (the patch skips the write when they already do).
+function _sessionsSheetWatchBtnHTML() {
+  const watchOn = !!state.sessionWatchFilter;
+  return `<button type="button" class="backend-filter-badge ${watchOn ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(_stx('session_watch_filter_tip', 'Show watched only'))}" aria-pressed="${watchOn ? 'true' : 'false'}">&#128065; ${state.watchedSessions ? state.watchedSessions.size : 0}</button>`;
+}
+
+function _sessionsSheetStateChips() {
+  const chip = state.sessionStateChip;
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  // State badges — every real state, not just buckets (item 4).
+  const realStateChips = [
+    {key: 'all',          label: t('session_chip_all'),          color: 'var(--text2)'},
+    {key: 'running',      label: t('session_chip_running'),      color: 'var(--success,#10b981)'},
+    {key: 'waiting_input',label: t('session_chip_waiting'),      color: 'var(--warning,#f59e0b)'},
+    {key: 'stalled',      label: t('session_chip_stalled'),      color: 'var(--error,#ef4444)'},
+    {key: 'rate_limited', label: t('session_chip_rate_limited'), color: 'var(--error,#ef4444)'},
+    {key: 'complete',     label: t('session_chip_complete'),     color: 'var(--text2)'},
+    {key: 'failed',       label: t('session_chip_failed'),       color: 'var(--error,#ef4444)'},
+    {key: 'killed',       label: t('session_chip_killed'),       color: 'var(--text2)'},
+  ];
+  const stateCounts = {};
+  realStateChips.forEach(c => {
+    if (c.key === 'all') stateCounts.all = sessions.length;
+    else stateCounts[c.key] = sessions.filter(s => s.state === c.key).length;
+  });
+  // GATE finding (operator 2026-05-10): only show state chips that have
+  // entries in the current list — 0-count chips are confusing. 'all'
+  // always visible. The currently-active filter ALSO stays visible even
+  // if 0 (so operator can see what they picked + back out).
+  const visibleStateChips = realStateChips.filter(c => c.key === 'all' || stateCounts[c.key] > 0 || chip === c.key);
+  const html = visibleStateChips.map(c => {
+    const isActive = chip === c.key;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
+  }).join('');
+  return { chips: visibleStateChips, counts: stateCounts, html };
+}
+
+function _sessionsSheetLlmChips() {
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  // Unique backend families, same order as the pre-refactor renderer.
+  const types = [...new Set(sessions.map(s => s.backend_family).filter(Boolean))].sort();
+  const filterText = (state.sessionFilter || '').toLowerCase();
+  const backendShort = {
+    'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
+    'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
+    'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
+    'council-virtual': '🎭 Council', // GH#172 D64
+  };
+  const html = types.map(bt => {
+    const isActive = filterText === bt.toLowerCase();
+    const label = backendShort[bt] || bt;
+    const count = sessions.filter(s => s.backend_family === bt).length;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
+  }).join('');
+  return { types, html };
+}
+
+// The single in-place refresh of an OPEN sheet: text/counts/options are
+// updated inside the stable containers; selects and inputs keep their
+// node, value, focus and scroll (see the kit above).
+function _sessionsSheetLivePatch(root) {
+  // 1. Group-by select: same node, options synced, selection kept.
+  const sel = _sheetFind(root, (el) => el && el.id === 'sessions-group-select');
+  if (sel && typeof sel.value === 'string') {
+    try {
+      const fresh = (typeof renderSessionsGroupPicker === 'function')
+        ? renderSessionsGroupPicker(_sessionsGroupCurrent()) : '';
+      const m = /<select\b[^>]*>([\s\S]*?)<\/select>/.exec(fresh || '');
+      if (m) {
+        const keep = sel.value;
+        if (String(sel.innerHTML) !== m[1]) sel.innerHTML = m[1];
+        try { sel.value = keep; } catch (_) { /* selection already current */ }
+      }
+    } catch (_) { /* select stays as-is */ }
+  }
+  // 2. State chips + Watch button (stable container, counts patch in place).
+  const st = _sheetFind(root, (el) => el && el.id === 'sessionsSheetStateChips');
+  if (st && typeof st.innerHTML === 'string') {
+    const html = _sessionsSheetStateChips().html + _sessionsSheetWatchBtnHTML();
+    if (String(st.innerHTML) !== html) { try { st.innerHTML = html; } catch (_) { /* ignore */ } }
+  }
+  // 3. Backend chips (render only paints them with >1 backend; match that).
+  const ll = _sheetFind(root, (el) => el && el.id === 'sessionsSheetLlmChips');
+  if (ll && typeof ll.innerHTML === 'string') {
+    const info = _sessionsSheetLlmChips();
+    if (info.types.length > 1 && String(ll.innerHTML) !== info.html) {
+      try { ll.innerHTML = info.html; } catch (_) { /* ignore */ }
+    }
+  }
+  // 4. Saved-view chip list (rename rows + inputs are stable nodes; only
+  //    the chip list itself changes, and only when the operator changed it).
+  const sv = _sheetFind(root, (el) => el && el.id === 'sessionsSavedViewsChips');
+  if (sv && typeof sv.innerHTML === 'string') {
+    let html = null;
+    try { html = _savedViewsChipsHTML(Array.isArray(_savedViews()) ? _savedViews() : []); } catch (_) { html = null; }
+    if (html != null && String(sv.innerHTML) !== html) { try { sv.innerHTML = html; } catch (_) { /* ignore */ } }
+  }
+}
+
+window._sheetFind = _sheetFind;
+window._sheetEngaged = _sheetEngaged;
+window._sheetHook = _sheetHook;
+window._sheetPatch = _sheetPatch;
+window._sheetCapture = _sheetCapture;
+window._sheetRestore = _sheetRestore;
+window._sheetSettleFire = _sheetSettleFire;
+window._sessionsSheetWatchBtnHTML = _sessionsSheetWatchBtnHTML;
+window._sessionsSheetStateChips = _sessionsSheetStateChips;
+window._sessionsSheetLlmChips = _sessionsSheetLlmChips;
+window._sessionsSheetLivePatch = _sessionsSheetLivePatch;
 
 // ── Filters sheet ───────────────────────────────────────────────────────
 // Open state lives in state._sessionsSheetOpen so every re-render redraws the
@@ -6244,10 +6531,11 @@ function _sessionsSheetHTML(parts) {
   const title = _stx('sessions_filters_title', 'Filters');
   const close = _stx('sessions_filters_close', 'Close');
   const sec = (h, body) => body ? `<section class="sessions-sheet-sec"><h4>${escHtml(h)}</h4>${body}</section>` : '';
-  const watchOn = !!state.sessionWatchFilter;
-  const watchBtn = `<button type="button" class="backend-filter-badge ${watchOn ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(_stx('session_watch_filter_tip', 'Show watched only'))}" aria-pressed="${watchOn ? 'true' : 'false'}">&#128065; ${state.watchedSessions ? state.watchedSessions.size : 0}</button>`;
-  const statusBody = `<div class="state-filter-chips sessions-sheet-chips">${p.stateBadges || ''}${watchBtn}</div>`
-    + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips">${p.llmBadges}</div>` : '')
+  // Stable container ids: while the sheet is open, a refresh patches these
+  // nodes in place (_sessionsSheetLivePatch) instead of rebuilding the
+  // sheet, so an open select / focused input is never destroyed.
+  const statusBody = `<div class="state-filter-chips sessions-sheet-chips" id="sessionsSheetStateChips">${p.stateBadges || ''}${_sessionsSheetWatchBtnHTML()}</div>`
+    + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips" id="sessionsSheetLlmChips">${p.llmBadges}</div>` : '')
     + (p.tagPanel ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_tags', 'Tags'))} ${p.tagHelp || ''}</div>${p.tagPanel}` : '');
   const groupBody = renderSessionsGroupPicker(p.groupBy);
   return `<div class="sessions-sheet-backdrop" id="sessionsSheetBackdrop" onclick="sessionsFiltersBackdrop(event)">
