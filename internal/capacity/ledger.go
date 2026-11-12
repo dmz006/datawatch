@@ -447,6 +447,9 @@ type Ledger struct {
 	adoptSince time.Time // when BeginAdoption was called
 
 	wedgeReported atomic.Bool // set while a lock wedge has been reported; see SnapshotWatched
+
+	intervals      []LaneInterval // closed lease and wait intervals; see LaneIntervals
+	recordingSince time.Time      // when the ledger began keeping intervals
 }
 
 // New creates a ledger.
@@ -467,14 +470,15 @@ func New(opt Options) *Ledger {
 		opt.Clock = realClock{}
 	}
 	return &Ledger{
-		limits:    map[string]int{},
-		leases:    map[string]*Lease{},
-		lastGrant: map[string]time.Time{},
-		lastModel: map[string]string{},
-		rates:     map[string]RateCeiling{},
-		rateUse:   map[string][]rateEntry{},
-		opt:       opt,
-		changed:   make(chan struct{}),
+		recordingSince: opt.Clock.Now(),
+		limits:         map[string]int{},
+		leases:         map[string]*Lease{},
+		lastGrant:      map[string]time.Time{},
+		lastModel:      map[string]string{},
+		rates:          map[string]RateCeiling{},
+		rateUse:        map[string][]rateEntry{},
+		opt:            opt,
+		changed:        make(chan struct{}),
 	}
 }
 
@@ -1041,6 +1045,7 @@ func (l *Ledger) Replan() {
 // grantLocked takes w's lease. req is w.req as resolved by resolveLocked, so
 // for a request with NodeChoices it already names the chosen node.
 func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
+	l.recordWaitEndLocked(w, now)
 	l.leases[req.Holder] = &Lease{
 		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
 		Node: req.Node, Model: req.Model, Acquired: now,
@@ -1162,6 +1167,7 @@ func (l *Ledger) remove(w *waiter) {
 	defer l.mu.Unlock()
 	for i, x := range l.waiters {
 		if x == w {
+			l.recordWaitEndLocked(w, l.opt.Clock.Now())
 			l.waiters = append(l.waiters[:i], l.waiters[i+1:]...)
 			break
 		}
@@ -1465,7 +1471,8 @@ func (l *Ledger) Bind(holder, sessionID string) {
 func (l *Ledger) Release(holder string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if _, ok := l.leases[holder]; ok {
+	if ls, ok := l.leases[holder]; ok {
+		l.recordLeaseEndLocked(ls, l.opt.Clock.Now())
 		delete(l.leases, holder)
 		l.signalChangedLocked()
 		l.dispatchLocked()
@@ -1543,6 +1550,7 @@ func (l *Ledger) Reap(live func(Lease) bool) []string {
 	var out []string
 	for _, d := range dead {
 		if cur, ok := l.leases[d.Holder]; ok && cur.Acquired.Equal(d.Acquired) {
+			l.recordLeaseEndLocked(cur, l.opt.Clock.Now())
 			delete(l.leases, d.Holder)
 			out = append(out, d.Holder)
 		}

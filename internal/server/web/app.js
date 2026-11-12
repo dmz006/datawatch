@@ -11905,6 +11905,11 @@ const DOCS_LINKS_BY_KEY = {
   dash_card_websearch_usage: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
   dash_card_memory_scope: 'memory.md',
   dash_card_smoke: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_events: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_gantt: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_heatmap: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_work_map: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_cost_report: DOCS_DEFINITIONS + '#cost-report',
   dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
@@ -35786,6 +35791,7 @@ window.costReportRowHtml = function(row, opts) {
   const withApi = !!o.withApi;
   const withUnits = !!o.withUnits;
   const withDetail = !!o.withDetail;
+  const withLocal = !!o.withLocal;
   const key = (r.key === undefined || r.key === null || r.key === '')
     ? (t('cost_report_key_unknown') || '—') : r.key;
   const td = (style, inner) => `<td style="padding:3px 8px;border-bottom:1px solid var(--border);${style}">${inner}</td>`;
@@ -35807,6 +35813,10 @@ window.costReportRowHtml = function(row, opts) {
     cells.push(td(mono, tc === null ? unk : String(tc)));
     cells.push(td(mono, secs(r.span_seconds)));
     cells.push(td(mono, secs(r.active_seconds)));
+  }
+  if (withLocal) {
+    cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
+      String(Number(r.local_tokens) || 0)));
   }
   if (withBilling) {
     const label = (typeof r.billing_label === 'string' && r.billing_label) ? r.billing_label : '';
@@ -35832,7 +35842,7 @@ window.costReportRowHtml = function(row, opts) {
     const n = Number(r.api_equivalent_usd);
     cells.push(td('color:var(--text2);text-align:right;font-family:monospace;white-space:nowrap;',
       Number.isFinite(n)
-        ? escHtml(t('cost_report_usd_value', [n.toFixed(2)]) || ('$' + n.toFixed(2)))
+        ? escHtml(t('cost_report_usd_api_value', [n.toFixed(2)]) || ('$' + n.toFixed(2) + ' API-equivalent'))
         : dash));
   }
   if (withUnits) {
@@ -35843,11 +35853,52 @@ window.costReportRowHtml = function(row, opts) {
   if (withUsd) {
     const hasUsd = r.usd_estimate !== undefined && r.usd_estimate !== null && Number.isFinite(Number(r.usd_estimate));
     const usd = hasUsd
-      ? escHtml(t('cost_report_usd_value', [Number(r.usd_estimate).toFixed(2)]) || ('$' + Number(r.usd_estimate).toFixed(2)))
+      ? escHtml(t('cost_report_usd_api_value', [Number(r.usd_estimate).toFixed(2)]) || ('$' + Number(r.usd_estimate).toFixed(2) + ' API-equivalent'))
       : escHtml(t('cost_report_usd_none') || '—');
     cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;', usd));
   }
   return `<tr class="cost-report-row">${cells.join('')}</tr>`;
+};
+
+// costReportTotalsHtml: one line with every row summed — in, out, cache
+// read, cache write and local-model tokens. Empty when the report carries no
+// totals.
+window.costReportTotalsHtml = function(totals) {
+  if (!totals || typeof totals !== 'object' || Array.isArray(totals)) return '';
+  const n = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const text = t('cost_report_totals', [n(totals.tokens_in), n(totals.tokens_out),
+    n(totals.cache_read), n(totals.cache_creation), n(totals.local_tokens)]);
+  return `<div class="cost-report-totals" style="font-size:10px;color:var(--text);margin-bottom:4px;">${escHtml(text)}</div>`;
+};
+
+// costReportReconcileHtml: the report's API-equivalent dollars against the
+// usage readings — points used against the pace line, the implied dollars per
+// point and the burn per day. Empty when no readings back the report.
+window.costReportReconcileHtml = function(rc) {
+  if (!rc || typeof rc !== 'object' || Array.isArray(rc)) return '';
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const points = num(rc.points);
+  const pace = num(rc.pace_line);
+  if (points === null || pace === null) return '';
+  const fmt = v => String(Number(v.toFixed(1)));
+  const verdict = rc.ahead_of_pace ? t('cost_report_reconcile_ahead') : t('cost_report_reconcile_within');
+  let out = `<div class="cost-report-reconcile" style="margin-top:6px;font-size:10px;line-height:1.5;">
+    <div style="font-weight:600;color:var(--text);">${escHtml(t('cost_report_reconcile_title'))}</div>
+    <div style="color:${rc.ahead_of_pace ? 'var(--warning, #d9822b)' : 'var(--text)'};">${escHtml(t('cost_report_reconcile_points', [fmt(points), fmt(pace), verdict]))}</div>`;
+  const api = num(rc.api_equivalent_usd);
+  const per = num(rc.implied_usd_per_point);
+  if (api !== null && per !== null) {
+    out += `<div style="color:var(--text2);">${escHtml(t('cost_report_reconcile_implied', [api.toFixed(2), fmt(points), per.toFixed(2)]))}</div>`;
+  }
+  const days = Array.isArray(rc.days) ? rc.days : [];
+  for (const d of days.slice(0, 31)) {
+    if (!d || typeof d !== 'object') continue;
+    const dp = num(d.points);
+    const du = num(d.api_equivalent_usd);
+    if (dp === null || du === null) continue;
+    out += `<div style="color:var(--text2);font-family:monospace;">${escHtml(t('cost_report_reconcile_day', [String(d.date || ''), fmt(dp), du.toFixed(2)]))}</div>`;
+  }
+  return out + '</div>';
 };
 
 // costReportCardHtml renders the whole card body from a decoded
@@ -35869,7 +35920,8 @@ window.costReportCardHtml = function(report, opts) {
   const withApi = window.costReportFieldHas(rows, 'api_equivalent_usd');
   const withUnits = window.costReportFieldHas(rows, 'units');
   const withDetail = rows.some(r => r && typeof r === 'object' && ['tool_calls', 'span_seconds', 'active_seconds', 'cache_read'].some(f => r[f] !== undefined));
-  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits, withDetail };
+  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits, withDetail,
+    withLocal: rows.some(r => r && Number(r.local_tokens) > 0) };
   const head = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
     <span style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(t('cost_report_card_title') || 'Cost report')}</span>
     ${window.costReportHelpLink()}
@@ -35896,14 +35948,14 @@ window.costReportCardHtml = function(report, opts) {
   const thL = txt => `<th style="padding:2px 8px 2px 0;text-align:left;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   const thR = txt => `<th style="padding:2px 8px;text-align:right;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   let body = `<div style="overflow-x:auto;font-size:10px;"><table style="border-collapse:collapse;width:100%;">
-    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withDetail ? thR(t('cost_report_column_cache') || 'Cache read/created') + thR(t('cost_report_column_tool_calls') || 'Tool calls') + thR(t('cost_report_column_span') || 'Span') + thR(t('cost_report_column_active') || 'Active time') : ''}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
+    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withDetail ? thR(t('cost_report_column_cache') || 'Cache read/created') + thR(t('cost_report_column_tool_calls') || 'Tool calls') + thR(t('cost_report_column_span') || 'Span') + thR(t('cost_report_column_active') || 'Active time') : ''}${rowOpts.withLocal ? thR(t('cost_report_column_local') || 'Local-model tokens') : ''}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
     <tbody>${rows.slice(0, maxRows).map(r => window.costReportRowHtml(r, rowOpts)).join('')}</tbody>
   </table></div>`;
   const hidden = rows.length - maxRows;
   if (hidden > 0) {
     body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
   }
-  return head + notes + body;
+  return head + window.costReportTotalsHtml(rep.totals) + notes + body + window.costReportReconcileHtml(rep.reconciliation);
 };
 
 // ── BL412 — self-config card ────────────────────────────────────────────
@@ -48129,9 +48181,9 @@ function _dashNodeColor(stateStr) {
 function _dashInitNodes() {
   _dash.nodes = {};
   _dash.edges = [];
-  const svgEl = document.getElementById('constellationSvg');
-  const W = (svgEl && svgEl.clientWidth) || 320;
-  const H = (svgEl && svgEl.clientHeight) || 220;
+  // Registry positions are no longer drawn (the Network card is a work map);
+  // they stay here only so the board sync keeps its node records.
+  const W = 320, H = 220;
   const sessions = state.sessions;
   if (!sessions.length) return;
   const cx = W / 2, cy = H / 2;
@@ -48177,9 +48229,9 @@ function _dashInitNodes() {
 
 function _dashReconcileNodes() {
   const sessions = state.sessions || [];
-  const svgEl = document.getElementById('constellationSvg');
-  const W = (svgEl && svgEl.clientWidth) || 320;
-  const H = (svgEl && svgEl.clientHeight) || 220;
+  // Registry positions are no longer drawn (the Network card is a work map);
+  // they stay here only so the board sync keeps its node records.
+  const W = 320, H = 220;
   const cx = W / 2, cy = H / 2;
 
   // Build live ID sets
@@ -48247,249 +48299,632 @@ function _dashReconcileNodes() {
   }
 }
 
-function _dashForceStep() {
-  const ids = Object.keys(_dash.nodes);
-  if (ids.length < 2) return;
-  const svgEl = document.getElementById('constellationSvg');
-  if (!svgEl) return;
-  const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
-  const cx = W / 2, cy = H / 2;
+// ── Network card (dashboard card id 'orbital') — the work map ───────────────
+// 2026-11-06 dashboard review: the old orbital session map could not say what
+// it answered, so the card is rebuilt as a work map. It draws the same
+// GET /api/dashboard/work-map payload the 'work-map' card reads (_dash._workMap,
+// one shared fetch per ~30s tick): projects are the roots, a click expands a
+// project to its Automations, Automata, tasks and sessions, fill colour is the
+// compute node and outline colour the lane, and a rotate control (plus the
+// timer on window._dashWorkMapInterval) steps through the running sessions,
+// highlighting each with its ancestors. A session click opens its detail.
+// The card is hidden through DASH_CARD_FEATURES['orbital'] while the map has
+// no nodes; with dashboard.hide_inactive_cards off it shows the one-line reason.
 
-  // Repulsion
-  for (let i = 0; i < ids.length; i++) {
-    for (let j = i + 1; j < ids.length; j++) {
-      const a = _dash.nodes[ids[i]], b = _dash.nodes[ids[j]];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const d2 = dx*dx + dy*dy + 1;
-      const f = Math.min(2500 / d2, 3);
-      const fx = (dx / Math.sqrt(d2)) * f;
-      const fy = (dy / Math.sqrt(d2)) * f;
-      a.vx -= fx; a.vy -= fy;
-      b.vx += fx; b.vy += fy;
-    }
-    // Gravity toward center
-    const n = _dash.nodes[ids[i]];
-    n.vx += (cx - n.x) * 0.008;
-    n.vy += (cy - n.y) * 0.008;
-  }
+const DASH_NETWORK_ROTATE_MS = 6000;
+const DASH_NETWORK_KIND_ORDER = ['project', 'automation', 'automaton', 'task', 'session'];
+const DASH_NETWORK_NODE_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#84cc16'];
+const DASH_NETWORK_LANE_PALETTE = ['#22d3ee', '#fde047', '#fb7185', '#c084fc', '#a3e635'];
+const DASH_NETWORK_ROW_STEP = 26;
+const DASH_NETWORK_NODE_H = 20;
+const DASH_NETWORK_PAD = 8;
 
-  // Edge attraction
-  for (const e of _dash.edges) {
-    const a = _dash.nodes[e.from], b = _dash.nodes[e.to];
-    if (!a || !b) continue;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const d = Math.sqrt(dx*dx + dy*dy) + 0.01;
-    const target = Math.min(W, H) * 0.22;
-    const f = (d - target) * 0.015;
-    const fx = (dx / d) * f, fy = (dy / d) * f;
-    a.vx += fx; a.vy += fy;
-    b.vx -= fx; b.vy -= fy;
-  }
-
-  // Integrate + clamp
-  for (const id of ids) {
-    const n = _dash.nodes[id];
-    const r = n.prd ? 20 : 14;
-    n.vx *= 0.72; n.vy *= 0.72;
-    n.x = Math.max(r + 2, Math.min(W - r - 2, n.x + n.vx));
-    n.y = Math.max(r + 14, Math.min(H - r - 2, n.y + n.vy));
-  }
+// _dashNetworkHash: a stable, small hash of a string (palette index source).
+function _dashNetworkHash(s) {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }
 
-function _drawConstellation() {
-  const svgEl = document.getElementById('constellationSvg');
+// _dashNetworkColors: fill by compute node, outline by lane. An error status
+// overrides the outline so a failure stays visible; no node or lane falls back
+// to the status colour and a neutral fill.
+function _dashNetworkColors(node, lane, status) {
+  const fill = node ? DASH_NETWORK_NODE_PALETTE[_dashNetworkHash(node) % DASH_NETWORK_NODE_PALETTE.length] : '#64748b';
+  let stroke = lane ? DASH_NETWORK_LANE_PALETTE[_dashNetworkHash(lane) % DASH_NETWORK_LANE_PALETTE.length] : _dashWorkMapStatusColor(status);
+  if (status === 'error') stroke = '#ef4444';
+  return { fill, stroke };
+}
+
+// _dashNetworkIndex: the work-map nodes keyed by id (a Map, so no id can reach
+// Object.prototype), each node's child ids, its top-level ancestor, and the
+// placement (compute node and lane) it shows. A container carries no placement
+// of its own, so it takes the placement of its first session below it.
+function _dashNetworkIndex(d) {
+  const nodes = d && Array.isArray(d.nodes) ? d.nodes.filter(n => n && n.id) : [];
+  const byId = new Map();
+  for (const n of nodes) byId.set(n.id, n);
+  const kids = new Map();
+  for (const n of nodes) {
+    if (n.parent && byId.has(n.parent)) {
+      if (!kids.has(n.parent)) kids.set(n.parent, []);
+      kids.get(n.parent).push(n.id);
+    }
+  }
+  const top = (id) => {
+    let cur = id;
+    for (let guard = 0; guard < 16; guard++) {
+      const n = byId.get(cur);
+      if (!n || !n.parent || !byId.has(n.parent)) break;
+      cur = n.parent;
+    }
+    return cur;
+  };
+  const placeOf = (id, depth) => {
+    const n = byId.get(id);
+    if (!n) return { node: '', lane: '' };
+    if (n.node || n.lane) return { node: n.node || '', lane: n.lane || '' };
+    if (depth > 8) return { node: '', lane: '' };
+    for (const c of kids.get(id) || []) {
+      const p = placeOf(c, depth + 1);
+      if (p.node || p.lane) return p;
+    }
+    return { node: '', lane: '' };
+  };
+  const placement = new Map();
+  for (const n of nodes) placement.set(n.id, placeOf(n.id, 0));
+  return { nodes, byId, kids, top, placement };
+}
+
+// _dashNetworkVisible: the nodes the card draws now. A project is always drawn;
+// the work under it only while the project is expanded by a click or is the
+// project under the rotation focus. Work with no project above it is always drawn.
+function _dashNetworkVisible(idx, expanded, focusProject) {
+  const out = [];
+  for (const n of idx.nodes) {
+    const root = idx.byId.get(idx.top(n.id));
+    const underProject = n.kind !== 'project' && root && root.kind === 'project';
+    if (!underProject || expanded.has(root.id) || root.id === focusProject) out.push(n);
+  }
+  return out;
+}
+
+// _dashNetworkLayout: a fixed-box column layout of the visible nodes. One
+// column per kind present, left to right; rows are sized to the box so nothing
+// is drawn outside it. A column that cannot fit its rows shows the first ones
+// and a count of the rest.
+function _dashNetworkLayout(visible, W, H) {
+  const byKind = new Map();
+  for (const n of visible) {
+    const k = n.kind || 'other';
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push(n);
+  }
+  const kinds = DASH_NETWORK_KIND_ORDER.filter(k => byKind.has(k))
+    .concat([...byKind.keys()].filter(k => DASH_NETWORK_KIND_ORDER.indexOf(k) < 0).sort());
+  const colW = (W - DASH_NETWORK_PAD * 2) / Math.max(1, kinds.length);
+  const nodeW = Math.max(40, Math.min(150, colW - 12));
+  const rowsFit = Math.max(1, Math.floor((H - DASH_NETWORK_PAD * 2) / DASH_NETWORK_ROW_STEP));
+  const pos = new Map();
+  const placed = [];
+  const more = [];
+  kinds.forEach((k, ci) => {
+    const list = byKind.get(k);
+    const fit = list.length > rowsFit ? rowsFit - 1 : list.length;
+    const x = DASH_NETWORK_PAD + ci * colW + colW / 2;
+    for (let ri = 0; ri < fit; ri++) {
+      const y = DASH_NETWORK_PAD + DASH_NETWORK_NODE_H / 2 + ri * DASH_NETWORK_ROW_STEP;
+      pos.set(list[ri].id, { x, y });
+      placed.push({ n: list[ri], x, y });
+    }
+    if (list.length > fit) {
+      more.push({ x, y: DASH_NETWORK_PAD + DASH_NETWORK_NODE_H / 2 + fit * DASH_NETWORK_ROW_STEP, count: list.length - fit });
+    }
+  });
+  return { pos, placed, more, nodeW, nodeH: DASH_NETWORK_NODE_H };
+}
+
+// _dashNetworkFocusId: the running session the rotation is on (or null).
+function _dashNetworkFocusId(running) {
+  if (!running.length) return null;
+  const len = running.length;
+  const i = (((_dash._netFocus || 0) % len) + len) % len;
+  return running[i].id;
+}
+
+// _dashNetworkRotate: one timer on window._dashWorkMapInterval, never stacked.
+// It runs only while the Network card is on the page and running work exists,
+// and clears itself when either is gone.
+function _dashNetworkRotate() {
+  const d = _dash._workMap;
+  const running = d && Array.isArray(d.running) ? d.running : [];
+  const live = !!document.getElementById('dashNetworkSvg') && running.length > 0;
+  if (!live) {
+    if (window._dashWorkMapInterval) clearInterval(window._dashWorkMapInterval);
+    window._dashWorkMapInterval = null;
+    return;
+  }
+  if (window._dashWorkMapInterval) return;
+  window._dashWorkMapInterval = setInterval(() => {
+    window._dashNetworkStep(1);
+    _dashNetworkRotate();
+  }, DASH_NETWORK_ROTATE_MS);
+}
+
+// window._dashNetworkStep: move the rotation focus by dir (+1 next, -1 back)
+// through the running sessions and redraw.
+window._dashNetworkStep = function(dir) {
+  const d = _dash._workMap;
+  const len = d && Array.isArray(d.running) ? d.running.length : 0;
+  if (!len) return;
+  _dash._netFocus = (((_dash._netFocus || 0) + (dir || 1)) % len + len) % len;
+  _drawNetworkWorkMap();
+};
+
+// window._dashNetworkClick: a project toggles its expansion; a session opens
+// its session detail. Other kinds do nothing here.
+window._dashNetworkClick = function(id) {
+  const d = _dash._workMap;
+  const n = d && Array.isArray(d.nodes) ? d.nodes.find(x => x && x.id === id) : null;
+  if (!n) return;
+  if (n.kind === 'project') {
+    if (!_dash._netExpanded) _dash._netExpanded = new Set();
+    if (_dash._netExpanded.has(id)) _dash._netExpanded.delete(id);
+    else _dash._netExpanded.add(id);
+    _drawNetworkWorkMap();
+    return;
+  }
+  if (n.kind === 'session' && typeof navigate === 'function') navigate('session-detail', id);
+};
+
+// _dashNetworkOnClick: one delegated click handler on the svg, set once per
+// element (the element is rebuilt when the grid is).
+function _dashNetworkOnClick(ev) {
+  const el = ev && ev.target && ev.target.closest ? ev.target.closest('[data-wm-id]') : null;
+  if (el) window._dashNetworkClick(el.getAttribute('data-wm-id'));
+}
+
+// _drawNetworkWorkMap: the Network card's frame. Draws into #dashNetworkSvg
+// (absent while the card is hidden or off, so the frame does nothing then).
+function _drawNetworkWorkMap() {
+  const svgEl = document.getElementById('dashNetworkSvg');
   if (!svgEl) return;
   const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
   svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
-
-  // Issue #98 — narrow fallback: width < 400px → compact text list
-  if (W < 400) {
-    const sessions = state.sessions || [];
-    if (sessions.length === 0) {
-      svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
-      return;
-    }
-    const stateColors = { running: '#7c3aed', generating: '#7c3aed', waiting_input: '#f59e0b', completed: '#10b981', failed: '#ef4444', blocked: '#ef4444', idle: '#64748b' };
-    const stateBadges = { running: '▶', generating: '▶', waiting_input: '⏸', completed: '✓', failed: '✗', blocked: '!', idle: '○' };
-    let html = '';
-    const ROW_H = 20, PAD = 8;
-    for (let i = 0; i < sessions.length && i < Math.floor((H - PAD) / ROW_H); i++) {
-      const s = sessions[i];
-      const col = stateColors[s.state] || '#64748b';
-      const badge = stateBadges[s.state] || '·';
-      const name = (s.name || s.task || s.id || '').slice(0, 18);
-      const age = s.created_at ? timeAgo(s.created_at) : '';
-      const y = PAD + i * ROW_H + 13;
-      html += `<text x="${PAD}" y="${y}" font-size="11" fill="${col}" style="pointer-events:none">• ${escHtml(name)}</text>`;
-      html += `<text x="${W - PAD - (age ? 36 : 18)}" y="${y}" font-size="10" fill="${col}" font-weight="700" style="pointer-events:none">${escHtml(badge)}</text>`;
-      if (age) html += `<text x="${W - PAD}" y="${y}" font-size="9" fill="var(--text2)" text-anchor="end" style="pointer-events:none">${escHtml(age)}</text>`;
-    }
-    svgEl.innerHTML = html;
+  svgEl.onclick = _dashNetworkOnClick;
+  const d = _dash._workMap;
+  const running = d && Array.isArray(d.running) ? d.running : [];
+  const cnt = document.getElementById('dashNetworkCount');
+  if (!d || !Array.isArray(d.nodes) || !d.nodes.length) {
+    svgEl.innerHTML = '';
+    if (cnt) cnt.innerHTML = '';
     return;
   }
-
-  const ids = Object.keys(_dash.nodes);
-  if (ids.length === 0) {
-    svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
-    return;
+  if (!_dash._netExpanded) _dash._netExpanded = new Set();
+  const idx = _dashNetworkIndex(d);
+  const focusId = _dashNetworkFocusId(running);
+  const focusProject = focusId ? idx.top(focusId) : null;
+  // The chain from the focused node up to its top-level ancestor is highlighted.
+  const chain = new Set();
+  for (let cur = focusId, g = 0; cur && g < 16; g++) {
+    chain.add(cur);
+    const n = idx.byId.get(cur);
+    cur = n && n.parent ? n.parent : null;
   }
-
-  const now = Date.now();
-  let html = `<defs>
-    <style>
-      .dbn { cursor:pointer; transition:opacity 0.1s; }
-      .dbn:hover { opacity:1 !important; filter:brightness(1.25); }
-    </style>
-  </defs>`;
-
-  // Hint text bottom-left
-  html += `<text x="8" y="${H-6}" font-size="10" fill="var(--text2)" opacity="0.5" style="pointer-events:none">Click a node to inspect</text>`;
-
-  // Edges
-  for (const e of _dash.edges) {
-    const a = _dash.nodes[e.from], b = _dash.nodes[e.to];
+  const lay = _dashNetworkLayout(_dashNetworkVisible(idx, _dash._netExpanded, focusProject), W, H);
+  let svg = '';
+  for (const e of d.edges || []) {
+    const a = lay.pos.get(e.from), b = lay.pos.get(e.to);
     if (!a || !b) continue;
-    html += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+    const x1 = a.x + lay.nodeW / 2, x2 = b.x - lay.nodeW / 2;
+    const mx = (x1 + x2) / 2;
+    const hot = chain.has(e.from) && chain.has(e.to);
+    svg += `<path d="M ${x1} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${x2} ${b.y}" fill="none" stroke="${hot ? '#3b82f6' : 'var(--border,#333)'}" stroke-width="${hot ? 2 : 1}"/>`;
   }
-
-  // Nodes
-  for (const id of ids) {
-    const n = _dash.nodes[id];
-    const r = n.prd ? 22 : 16;
-    const active = n.state === 'running' || n.state === 'generating' || n.state === 'waiting_input';
-    const pulseR = active ? (r + 6 + Math.sin(now / 500) * 4) : 0;
-    const opacity = n.hookHealth === 'missing' && !n.prd ? '0.4' : '0.9';
-
-    if (active && pulseR > 0) {
-      const pulseAlpha = (0.25 + Math.sin(now / 400) * 0.15).toFixed(2);
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${pulseR.toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="2" opacity="${pulseAlpha}"/>`;
+  for (const p of lay.placed) {
+    const n = p.n;
+    const pl = idx.placement.get(n.id) || { node: '', lane: '' };
+    const c = _dashNetworkColors(pl.node, pl.lane, n.status);
+    const label = String(n.label || n.id || '').slice(0, 15);
+    const x = p.x - lay.nodeW / 2;
+    const y = p.y - lay.nodeH / 2;
+    const isProject = n.kind === 'project';
+    const kids = idx.kids.get(n.id) || [];
+    const open = isProject && _dash._netExpanded.has(n.id);
+    const hot = chain.has(n.id);
+    const title = [n.label || n.id, pl.node, pl.lane, n.status].filter(Boolean).map(s => escHtml(String(s))).join(' · ');
+    svg += `<g data-wm-id="${escHtml(n.id)}" style="cursor:${n.kind === 'project' || n.kind === 'session' ? 'pointer' : 'default'};${n.status === 'done' ? 'opacity:0.6;' : ''}">
+      <title>${title}</title>
+      <rect x="${x}" y="${y}" width="${lay.nodeW}" height="${lay.nodeH}" rx="5" fill="var(--bg2,#111)" stroke="${c.stroke}" stroke-width="${hot ? 2.5 : 1.2}"/>
+      <circle cx="${x + 9}" cy="${p.y}" r="3.5" fill="${c.fill}"/>
+      <text x="${x + 17}" y="${p.y + 3.5}" font-size="10" fill="var(--text,#ccc)" style="pointer-events:none">${escHtml(label)}</text>`;
+    if (isProject) {
+      const mark = open ? '▾' : '▸';
+      svg += `<text x="${x + lay.nodeW - 6}" y="${p.y + 3.5}" text-anchor="end" font-size="10" fill="var(--text2,#888)" style="pointer-events:none">${mark}${kids.length ? ' ' + kids.length : ''}</text>`;
     }
-    if (n.hookHealth === 'alive') {
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="1" opacity="0.4"/>`;
-    } else if (n.hookHealth === 'stale') {
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="var(--warning)" stroke-width="1" opacity="0.4"/>`;
-    }
-
-    // Filled node + invisible larger hit target for easier clicking
-    html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+6).toFixed(1)}" fill="transparent" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(id)})`)}"/>`;
-    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(id)})`)}">`;
-    html += `<title>${escHtml(n.label)} · ${escHtml(n.state)} — click to open</title></circle>`;
-
-    // State initial inside node
-    const stateInitial = ({running:'▶', generating:'▶', waiting_input:'⏸', completed:'✓', failed:'✗', blocked:'!', idle:'○'})[n.state] || '·';
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+4).toFixed(1)}" text-anchor="middle" font-size="${n.prd ? 11 : 9}" fill="rgba(255,255,255,0.85)" style="pointer-events:none;font-weight:700;">${stateInitial}</text>`;
-
-    if (n.threats > 0) {
-      html += `<circle cx="${(n.x+r-4).toFixed(1)}" cy="${(n.y-r+4).toFixed(1)}" r="6" fill="var(--error)" opacity="0.95"/>`;
-      html += `<text x="${(n.x+r-4).toFixed(1)}" y="${(n.y-r+8).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fff" style="pointer-events:none;font-weight:700;">${n.threats}</text>`;
-    }
-
-    const label = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+14).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text)" opacity="0.75" style="pointer-events:none">${escHtml(label)}</text>`;
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+24).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text2)" opacity="0.55" style="pointer-events:none">${escHtml(n.state)}</text>`;
+    svg += `</g>`;
   }
-
-  svgEl.innerHTML = html;
+  for (const m of lay.more) {
+    svg += `<text x="${m.x}" y="${m.y + 3.5}" text-anchor="middle" font-size="10" fill="var(--text2,#888)" style="pointer-events:none">+${m.count}</text>`;
+  }
+  svgEl.innerHTML = svg;
+  if (cnt) {
+    const i = focusId ? running.findIndex(r => r.id === focusId) : -1;
+    cnt.innerHTML = running.length ? escHtml(`${i + 1}/${running.length}`) : escHtml(t('dash_network_none_running') || '');
+  }
+  _dashNetworkRotate();
 }
 
-function _drawMultiEKG() {
-  const canvas = document.getElementById('ekgCanvas');
-  if (!canvas) return;
+// Lane pulse card (replaces the Multi-EKG canvas). One trace per lane and
+// node from GET /api/dashboard/lane-pulse: busy and waiting bars over the
+// window, idle is the empty track. The burn panel shows usage in points
+// against the pace line. No dollar figure is drawn anywhere on this card.
+const LANE_PULSE_WINDOW = '6h';
+const LANE_PULSE_MAX_ROWS = 12;
+const LANE_PULSE_COLORS = { busy: '#10b981', waiting: '#f59e0b' };
 
-  // Issue #99 — EKG narrow mode: hide canvas, show burn-rate panel only
-  const ekgCardW = canvas.closest('[data-card-id="ekg"]') ? (canvas.closest('[data-card-id="ekg"]').clientWidth || 0) : (canvas.clientWidth || 0);
-  const ekgNarrow = ekgCardW < 280 && ekgCardW > 0;
-  canvas.style.display = ekgNarrow ? 'none' : '';
-  const burnRateEl = document.getElementById('dashBurnRate');
-  if (burnRateEl) {
-    if (ekgNarrow) {
-      burnRateEl.style.width = '100%';
-      burnRateEl.style.borderLeft = 'none';
-      burnRateEl.style.alignItems = 'center';
-    } else {
-      burnRateEl.style.width = '';
-      burnRateEl.style.borderLeft = '';
-      burnRateEl.style.alignItems = '';
-    }
-  }
-  if (ekgNarrow) return;
+// _lanePulseText: the locale text for a key, or '' when the bundle has no
+// entry (t() returns the key itself on a miss).
+function _lanePulseText(key) {
+  const s = t(key);
+  return s === key ? '' : s;
+}
 
-  const W = canvas.clientWidth || canvas.width;
-  const H = canvas.clientHeight || canvas.height;
-  if (canvas.width !== W) canvas.width = W;
-  if (canvas.height !== H) canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  const css = getComputedStyle(document.documentElement);
-  const bgColor = css.getPropertyValue('--bg').trim() || '#0f1117';
-  const borderColor = css.getPropertyValue('--border').trim() || '#2d3148';
-  const accentColor = css.getPropertyValue('--accent').trim() || '#7c3aed';
-  const text2Color = css.getPropertyValue('--text2').trim() || '#64748b';
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, W, H);
-  const activeSessions = (state.sessions || [])
-    .filter(s => s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input' || s.state === 'idle')
-    .slice(0, 6);
-  const LABEL_W = 72;
-  if (activeSessions.length === 0) {
-    if (_dash.ekg.length >= 2) {
-      const pts = _dash.ekg.slice(-W);
-      ctx.beginPath(); ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5;
-      let fp = true;
-      for (let i = 0; i < pts.length; i++) {
-        const x = W - pts.length + i;
-        const dec = Math.exp(-(pts.length - i) / 60);
-        const y = H / 2 - pts[i].dy * dec * (H * 0.38);
-        if (fp) { ctx.moveTo(x, y); fp = false; } else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+// _lanePulseRows: the rows to draw. Each row carries a label and its busy and
+// waiting bars as left/width percentages of the window. Pure: no DOM access.
+function _lanePulseRows(series, fromMs, toMs) {
+  const span = toMs - fromMs;
+  if (!Array.isArray(series) || !(span > 0)) return [];
+  const pct = (iso) => Math.min(100, Math.max(0, (Date.parse(iso) - fromMs) / span * 100));
+  return series.slice(0, LANE_PULSE_MAX_ROWS).map(s => {
+    const bars = [];
+    for (const seg of (s.segments || [])) {
+      if (seg.state !== 'busy' && seg.state !== 'waiting') continue;
+      const l = pct(seg.start), r = pct(seg.end);
+      if (!(r > l)) continue;
+      bars.push({ state: seg.state, left: l, width: r - l });
     }
-    return;
+    return { label: (s.lane || '?') + ' · ' + (s.node || '?'), bars };
+  });
+}
+
+// _lanePulseBurnLines: the usage readings as SVG polyline points in a 100x30
+// box, for the level and for the pace line, on one shared scale.
+function _lanePulseBurnLines(readings) {
+  const rs = Array.isArray(readings) ? readings : [];
+  if (rs.length < 2) return { points: '', pace: '' };
+  let max = 1;
+  for (const r of rs) max = Math.max(max, r.points || 0, r.pace_line || 0);
+  max *= 1.1;
+  const xy = (r, i, key) => {
+    const x = (i / (rs.length - 1)) * 100;
+    const y = 30 - Math.min(1, (r[key] || 0) / max) * 30;
+    return x.toFixed(2) + ',' + y.toFixed(2);
+  };
+  return {
+    points: rs.map((r, i) => xy(r, i, 'points')).join(' '),
+    pace: rs.map((r, i) => xy(r, i, 'pace_line')).join(' '),
+  };
+}
+
+// _dashLanePulseActive: the card is shown once a lane held a lease or waited
+// in the window, or the usage burn panel can read a level. Otherwise it is off.
+function _dashLanePulseActive() {
+  const d = _dash._lanePulse;
+  if (!d) return false;
+  if (d.burn && d.burn.available) return true;
+  return Array.isArray(d.series) && d.series.some(s => (s.busy_seconds || 0) + (s.waiting_seconds || 0) > 0);
+}
+
+function _lanePulseBurnHtml(b) {
+  if (!b || !b.available) {
+    const reason = b && b.reason ? _lanePulseText('lane_pulse_reason_' + b.reason) : '';
+    return '<div style="font-size:10px;color:var(--text2);line-height:1.5;">' + escHtml(reason) + '</div>';
   }
-  const channelH = H / activeSessions.length;
-  for (let ci = 0; ci < activeSessions.length; ci++) {
-    const sess = activeSessions[ci];
-    const sid = sess.full_id || sess.id;
-    const color = _dashNodeColor(sess.state);
-    const chanY = ci * channelH;
-    if (ci % 2 === 1) { ctx.fillStyle = 'rgba(255,255,255,0.015)'; ctx.fillRect(0, chanY, W, channelH); }
-    ctx.fillStyle = color; ctx.font = `bold 9px monospace`;
-    ctx.fillText((sess.name || sess.id || '?').slice(0, 9), 3, chanY + channelH * 0.5 + 3);
-    const board = _dash._boards[sid];
-    const hDot = !board ? '○' : board.hook_health === 'alive' ? '●' : '◐';
-    const hColor = !board ? text2Color : board.hook_health === 'alive' ? '#10b981' : '#f59e0b';
-    ctx.fillStyle = hColor; ctx.font = '8px monospace';
-    ctx.fillText(hDot, 3, chanY + channelH * 0.85);
-    const sessEvents = _dash.ekg.filter(e => !e.sid || e.sid === sid);
-    const barW = W - LABEL_W;
-    const pts = sessEvents.slice(-barW);
-    if (pts.length >= 2) {
-      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.2;
-      let fp = true;
-      for (let i = 0; i < pts.length; i++) {
-        const x = LABEL_W + barW - pts.length + i;
-        const dec = Math.exp(-(pts.length - i) / 50);
-        const mid = chanY + channelH / 2;
-        const y = mid - pts[i].dy * dec * (channelH * 0.38);
-        if (fp) { ctx.moveTo(x, y); fp = false; } else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+  const lines = _lanePulseBurnLines(b.readings);
+  const svg = lines.points
+    ? '<svg viewBox="0 0 100 30" preserveAspectRatio="none" style="width:100%;height:34px;display:block;margin-top:2px;">' +
+      '<polyline points="' + lines.pace + '" fill="none" stroke="var(--text2,#888)" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>' +
+      '<polyline points="' + lines.points + '" fill="none" stroke="var(--accent,#7c3aed)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>'
+    : '';
+  const pace = b.ahead_of_pace ? _lanePulseText('dash_lane_pulse_ahead') : _lanePulseText('dash_lane_pulse_on_pace');
+  const paceColor = b.ahead_of_pace ? '#f59e0b' : '#10b981';
+  const stale = b.stale ? ' · ' + escHtml(_lanePulseText('dash_lane_pulse_stale')) : '';
+  return '<div style="font-size:9px;color:var(--text2);text-transform:uppercase;">' + escHtml(_lanePulseText('dash_lane_pulse_usage')) + stale + '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--accent);">' + (Number(b.points) || 0).toFixed(1) +
+      ' <span style="font-size:9px;font-weight:400;">' + escHtml(_lanePulseText('dash_lane_pulse_points')) + '</span></div>' +
+    '<div style="font-size:9px;color:var(--text2);">' + escHtml(_lanePulseText('dash_lane_pulse_pace_line')) + ' ' + (Number(b.pace_line) || 0).toFixed(1) + '</div>' +
+    '<div style="font-size:9px;color:' + paceColor + ';">' + escHtml(pace) + '</div>' + svg;
+}
+
+function _dashRenderLanePulse() {
+  const traces = document.getElementById('dashLanePulseTraces');
+  const burnEl = document.getElementById('dashBurnRate');
+  if (!traces && !burnEl) return;
+  const d = _dash._lanePulse || {};
+  const fromMs = d.window_from ? Date.parse(d.window_from) : NaN;
+  const toMs = d.window_to ? Date.parse(d.window_to) : NaN;
+  if (traces) {
+    const rows = _lanePulseRows(d.series, fromMs, toMs);
+    if (!rows.length) {
+      traces.innerHTML = '<div style="padding:8px 6px;color:var(--text2);font-size:11px;">' + escHtml(_lanePulseText('dash_lane_pulse_none')) + '</div>';
     } else {
-      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.globalAlpha = 0.25;
-      ctx.moveTo(LABEL_W, chanY + channelH / 2); ctx.lineTo(W, chanY + channelH / 2); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    if (ci < activeSessions.length - 1) {
-      ctx.strokeStyle = borderColor; ctx.lineWidth = 0.5; ctx.setLineDash([2, 4]);
-      ctx.beginPath(); ctx.moveTo(0, chanY + channelH); ctx.lineTo(W, chanY + channelH); ctx.stroke();
-      ctx.setLineDash([]);
+      const legend = '<div style="display:flex;gap:10px;padding:0 6px 4px;font-size:9px;color:var(--text2);">' +
+        '<span><span style="color:' + LANE_PULSE_COLORS.busy + ';">■</span> ' + escHtml(_lanePulseText('dash_lane_pulse_busy')) + '</span>' +
+        '<span><span style="color:' + LANE_PULSE_COLORS.waiting + ';">■</span> ' + escHtml(_lanePulseText('dash_lane_pulse_waiting')) + '</span></div>';
+      traces.innerHTML = legend + rows.map(row => {
+        const bars = row.bars.map(b => {
+          const busy = b.state === 'busy';
+          const top = busy ? 0 : 62, h = busy ? 58 : 38;
+          return '<div style="position:absolute;left:' + b.left.toFixed(3) + '%;width:' + b.width.toFixed(3) + '%;top:' + top + '%;height:' + h + '%;background:' + LANE_PULSE_COLORS[b.state] + ';"></div>';
+        }).join('');
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;">' +
+          '<div title="' + escHtml(row.label) + '" style="width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:monospace;color:var(--text2);">' + escHtml(row.label) + '</div>' +
+          '<div style="position:relative;flex:1;min-width:0;height:14px;background:rgba(255,255,255,0.03);border-radius:2px;overflow:hidden;">' + bars + '</div></div>';
+      }).join('');
     }
   }
-  const grad = ctx.createLinearGradient(LABEL_W, 0, LABEL_W + 16, 0);
-  grad.addColorStop(0, bgColor); grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad; ctx.fillRect(LABEL_W, 0, 16, H);
-  ctx.strokeStyle = accentColor; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
-  ctx.beginPath(); ctx.moveTo(W - 1, 0); ctx.lineTo(W - 1, H); ctx.stroke();
-  ctx.setLineDash([]);
+  if (burnEl) burnEl.innerHTML = _lanePulseBurnHtml(d.burn);
+}
+
+// Lane pulse: one shared GET /api/dashboard/lane-pulse per ~30s tick; the card
+// renders from the cached payload and fetches on first paint.
+if (!_dash._lanePulse) _dash._lanePulse = null;
+
+function _dashFetchLanePulse() {
+  if (_dash._lanePulseFetching) return Promise.resolve(_dash._lanePulse);
+  _dash._lanePulseFetching = true;
+  return apiFetch('/api/dashboard/lane-pulse?window=' + LANE_PULSE_WINDOW)
+    .then(d => { if (d && Array.isArray(d.series)) _dash._lanePulse = d; _dashRenderLanePulse(); return _dash._lanePulse; })
+    .catch(() => _dash._lanePulse)
+    .finally(() => { _dash._lanePulseFetching = false; });
+}
+
+// Dashboard series cards: lane utilization (busy share per lane per hour),
+// throughput forecast (trend points with the completion range) and verifier
+// health (waits and runs per node). Each reads one GET under
+// /api/dashboard/series/ on the dashboard tick and stays off until it has data
+// (DASH_CARD_FEATURES).
+function _dashSeriesFetch(slot, url, ok, render) {
+  const flag = slot + 'Fetching';
+  if (_dash[flag]) return Promise.resolve(_dash[slot]);
+  _dash[flag] = true;
+  return apiFetch(url)
+    .then(d => { if (d && ok(d)) _dash[slot] = d; render(); return _dash[slot]; })
+    .catch(() => _dash[slot])
+    .finally(() => { _dash[flag] = false; });
+}
+
+// Locale keys for each series card's frame: what it is for (purpose), the next
+// action for the operator (next), and the state line that carries the live
+// count (now). The "why" of an empty card is the card's reasonKey in
+// DASH_CARD_FEATURES, shown in the state line when the card has no data.
+const _DASH_SERIES_TEXT = {
+  'lane-utilization': { purpose: 'dash_series_purpose_lane_util', next: 'dash_series_next_lane_util', now: 'dash_series_now_lane_util' },
+  'throughput-forecast': { purpose: 'dash_series_purpose_forecast', next: 'dash_series_next_forecast', now: 'dash_series_now_forecast' },
+  'verifier-health': { purpose: 'dash_series_purpose_verifier', next: 'dash_series_next_verifier', now: 'dash_series_now_verifier' },
+  'release-train': { purpose: 'dash_series_purpose_release_train', next: 'dash_series_next_release_train', now: 'dash_series_now_release_train' },
+  'review-backlog': { purpose: 'dash_series_purpose_review_backlog', next: 'dash_series_next_review_backlog', now: 'dash_series_now_review_backlog' },
+  'defects-per-day': { purpose: 'dash_series_purpose_defects', next: 'dash_series_next_defects', now: 'dash_series_now_defects' },
+};
+
+// Frame for a series card: purpose line, state line, the card body, and the
+// next action. `state` is already-translated text; it is escaped here.
+function _dashSeriesFrame(id, body, state) {
+  const k = _DASH_SERIES_TEXT[id];
+  const line = (text, extra) => '<div style="padding:0 6px 3px;color:var(--text2);font-size:10px;line-height:1.4;' + (extra || '') + '">' + escHtml(text) + '</div>';
+  return line(t(k.purpose)) +
+    '<div style="padding:0 6px 4px;font-size:11px;line-height:1.4;">' + escHtml(state || '') + '</div>' +
+    (body || '') +
+    '<div style="margin-top:4px;padding:4px 6px 0;border-top:1px solid var(--border);">' + line(t(k.next)) + '</div>';
+}
+
+// Empty series card: the frame with the card's own "why" as the state line.
+function _dashSeriesEmpty(el, id) {
+  const feat = _dashCardFeature(id);
+  const why = feat ? (t(feat.reasonKey) || feat.reasonDefault) : t('dash_series_none');
+  el.innerHTML = _dashSeriesFrame(id, '', why);
+}
+
+function _dashLaneUtilActive() {
+  const d = _dash._seriesLaneUtil;
+  return !!(d && Array.isArray(d.lanes) && d.lanes.some(l => (l.hours || []).some(h => (Number(h.busy_fraction) || 0) > 0)));
+}
+
+function _dashFetchLaneUtil() {
+  return _dashSeriesFetch('_seriesLaneUtil', '/api/dashboard/series/lane-utilization?window=24h',
+    d => Array.isArray(d.lanes), _dashRenderLaneUtil);
+}
+
+function _dashRenderLaneUtil() {
+  const el = document.getElementById('dashLaneUtilCard');
+  if (!el) return;
+  const d = _dash._seriesLaneUtil;
+  if (!d || !Array.isArray(d.lanes) || !d.lanes.length) { _dashSeriesEmpty(el, 'lane-utilization'); return; }
+  const hourOf = h => String(new Date(h.start).getHours()).padStart(2, '0') + ':00';
+  const cell = h => {
+    if (h.busy_fraction == null) {
+      return '<div title="' + escHtml(t('dash_series_no_history')) + '" style="flex:1;min-width:0;height:14px;background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,0.06) 3px 6px);"></div>';
+    }
+    const f = Math.max(0, Math.min(1, Number(h.busy_fraction) || 0));
+    return '<div title="' + hourOf(h) + ' ' + Math.round(f * 100) + '%" style="flex:1;min-width:0;height:14px;background:rgba(124,58,237,' + (0.06 + 0.94 * f).toFixed(2) + ');"></div>';
+  };
+  const body = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_busy_share')) + '</div>' +
+    d.lanes.map(l => '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;">' +
+      '<div title="' + escHtml(l.lane) + '" style="width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:monospace;color:var(--text2);">' + escHtml(l.lane) + '</div>' +
+      '<div style="display:flex;gap:1px;flex:1;min-width:0;">' + (l.hours || []).map(cell).join('') + '</div></div>').join('');
+  el.innerHTML = _dashSeriesFrame('lane-utilization', body, t('dash_series_now_lane_util', [d.lanes.length]));
+}
+
+function _dashForecastActive() {
+  const d = _dash._seriesForecast;
+  return !!(d && Array.isArray(d.points) && d.points.some(p => (Number(p.throughput_per_day) || 0) > 0 || p.completion_low_days != null));
+}
+
+function _dashFetchForecast() {
+  return _dashSeriesFetch('_seriesForecast', '/api/dashboard/series/throughput-forecast?days=30',
+    d => Array.isArray(d.points), _dashRenderForecast);
+}
+
+function _dashRenderForecast() {
+  const el = document.getElementById('dashForecastCard');
+  if (!el) return;
+  const d = _dash._seriesForecast;
+  if (!d || !Array.isArray(d.points) || !d.points.length) { _dashSeriesEmpty(el, 'throughput-forecast'); return; }
+  const num = v => (v == null ? '—' : (Number(v) || 0).toFixed(1));
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const head = '<tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_date')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_throughput')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_range')) + '</th></tr>';
+  const rows = d.points.slice(-14).map(p => '<tr>' +
+    '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.throughput_per_day) || 0).toFixed(2) + '</td>' +
+    '<td style="padding:2px 6px;">' + num(p.completion_low_days) + ' – ' + num(p.completion_high_days) + '</td></tr>').join('');
+  const body = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  el.innerHTML = _dashSeriesFrame('throughput-forecast', body, t('dash_series_now_forecast', [d.points.length]));
+}
+
+// Release train, review backlog and defects per day: the series cards from
+// GET /api/dashboard/series/{release-train,review-backlog,defects-per-day}.
+// Each stays off (DASH_CARD_FEATURES) until the window holds something to show.
+function _dashReleaseTrainActive() {
+  const d = _dash._seriesReleaseTrain;
+  return !!(d && ((d.tags || []).length || (d.ci || []).length || (d.deploy && d.deploy.state && d.deploy.state !== 'none')));
+}
+
+function _dashFetchReleaseTrain() {
+  return _dashSeriesFetch('_seriesReleaseTrain', '/api/dashboard/series/release-train?days=14',
+    d => Array.isArray(d.tags) && Array.isArray(d.ci), _dashRenderReleaseTrain);
+}
+
+// CI and deploy states from the release-train payload, each with a literal locale key.
+const _DASH_SERIES_STATE_KEYS = {
+  failing: 'dash_series_state_failing', pending: 'dash_series_state_pending', green: 'dash_series_state_green',
+  ok: 'dash_series_state_ok', failed: 'dash_series_state_failed', none: 'dash_series_state_none',
+};
+function _dashSeriesState(s) {
+  return t(_DASH_SERIES_STATE_KEYS[s] || 'dash_series_state_none');
+}
+
+function _dashRenderReleaseTrain() {
+  const el = document.getElementById('dashReleaseTrainCard');
+  if (!el) return;
+  const d = _dash._seriesReleaseTrain;
+  if (!_dashReleaseTrainActive()) { _dashSeriesEmpty(el, 'release-train'); return; }
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const row = (k, v) => '<div style="display:flex;gap:6px;padding:2px 6px;"><span style="width:90px;flex-shrink:0;color:var(--text2);">' + escHtml(k) + '</span><span>' + v + '</span></div>';
+  const tags = (d.tags || []).map(g => '<span title="' + escHtml(g.prd_id || '') + '" style="font-family:monospace;margin-right:6px;">' + escHtml(g.tag) + '</span>').join('');
+  const ci = (d.ci || []).length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_repo')) + '</th><th ' + th + '>' + escHtml(t('dash_series_status')) + '</th></tr>' +
+    d.ci.map(r => '<tr><td style="padding:2px 6px;font-family:monospace;">' + escHtml(r.repo + ' ' + (r.workflow || '')) + '</td>' +
+      '<td style="padding:2px 6px;">' + escHtml(_dashSeriesState(r.status)) + '</td></tr>').join('') + '</table>' : '';
+  const body = row(t('dash_series_tags'), tags || escHtml(t('dash_series_state_none'))) +
+    row(t('dash_series_ci_state'), escHtml(_dashSeriesState(d.ci_state))) +
+    row(t('dash_series_deploy_state'), escHtml(_dashSeriesState(d.deploy && d.deploy.state))) + ci;
+  el.innerHTML = _dashSeriesFrame('release-train', body,
+    t('dash_series_now_release_train', [(d.tags || []).length, (d.ci || []).length]));
+}
+
+function _dashReviewBacklogActive() {
+  const d = _dash._seriesReviewBacklog;
+  return !!(d && ((Number(d.plan_count) || 0) + (Number(d.question_count) || 0)) > 0);
+}
+
+function _dashFetchReviewBacklog() {
+  return _dashSeriesFetch('_seriesReviewBacklog', '/api/dashboard/series/review-backlog?limit=50',
+    d => Array.isArray(d.plans) && Array.isArray(d.questions), _dashRenderReviewBacklog);
+}
+
+function _dashAgeLabel(sec) {
+  return t('dash_series_age_hours', [Math.floor((Number(sec) || 0) / 3600)]);
+}
+
+function _dashRenderReviewBacklog() {
+  const el = document.getElementById('dashReviewBacklogCard');
+  if (!el) return;
+  const d = _dash._seriesReviewBacklog;
+  if (!_dashReviewBacklogActive()) { _dashSeriesEmpty(el, 'review-backlog'); return; }
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const table = (head, rows) => '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text2);text-align:left;">' +
+    head.map(h => '<th ' + th + '>' + escHtml(h) + '</th>').join('') + '</tr>' + rows.join('') + '</table>';
+  const cell = v => '<td style="padding:2px 6px;">' + v + '</td>';
+  const plans = (d.plans || []).length ? table([t('dash_series_plans'), t('dash_series_age')],
+    d.plans.map(p => '<tr>' + cell(escHtml(p.title || p.id)) + cell(_dashAgeLabel(p.age_seconds)) + '</tr>')) : '';
+  const qs = (d.questions || []).length ? table([t('dash_series_questions'), t('dash_series_age')],
+    d.questions.map(q => '<tr>' + cell(escHtml(q.title || q.question_id)) + cell(_dashAgeLabel(q.age_seconds)) + '</tr>')) : '';
+  el.innerHTML = _dashSeriesFrame('review-backlog', plans + qs,
+    t('dash_series_now_review_backlog', [(d.plan_count || 0), (d.question_count || 0)]));
+}
+
+function _dashDefectsActive() {
+  const d = _dash._seriesDefects;
+  return !!(d && ((Number(d.total_found) || 0) > 0 || (Number(d.total_fixed) || 0) > 0));
+}
+
+function _dashFetchDefects() {
+  return _dashSeriesFetch('_seriesDefects', '/api/dashboard/series/defects-per-day?days=14',
+    d => Array.isArray(d.points), _dashRenderDefects);
+}
+
+function _dashRenderDefects() {
+  const el = document.getElementById('dashDefectsCard');
+  if (!el) return;
+  const d = _dash._seriesDefects;
+  if (!_dashDefectsActive()) { _dashSeriesEmpty(el, 'defects-per-day'); return; }
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const head = '<tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_date')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_found')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_fixed')) + '</th></tr>';
+  const rows = (d.points || []).slice(-14).map(p => '<tr>' +
+    '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(p.date) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.found) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(p.fixed) || 0) + '</td></tr>').join('');
+  const body = '<div style="font-size:9px;color:var(--text2);padding:0 6px 4px;">' + escHtml(t('dash_series_total')) + ': ' +
+    (Number(d.total_found) || 0) + ' / ' + (Number(d.total_fixed) || 0) + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  el.innerHTML = _dashSeriesFrame('defects-per-day', body,
+    t('dash_series_now_defects', [(Number(d.total_found) || 0), (Number(d.total_fixed) || 0)]));
+}
+
+function _dashVerifierActive() {
+  const d = _dash._seriesVerifier;
+  return !!(d && Array.isArray(d.nodes) && d.nodes.some(n => (n.runs || 0) + (n.waits || 0) > 0));
+}
+
+function _dashFetchVerifier() {
+  return _dashSeriesFetch('_seriesVerifier', '/api/dashboard/series/verifier-health?window=24h',
+    d => Array.isArray(d.nodes), _dashRenderVerifier);
+}
+
+function _dashRenderVerifier() {
+  const el = document.getElementById('dashVerifierCard');
+  if (!el) return;
+  const d = _dash._seriesVerifier;
+  if (!d || !Array.isArray(d.nodes) || !d.nodes.length) { _dashSeriesEmpty(el, 'verifier-health'); return; }
+  const secs = v => (Number(v) || 0).toFixed(0) + 's';
+  const th = 'style="padding:2px 6px;font-weight:400;"';
+  const head = '<tr style="color:var(--text2);text-align:left;">' +
+    '<th ' + th + '>' + escHtml(t('dash_series_node')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_runs')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_waits')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_avg_wait')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_avg_run')) + '</th>' +
+    '<th ' + th + '>' + escHtml(t('dash_series_pass_rate')) + '</th></tr>';
+  // The pass rate is per node; a node with no logged result has a null rate
+  // and shows a dash, never 0%.
+  const rate = n => n.pass_rate == null ? '—' : Math.round(Number(n.pass_rate) * 100) + '%';
+  const rows = d.nodes.map(n => '<tr>' +
+    '<td style="padding:2px 6px;font-family:monospace;">' + escHtml(n.node) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(n.runs) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + (Number(n.waits) || 0) + '</td>' +
+    '<td style="padding:2px 6px;">' + secs(n.wait_avg_seconds) + '</td>' +
+    '<td style="padding:2px 6px;">' + secs(n.run_avg_seconds) + '</td>' +
+    '<td style="padding:2px 6px;" title="' + escHtml((Number(n.passes) || 0) + ' / ' + (Number(n.outcomes) || 0)) + '">' + rate(n) + '</td></tr>').join('');
+  const body = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + head + rows + '</table>';
+  el.innerHTML = _dashSeriesFrame('verifier-health', body, t('dash_series_now_verifier', [d.nodes.length]));
 }
 
 function _renderSprintPipeline() {
@@ -48631,13 +49066,9 @@ function _dashLoop(ts) {
   if (state.activeView !== 'dashboard') { _dash.rafId = null; return; }
   _dash._frameCount++;
 
-  // Canvas renders at full rate
-  _drawMultiEKG();
-  _dashForceStep();
-
-  // Orbital + Gantt at ~10fps
+  // Network (work map) + Gantt at ~10fps
   if (_dash._frameCount % 6 === 0) {
-    _drawConstellation();
+    _drawNetworkWorkMap();
     _drawGantt();
   }
 
@@ -48647,16 +49078,17 @@ function _dashLoop(ts) {
     _drawHeatmap();
   }
 
-  // Stat bar + tree + event feed + burn rate + guardrails + smoke at ~5fps
+  // Stat bar + tree + event feed + lane pulse + guardrails + smoke at ~5fps
   if (_dash._frameCount % 12 === 0) {
     _dashUpdateStatBar();
     _dashRenderTree();
     _dashRenderEventFeed();
-    _dashRenderBurnRate();
+    _dashRenderLanePulse();
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderTimeline();
     _dashRenderWebSearchUsage();
+    _dashRenderWorkMap();
     _dashRenderConsole();
     _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
@@ -48704,13 +49136,20 @@ function _dashLoop(ts) {
     _dashFetchArc();
   }
 
+  // Lane pulse: one shared GET /api/dashboard/lane-pulse per ~30s tick.
+  if ((_dash._frameCount === 1 || _dash._frameCount % 900 === 0) && !_dash._lanePulseFetching) {
+    _dashFetchLanePulse();
+  }
+
+  // Work map: one shared GET /api/dashboard/work-map per ~30s tick; the card
+  // renders from the cached _dash._workMap payload and fetches on mount too.
+  if ((_dash._frameCount === 1 || _dash._frameCount % 900 === 0) && !_dash._workMapFetching) {
+    _dashFetchWorkMap();
+  }
+
   // Fetch heatmap data every ~60s
   if ((_dash._frameCount === 1 || _dash._frameCount % 1800 === 0) && !_dash._heatmapFetching) {
-    _dash._heatmapFetching = true;
-    apiFetch('/api/analytics?range=30d').then(d => {
-      _dash._heatmapData = (d && d.buckets) || [];
-      _dashClearFedError('heatmap');
-    }).catch(e => _dashSetFedError('heatmap', e)).finally(() => { _dash._heatmapFetching = false; });
+    _dashFetchHeatmap();
   }
 
   // Fetch compute nodes every ~60s for runtime badges
@@ -49067,12 +49506,12 @@ function _dashDefLabel(def) {
 // maps to these five at-a-glance cards. Two existing OBSERVER cards are
 // REUSED as the higher-level source for two of them instead of rebuilding
 // the observer views:
-//   • lanes — `orbital` (the Network card, _drawConstellation) already
-//     shows the session/automaton network; console-lanes distills the same
+//   • lanes — `orbital` (the Network card, _drawNetworkWorkMap) already
+//     shows the session/automaton work map; console-lanes distills the same
 //     picture into one number + the #lanes link and stays on the default
 //     board;
-//   • usage — `ekg` (the Multi-EKG card, _drawMultiEKG plus its burn-rate
-//     side panel) already plots token throughput; console-usage promotes
+//   • usage — `ekg` (the lane pulse card, whose burn panel shows usage in
+//     points against the pace line); console-usage promotes
 //     the audit's "Claude usage against the pace line" question to its own
 //     number + the #usage link and stays on the default board.
 // One shared fetch feeds the whole group — GET /api/dashboard/console is
@@ -49146,6 +49585,7 @@ function _dashConsoleCardHTML(spec) {
   const href = _dashConsoleSafeHref(sec.link);
   const linkText = escHtml(t(spec.linkKey) || spec.label);
   const linkEl = `<a class="dash-console-link" href="${href}">↗ ${linkText}</a>`;
+  if (sec.available && sec.release) return _dashCIReleaseBodyHTML(sec, linkEl);
   if (sec.available) {
     const n = Number(sec.count);
     const num = Number.isFinite(n) ? n : 0;
@@ -49158,6 +49598,51 @@ function _dashConsoleCardHTML(spec) {
   const reason = escHtml(sec.reason || (t('dash_console_unavailable') || 'Unavailable'));
   return `<div class="dash-console-card">
     <div class="dash-console-line dash-console-reason">${reason}</div>
+    ${linkEl}
+  </div>`;
+}
+
+// _dashCIReleaseBodyHTML: the CI & release card body from the release detail.
+// Release and ship state always show. A repo CI watch that is off says exactly
+// "repo CI watch off" with the setting as the next action; failing or hung runs
+// are listed only while the watch is on. Run links must be https.
+function _dashCIReleaseBodyHTML(sec, linkEl) {
+  const r = sec.release || {};
+  const lines = [];
+  if (r.release_state === 'update_available' && r.latest_release) {
+    lines.push(t('dash_console_ci_latest', [r.latest_release]));
+  } else if (r.release_state === 'up_to_date') {
+    lines.push(t('dash_console_ci_running', [r.current_version || '']));
+  } else if (r.release_state === 'check_failed') {
+    lines.push(t('dash_console_ci_check_failed'));
+  } else {
+    lines.push(t('dash_console_ci_not_wired'));
+  }
+  if (r.ship_push || r.ship_tag || r.ship_ci_watch) {
+    lines.push(t('dash_console_ci_ship', [r.ship_push || '', r.ship_tag || '', r.ship_ci_watch || '']));
+  }
+  if (r.ship_last_note) lines.push(t('dash_console_ci_ship_note', [r.ship_last_note]));
+  let watch;
+  if (r.watch_off) {
+    watch = `<div class="dash-console-line dash-console-reason">${escHtml(t('dash_console_ci_watch_off'))}</div>
+      <a class="dash-console-link" href="${_dashConsoleSafeHref(r.watch_link)}">↗ ${escHtml(t('dash_console_ci_watch_link'))}</a>`;
+  } else {
+    const runs = Array.isArray(r.failing_runs) ? r.failing_runs : [];
+    if (!runs.length) {
+      watch = `<div class="dash-console-line">${escHtml(t('dash_console_ci_none_failing'))}</div>`;
+    } else {
+      watch = `<div class="dash-console-line">${escHtml(t('dash_console_ci_failing', [String(runs.length)]))}</div>` +
+        runs.map(run => {
+          const url = typeof run.run_url === 'string' && /^https:\/\//.test(run.run_url) ? run.run_url : '';
+          const open = url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">↗ ${escHtml(t('dash_console_ci_run_link'))}</a> ` : '';
+          const label = escHtml([run.repo, run.workflow, run.status].filter(Boolean).join(' · '));
+          return `<div class="dash-console-line">${open}${label}</div>`;
+        }).join('');
+    }
+  }
+  return `<div class="dash-console-card">
+    ${lines.map(l => `<div class="dash-console-line">${escHtml(l)}</div>`).join('')}
+    ${watch}
     ${linkEl}
   </div>`;
 }
@@ -49419,14 +49904,26 @@ const DASH_CARD_DEFS = [
     body: () => '<div id="dashIntegrationStatusCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   { id: 'tree',       label: 'Automata',       icon: '⣿',  defaultCs: 2,
     body: () => '<div id="dashTree" style="height:100%;overflow-y:auto;"></div>' },
+  // Network card — the work map (see _drawNetworkWorkMap): one line of purpose,
+  // a rotate control with its position in the running work, and the map in a
+  // box that never grows past the grid cell.
   { id: 'orbital',    label: 'Network',         icon: '◎',  defaultCs: 6,
-    body: () => '<svg id="constellationSvg" style="width:100%;height:100%;display:block;"></svg>' },
+    body: () => `<div id="dashNetworkWorkMap" style="height:100%;display:flex;flex-direction:column;overflow:hidden;min-height:0;font-size:10px;">
+      <div style="display:flex;align-items:center;gap:6px;padding:2px 6px;min-width:0;flex-shrink:0;">
+        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text2);">${escHtml(t('dash_network_purpose') || '')}</span>
+        <span id="dashNetworkCount" style="flex-shrink:0;color:var(--text2);"></span>
+        <button type="button" onclick="window._dashNetworkStep(1)" title="${escHtml(t('dash_network_next') || '')}" aria-label="${escHtml(t('dash_network_next') || '')}" style="flex-shrink:0;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;padding:0 6px;font-size:10px;line-height:1.4;">▶</button>
+      </div>
+      <div style="flex:1;min-height:0;position:relative;">
+        <svg id="dashNetworkSvg" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></svg>
+      </div>
+    </div>` },
   { id: 'events',     label: 'Live Events',     icon: '⚡', defaultCs: 2,
     body: () => '<div id="dashEventFeed" style="height:100%;overflow-y:auto;font-family:monospace;font-size:10px;"></div>' },
   { id: 'sparklines', label: 'Sessions',        icon: '▬',  defaultCs: 2,
     body: () => '<canvas id="dashSparkCanvas" style="width:100%;height:100%;display:block;"></canvas>' },
   { id: 'gantt',      label: 'Timeline · 6h',  icon: '≡',  defaultCs: 12,
-    body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;"></svg></div>' },
+    body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;max-width:960px;"></svg></div>' },
   // Per-Automaton timeline: every project's active Automata stacked as SVG
   // Gantt charts (stages as bands, members as bars, blocked/waiting
   // hatched, today + projected-finish markers). Data:
@@ -49442,8 +49939,12 @@ const DASH_CARD_DEFS = [
     </div>` },
   { id: 'guardrails', label: 'Guardrails',      icon: '🛡',  defaultCs: 3,
     body: () => '<div id="dashGuardrailsCard" style="height:100%;overflow-y:auto;padding:6px 8px;"></div>' },
-  { id: 'ekg',        label: 'Multi-EKG',       icon: '♡',  defaultCs: 6,
-    body: () => '<div style="height:100%;display:flex;"><canvas id="ekgCanvas" style="flex:1;min-width:0;height:100%;display:block;"></canvas><div id="dashBurnRate" style="width:72px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 6px;font-size:10px;font-family:monospace;color:var(--text2);"></div></div>' },
+  // Lane pulse — one trace per lane and node (busy, waiting, idle) over the
+  // window, with the usage burn panel in points against the pace line.
+  // Data: GET /api/dashboard/lane-pulse. Hidden until it has data (see
+  // DASH_CARD_FEATURES.ekg).
+  { id: 'ekg',        label: 'Lane pulse', labelKey: 'dash_lane_pulse', icon: '♡',  defaultCs: 6,
+    body: () => '<div style="height:100%;display:flex;flex-direction:column;min-height:0;"><div id="dashLanePulseTraces" style="flex:1;min-height:0;overflow-y:auto;padding:4px 0;font-size:10px;"></div><div id="dashBurnRate" style="flex-shrink:0;border-top:1px solid var(--border);padding:4px 8px;font-family:monospace;color:var(--text2);"></div></div>' },
   { id: 'smoke',      label: 'Smoke Run',       icon: '🔬', defaultCs: 6,
     body: () => '<div id="dashSmokeCard" style="height:100%;display:flex;flex-direction:column;font-size:11px;user-select:none;"></div>' },
   // BL387 Phase 3 — memory scope stats tile.
@@ -49452,6 +49953,28 @@ const DASH_CARD_DEFS = [
   // BL391 — multi-provider web search usage tile.
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // Work map — the install's active work as a graph (project → Automation →
+  // Automaton → task → session), its edges, and the sessions running now.
+  // Data: GET /api/dashboard/work-map (trace roll-up + session placement tags).
+  { id: 'work-map', label: 'Work map', labelKey: 'dash_work_map', icon: '🗺', defaultCs: 6,
+    body: () => '<div id="dashWorkMapCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // Lane utilization, throughput forecast and verifier health: opt-in series
+  // cards (see DASH_CARD_FEATURES). Not in the default layout; each shows once
+  // its feature has data.
+  { id: 'lane-utilization', label: 'Lane utilization', labelKey: 'dash_lane_util', icon: '▦', defaultCs: 6,
+    body: () => '<div id="dashLaneUtilCard" style="height:100%;overflow-y:auto;padding:6px 0;font-size:11px;"></div>' },
+  { id: 'throughput-forecast', label: 'Throughput forecast', labelKey: 'dash_throughput_forecast', icon: '📈', defaultCs: 6,
+    body: () => '<div id="dashForecastCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  { id: 'verifier-health', label: 'Verifier health', labelKey: 'dash_verifier_health', icon: '✔', defaultCs: 6,
+    body: () => '<div id="dashVerifierCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // Release train, review backlog and defects per day: opt-in series cards
+  // (see DASH_CARD_FEATURES). Not in the default layout; each shows once it has data.
+  { id: 'release-train', label: 'Release train', labelKey: 'dash_release_train', icon: '🚂', defaultCs: 6,
+    body: () => '<div id="dashReleaseTrainCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  { id: 'review-backlog', label: 'Review backlog', labelKey: 'dash_review_backlog', icon: '📋', defaultCs: 6,
+    body: () => '<div id="dashReviewBacklogCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  { id: 'defects-per-day', label: 'Defects per day', labelKey: 'dash_defects_per_day', icon: '🐞', defaultCs: 6,
+    body: () => '<div id="dashDefectsCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
   // The three small usage cards (one shared renderer, bounded size).
   { id: 'usage-allowance', label: 'Weekly allowance', labelKey: 'dash_card_usage_allowance', icon: '📈', defaultCs: 3,
@@ -49464,7 +49987,7 @@ const DASH_CARD_DEFS = [
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
   // GET /api/cost/report; controls in the card: group select, window
-  // (days) input, Refresh button. Sits beside the EKG card's burn-rate USD.
+  // (days) input, Refresh button. Dollar figures here are API-equivalent cost, not plan spend.
   { id: 'cost-report', label: 'Cost report', labelKey: 'dash_cost_report', icon: '💲', defaultCs: 6,
     body: () => '<div id="dashCostReportCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 ];
@@ -49494,6 +50017,112 @@ const DASH_DEFAULT_LAYOUT = [
 // install; with it off they render in a single line saying why they are
 // empty, with a link to the related setting's help page.
 const DASH_CARD_FEATURES = {
+  // The CI & release console card is shown once the daemon has reported a
+  // release check or ship policy. A repo CI watch that is off does not hide
+  // it: the card still shows the release and ship state with the next action.
+  // The lane pulse card shows once a lane held a lease or waited in the
+  // window, or the usage burn panel can read a level; until then it is off.
+  ekg: {
+    docsKey: 'dash_card_events',
+    reasonKey: 'dash_card_off_ekg_reason',
+    reasonDefault: 'No lane has held or waited on a lease in this window yet, and no usage reading is available — this card fills as lanes run.',
+    linkKey: 'dash_card_off_ekg_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashLanePulseActive(); },
+  },
+  // Lane utilization, throughput forecast and verifier health: the series
+  // cards from GET /api/dashboard/series/*. Each is off until it has data.
+  'lane-utilization': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_lane_util_reason',
+    reasonDefault: 'No lane has held a lease in the last 24 hours — this card fills as lanes run.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashLaneUtilActive(); },
+  },
+  'throughput-forecast': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_forecast_reason',
+    reasonDefault: 'No saved progress snapshot has a throughput or completion estimate yet — the forecast fills as Automata finish.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashForecastActive(); },
+  },
+  'verifier-health': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_verifier_reason',
+    reasonDefault: 'No verifier has run or waited on a node in this window — this card fills as verifiers run.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashVerifierActive(); },
+  },
+  // Release train, review backlog and defects per day: each is off until its
+  // window holds a tag or CI run, a waiting plan or question, or a defect.
+  'release-train': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_release_train_reason',
+    reasonDefault: 'No tags, CI runs or deploy state in this window yet — this card fills after the first release or ship.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashReleaseTrainActive(); },
+  },
+  'review-backlog': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_review_backlog_reason',
+    reasonDefault: 'No plans or held questions are waiting for a decision — this card fills when one waits.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashReviewBacklogActive(); },
+  },
+  'defects-per-day': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_defects_reason',
+    reasonDefault: 'No defects were found or fixed in this window — this card fills as defects are recorded.',
+    linkKey: 'dash_card_off_series_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _dashDefectsActive(); },
+  },
+  'console-ci-release': {
+    docsKey: 'dash_card_events',
+    reasonKey: 'dash_card_off_ci_release_reason',
+    reasonDefault: 'No release or ship state reported yet — this card fills after the first release check.',
+    linkKey: 'dash_card_off_ci_release_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const s = _dash && _dash._console && _dash._console.ci_release;
+      return !!(s && s.available && s.release && (s.release.release_state || s.release.ship_push));
+    },
+  },
+  'heatmap': {
+    docsKey: 'dash_card_heatmap',
+    reasonKey: 'dash_card_off_heatmap_reason',
+    reasonDefault: 'No Automata completed or shipped in the last 30 days — the month fills as work lands.',
+    linkKey: 'dash_card_off_heatmap_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      return (Array.isArray(_dash._heatmapData) ? _dash._heatmapData : []).some(
+        r => r.hasProgress || r.shipped > 0 || (r.tags && r.tags.length > 0));
+    },
+  },
+  'gantt': {
+    docsKey: 'dash_card_gantt',
+    reasonKey: 'dash_card_off_gantt_reason',
+    reasonDefault: 'No Automaton task has run in the last 6 hours — its bar appears here when one starts.',
+    linkKey: 'dash_card_off_gantt_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return _ganttGroups(Date.now()).length > 0; },
+  },
+  'events': {
+    docsKey: 'dash_card_events',
+    reasonKey: 'dash_card_off_events_reason',
+    reasonDefault: 'No Automata or session events yet — this card fills as work runs.',
+    linkKey: 'dash_card_off_events_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      return (Array.isArray(_dash._eventLog) && _dash._eventLog.length > 0) ||
+        (Array.isArray(_dash._daemonEvents) && _dash._daemonEvents.length > 0);
+    },
+  },
   'integration-status': {
     docsKey: 'dash_card_integration_status',
     reasonKey: 'dash_card_off_integration_reason',
@@ -49546,6 +50175,49 @@ const DASH_CARD_FEATURES = {
       return !!(d && d.enabled && (((d.summary || {}).providers) || []).length > 0);
     },
   },
+  // The cost report card is shown once the report has token usage, or once the
+  // operator has touched a control (so a window with no usage can be changed
+  // back). It stays off while the report is unread, empty or unavailable.
+  'cost-report': {
+    docsKey: 'dash_card_cost_report',
+    reasonKey: 'dash_card_off_cost_report_reason',
+    reasonDefault: 'No recorded sessions with token usage in this window — the card fills as sessions report usage.',
+    linkKey: 'dash_card_off_cost_report_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const c = _dash._costReport;
+      if (!c) return false;
+      if (c.userTouched) return true;
+      const r = c.report;
+      return !!(r && Array.isArray(r.rows) && r.rows.length > 0);
+    },
+  },
+  // The Network card draws the same work map as 'work-map' from the same
+  // payload. It is shown while the map has nodes; with no work it is dropped
+  // from the grid, and with hide_inactive_cards off it shows the one-line reason
+  // below (the same key the work-map card uses, since the map is the same).
+  'orbital': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_work_map_reason',
+    reasonDefault: 'No live sessions or Automaton tasks yet — the map fills as work runs.',
+    linkKey: 'dash_card_off_work_map_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const d = _dash._workMap;
+      return !!(d && Array.isArray(d.nodes) && d.nodes.length > 0);
+    },
+  },
+  'work-map': {
+    docsKey: 'dash_card_work_map',
+    reasonKey: 'dash_card_off_work_map_reason',
+    reasonDefault: 'No live sessions or Automaton tasks yet — the map fills as work runs.',
+    linkKey: 'dash_card_off_work_map_link',
+    linkDefault: 'Dashboard card reference',
+    active() {
+      const d = _dash._workMap;
+      return !!(d && Array.isArray(d.nodes) && d.nodes.length > 0);
+    },
+  },
 };
 
 function _dashCardFeature(id) {
@@ -49571,6 +50243,75 @@ function _dashCardOffBody(feat) {
   }
   out += `</div>`;
   return out;
+}
+
+// One-line purpose and '?' help entry for every dashboard card. Each card id
+// has a purpose line under its title (locale key dash_card_purpose_<id>, the
+// id with '-' as '_') and a help link into docs/howto/dashboard.md at the
+// card's own heading (locale key dash_card_help_<id> is the tooltip). The
+// Network card already carries its purpose line in its body, so its purpose
+// key is the existing dash_network_purpose and no second line is drawn.
+// The anchors are the headings of the card sections in docs/howto/dashboard.md.
+const DASH_CARD_HELP_DOC = 'howto/dashboard.md';
+const DASH_CARD_HELP_ANCHORS = {
+  'console-questions': 'questions-waiting-card',
+  'console-held': 'held-and-blocked-card',
+  'console-lanes': 'lanes-card',
+  'console-usage': 'usage-card',
+  'console-ci-release': 'ci-and-release-card',
+  'integration-status': 'integration-status-card',
+  'tree': 'automata-card',
+  'orbital': 'network-card',
+  'events': 'live-events-card',
+  'sparklines': 'sessions-card',
+  'gantt': 'timeline-card',
+  'heatmap': '30-day-activity-card',
+  'guardrails': 'guardrails-card',
+  'ekg': 'lane-pulse-card',
+  'smoke': 'smoke-run-card',
+  'memory-scope': 'memory-scopes-card',
+  'websearch-usage': 'search-usage-card',
+  'work-map': 'work-map-card',
+  'lane-utilization': 'lane-utilization-card',
+  'throughput-forecast': 'throughput-forecast-card',
+  'verifier-health': 'verifier-health-card',
+  'release-train': 'release-train-card',
+  'review-backlog': 'review-backlog-card',
+  'defects-per-day': 'defects-per-day-card',
+  'cost-report': 'cost-report-card',
+};
+
+function _dashCardKeyId(id) {
+  return String(id).replace(/-/g, '_');
+}
+
+function _dashCardPurposeKey(id) {
+  return id === 'orbital' ? 'dash_network_purpose' : 'dash_card_purpose_' + _dashCardKeyId(id);
+}
+
+function _dashCardHelpKey(id) {
+  return 'dash_card_help_' + _dashCardKeyId(id);
+}
+
+// The one-line purpose under the card title. Empty for a card that draws its
+// own purpose line in its body (Network).
+function _dashCardPurposeHTML(id) {
+  if (id === 'orbital') return '';
+  const text = t(_dashCardPurposeKey(id)) || '';
+  if (!text) return '';
+  return `<div class="dboard-card-purpose" title="${escHtml(text)}">${escHtml(text)}</div>`;
+}
+
+// The '?' help entry in the card header, built with the shared
+// settingsHelpLink helper so it follows the inline-docs-links switch.
+function _dashCardHelpHTML(id) {
+  const anchor = DASH_CARD_HELP_ANCHORS[id];
+  if (!anchor) return '';
+  return settingsHelpLink({
+    helpDocs: DASH_CARD_HELP_DOC + '#' + anchor,
+    helpKey: _dashCardHelpKey(id),
+    helpLabelKey: 'dash_card_help_label',
+  });
 }
 
 // Body for a card definition: a feature card with no data renders the
@@ -49601,8 +50342,21 @@ function _dashPumpFeatureData() {
     }
   };
   kick(_dashCardFeature('integration-status'), _dashFetchIntegStatus);
+  kick(_dashCardFeature('events'), _dashFetchDaemonEvents);
   kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
   kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
+  kick(_dashCardFeature('heatmap'), _dashFetchHeatmap);
+  kick(_dashCardFeature('work-map'), _dashFetchWorkMap);
+  kick(_dashCardFeature('orbital'), _dashFetchWorkMap);
+  kick(_dashCardFeature('cost-report'), _dashFetchCostReport);
+  kick(_dashCardFeature('console-ci-release'), _dashFetchConsole);
+  kick(_dashCardFeature('ekg'), _dashFetchLanePulse);
+  kick(_dashCardFeature('lane-utilization'), _dashFetchLaneUtil);
+  kick(_dashCardFeature('throughput-forecast'), _dashFetchForecast);
+  kick(_dashCardFeature('verifier-health'), _dashFetchVerifier);
+  kick(_dashCardFeature('release-train'), _dashFetchReleaseTrain);
+  kick(_dashCardFeature('review-backlog'), _dashFetchReviewBacklog);
+  kick(_dashCardFeature('defects-per-day'), _dashFetchDefects);
   // smoke keeps polling unconditionally in _dashLoop and guardrail
   // verdicts arrive with the board sync — nothing extra to pump there.
   if (!jobs.length) return;
@@ -49679,11 +50433,12 @@ function _dashCardHTML(entry) {
     ondragend="window._dashDragEnd(event)">
     <div class="dboard-card-hdr">
       <span class="dboard-card-drag">⣿</span>
-      <span class="dboard-card-title">${def.icon} ${escHtml(_dashDefLabel(def))}</span>
+      <span class="dboard-card-title">${def.icon} ${escHtml(_dashDefLabel(def))}</span>${_dashCardHelpHTML(def.id)}
       <span class="dboard-card-span" onclick="window._dashCycleSpan('${entry.id}')" title="Width (click to cycle)">${cs}w</span>
       <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
       <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
     </div>
+    ${_dashCardPurposeHTML(def.id)}
     <div class="dboard-card-body">${_dashCardBodySafe(def)}</div>
   </div>`;
 }
@@ -49740,7 +50495,7 @@ function _dashBuildGrid(layout) {
   _dashUpdateStatBar();
   _dashRenderTree();
   _dashRenderEventFeed();
-  _dashRenderBurnRate();
+  _dashRenderLanePulse();
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
@@ -49756,8 +50511,7 @@ function _dashBuildGrid(layout) {
   _dashRenderIntegrationStatus();
   _dashRenderPluginWidgets();
   _drawGantt();
-  _dashForceStep();
-  _drawConstellation();
+  _drawNetworkWorkMap();
 }
 
 window._dashStartEdit = function() {
@@ -50038,7 +50792,114 @@ window._dashDragEnd = function(e) {
   });
 };
 
-// 30-day GitHub-style heatmap ————————————————————————————
+// 30-day activity heatmap ————————————————————————————
+// One cell per UTC day for the last 30 days. Built by _heatmapActivityDays
+// from the progress trend (Automata completed to date, throughput), the
+// shipped counts (shipped per merge day) and the release tags, which are drawn
+// as a marker above their day. _dashFetchHeatmap fills _dash._heatmapData.
+const HEATMAP_DAYS = 30;
+
+// _heatmapActivityDays returns one row per UTC day, oldest first. A trend
+// point with zero completed and zero throughput is the empty post-restart
+// state: it is skipped, so it neither plots nor replaces a real point.
+function _heatmapActivityDays(points, byDay, tags, nowMs, days) {
+  const n = days || HEATMAP_DAYS;
+  const byDate = {};
+  for (const p of (Array.isArray(points) ? points : [])) {
+    if (!p || !p.date) continue;
+    const completed = Number(p.completed_prds) || 0;
+    const throughput = Number(p.throughput_3d) || 0;
+    if (completed === 0 && throughput === 0) continue;
+    byDate[p.date] = { completed, throughput };
+  }
+  const tagsByDate = {};
+  for (const tg of (Array.isArray(tags) ? tags : [])) {
+    if (!tg || !tg.date) continue;
+    (tagsByDate[tg.date] = tagsByDate[tg.date] || []).push(tg.name);
+  }
+  const now = new Date(nowMs);
+  const rows = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    const date = d.toISOString().slice(0, 10);
+    const pt = byDate[date];
+    const day = (byDay && byDay[date]) || {};
+    rows.push({
+      date,
+      hasProgress: !!pt,
+      completed: pt ? pt.completed : 0,
+      throughput: pt ? pt.throughput : 0,
+      shipped: Number(day.prds) || 0,
+      tags: tagsByDate[date] || [],
+    });
+  }
+  return rows;
+}
+
+// _dashFetchHeatmap reads the three sources. A source that fails is left out
+// rather than blanking the card; only when all three fail is the fed error set.
+function _dashFetchHeatmap() {
+  if (_dash._heatmapFetching) return Promise.resolve();
+  _dash._heatmapFetching = true;
+  const soft = (p) => Promise.resolve(p).catch(() => null);
+  return Promise.all([
+    soft(apiFetch('/api/autonomous/progress/trend?days=' + HEATMAP_DAYS)),
+    soft(apiFetch('/api/autonomous/shipped/counts')),
+    soft(apiFetch('/api/autonomous/release-tags')),
+  ]).then(([trend, counts, tags]) => {
+    if (!trend && !counts && !tags) {
+      _dashSetFedError('heatmap', new Error('Failed to load'));
+      return;
+    }
+    _dash._heatmapData = _heatmapActivityDays(
+      trend && trend.points, counts && counts.by_day, tags && tags.tags, Date.now(), HEATMAP_DAYS);
+    _dashClearFedError('heatmap');
+    // The card may have been built while its data was still empty: rebuild
+    // once so it appears as soon as a day has anything to show.
+    const feat = _dashCardFeature('heatmap');
+    if (feat && feat.active() && typeof document !== 'undefined' &&
+        !document.getElementById('dashHeatmapCanvas') && _dash._layout) {
+      _dashBuildGrid(_dash._layout);
+    }
+  }).finally(() => { _dash._heatmapFetching = false; });
+}
+
+function _dashHeatmapTip(canvas) {
+  let tip = canvas._heatTip;
+  if (!tip && canvas.parentElement && typeof document !== 'undefined') {
+    tip = document.createElement('div');
+    tip.style.cssText = 'position:absolute;pointer-events:none;display:none;z-index:5;background:var(--bg,#0f1424);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:10px;line-height:1.4;color:var(--text);white-space:nowrap;';
+    canvas.parentElement.appendChild(tip);
+    canvas._heatTip = tip;
+  }
+  return tip;
+}
+
+function _dashHeatmapHover(canvas, ev) {
+  const g = _dash._heatmapGeom;
+  const tip = _dashHeatmapTip(canvas);
+  if (!g || !tip) return;
+  const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+  const x = ev.clientX - rect.left;
+  const i = Math.floor((x - g.PAD) / g.step);
+  if (i < 0 || i >= g.rows.length || x < g.PAD) { tip.style.display = 'none'; return; }
+  const r = g.rows[i];
+  const lines = [`<b>${escHtml(r.date)}</b>`];
+  lines.push(escHtml(t('dash_heatmap_tip_completed', [r.completed])));
+  lines.push(escHtml(t('dash_heatmap_tip_shipped', [r.shipped])));
+  if (r.tags.length) lines.push(escHtml(t('dash_heatmap_tip_release', [r.tags.join(', ')])));
+  if (!r.hasProgress && !r.shipped && !r.tags.length) lines.push(escHtml(t('dash_heatmap_tip_none')));
+  tip.innerHTML = lines.join('<br>');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(x + 10, g.W - 170) + 'px';
+  tip.style.top = '4px';
+}
+
+function _dashHeatmapHide(canvas) {
+  const tip = canvas && canvas._heatTip;
+  if (tip) tip.style.display = 'none';
+}
+
 function _drawHeatmap() {
   const canvas = document.getElementById('dashHeatmapCanvas');
   if (!canvas) return;
@@ -50054,95 +50915,65 @@ function _drawHeatmap() {
   const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
   ctx.fillStyle = bg2;
   ctx.fillRect(0, 0, W, H);
-  const buckets = _dash._heatmapData || [];
+  const rows = _dash._heatmapData;
   const loadingEl = document.getElementById('dashHeatmapLoading');
-  if (buckets.length === 0) {
+  if (!rows) {
     if (loadingEl) loadingEl.style.display = 'flex';
     return;
   }
   if (loadingEl) loadingEl.style.display = 'none';
 
-  // Issue #101 — narrow mode: card width < 300px → 7-day bar chart
-  const cardEl = canvas.closest('[data-card-id="heatmap"]');
-  const cardCs = cardEl ? parseInt(cardEl.getAttribute('data-cs') || '3', 10) : 3;
-  const narrowMode = W < 300 || cardCs <= 3;
-
-  if (narrowMode) {
-    // 7-day vertical bar chart
-    const last7 = buckets.slice(-7);
-    const maxTotal = Math.max(1, ...last7.map(b => b.total || b.session_count || 0));
-    const PAD = 6;
-    const barCount = last7.length;
-    const barGap = 2;
-    const barW = Math.max(4, Math.floor((W - PAD * 2 - barGap * (barCount - 1)) / barCount));
-    for (let i = 0; i < barCount; i++) {
-      const b = last7[i];
-      const total = b.total || b.session_count || 0;
-      const errors = (b.failed || 0) + (b.killed || 0);
-      const errRate = total ? errors / total : 0;
-      let fill;
-      if (!total) {
-        fill = bdr;
-      } else if (errRate > 0.2) {
-        fill = 'rgba(239,68,68,0.8)';
-      } else if (errRate >= 0.05) {
-        fill = 'rgba(245,158,11,0.8)';
-      } else {
-        fill = 'rgba(16,185,129,0.8)';
-      }
-      const barH = Math.max(2, Math.round((total / maxTotal) * (H - PAD * 2)));
-      const x = PAD + i * (barW + barGap);
-      const y = H - PAD - barH;
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, 2);
-      else ctx.rect(x, y, barW, barH);
-      ctx.fill();
-    }
-    // "7d" label bottom-right
-    ctx.fillStyle = txt2; ctx.font = '8px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText('7d', W - 3, H - 2);
-    ctx.textAlign = 'left';
-    return;
-  }
-
-  const COLS = Math.min(buckets.length, 30);
-  const PAD = 10, LBL_H = 14;
-  const cellPad = 2;
-  const cellW = Math.max(4, Math.floor((W - PAD * 2) / COLS) - cellPad);
-  const cellH = Math.max(4, H - PAD * 2 - LBL_H);
-  const maxCount = Math.max(1, ...buckets.map(b => b.session_count || 0));
-  for (let i = 0; i < COLS; i++) {
-    const b = buckets[buckets.length - COLS + i];
-    const x = PAD + i * (cellW + cellPad);
-    const errors = (b.failed || 0) + (b.killed || 0);
-    const errRate = b.session_count ? errors / b.session_count : 0;
+  const n = rows.length;
+  const PAD = 8, LBL_H = 14, MARK_H = 8, cellPad = 2;
+  const cellW = Math.max(3, Math.floor((W - PAD * 2) / n) - cellPad);
+  const step = cellW + cellPad;
+  const cellTop = PAD + MARK_H;
+  const cellH = Math.max(4, H - cellTop - PAD - LBL_H);
+  const maxShipped = Math.max(1, ...rows.map(r => r.shipped));
+  for (let i = 0; i < n; i++) {
+    const r = rows[i];
+    const x = PAD + i * step;
     let fill;
-    if (!b.session_count) {
-      fill = bdr;
-    } else if (errRate > 0.3) {
-      fill = 'rgba(239,68,68,0.7)';
+    if (r.shipped > 0) {
+      const f = r.shipped / maxShipped;
+      fill = f < 0.34 ? 'rgba(124,58,237,0.35)' : f < 0.67 ? 'rgba(124,58,237,0.65)' : acc;
+    } else if (r.hasProgress) {
+      fill = 'rgba(124,58,237,0.14)';
     } else {
-      const t = b.session_count / maxCount;
-      fill = t < 0.25 ? 'rgba(124,58,237,0.25)' : t < 0.5 ? 'rgba(124,58,237,0.5)' : t < 0.75 ? 'rgba(124,58,237,0.75)' : acc;
+      fill = bdr;
     }
     ctx.fillStyle = fill;
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x, PAD, cellW, cellH, 2);
-    else ctx.rect(x, PAD, cellW, cellH);
+    if (ctx.roundRect) ctx.roundRect(x, cellTop, cellW, cellH, 2);
+    else ctx.rect(x, cellTop, cellW, cellH);
     ctx.fill();
+    if (r.tags.length) {
+      const cx = x + cellW / 2;
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.moveTo(cx - 3, PAD);
+      ctx.lineTo(cx + 3, PAD);
+      ctx.lineTo(cx, PAD + 5);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
   ctx.fillStyle = txt2; ctx.font = '8px monospace';
-  for (let i = 0; i < COLS; i += 7) {
-    const b = buckets[buckets.length - COLS + i];
-    if (!b) continue;
-    ctx.fillText((b.date || '').slice(5), PAD + i * (cellW + cellPad), PAD + cellH + 10);
+  for (let i = 0; i < n; i += 7) {
+    ctx.fillText(rows[i].date.slice(5), PAD + i * step, cellTop + cellH + 10);
   }
-  const total = buckets.reduce((n, b) => n + (b.session_count || 0), 0);
+  const shippedTotal = rows.reduce((s, r) => s + r.shipped, 0);
+  const releases = rows.reduce((s, r) => s + r.tags.length, 0);
   ctx.textAlign = 'right';
-  ctx.fillText(`${total} / 30d`, W - PAD, PAD + cellH + 10);
+  ctx.fillText(t('dash_heatmap_total', [shippedTotal, releases, n]), W - PAD, cellTop + cellH + 10);
   ctx.textAlign = 'left';
+
+  _dash._heatmapGeom = { PAD, step, W, rows };
+  if (!canvas._heatHover) {
+    canvas._heatHover = true;
+    canvas.onmousemove = (ev) => _dashHeatmapHover(canvas, ev);
+    canvas.onmouseleave = () => _dashHeatmapHide(canvas);
+  }
 }
 
 // Guardrail verdicts bar chart ————————————————————————————
@@ -50292,7 +51123,134 @@ function _dashRenderWebSearchUsage() {
       </div>`;
     }
   }
+  html += _dashWebSearchCallersHtml(d.callers);
   el.innerHTML = html;
+}
+
+// _dashWebSearchCallersHtml: the counts-by-caller list under the provider bars.
+// Empty when no search has a caller, so the heading never sits over nothing.
+function _dashWebSearchCallersHtml(callers) {
+  const rows = (Array.isArray(callers) ? callers : []).filter(c => c && (c.total || 0) > 0);
+  if (!rows.length) return '';
+  const keys = { session: 'websearch_caller_session', automaton: 'websearch_caller_automaton',
+    mcp: 'websearch_caller_mcp', rest: 'websearch_caller_rest', cli: 'websearch_caller_cli' };
+  const label = k => (keys[k] && t(keys[k])) || k;
+  let h = `<div style="margin-top:6px;font-size:9px;color:var(--text2);">${escHtml(t('websearch_callers') || 'by caller')}</div>`;
+  for (const c of rows) {
+    h += `<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(label(String(c.caller)))}</span>
+      <span style="flex-shrink:0;margin-left:4px;color:var(--text);">${c.total|0}</span>
+    </div>`;
+  }
+  return h;
+}
+
+// ── Work map card (dashboard wiring) ────────────────────────────────────────
+// Card id 'work-map' — the GET /api/dashboard/work-map graph: a node for each
+// project, Automation, Automaton, Automaton task and live session, the edges
+// tying them together, and the sessions running right now. Same cached-card
+// discipline as the other dashboard tiles: last good payload kept on _dash,
+// one shared fetch per dashboard tick, the card renders from the cache. A
+// fresh card fetches on mount so the first paint is not 15s away.
+if (!_dash._workMap) _dash._workMap = null;
+
+function _dashFetchWorkMap() {
+  if (_dash._workMapFetching) return Promise.resolve(_dash._workMap || null);
+  _dash._workMapFetching = true;
+  return apiFetch('/api/dashboard/work-map')
+    .then(d => { _dash._workMap = d && Array.isArray(d.nodes) ? d : null; _dashRenderWorkMap(); return _dash._workMap; })
+    .catch(() => _dash._workMap)
+    .finally(() => { _dash._workMapFetching = false; });
+}
+
+// _dashWorkMapStatusColor: a node status to a swatch/outline color.
+function _dashWorkMapStatusColor(status) {
+  switch (status) {
+    case 'running': return '#3b82f6';
+    case 'waiting': return '#f59e0b';
+    case 'done':    return '#6b7280';
+    case 'error':   return '#ef4444';
+    case 'ok':      return '#22c55e';
+    default:        return '#64748b';
+  }
+}
+
+function _dashRenderWorkMap() {
+  const el = document.getElementById('dashWorkMapCard');
+  if (!el) return;
+  const d = _dash._workMap;
+  if (!d) {
+    // No refetch here: this renders ~5 times a second, and the 30s tick is the
+    // retry cadence. Refetching from the render path would hammer a 503.
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('dash_work_map_unavailable') || 'Work map unavailable')}</div>`;
+    return;
+  }
+  const nodes = Array.isArray(d.nodes) ? d.nodes : [];
+  const edges = Array.isArray(d.edges) ? d.edges : [];
+  const running = Array.isArray(d.running) ? d.running : [];
+  if (!nodes.length) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('dash_work_map_empty') || 'No work mapped yet — sessions and Automaton tasks appear here as they run.')}</div>`;
+    return;
+  }
+  // One column per node kind, left to right (project → Automation → Automaton
+  // → task → session); rows within a column. Edges are cubic curves so a
+  // container→child line never cuts across the intermediate columns.
+  const kindOrder = ['project', 'automation', 'automaton', 'task', 'session'];
+  const colW = 156, rowH = 30, padL = 8, padT = 8, nodeW = 140, nodeH = 22;
+  const byKind = {};
+  for (const k of kindOrder) byKind[k] = [];
+  for (const n of nodes) (byKind[n.kind] || (byKind[n.kind] = [])).push(n);
+  const kinds = kindOrder.filter(k => byKind[k].length)
+    .concat(Object.keys(byKind).filter(k => kindOrder.indexOf(k) === -1).sort());
+  const maxRows = Math.max.apply(null, [1].concat(kinds.map(k => byKind[k].length)));
+  const W = padL * 2 + kinds.length * colW;
+  const H = padT * 2 + maxRows * rowH;
+  const pos = {};
+  kinds.forEach((k, ci) => {
+    byKind[k].forEach((n, ri) => {
+      pos[n.id] = { x: padL + ci * colW + nodeW / 2, y: padT + ri * rowH + nodeH / 2 };
+    });
+  });
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" style="display:block;" preserveAspectRatio="xMidYMid meet">`;
+  for (const e of edges) {
+    const a = pos[e.from], b = pos[e.to];
+    if (!a || !b) continue;
+    const mx = (a.x + b.x) / 2;
+    svg += `<path d="M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}" fill="none" stroke="var(--border,#333)" stroke-width="1"/>`;
+  }
+  for (const k of kinds) {
+    for (const n of byKind[k]) {
+      const p = pos[n.id];
+      const color = _dashWorkMapStatusColor(n.status);
+      const label = String(n.label || n.id || '').slice(0, 15);
+      svg += `<g>
+        <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="5" fill="var(--bg2,#111)" stroke="${color}" stroke-width="1.2"/>
+        <circle cx="${p.x - nodeW / 2 + 9}" cy="${p.y}" r="3" fill="${color}"/>
+        <text x="${p.x - nodeW / 2 + 17}" y="${p.y + 3.5}" font-size="10" fill="var(--text,#ccc)">${escHtml(label)}</text>
+      </g>`;
+    }
+  }
+  svg += `</svg>`;
+  // Running strip: the sessions live right now, newest first (server order).
+  let strip = '';
+  if (running.length) {
+    const items = running.slice(0, 8).map(r => {
+      const tag = [r.node, r.lane, r.role].filter(Boolean).join(' · ');
+      return `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px 4px 0;padding:2px 7px;border:1px solid var(--border);border-radius:10px;font-size:9px;white-space:nowrap;">
+        <span style="width:6px;height:6px;border-radius:50%;background:#3b82f6;"></span>
+        ${escHtml(r.label || r.id)}${tag ? ` <span style="color:var(--text2);">${escHtml(tag)}</span>` : ''}
+      </span>`;
+    }).join('');
+    strip = `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px;">
+      <div style="font-size:9px;color:var(--text2);margin-bottom:4px;">${escHtml(t('dash_work_map_running') || 'Running now')} · ${running.length}</div>
+      <div>${items}</div>
+    </div>`;
+  }
+  const traceNote = d.trace === false
+    ? ` · ${escHtml(t('dash_work_map_no_trace') || 'placement only (no trace store)')}`
+    : '';
+  el.innerHTML = `<div style="height:70%;min-height:120px;">${svg}</div>${strip}
+    <div style="font-size:9px;color:var(--text2);margin-top:5px;">${escHtml(t('dash_work_map_counts') || 'nodes')}: ${nodes.length}${traceNote}</div>`;
 }
 
 // ── Cost report card (dashboard wiring) ──────────────────────────────────────
@@ -50640,9 +51598,10 @@ function _dashRenderSmoke() {
   const el = document.getElementById('dashSmokeCard');
   if (!el) return;
 
+  const smokePurpose = `<div class="dash-smoke-purpose" style="color:var(--text2);padding:4px 8px;font-size:10px;opacity:0.7;flex-shrink:0;">${escHtml(t('dash_card_smoke_purpose') || 'Progress of release smoke and end-to-end test runs.')}</div>`;
   const envelopes = _dash._smokeEnvelopes || [];
   if (envelopes.length === 0) {
-    el.innerHTML = `<div style="padding:12px;color:var(--text2);font-size:11px;">No runs — start <code>release-smoke.sh</code> or <code>run-tests.sh</code></div>`;
+    el.innerHTML = smokePurpose + `<div style="padding:12px;color:var(--text2);font-size:11px;">No runs — start <code>release-smoke.sh</code> or <code>run-tests.sh</code></div>`;
     return;
   }
 
@@ -50770,7 +51729,7 @@ function _dashRenderSmoke() {
   const _smokePaneStyle = _smokeNarrowOuter
     ? 'flex:1;min-height:0;display:flex;flex-direction:column;overflow-x:auto;-webkit-overflow-scrolling:touch;'
     : 'flex:1;min-height:0;display:flex;flex-direction:column;';
-  el.innerHTML = envListHtml + (_dash._smokeExpandedId
+  el.innerHTML = smokePurpose + envListHtml + (_dash._smokeExpandedId
     ? `<div style="${_smokePaneStyle}">${detailHtml}</div>`
     : `<div style="padding:10px 8px;color:var(--text2);font-size:10px;">↑ Click a run to expand</div>`);
 }
@@ -50820,7 +51779,12 @@ function _dashFetchPRDs() {
   // (the all-servers aggregate has no summary or filter form).
   return apiFetch(_tagFilterAppend(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?status=running,blocked,planning&limit=500', 'dashboard')).then(d => {
     const list = Array.isArray(d) ? d : ((d && d.prds) || []);
+    const ganttWas = _dashCardFeature('gantt').active();
     _dash._prds = _dashTagFilter(list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning'));
+    // The Timeline card joins or leaves the grid as its first or last bar comes and goes.
+    if (_dashCardFeature('gantt').active() !== ganttWas && typeof _dashBuildGrid === 'function') {
+      try { _dashBuildGrid(_dash._layout || []); } catch (_e) { /* grid not mounted yet */ }
+    }
   });
 }
 
@@ -50852,7 +51816,7 @@ function _dashFetchCost() {
     }
     // Sum each server's CostSummary into the same shape /api/cost
     // returns for a single server, so _dashUpdateStatBar/
-    // _dashRenderBurnRate don't need to know which mode produced it.
+    // _dashRenderLanePulse don't need to know which mode produced it.
     const list = Array.isArray(d) ? d : [];
     _dash._costToday = list.reduce((acc, c) => ({
       sessions: acc.sessions + (c.sessions || 0),
@@ -50869,6 +51833,7 @@ function renderDashboardView() {
   if (!viewEl) return;
   if (_dash.rafId) { cancelAnimationFrame(_dash.rafId); _dash.rafId = null; }
   _dash._frameCount = 0;
+  _dashStartEventLogPoll();
 
   viewEl.innerHTML = `
     <div class="dboard-cards" id="dashboardWrap">
@@ -51024,7 +51989,7 @@ window.dashSetPlacementTag = function(v) {
   if (typeof _dashUpdateStatBar === 'function') _dashUpdateStatBar();
   if (typeof _dashRenderTree === 'function') _dashRenderTree();
   if (typeof _drawGantt === 'function') _drawGantt();
-  if (typeof _dashRenderBurnRate === 'function') _dashRenderBurnRate();
+  if (typeof _dashRenderLanePulse === 'function') _dashRenderLanePulse();
 };
 
 function _dashUpdateStatBar() {
@@ -51150,29 +52115,61 @@ function _dashRenderTree() {
   el.innerHTML = html;
 }
 
+// Daemon event stream for the Live Events card: the newest entries of
+// GET /api/autonomous/event-log, so Automata workers on any lane show up and
+// not only Claude hook events. Polled with one shared window handle.
+const _DASH_DAEMON_EVENTS_LIMIT = 15;
+const _DASH_EVENT_KIND_COLOR = { error: '#ef4444', alert: '#f59e0b', watch: '#f59e0b', retry: '#8b5cf6', decision: '#60a5fa', check: '#10b981', cleanup: '#64748b' };
+
+function _dashFetchDaemonEvents() {
+  if (_dash._daemonEventsFetching) return Promise.resolve();
+  _dash._daemonEventsFetching = true;
+  return apiFetch('/api/autonomous/event-log?limit=' + _DASH_DAEMON_EVENTS_LIMIT).then(d => {
+    _dash._daemonEvents = (d && Array.isArray(d.events)) ? d.events : [];
+    _dashRenderEventFeed();
+  }).catch(() => {}).finally(() => { _dash._daemonEventsFetching = false; });
+}
+
+// One handle on window, never a DOM-stored interval. The tick ends itself
+// once the dashboard is no longer the active view.
+function _dashStartEventLogPoll() {
+  if (window._dashEventLogInterval) return;
+  _dashFetchDaemonEvents();
+  window._dashEventLogInterval = setInterval(() => {
+    if (state.activeView !== 'dashboard') {
+      clearInterval(window._dashEventLogInterval);
+      window._dashEventLogInterval = null;
+      return;
+    }
+    _dashFetchDaemonEvents();
+  }, 10000);
+}
+
+// Newest-first merge of daemon events and hook events, capped for the card.
+function _dashMergedEvents() {
+  const rows = [];
+  for (const e of (_dash._daemonEvents || [])) {
+    const ts = Date.parse(e.time);
+    rows.push({ t: isNaN(ts) ? 0 : ts, kind: e.kind || 'event', text: e.summary || '',
+      color: _DASH_EVENT_KIND_COLOR[e.kind] || 'var(--text2)' });
+  }
+  for (const e of (_dash._eventLog || [])) {
+    rows.push({ t: e.t, kind: 'hook', text: [e.name, e.event, e.tool, e.task].filter(Boolean).join(' · '), color: e.color });
+  }
+  rows.sort((a, b) => b.t - a.t);
+  return rows.slice(0, 40);
+}
+
 function _dashRenderEventFeed() {
   const feedEl = document.getElementById('dashEventFeed');
   if (!feedEl) return;
-  const log = _dash._eventLog;
-  if (log.length === 0) {
-    feedEl.innerHTML = `<div style="color:var(--text2);padding:6px 10px;font-size:10px;opacity:0.6;">Waiting for hook events…</div>`;
-    return;
-  }
-  feedEl.innerHTML = [...log].reverse().map(e => {
-    const ts = new Date(e.t).toLocaleTimeString('en-GB', { hour12: false });
-    const toolBadge = e.tool ? `<span style="color:var(--accent2,#60a5fa);margin-left:3px;font-size:9px;">${escHtml(e.tool.slice(0, 14))}</span>` : '';
-    const taskLine = e.task ? `<div style="color:var(--text2);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:10px;" title="${escHtml(e.task)}">▸ ${escHtml(e.task.slice(0, 32))}</div>` : '';
-    const evIcon = { Stop: '◼', PostToolUse: '▶', UserPromptSubmit: '💬', SubagentStop: '◻', update: '·' }[e.event] || '·';
-    return `<div style="padding:2px 6px;border-bottom:1px solid rgba(255,255,255,0.03);">
-      <div style="display:flex;align-items:center;gap:2px;flex-wrap:nowrap;overflow:hidden;">
-        <span style="color:var(--text2);font-size:8px;flex-shrink:0;">${ts}</span>
-        <span style="color:${e.color};font-size:8px;flex-shrink:0;">${evIcon}</span>
-        <span style="color:var(--text);font-size:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px;" title="${escHtml(e.name)}">${escHtml(e.name)}</span>
-        ${toolBadge}
-      </div>
-      ${taskLine}
-    </div>`;
-  }).join('');
+  const purpose = `<div style="color:var(--text2);padding:4px 8px;font-size:10px;opacity:0.7;">${escHtml(t('dash_card_events_purpose') || 'Newest Automata and session events.')}</div>`;
+  const rows = _dashMergedEvents();
+  feedEl.innerHTML = purpose + rows.map(e => `<div style="padding:2px 6px;border-bottom:1px solid rgba(255,255,255,0.03);display:flex;gap:4px;align-items:baseline;overflow:hidden;white-space:nowrap;">
+      <span style="color:${escHtml(e.color)};font-size:9px;font-weight:600;flex-shrink:0;">${escHtml(e.kind)}</span>
+      <span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis;flex:1;" title="${escHtml(e.text)}">${escHtml(e.text)}</span>
+      <span style="color:var(--text2);font-size:8px;flex-shrink:0;">${escHtml(timeAgo(e.t))}</span>
+    </div>`).join('');
 }
 
 // _ganttStateColour is the bar colour for a Gantt state. The dashboard Timeline
@@ -51182,123 +52179,117 @@ function _ganttStateColour(s, accent, muted) {
   return ({ completed: '#10b981', running: accent, in_progress: accent, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || muted);
 }
 
+// Timeline card (dashboard 'gantt'): one row per Automaton with a task running
+// now or finished inside the 6h window, one bar per such task. Bars come from
+// the task records' started_at / completed_at in the Automata list fetch
+// (_dashFetchPRDs), not from hook events, and are coloured by task status.
+const _GANTT_WINDOW_MS = 6 * 3600000;
+const _GANTT_MAX_W = 960;
+const _GANTT_LIVE_TASK = { in_progress: true, running_tests: true, verifying: true };
+
+// _ganttTaskBars returns one Automaton's bars for the window ending at `now`.
+// A task needs a start timestamp. A live task runs to `now`; any other task
+// needs completed_at. A bar that began before the window is clipped to its
+// start, and a task that ended before the window is dropped.
+function _ganttTaskBars(prd, now, winMs) {
+  const winStart = now - winMs;
+  const out = [];
+  for (const st of ((prd && prd.stories) || [])) {
+    for (const tk of (st.tasks || [])) {
+      const start = Date.parse(tk.started_at || '');
+      if (!Number.isFinite(start) || start > now) continue;
+      const live = !!_GANTT_LIVE_TASK[tk.status];
+      let end = Date.parse(tk.completed_at || '');
+      if (!Number.isFinite(end)) end = live ? now : NaN;
+      if (!Number.isFinite(end) || end < winStart) continue;
+      out.push({
+        id: tk.id || '',
+        title: tk.title || tk.id || '',
+        status: tk.status || '',
+        live,
+        start: Math.max(start, winStart),
+        end: Math.min(Math.max(end, start), now),
+      });
+    }
+  }
+  return out;
+}
+
+// _ganttGroups returns { prd, bars } for each placed Automaton with at least one
+// bar in the window. An empty result means the Timeline card has nothing to show.
+function _ganttGroups(now) {
+  const groups = [];
+  for (const prd of _dashPlacedPrds()) {
+    const bars = _ganttTaskBars(prd, now, _GANTT_WINDOW_MS);
+    if (bars.length) groups.push({ prd, bars });
+  }
+  return groups;
+}
+
+// _ganttBarState maps the task statuses that have no colour of their own onto
+// the state they read as: verifying and running tests look like running.
+function _ganttBarState(s) {
+  return ({ running_tests: 'running', verifying: 'running' })[s] || s;
+}
+
 function _drawGantt() {
   const svgEl = document.getElementById('dashGanttSvg');
   if (!svgEl) return;
   const container = svgEl.parentElement;
   if (!container) return;
-  const W = container.clientWidth || 600;
+  const W = Math.min(container.clientWidth || 600, _GANTT_MAX_W);
   const LABEL_W = 164;
   const BAR_X = LABEL_W;
   const BAR_W = W - LABEL_W - 24;
   const now = Date.now();
-  const WIN_MS = 6 * 3600000;
-  const winStart = now - WIN_MS;
-  const HEADER_H = 24, AUTO_H = 28, STORY_H = 22, GAP = 8;
-  const prds = _dashPlacedPrds();
+  const winStart = now - _GANTT_WINDOW_MS;
+  const HEADER_H = 24, AUTO_H = 28, TASK_H = 22, GAP = 8;
+  const groups = _ganttGroups(now);
   const css = getComputedStyle(document.documentElement);
-  const bg = css.getPropertyValue('--bg').trim() || '#0f1117';
   const bg2 = css.getPropertyValue('--bg2').trim() || '#161b2e';
   const bdr = css.getPropertyValue('--border').trim() || '#2d3148';
   const txt = css.getPropertyValue('--text').trim() || '#e2e8f0';
   const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
   const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
-  const stC = s => _ganttStateColour(s, acc, txt2);
-  const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / WIN_MS)) * BAR_W;
+  const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / _GANTT_WINDOW_MS)) * BAR_W;
   let totalH = HEADER_H + GAP;
-  for (const p of prds) {
+  for (const g of groups) {
     totalH += AUTO_H;
-    if (_dash._ganttTreeExpand[p.id] !== false) totalH += (p.stories || []).length * STORY_H;
+    if (_dash._ganttTreeExpand[g.prd.id] !== false) totalH += g.bars.length * TASK_H;
     totalH += GAP;
   }
   totalH = Math.max(totalH, 80);
-  let html = '';
-  html += `<rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="${bg2}"/>`;
+  let html = `<rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="${bg2}"/>`;
   const startH = Math.ceil(winStart / 3600000), endH = Math.floor(now / 3600000);
   for (let h = startH; h <= endH; h++) {
-    const ts = h * 3600000;
-    const x = tsX(ts);
+    const x = tsX(h * 3600000);
     if (x < BAR_X - 2 || x > W - 10) continue;
-    const d = new Date(ts);
-    const lbl = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const lbl = new Date(h * 3600000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     html += `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${totalH}" stroke="${bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
     html += `<text x="${x.toFixed(1)}" y="14" text-anchor="middle" font-size="9" fill="${txt2}">${escHtml(lbl)}</text>`;
   }
   const nowX = tsX(now);
   html += `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${totalH}" stroke="${acc}" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>`;
   html += `<text x="${nowX.toFixed(1)}" y="10" text-anchor="middle" font-size="8" fill="${acc}" font-weight="bold">NOW</text>`;
-  let y = HEADER_H + GAP;
-  if (prds.length === 0) {
-    html += `<text x="${W / 2}" y="${HEADER_H + 50}" text-anchor="middle" font-size="13" fill="${txt2}" opacity="0.6">No active automata — start an Automaton to see its timeline</text>`;
-    html += `<text x="${W / 2}" y="${HEADER_H + 68}" text-anchor="middle" font-size="10" fill="${txt2}" opacity="0.4">Live story bars appear here as hooks fire</text>`;
+  if (groups.length === 0) {
+    html += `<text x="${W / 2}" y="${HEADER_H + 40}" text-anchor="middle" font-size="12" fill="${txt2}" opacity="0.7">${escHtml(t('dash_card_off_gantt_reason'))}</text>`;
   }
-  for (const prd of prds) {
-    const stories = prd.stories || [];
-    const tTotal = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
-    const tDone = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
-    const pct = tTotal > 0 ? Math.round(tDone / tTotal * 100) : 0;
-    const prdColor = stC(prd.status);
-    const expanded = _dash._ganttTreeExpand[prd.id] !== false;
-    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="${escHtml(`window._dashToggleGanttRow(${JSON.stringify(prd.id)})`)}"/>`;
-    html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${prdColor}" style="cursor:pointer;">${expanded ? '▼' : '▶'}</text>`;
-    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}">${escHtml((prd.title || prd.id).slice(0, 26))}</text>`;
-    const pbX = W - 96, pbY = y + AUTO_H / 2 - 5, pbW = 72, pbH = 7;
-    html += `<rect x="${pbX}" y="${pbY}" width="${pbW}" height="${pbH}" rx="3" fill="${bdr}"/>`;
-    html += `<rect x="${pbX}" y="${pbY}" width="${(pbW * pct / 100).toFixed(1)}" height="${pbH}" rx="3" fill="${prdColor}" opacity="0.8"/>`;
-    html += `<text x="${pbX + pbW + 4}" y="${pbY + pbH - 1}" font-size="9" fill="${txt2}">${pct}%</text>`;
+  let y = HEADER_H + GAP;
+  for (const g of groups) {
+    const expanded = _dash._ganttTreeExpand[g.prd.id] !== false;
+    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="${escHtml(`window._dashToggleGanttRow(${JSON.stringify(g.prd.id)})`)}"/>`;
+    html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${acc}" style="cursor:pointer;">${expanded ? '▼' : '▶'}</text>`;
+    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(g.prd.id)})`)}">${escHtml((g.prd.title || g.prd.id).slice(0, 26))}</text>`;
+    html += `<text x="${W - 10}" y="${y + AUTO_H / 2 + 4}" text-anchor="end" font-size="9" fill="${txt2}">${g.bars.length}</text>`;
     y += AUTO_H;
     if (!expanded) { y += GAP; continue; }
-    const completedCount = stories.filter(s => s.status === 'completed').length;
-    for (let si = 0; si < stories.length; si++) {
-      const st = stories[si];
-      const key = prd.id + ':' + si;
-      const timing = _dash._ganttTimings[key];
-      let barStart, barEnd;
-      if (timing && timing.start) {
-        barStart = timing.start;
-        barEnd = st.status === 'completed' ? (timing.end || timing.lastSeen || now) : now;
-      } else {
-        const slotMs = WIN_MS / Math.max(stories.length, 1);
-        if (st.status === 'completed') {
-          barStart = winStart + si * slotMs;
-          barEnd = winStart + (si + 1) * slotMs;
-        } else if (st.status === 'running' || st.status === 'in_progress') {
-          barStart = winStart + completedCount * slotMs;
-          barEnd = now;
-        } else {
-          barStart = now + (si - completedCount) * (WIN_MS / 12);
-          barEnd = barStart + WIN_MS / 12;
-        }
-      }
-      const bx = tsX(barStart);
-      const bx2 = Math.min(W - 16, tsX(barEnd));
-      const bw = Math.max(3, bx2 - bx);
-      const color = stC(st.status);
-      const isPending = !st.status || st.status === 'draft' || st.status === 'not_started';
-      const rowY = y + 2, rowH = STORY_H - 4;
-      html += `<rect x="0" y="${y}" width="${W}" height="${STORY_H}" fill="transparent" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}" style="cursor:pointer;"/>`;
-      const sIcon = { completed: '✓', running: '▶', in_progress: '▶', blocked: '!', needs_review: '?', failed: '✗' }[st.status] || '○';
-      html += `<text x="${LABEL_W - 8}" y="${y + STORY_H / 2 + 4}" text-anchor="end" font-size="10" fill="${color}">${sIcon}</text>`;
-      html += `<text x="8" y="${y + STORY_H / 2 - 1}" font-size="9" fill="${txt}" opacity="0.8">${escHtml((st.title || `Story ${si + 1}`).slice(0, 24))}</text>`;
-      const tD2 = (st.tasks || []).filter(t => t.status === 'completed').length;
-      const tT2 = (st.tasks || []).length;
-      if (tT2 > 0) html += `<text x="8" y="${y + STORY_H / 2 + 9}" font-size="8" fill="${txt2}">${tD2}/${tT2}</text>`;
-      if (isPending) {
-        html += `<rect x="${bx.toFixed(1)}" y="${rowY}" width="${bw.toFixed(1)}" height="${rowH}" rx="2" fill="none" stroke="${color}" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.35"/>`;
-      } else {
-        const op = st.status === 'completed' ? '0.55' : '0.82';
-        html += `<rect x="${bx.toFixed(1)}" y="${rowY}" width="${bw.toFixed(1)}" height="${rowH}" rx="2" fill="${color}" opacity="${op}"/>`;
-        if (bw > 44) {
-          const bl = (st.status === 'running' || st.status === 'in_progress')
-            ? `▶ ${(st.title || `S${si + 1}`).slice(0, 14)}`
-            : (st.title || `S${si + 1}`).slice(0, 16);
-          html += `<text x="${(bx + Math.min(bw, 120) / 2).toFixed(1)}" y="${rowY + rowH / 2 + 4}" text-anchor="middle" font-size="9" fill="white" opacity="0.92" style="pointer-events:none;">${escHtml(bl)}</text>`;
-        }
-        if ((st.verdicts || []).some(v => v.outcome === 'block')) {
-          html += `<text x="${(bx + bw + 4).toFixed(1)}" y="${rowY + rowH - 1}" font-size="10" fill="#ef4444">⛔</text>`;
-        }
-      }
-      y += STORY_H;
+    for (const b of g.bars) {
+      const bx = tsX(b.start);
+      const bw = Math.max(3, tsX(b.end) - bx);
+      const color = _ganttStateColour(_ganttBarState(b.status), acc, txt2);
+      html += `<text x="8" y="${y + TASK_H / 2 + 3}" font-size="9" fill="${txt}" opacity="0.8">${escHtml(b.title.slice(0, 24))}</text>`;
+      html += `<rect x="${bx.toFixed(1)}" y="${y + 2}" width="${bw.toFixed(1)}" height="${TASK_H - 4}" rx="2" fill="${color}" opacity="${b.live ? '0.82' : '0.55'}"><title>${escHtml(b.title)}</title></rect>`;
+      y += TASK_H;
     }
     y += GAP;
   }
@@ -51365,24 +52356,6 @@ function _drawSparklines() {
     }
     ctx.globalAlpha = 1;
   }
-}
-
-function _dashRenderBurnRate() {
-  const el = document.getElementById('dashBurnRate');
-  if (!el) return;
-  const sessions = (state.sessions || []).filter(s => s.state === 'running' || s.state === 'generating');
-  let html = '';
-  if (_dash._costToday) {
-    const c = _dash._costToday;
-    const tot = typeof c.total_usd === 'number' ? c.total_usd : 0;
-    if (tot > 0) {
-      html += `<div style="color:var(--success,#10b981);font-weight:700;">$${tot.toFixed(2)}</div><div style="font-size:8px;opacity:0.6;">today</div>`;
-    }
-  }
-  html += `<div style="margin-top:3px;color:var(--accent);font-size:9px;">${sessions.length} running</div>`;
-  const prds = _dashPlacedPrds();
-  if (prds.length > 0) html += `<div style="font-size:8px;color:var(--text2);">${prds.length} automata</div>`;
-  el.innerHTML = html;
 }
 
 window._dashToggleGanttRow = function(prdId) {

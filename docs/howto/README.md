@@ -107,7 +107,7 @@ you already have a daemon you can talk to.
 | [Sessions tiles, grouping and saved views](sessions-tiles-and-grouping.md) | The one-row toolbar (search, Filters button, server chips), the three view modes (list / tiles / compact), the one-line status counts, Show-more paging, group by state / node / project / tag / tag-prefix / automaton with sub-task nesting under the owning Automaton and done/total progress, per-device saved views, and the same shared grouped read on REST, MCP, CLI and the comm channel |
 | [Claude Code hooks](claude-hooks.md) | Auto-install, manual setup, structured hook payload schema, TodoWrite integration |
 | [Session Telemetry](session-telemetry.md) | Structured task telemetry from hook events: tasks[], guardrail verdicts, persist-on-stop |
-| [Dashboard](dashboard.md) | /dashboard Mission Control: session constellation, EKG waveform, sprint pipeline, expand mode |
+| [Dashboard](dashboard.md) | /dashboard Mission Control: Network work map, work-map card, Lane pulse with burn panel, session cards, expand mode |
 | [Operator console](dashboard-operator-console.md) | The dashboard's one-glance “what needs my attention” summary — questions waiting, held & blocked, lanes, usage, CI & release; every switch, every surface (YAML, CLI, PWA, REST, MCP, chat), and what the console never does |
 | [Arc view](dashboard-arc-view.md) | The dashboard's arc view — an Automation's stages in order (bugs, features, final stage), the separate maintenance lane, the blocked stage, shared lanes and plan usage in points and tokens (never billed dollars); REST, MCP, CLI, chat verb and the Arc card in the PWA |
 | [Channel state engine](channel-state-engine.md) | Why a session is in its current state; signals + diagnostic walkthrough |

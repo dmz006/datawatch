@@ -3287,6 +3287,8 @@ paths:
                         known_tasks: {type: integer}
                         estimated_tasks: {type: number}
                         throughput_3d: {type: number}
+                        prds_per_day_24h: {type: number, description: Completions per active day over the 24 hours before the snapshot}
+                        prds_last_24h: {type: integer, description: Completions in those 24 hours}
                         utilization: {type: number}
                         completed_prds: {type: integer}
                   direction: {type: string, enum: [converging, widening, flat, unknown]}
@@ -9255,6 +9257,40 @@ paths:
       parameters:
         - {name: v, in: query, required: false, schema: {type: string}, description: "Pass 2 for the structured v2 payload"}
       responses: {"200": {description: OK}}
+  /api/websearch/stats:
+    get:
+      summary: Search usage - counts by provider, a daily series, and counts by caller
+      description: |
+        `summary` carries the provider rollup; `daily_series` is a zero-filled
+        daily count; `callers` lists the number of searches made by each kind of
+        caller, largest first. A caller is a session, an Automaton task, an MCP
+        client with no session, a REST call or the CLI. Read-only; needs the
+        analytics capability when called by a federation peer.
+      operationId: websearchStats
+      tags: [Singletons]
+      parameters:
+        - {name: days, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 365, default: 30}, description: Length of the daily series}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  cache_enabled: {type: boolean}
+                  provider_names: {type: array, items: {type: string}}
+                  summary: {type: object}
+                  daily_series: {type: array, items: {type: object}}
+                  callers:
+                    type: array
+                    description: Searches by caller kind, largest first
+                    items:
+                      type: object
+                      properties:
+                        caller: {type: string, enum: [session, automaton, mcp, rest, cli]}
+                        total: {type: integer}
   /api/ollama/stats:
     get:
       summary: Ollama-specific stats — running models, queue depth

@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -489,5 +490,139 @@ func TestPlatformContextConfigGetPUTRoundTrip(t *testing.T) {
 	}
 	if pc = get(); pc["note"] != "extra" {
 		t.Errorf("rejected PUT changed the note: %v", pc["note"])
+	}
+}
+
+// ciReleaseSpy returns the fixture's CI watch spy so a test can change the
+// watch mode or records before the request.
+func ciReleaseSpy(t *testing.T, s *Server) *consoleSpy {
+	t.Helper()
+	spy, ok := s.autonomousMgr.(*consoleSpy)
+	if !ok {
+		t.Fatalf("fixture autonomous manager is not the console spy")
+	}
+	return spy
+}
+
+func TestDashboardConsoleCIReleaseWatchOffKeepsReleaseAndShipState(t *testing.T) {
+	s := consoleFixtureServer(t)
+	s.latestVersion = func() (string, error) { return "99.0.0", nil }
+	ciReleaseSpy(t, s).triage[0].Notes = []autonomous.TriageNote{
+		{At: time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC), Source: "ship_step", Text: "pushed the release commit"},
+	}
+	_, resp := getConsole(t, s)
+
+	rel := resp.CIRelase.Release
+	if !resp.CIRelase.Available || rel == nil {
+		t.Fatalf("ci_release: want an available section with release detail, got %+v", resp.CIRelase)
+	}
+	if !rel.WatchOff || rel.WatchMode != "off" {
+		t.Errorf("watch: want off, got mode=%q watch_off=%v", rel.WatchMode, rel.WatchOff)
+	}
+	if rel.WatchLink != consoleAnchorSettings {
+		t.Errorf("watch_link: got %q, want %q (the next action goes to settings)", rel.WatchLink, consoleAnchorSettings)
+	}
+	if len(rel.FailingRuns) != 0 {
+		t.Errorf("failing_runs: a watch that is off must not list runs, got %d", len(rel.FailingRuns))
+	}
+	if rel.CurrentVersion != Version {
+		t.Errorf("current_version: got %q, want %q", rel.CurrentVersion, Version)
+	}
+	if rel.ReleaseState != consoleReleaseAvailable || rel.LatestRelease != "99.0.0" {
+		t.Errorf("release: got state=%q latest=%q, want update_available 99.0.0", rel.ReleaseState, rel.LatestRelease)
+	}
+	want := autonomous.BuildShipStatus(nil, "", "").Policy
+	if rel.ShipPush != want.Push || rel.ShipTag != want.Tag || rel.ShipCIWatch != want.CIWatch {
+		t.Errorf("ship policy: got push=%q tag=%q ci_watch=%q, want %q %q %q",
+			rel.ShipPush, rel.ShipTag, rel.ShipCIWatch, want.Push, want.Tag, want.CIWatch)
+	}
+	if rel.ShipLastNote != "pushed the release commit" {
+		t.Errorf("ship_last_note: got %q", rel.ShipLastNote)
+	}
+	if !strings.Contains(resp.CIRelase.Summary, "ship: push") {
+		t.Errorf("summary: %q (want the ship policy line)", resp.CIRelase.Summary)
+	}
+}
+
+func TestDashboardConsoleCIReleaseWatchOnListsFailingRuns(t *testing.T) {
+	s := consoleFixtureServer(t)
+	spy := ciReleaseSpy(t, s)
+	spy.ci.Mode = "shadow"
+	spy.ci.Records[1].Repo = "repo-a"
+	spy.ci.Records[1].Workflow = "ci.yml"
+	spy.ci.Records[1].RunID = "123"
+	spy.ci.Records[1].RunURL = "https://ci.example/runs/123"
+	_, resp := getConsole(t, s)
+
+	rel := resp.CIRelase.Release
+	if rel == nil || rel.WatchOff {
+		t.Fatalf("watch on: want release detail with watch_off=false, got %+v", rel)
+	}
+	if len(rel.FailingRuns) != 1 {
+		t.Fatalf("failing_runs: want 1 failing run, got %d", len(rel.FailingRuns))
+	}
+	run := rel.FailingRuns[0]
+	if run.Repo != "repo-a" || run.RunID != "123" || run.Status != "failing" || run.RunURL != "https://ci.example/runs/123" {
+		t.Errorf("failing run: got %+v", run)
+	}
+	if rel.ReleaseState != consoleReleaseNotWired {
+		t.Errorf("release_state: with no version check wired got %q, want %q", rel.ReleaseState, consoleReleaseNotWired)
+	}
+}
+
+func TestDashboardConsoleCIReleaseVersionCheckStates(t *testing.T) {
+	cases := []struct {
+		name   string
+		fn     func() (string, error)
+		state  string
+		latest string
+	}{
+		{"up to date when no newer tag", func() (string, error) { return "", nil }, consoleReleaseUpToDate, ""},
+		{"check failed", func() (string, error) { return "", fmt.Errorf("offline") }, consoleReleaseCheckFail, ""},
+		{"update available", func() (string, error) { return "99.0.0", nil }, consoleReleaseAvailable, "99.0.0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := consoleFixtureServer(t)
+			s.latestVersion = tc.fn
+			_, resp := getConsole(t, s)
+			if resp.CIRelase.Release.ReleaseState != tc.state {
+				t.Errorf("release_state: got %q, want %q", resp.CIRelase.Release.ReleaseState, tc.state)
+			}
+			if resp.CIRelase.Release.LatestRelease != tc.latest {
+				t.Errorf("latest_release: got %q, want %q", resp.CIRelase.Release.LatestRelease, tc.latest)
+			}
+		})
+	}
+}
+
+func TestDashboardConsoleCIReleaseOmittedWhenSectionHidden(t *testing.T) {
+	s := consoleFixtureServer(t)
+	off := false
+	s.cfg.Dashboard.Console.ShowCIRelease = &off
+	_, resp := getConsole(t, s)
+	if resp.CIRelase.Available || resp.CIRelase.Release != nil {
+		t.Errorf("ci_release hidden by its switch: want no detail, got %+v", resp.CIRelase)
+	}
+}
+
+func TestConsoleFailingRunsNewestFirstAndCapped(t *testing.T) {
+	base := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	var recs []*autonomous.RepoCIWatchRecord
+	for i := 0; i < 7; i++ {
+		recs = append(recs, &autonomous.RepoCIWatchRecord{
+			RunID: fmt.Sprintf("r%d", i), Status: "hung", UpdatedAt: base.Add(time.Duration(i) * time.Hour),
+		})
+	}
+	recs = append(recs, &autonomous.RepoCIWatchRecord{RunID: "green", Status: "green", UpdatedAt: base.Add(100 * time.Hour)}, nil)
+	got := consoleFailingRuns(recs)
+	if len(got) != consoleFailingRunLimit {
+		t.Fatalf("want %d runs (the cap), got %d", consoleFailingRunLimit, len(got))
+	}
+	if got[0].RunID != "r6" || got[len(got)-1].RunID != "r2" {
+		t.Errorf("order: want newest first r6..r2, got %s..%s", got[0].RunID, got[len(got)-1].RunID)
+	}
+	if n := len(consoleFailingRuns(nil)); n != 0 {
+		t.Errorf("no records: want 0 runs, got %d", n)
 	}
 }

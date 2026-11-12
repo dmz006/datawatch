@@ -32,6 +32,9 @@ func newDashboardCmd() *cobra.Command {
 	cmd.AddCommand(newDashboardLayoutCmd())
 	cmd.AddCommand(newDashboardConsoleCmd())
 	cmd.AddCommand(newDashboardArcCmd())
+	cmd.AddCommand(newDashboardWorkMapCmd())
+	cmd.AddCommand(newDashboardLanePulseCmd())
+	cmd.AddCommand(newDashboardSeriesCmd())
 	return cmd
 }
 

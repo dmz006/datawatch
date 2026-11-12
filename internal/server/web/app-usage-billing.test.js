@@ -102,7 +102,7 @@ test('billing columns render values and dashes where a row lacks them', (t) => {
     ],
   }, {});
   const text = textOf(html);
-  for (const h of ['Billing', 'Points', 'Share of price', 'API-equiv (unbilled)', 'Units']) {
+  for (const h of ['Billing', 'Points', 'Share of price', 'API-equivalent USD (unbilled)', 'Units']) {
     assert.ok(text.includes(h), 'header "' + h + '" must render when any row has billing data');
   }
   assert.ok(text.includes('950.5 pts'), 'usage points value');

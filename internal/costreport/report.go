@@ -281,6 +281,95 @@ type Request struct {
 	GroupBy GroupBy // zero → the config default (automaton)
 	Since   time.Time
 	Until   time.Time
+	// Usage carries the usage readings to reconcile against; nil leaves the
+	// report without a reconciliation.
+	Usage *UsageInput
+}
+
+// Cache pricing factors: a prompt-cache read costs a tenth of the input rate
+// and a cache write 1.25 times it at API list prices. Only the input rate
+// is in the rate table, so the report derives both from it; every dollar
+// figure it produces is API-equivalent.
+const (
+	CacheReadFactor  = 0.1
+	CacheWriteFactor = 1.25
+)
+
+// recordUSD prices one record at rate: input and output tokens at their
+// rates, cache reads and cache creation at the input rate times their factor.
+func recordUSD(rate session.CostRate, r Record) float64 {
+	usd := session.EstimateCost(rate, r.TokensIn, r.TokensOut)
+	usd += rate.InPerK * CacheReadFactor * float64(r.CacheRead) / 1000
+	usd += rate.InPerK * CacheWriteFactor * float64(r.CacheCreation) / 1000
+	return usd
+}
+
+// isLocalBackend reports whether a backend family runs a local model (pi,
+// ollama and their variants), whose tokens are counted but never priced.
+func isLocalBackend(backend string) bool {
+	b := strings.ToLower(strings.TrimSpace(backend))
+	for _, p := range []string{"pi", "ollama"} {
+		if b == p || strings.HasPrefix(b, p+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// UsageDay is one day of burn read from the usage readings series, in
+// points of the weekly allowance.
+type UsageDay struct {
+	Start  time.Time
+	End    time.Time
+	Points float64
+}
+
+// UsageInput is the usage readings a surface hands the report so it can be
+// reconciled: the burn per day and the pace line (points a steady pace would
+// have used by now). A nil UsageInput, or one with no days, means there are
+// no readings and the report carries no reconciliation.
+type UsageInput struct {
+	Days     []UsageDay
+	PaceLine float64
+}
+
+// ReconcileDay is one day of the reconciliation: the points the readings show
+// and the API-equivalent dollars the report prices for the same day.
+type ReconcileDay struct {
+	Date             string  `json:"date"`
+	Points           float64 `json:"points"`
+	APIEquivalentUSD float64 `json:"api_equivalent_usd"`
+}
+
+// Reconciliation sets the report's API-equivalent dollars beside the usage
+// readings over the same window. Present only where readings exist.
+type Reconciliation struct {
+	// Points is the burn the readings show over the window.
+	Points float64 `json:"points"`
+	// PaceLine is the points a steady pace would have used by now.
+	PaceLine float64 `json:"pace_line"`
+	// AheadOfPace is true when Points is above PaceLine.
+	AheadOfPace bool `json:"ahead_of_pace"`
+	// APIEquivalentUSD is the bundled-plan spend in the window priced at API
+	// rates, cache tokens included.
+	APIEquivalentUSD float64 `json:"api_equivalent_usd"`
+	// ImpliedUSDPerPoint is APIEquivalentUSD over Points; nil when either is
+	// zero.
+	ImpliedUSDPerPoint *float64 `json:"implied_usd_per_point,omitempty"`
+	// Days is the burn per day against the dollars priced for that day.
+	Days []ReconcileDay `json:"days"`
+}
+
+// Totals are the report-wide token counts, every row summed.
+type Totals struct {
+	Sessions      int `json:"sessions"`
+	TokensIn      int `json:"tokens_in"`
+	TokensOut     int `json:"tokens_out"`
+	CacheRead     int `json:"cache_read"`
+	CacheCreation int `json:"cache_creation"`
+	// LocalTokens is the in and out tokens of local-model sessions (pi,
+	// ollama); they are part of TokensIn / TokensOut, never priced.
+	LocalTokens int `json:"local_tokens"`
 }
 
 // Row is one grouped line of the report.
@@ -299,6 +388,9 @@ type Row struct {
 	CacheRead     int `json:"cache_read"`
 	CacheCreation int `json:"cache_creation"`
 	ToolCalls     int `json:"tool_calls"`
+	// LocalTokens is the in and out tokens of the group's local-model
+	// sessions (a subset of TokensIn + TokensOut).
+	LocalTokens int `json:"local_tokens"`
 	// FirstActivity / LastActivity are the earliest and latest activity
 	// stamps in the group; SpanSeconds is the wall-clock span between
 	// them and ActiveSeconds the summed working time.
@@ -361,6 +453,10 @@ type Report struct {
 	// TotalsByUnit is one total per billing unit across all rows; dollars
 	// are never summed with points. Present when a billing resolver was wired.
 	TotalsByUnit []UnitTotal `json:"totals_by_unit,omitempty"`
+	// Totals sums every row's token counts.
+	Totals Totals `json:"totals"`
+	// Reconciliation is present only when usage readings were supplied.
+	Reconciliation *Reconciliation `json:"reconciliation,omitempty"`
 	// RetentionDays is the retention horizon of the spend store the
 	// dollar figures rest on.
 	RetentionDays int `json:"retention_days"`
@@ -712,6 +808,7 @@ func Build(
 		sessions              int
 		tin, tout             int
 		cread, ccreate, tools int
+		local                 int
 		first, last           time.Time
 		active                float64
 		usd                   float64
@@ -744,6 +841,9 @@ func Build(
 		a.cread += r.CacheRead
 		a.ccreate += r.CacheCreation
 		a.tools += r.ToolCalls
+		if isLocalBackend(r.Backend) {
+			a.local += r.TokensIn + r.TokensOut
+		}
 		a.active += r.ActiveSeconds
 		lo, hi := r.FirstActivity, r.LastActivity
 		if lo.IsZero() {
@@ -762,7 +862,7 @@ func Build(
 		var usdRec *float64
 		if rateFor != nil {
 			if rate, ok := rateFor(r.Backend); ok && showUSD {
-				v := session.EstimateCost(rate, r.TokensIn, r.TokensOut)
+				v := recordUSD(rate, r)
 				usdRec = &v
 			}
 		}
@@ -784,13 +884,13 @@ func Build(
 			a.allRate = false
 			continue
 		}
-		a.usd += session.EstimateCost(rate, r.TokensIn, r.TokensOut)
+		a.usd += recordUSD(rate, r)
 	}
 
 	out := make([]Row, 0, len(buckets))
 	for key, a := range buckets {
 		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout,
-			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, ActiveSeconds: a.active}
+			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, LocalTokens: a.local, ActiveSeconds: a.active}
 		if !a.first.IsZero() {
 			f, l := a.first, a.last
 			row.FirstActivity, row.LastActivity = &f, &l
@@ -830,7 +930,19 @@ func Build(
 		attempts = []Attempt{}
 	}
 
+	var totals Totals
+	for _, r := range out {
+		totals.Sessions += r.Sessions
+		totals.TokensIn += r.TokensIn
+		totals.TokensOut += r.TokensOut
+		totals.CacheRead += r.CacheRead
+		totals.CacheCreation += r.CacheCreation
+		totals.LocalTokens += r.LocalTokens
+	}
+
 	rep := &Report{
+		Totals:           totals,
+		Reconciliation:   reconcile(req.Usage, res.Records, rateFor, billing, since, until, peer),
 		GroupBy:          req.GroupBy,
 		Since:            since,
 		Until:            until,
@@ -988,4 +1100,42 @@ func renderStartupTable(rows []StartupRow) string {
 		fmt.Fprintf(&b, "  %s\t%d\t%s\t%d\t%d\t%d\n", row.Key, row.Attempts, avg, row.Estimated, row.Reported, row.NoData)
 	}
 	return b.String()
+}
+
+// reconcile prices the bundled-plan records of the window per day and sets
+// them beside the usage readings' burn per day. It returns nil when no
+// readings were supplied. Records of a backend with no rate are left out (no
+// price to compare); with no billing resolver every priced record counts.
+func reconcile(u *UsageInput, records []Record, rateFor RateFunc, billing BillingFunc, since, until time.Time, peer bool) *Reconciliation {
+	if u == nil || len(u.Days) == 0 {
+		return nil
+	}
+	rec := &Reconciliation{PaceLine: u.PaceLine, Days: make([]ReconcileDay, 0, len(u.Days))}
+	for _, d := range u.Days {
+		day := ReconcileDay{Date: d.Start.UTC().Format("2006-01-02"), Points: d.Points}
+		for _, r := range records {
+			if r.Peer && !peer {
+				continue
+			}
+			if r.At.IsZero() || r.At.Before(d.Start) || !r.At.Before(d.End) ||
+				r.At.Before(since) || r.At.After(until) || rateFor == nil {
+				continue
+			}
+			if billing != nil && billing(r.Backend).Profile.Mode != config.BillingModeBundledPlan {
+				continue
+			}
+			if rate, ok := rateFor(r.Backend); ok {
+				day.APIEquivalentUSD += recordUSD(rate, r)
+			}
+		}
+		rec.Points += d.Points
+		rec.APIEquivalentUSD += day.APIEquivalentUSD
+		rec.Days = append(rec.Days, day)
+	}
+	rec.AheadOfPace = rec.Points > rec.PaceLine
+	if rec.Points > 0 && rec.APIEquivalentUSD > 0 && finite(rec.Points) && finite(rec.APIEquivalentUSD) {
+		v := rec.APIEquivalentUSD / rec.Points
+		rec.ImpliedUSDPerPoint = &v
+	}
+	return rec
 }

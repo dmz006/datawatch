@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,7 +55,49 @@ type consoleSection struct {
 	Summary   string `json:"summary,omitempty"`
 	Link      string `json:"link,omitempty"`
 	Reason    string `json:"reason,omitempty"`
+	// Release is the CI & release detail, set on the ci_release section only.
+	Release *consoleReleaseDetail `json:"release,omitempty"`
 }
+
+// consoleReleaseDetail is the structured CI & release state the card draws:
+// the running and latest release tags, the ship policy with the newest ship
+// note, and the repo CI watch state. The watch being off is reported in
+// WatchOff (the card then shows the next action from WatchLink) while the
+// release and ship state stay filled in. FailingRuns lists the newest
+// failing or hung runs, and only while the watch is on.
+type consoleReleaseDetail struct {
+	CurrentVersion string              `json:"current_version"`
+	LatestRelease  string              `json:"latest_release,omitempty"`
+	ReleaseState   string              `json:"release_state"`
+	WatchMode      string              `json:"watch_mode"`
+	WatchOff       bool                `json:"watch_off"`
+	WatchLink      string              `json:"watch_link"`
+	ShipPush       string              `json:"ship_push"`
+	ShipTag        string              `json:"ship_tag"`
+	ShipCIWatch    string              `json:"ship_ci_watch"`
+	ShipLastNote   string              `json:"ship_last_note,omitempty"`
+	FailingRuns    []consoleFailingRun `json:"failing_runs"`
+}
+
+// consoleFailingRun is one failing or hung CI run under the repo CI watch.
+type consoleFailingRun struct {
+	Repo     string `json:"repo"`
+	Workflow string `json:"workflow"`
+	RunID    string `json:"run_id"`
+	Status   string `json:"status"`
+	RunURL   string `json:"run_url,omitempty"`
+}
+
+// consoleFailingRunLimit caps the failing-run list on the card.
+const consoleFailingRunLimit = 5
+
+// consoleReleaseStates are the release_state values the card reads.
+const (
+	consoleReleaseUpToDate  = "up_to_date"
+	consoleReleaseAvailable = "update_available"
+	consoleReleaseCheckFail = "check_failed"
+	consoleReleaseNotWired  = "not_wired"
+)
 
 type dashboardConsoleResponse struct {
 	GeneratedAt      time.Time      `json:"generated_at"`
@@ -98,7 +141,16 @@ func (s *Server) handleDashboardConsole(w http.ResponseWriter, r *http.Request) 
 	resp.HeldBlocked = s.consoleSection(ctx, "dashboard.console.show_held_blocked", consoleAnchorHeldBlocked, c.EffectiveShowHeld(), s.buildHeldBlocked)
 	resp.Lanes = s.consoleSection(ctx, "dashboard.console.show_lanes", consoleAnchorLanes, c.EffectiveShowLanes(), s.buildLanes)
 	resp.Usage = s.consoleSection(ctx, "dashboard.console.show_usage", consoleAnchorUsage, c.EffectiveShowUsage(), s.buildUsage)
-	resp.CIRelase = s.consoleSection(ctx, "dashboard.console.show_ci_release", consoleAnchorCIRelease, c.EffectiveShowCIRelease(), s.buildCIRelase)
+	var release *consoleReleaseDetail
+	resp.CIRelase = s.consoleSection(ctx, "dashboard.console.show_ci_release", consoleAnchorCIRelease, c.EffectiveShowCIRelease(),
+		func(ctx context.Context) (int, string, error) {
+			count, summary, detail, err := s.ciReleaseState(ctx)
+			release = detail
+			return count, summary, err
+		})
+	if resp.CIRelase.Available {
+		resp.CIRelase.Release = release
+	}
 
 	writeJSONOK(w, resp)
 }
@@ -274,13 +326,13 @@ func (s *Server) buildUsage(ctx context.Context) (int, string, error) {
 
 // buildCIRelase rolls up the repo CI watch records (splitting the failing
 // or hung ones) and the latest-release check.
-func (s *Server) buildCIRelase(context.Context) (int, string, error) {
+func (s *Server) ciReleaseState(context.Context) (int, string, *consoleReleaseDetail, error) {
 	if s.autonomousMgr == nil {
-		return 0, "", fmt.Errorf("the autonomous manager is not wired in on this daemon (autonomous mode off)")
+		return 0, "", nil, fmt.Errorf("the autonomous manager is not wired in on this daemon (autonomous mode off)")
 	}
 	rw, ok := s.autonomousMgr.(repoCIWatchReader)
 	if !ok {
-		return 0, "", fmt.Errorf("the repo CI watch is not wired in on this daemon")
+		return 0, "", nil, fmt.Errorf("the repo CI watch is not wired in on this daemon")
 	}
 	st := rw.RepoCIWatchStatus()
 	attention := 0
@@ -289,21 +341,73 @@ func (s *Server) buildCIRelase(context.Context) (int, string, error) {
 			attention++
 		}
 	}
+	detail := &consoleReleaseDetail{
+		CurrentVersion: Version,
+		WatchMode:      st.Mode,
+		WatchOff:       st.Mode == autonomous.RepoCIWatchModeOff || st.Mode == "",
+		WatchLink:      consoleAnchorSettings,
+		FailingRuns:    []consoleFailingRun{},
+	}
 	parts := []string{fmt.Sprintf("%d CI run(s) under watch across %d repo(s), %d failing or hung (watch mode %s)", len(st.Records), len(st.Repos), attention, st.Mode)}
-	if s.latestVersion != nil {
+
+	if !detail.WatchOff {
+		detail.FailingRuns = consoleFailingRuns(st.Records)
+	}
+
+	if tr, ok := s.autonomousMgr.(triageReader); ok {
+		ship := autonomous.BuildShipStatus(tr.ListTriageRecords(), "", "")
+		detail.ShipPush = ship.Policy.Push
+		detail.ShipTag = ship.Policy.Tag
+		detail.ShipCIWatch = ship.Policy.CIWatch
+		if len(ship.Findings) > 0 {
+			detail.ShipLastNote = ship.Findings[0].Text
+		}
+		parts = append(parts, fmt.Sprintf("ship: push %s, tag %s, CI watch %s", ship.Policy.Push, ship.Policy.Tag, ship.Policy.CIWatch))
+	}
+
+	switch {
+	case s.latestVersion == nil:
+		detail.ReleaseState = consoleReleaseNotWired
+		parts = append(parts, "release: the latest-version check is not wired in")
+	default:
 		latest, err := s.latestVersion()
 		switch {
 		case err != nil:
+			detail.ReleaseState = consoleReleaseCheckFail
 			parts = append(parts, "release: latest-version check failed ("+err.Error()+")")
 		case latest == "" || !semverIsNewer(latest, Version):
+			detail.ReleaseState = consoleReleaseUpToDate
+			detail.LatestRelease = latest
 			parts = append(parts, "release: up to date (v"+Version+")")
 		default:
+			detail.ReleaseState = consoleReleaseAvailable
+			detail.LatestRelease = latest
 			parts = append(parts, "release: update available — v"+latest)
 		}
-	} else {
-		parts = append(parts, "release: the latest-version check is not wired in")
 	}
-	return len(st.Records), strings.Join(parts, "; "), nil
+	return len(st.Records), strings.Join(parts, "; "), detail, nil
+}
+
+// consoleFailingRuns picks the newest failing or hung runs, capped at
+// consoleFailingRunLimit. The input is not modified.
+func consoleFailingRuns(recs []*autonomous.RepoCIWatchRecord) []consoleFailingRun {
+	var hit []*autonomous.RepoCIWatchRecord
+	for _, rec := range recs {
+		if rec != nil && (rec.Status == "failing" || rec.Status == "hung") {
+			hit = append(hit, rec)
+		}
+	}
+	sort.SliceStable(hit, func(i, j int) bool { return hit[i].UpdatedAt.After(hit[j].UpdatedAt) })
+	out := []consoleFailingRun{}
+	for _, rec := range hit {
+		if len(out) == consoleFailingRunLimit {
+			break
+		}
+		out = append(out, consoleFailingRun{
+			Repo: rec.Repo, Workflow: rec.Workflow, RunID: rec.RunID, Status: rec.Status, RunURL: rec.RunURL,
+		})
+	}
+	return out
 }
 
 // humanDuration renders a non-negative interval ("Xd Yh", "Yh Zm", "Zm")

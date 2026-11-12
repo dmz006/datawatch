@@ -118,6 +118,8 @@ const (
 	// command and path.
 	CmdDashboardConsole CommandType = "dashboard console"
 	CmdDashboardArc     CommandType = "dashboard arc"
+	// Dashboard data over chat — work map, lane pulse and the six series.
+	CmdDashboardData CommandType = "dashboard data"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -1397,6 +1399,9 @@ func Parse(text string) Command {
 
 	case lower == "dashboard arc" || lower == "dashboard-arc":
 		return Command{Type: CmdDashboardArc}
+	case isDashboardDataVerb(lower):
+		c, _ := parseDashboardData(lower)
+		return c
 
 	case lower == "peers" || strings.HasPrefix(lower, "peers "):
 		// BL172 (S11) — federated observer peers over chat. Forms:
@@ -2016,6 +2021,9 @@ audit [actor=x action=y limit=N] query operator audit log
 audit self-config [limit=N]      query self-config audit log: allowed + denied config-write attempts
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
 dashboard arc                    arc summary — stages, lanes, plan usage in points and tokens
+dashboard work-map               work map of projects, Automata, tasks and sessions
+dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (window like 6h)
+dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 

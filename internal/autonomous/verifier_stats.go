@@ -45,8 +45,30 @@ type VerifierStatsView struct {
 	Since      time.Time `json:"since"`
 }
 
+// Bounds on the per-node outcome log: entries older than the longest dashboard
+// window are dropped, and the log never holds more than verifierNodeLogMax.
+const (
+	verifierNodeLogRetention = 7 * 24 * time.Hour
+	verifierNodeLogMax       = 20000
+)
+
+// verifierNodeOutcome is one verifier result and the compute node that judged it.
+type verifierNodeOutcome struct {
+	at       time.Time
+	node     string
+	category string
+}
+
+// VerifierNodePass is one node's verifier results over a window: how many
+// results were recorded and how many of them passed.
+type VerifierNodePass struct {
+	Outcomes int
+	Passes   int
+}
+
 // VerifierStats keeps rolling aggregates of verifier queue wait, run time and
-// outcome category since the daemon started.
+// outcome category since the daemon started, plus a bounded, time-stamped log
+// of outcomes by compute node so a window can report a pass rate per node.
 type VerifierStats struct {
 	mu    sync.Mutex
 	now   func() time.Time
@@ -54,6 +76,7 @@ type VerifierStats struct {
 	v     VerifierStatsView
 	// runCapSec is configuration, not a counter, so reset leaves it alone.
 	runCapSec int
+	nodeLog   []verifierNodeOutcome
 }
 
 // NewVerifierStats returns an empty aggregate; a nil clock means time.Now.
@@ -69,6 +92,7 @@ func NewVerifierStats(now func() time.Time) *VerifierStats {
 func (s *VerifierStats) reset() {
 	s.since = s.now()
 	s.v = VerifierStatsView{Categories: map[string]int{}}
+	s.nodeLog = nil
 }
 
 // DefaultVerifierStats is the process-wide aggregate the verifier records into.
@@ -116,6 +140,50 @@ func (s *VerifierStats) SetRunCapSeconds(sec int) {
 		sec = 0
 	}
 	s.runCapSec = sec
+}
+
+// RecordNodeOutcome adds one verifier result to the per-node log. A result with
+// no node (a one-node entry has no compute node to name) is not attributable
+// and is left out. It does not touch the process-wide aggregates; Record does.
+func (s *VerifierStats) RecordNodeOutcome(node, category string) {
+	if node == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	s.nodeLog = append(s.nodeLog, verifierNodeOutcome{at: now, node: node, category: category})
+	cut := 0
+	for cut < len(s.nodeLog) && now.Sub(s.nodeLog[cut].at) > verifierNodeLogRetention {
+		cut++
+	}
+	if over := len(s.nodeLog) - cut - verifierNodeLogMax; over > 0 {
+		cut += over
+	}
+	if cut > 0 {
+		s.nodeLog = append([]verifierNodeOutcome(nil), s.nodeLog[cut:]...)
+	}
+}
+
+// NodeOutcomes sums the logged results per compute node recorded in [from, to].
+// A result passes when its category is VerifierCatPass. Nodes with no result in
+// the window are absent from the map.
+func (s *VerifierStats) NodeOutcomes(from, to time.Time) map[string]VerifierNodePass {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]VerifierNodePass{}
+	for _, o := range s.nodeLog {
+		if o.at.Before(from) || o.at.After(to) {
+			continue
+		}
+		p := out[o.node]
+		p.Outcomes++
+		if o.category == VerifierCatPass {
+			p.Passes++
+		}
+		out[o.node] = p
+	}
+	return out
 }
 
 // Snapshot returns a copy of the aggregates; averages are zero with no runs.

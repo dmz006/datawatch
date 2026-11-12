@@ -1,12 +1,15 @@
 ---
 docs:
   index: true
-  topics: [dashboard, websocket, constellation, EKG, architecture]
+  topics: [dashboard, websocket, network, work-map, lane-pulse, architecture]
 ---
 # Flow: Dashboard Mission Control
 
-Data flow through the `/dashboard` view — from WebSocket events to rendered
-constellation, EKG, and sprint pipeline.
+Data flow through the `/dashboard` view — from WebSocket events and the two
+dashboard APIs to the rendered Network (work map), Lane pulse (with burn panel)
+and session cards. The session constellation, the EKG waveform and the sprint
+pipeline strip have been removed; the Network card replaces the constellation
+and the Lane pulse card replaces the EKG.
 
 ## End-to-end flow
 
@@ -17,18 +20,23 @@ Daemon                         WebSocket                    PWA /dashboard
 hook script fires                                              ┌─────────────┐
   └─ POST /api/sessions/{id}/hook-event                        │ _dash state │
        └─ globalHookStore.record()                             │  .nodes{}   │
-            └─ BroadcastHookUpdate(sid, board)    ──────────►  │  .ekg[]     │
-                                                               │  ._boards{} │
-session state change                                           └─────────────┘
-  └─ hub.Broadcast(MsgSessionState, sess)         ──────────►  updateSession()
-                                                               └─ update node
-                                                                  colour/state
+            └─ BroadcastHookUpdate(sid, board)    ──────────►  │  ._boards{} │
+                                                               │  ._workMap  │
+session state change                                           │  ._lanePulse│
+  └─ hub.Broadcast(MsgSessionState, sess)         ──────────►  └─────────────┘
+  └─ updateSession()                                             │
+       └─ update node colour/state                               │
+                                                                 │
+GET /api/dashboard/work-map        (one shared fetch per ~30s) ──┤
+GET /api/dashboard/lane-pulse?window=6h (one shared fetch per ~30s) ┘
 
 requestAnimationFrame loop (60fps):
-  ├─ _drawEKG()            ← reads _dash.ekg[]   (canvas repaint)
-  ├─ _dashForceStep()      ← Euler physics step  (every 3rd frame)
-  ├─ _drawConstellation()  ← SVG innerHTML update (every 3rd frame)
-  └─ _renderSprintPipeline() ← HTML update        (every 6th frame)
+  ├─ _dashForceStep()          ← Euler physics step for the Network layout (every 3rd frame)
+  ├─ _dashRenderLanePulse()    ← from _dash._lanePulse, incl. burn panel (the 'ekg' card)
+  ├─ _dashRenderWorkMap()      ← from _dash._workMap (the 'orbital' Network card and 'work-map' card)
+  └─ work-map and lane-pulse refetch every 900 frames (~30s), once per tick
+
+Each fetch also re-renders its card as soon as the payload arrives.
 
 User clicks node / ⊞ button
   └─ openDashExpand(sid)
@@ -56,31 +64,50 @@ session_state WS event
 hook_update WS event
   └─ _dash.nodes[sid].hookHealth = board.hook_health
      _dash.nodes[sid].threats    = guardrail block+warn count
-     _dash.ekg.push(...)         — adds EKG spike
+     _dash._boards[sid]          = board (used by the expand panel)
 ```
 
-## Sprint pipeline data
+## Work map and lane pulse data
 
 ```
-renderDashboardView()
-  └─ if _automataState.allPrds available: use in-memory cache
-     else: GET /api/autonomous/prds  → _dash._prds
-               └─ filter: status ∈ {running, blocked, planning}
+Network / Work map cards
+  └─ GET /api/dashboard/work-map  → _dash._workMap
+       one node per project, Automation, Automaton, task and live session;
+       one edge per parent-to-child link. Answers 503 only when the daemon has
+       neither a session store nor a trace store.
 
-prd_update WS event (existing handler)
-  └─ reloads _automataState.allPrds when on autonomous view
-     (dashboard uses cached _automataState.allPrds on next mount)
+Lane pulse card (and its burn panel)
+  └─ GET /api/dashboard/lane-pulse?window=<duration>  → _dash._lanePulse
+       default window 6h, maximum 168h (7 days). One trace per capacity lane
+       and node: busy (lease held), waiting (request queued), idle (neither).
+       The burn panel reads the usage readings in the same payload, in points.
+       The card is hidden until a lane held or waited in the window, or the
+       burn panel can read a level.
 ```
+
+Series cards (opt-in)
+  └─ GET /api/dashboard/series/<name>  (lane-utilization, throughput-forecast,
+       verifier-health, release-train, review-backlog, defects-per-day)
+       Each card's `active()` entry in DASH_CARD_FEATURES keeps it off the grid
+       until its series has data; the one-line reason is shown only when
+       dashboard.hide_inactive_cards is off. Every card's "?" link opens its
+       own section in howto/dashboard.md.
+
+The sprint pipeline strip no longer renders. Sprint and Automaton detail for a
+session appears in the expand panel's status board (`board.sprint`), not on the
+grid.
 
 ## Performance budget
 
-| Component | Update rate | Cost |
-|-----------|-------------|------|
-| EKG canvas | 60fps | ~0.2ms (clearRect + drawLine) |
-| Force step | 20fps | O(n²) repulsion, bounded at n≤50 |
-| Constellation SVG | 20fps | innerHTML string; ~1ms for 20 nodes |
-| Sprint pipeline | 10fps | HTML string; ~0.5ms |
-| EKG ring buffer | capped at 400 | memory O(400) |
+| Component | Update rate | Notes |
+|-----------|-------------|-------|
+| Force step (Network layout) | every 3rd frame | O(n²) repulsion, bounded at n≤50 |
+| Work map and Network render | frame loop, from cached payload | rebuilt from `_dash._workMap` |
+| Lane pulse and burn panel | frame loop, from cached payload | rebuilt from `_dash._lanePulse` |
+| Work-map and lane-pulse fetch | every 900 frames (~30s) | one shared request each |
+
+The EKG ring buffer (`_dash.ekg`, capped at 400) is still filled on each
+`hook_update`, but no card reads it. It is a candidate for removal in a code change.
 
 ## See also
 

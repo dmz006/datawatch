@@ -98,9 +98,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
   - [Shipped](#shipped)
 - [Dashboard](#dashboard)
-  - [Session constellation](#session-constellation)
-  - [EKG waveform](#ekg-waveform)
-  - [Sprint pipeline](#sprint-pipeline)
+  - [Network card (work map)](#network-card-work-map)
+  - [Lane pulse](#lane-pulse)
+  - [Burn panel](#burn-panel)
   - [Expand panel](#expand-panel)
 - [Observer](#observer)
   - [Federated peers](#federated-peers)
@@ -796,28 +796,55 @@ The layout is fully customisable: drag cards to reorder, resize with the width/h
 
 Five cards that open the board — **Questions waiting**, **Held & blocked**, **Lanes**, **Usage**, **CI & release** — each pointing at the PWA anchor where that part of the daemon is handled. They are the PWA face of the one-glance summary served by `GET /api/dashboard/console` (one count, one summary line and one link per section: `questions_waiting`, `held_blocked`, `lanes`, `usage`, `ci_release`); the same body is on MCP (`dashboard_console_get`), the CLI (`datawatch dashboard console`) and the chat verb `dashboard console`. The seven switches are `dashboard.console.enabled` plus the five `dashboard.console.show_*` keys and `dashboard.hide_inactive_cards`, each a boolean that reads **true** while absent. Disabling the console drops the console cards from the board.
 
-### Session constellation
+<a id="session-constellation"></a>
 
-Force-directed SVG graph where each node is a session. Node colour reflects state (green = running, amber = waiting, grey = done). A pulsing ring indicates activity; a guardrail ring shows hook health from the session's status board.
+### Network card (work map)
 
-Click any node to open the **expand panel** for that session.
+The **work map** is the graph of every project, Automation, Automaton, task and live session with one edge per parent-to-child link. The **Network** card draws it from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link. Click a project to expand it and a session to open it. A button in the footer steps to the next running session. The card replaces the older session constellation; it is hidden from the grid while the map has no nodes.
 
-### EKG waveform
+<a id="ekg-waveform"></a>
 
-Scrolling canvas trace driven by every incoming `hook_update` WebSocket event. Spikes decay over time, giving a visual heartbeat of fleet activity. Flat line = quiet; busy fleet = rhythmic spikes.
+### Lane pulse
 
-### Sprint pipeline
+The **Lane pulse** card replaces the older EKG waveform. It draws one trace per capacity lane and node over a time window (default 6 hours, up to 7 days), in three states: **busy** (a capacity lease held), **waiting** (a request queued for that lane and node) and **idle** (neither). Waiting often overlaps busy, because a request queues while the lane is full. Data: `GET /api/dashboard/lane-pulse?window=<duration>`. The card is hidden until a lane held or waited in the window, or the burn panel can read a level.
 
-Shown when Automata are running. Horizontal stage bar with story nodes, gate rings (pass/fail from guardrail verdicts), and stage colours matching story status. Lets you see at a glance how far along the active sprint is and where blockers have appeared.
+### Burn panel
+
+The panel under the lane pulse traces. It shows the weekly usage level in **points** of the allowance, against the **pace line**, and says *ahead of pace* or *on pace*. It never shows dollars. When the usage calculator cannot answer, the panel shows the reason instead of a level. See [usage-calculator.md](howto/usage-calculator.md).
+
+**Lane utilization**, **Throughput forecast** and **Verifier health** are opt-in series cards (Edit → Add Card). Lane utilization shows, for each lane and clock hour, the share of that hour in which a lane held a lease. Throughput forecast shows each saved progress day with the completion range in days and the completions per active day over the 24 hours before that snapshot. Verifier health shows verifier waits, runs and the pass rate per compute node; the pass rate is the passing verifier results over all results logged for that node in the window, and a node with no logged result shows a dash rather than 0%. Each card is hidden until it has data.
 
 ### Expand panel
 
-Three-column overlay opened by clicking a constellation node or a session card's `⊞` button:
+Three-column overlay opened by the `⊞` button on a session card or an Automata card:
 - **Left sidebar** — live task tree (reuses the telemetry task tree renderer).
 - **Main area** — session status board: hook health ring, current focus, test counts, git state.
 - **Right rail** — guardrail verdicts from the session's telemetry.
 
-**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt (the last six hours of session activity from hook events — not the Automata interval chart, see *Timeline chart*), 30-day heatmap, guardrail profiles view, multi-session EKG overlay, smoke run progress. The *Automaton Timeline* card (the Automata interval chart, see *Timeline chart*) is not an add-on: it is a full-width system card in the default board layout, shown even when the chart is empty (a one-line empty message), and not gated by `dashboard.hide_inactive_cards`.
+### Feature cards and their data
+
+Every card has a one-line purpose under its title and a **?** link to its own section in [howto/dashboard.md](howto/dashboard.md#card-data-sources) (what it is for, where its data comes from, what *off* means).
+
+
+Each feature card reads one live source. When it has nothing to draw it shows a one-line reason and a link here, and while `dashboard.hide_inactive_cards` is true (the default) it stays off the grid.
+
+- **Live Events** — the daemon's own event stream (`GET /api/autonomous/event-log`), the same feed as the Events tab. Not hook events.
+- **Timeline** — the 6-hour Gantt, drawn from each Automaton task's start and end timestamps (bounded to 960 px wide).
+- **30-Day Activity** — the 30-day heatmap, drawn from the daily progress trend, the shipped counts and the release tags. Each day's tooltip gives the Automata completed to date, the shipped count and any release.
+- **CI & release** — the operator console's `ci_release` section (see *Operator console*): the running and latest release, the ship policy, the repo CI watch and up to five failing or hung runs.
+- **Smoke Run** — release smoke and end-to-end run progress (`GET /api/smoke/progress`). A release smoke run against an external daemon (`DW_BASE`) posts its progress to that daemon; a default run's throwaway test daemon is not posted.
+- **Cost report** — see *Cost Report* below.
+- **Search Usage** — see *Web Search (multi-provider registry)* below.
+- **Work map** — a read-only graph from `GET /api/dashboard/work-map`: one node per project, Automation, Automaton, task and live session, with an edge for every parent-to-child link, plus a **Running now** list of the live sessions in an active state. With no trace store the card's header reads "placement only (no trace store)". Tasks are capped per Automaton (the overflow is `tasks_omitted`).
+- **Network** — the same work map payload, drawn as the Network card's graph. See *Network card (work map)* above.
+- **Lane pulse** — the lane and node traces and the burn panel from `GET /api/dashboard/lane-pulse`. See *Lane pulse* and *Burn panel* above.
+- **Release train** — tags, CI runs and deploys in the window, in order (`GET /api/dashboard/series/release-train`). Hidden until the window holds a tag, a CI run or deploy state.
+- **Review backlog** — plans and held questions waiting for a decision, oldest first (`GET /api/dashboard/series/review-backlog`). Hidden while nothing waits.
+- **Defects per day** — defects found and fixed per UTC day (`GET /api/dashboard/series/defects-per-day`). Hidden until a defect was found or fixed in the window.
+
+**Dashboard data on every surface** — the work map, the lane pulse and the six series (lane utilization, throughput forecast, verifier health, release train, review backlog, defects per day) are readable beyond the web page, each returning the REST body unchanged: MCP `dashboard_work_map_get`, `dashboard_lane_pulse_get` and `dashboard_series_get` (argument `series`, plus `window`, `days` or `limit`), CLI `datawatch dashboard work-map`, `lane-pulse` and `series <name>`, and the chat verbs `dashboard work-map`, `dashboard lane-pulse [window]` and `dashboard series <name> [value]`. No setting controls them. See [howto/dashboard.md](howto/dashboard.md).
+
+**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt (the last six hours of session activity from hook events — not the Automata interval chart, see *Timeline chart*), 30-day heatmap, guardrail profiles view, lane pulse (the rebuilt multi-session EKG), smoke run progress, Network (work map), work map. The *Automaton Timeline* card (the Automata interval chart, see *Timeline chart*) is not an add-on: it is a full-width system card in the default board layout, shown even when the chart is empty (a one-line empty message), and not gated by `dashboard.hide_inactive_cards`.
 
 **See also:**
 [howto/dashboard.md](howto/dashboard.md) ·
@@ -1120,7 +1147,7 @@ Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` direct
 | **opencode sessions** | `web_search` added to `extraMCPSpecs` → injected into `.datawatch/.mcp.json` at session start. |
 | **goose sessions** | `GOOSE_MCP__WEB_SEARCH__TYPE/CMD/ARGS` env vars set on the goose process. |
 | **Skill** | `web-search-guidance` skill written to `<projectDir>/.datawatch/skills/web-search-guidance/` with query guidance, engine availability notes, and result interpretation tips. |
-| **Dashboard** | "Search Usage" card: total/today/this week/this month + cache hits per provider and overall, a daily usage graph, and recent search history. |
+| **Dashboard** | "Search Usage" card: total/today/this week/this month + cache hits per provider and overall, a daily usage graph, recent search history, and searches **by caller** (session, Automaton task, MCP client, REST, CLI). |
 | **Monitor tab** | Web Search stat tile shows enabled state, active provider names, queries/errors counters, and last-query timestamp. |
 | **MCP tools** | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`. Legacy `web_search_stats` kept as a deprecated alias. |
 
@@ -1184,6 +1211,8 @@ The **Cost report** dashboard card (help link target: `#cost-report`) renders th
 - **Refresh** — re-requests `GET /api/cost/report` with the current controls.
 
 Rendering rules: token counts (in/out) are shown first, for every group; a USD figure appears **only** where the report carries one (a group counts toward a USD estimate only while it has a rate configured — cost rates above — under the `cost_report.show_usd_estimates` setting, and the card also shows the daemon's retention line, e.g. *Figures rest on the last 31 days of recorded sessions*, plus a note when some figures fall back to lifetime rates). The card never invents a USD number for a group the daemon did not price.
+
+What the report counts: input and output tokens, **prompt-cache read and creation tokens** (kept apart from input, because they price differently: a cache read at a tenth of the input rate, a cache creation at 1.25 times it), and the tokens of **local-model sessions** (pi and ollama; counted, never priced). A pi session's tokens come from its own session log. The body carries a `totals` block with all of them summed. Every dollar figure on the card is labelled **API-equivalent**: it is what the usage would cost at API list prices, not a charge. Where usage readings exist (`GET /api/usage/readings`), the body also carries a `reconciliation` block and the card shows it under the table: the points the readings show against the pace line, the API-equivalent dollars priced for the same window, the implied dollars per point, and the burn per day. With no readings there is no block. The card is not shown while the report is unread or has no rows; its one-line reason links back here.
 
 **Settings** (`cost_report` group in PWA settings): `default_group_by`, `default_window_days`, `show_usd_estimates`, `week_start` (Monday or Sunday for the `week` grouping) and `include_peer_spend`.
 
@@ -1722,9 +1751,11 @@ its open questions await operator review.
 
 **review-needed (task status)** — a task held after its failed attempts reached the escalation limit. The status is `review_needed` in the API and reads "Held for review" in the web UI. It is not a failure and not finished: the task keeps its attempts and a report, the Automaton shows as blocked, and one error alert is raised. The operator retries it (optionally with a changed spec, worker or file list) or cancels it, from the web UI, the CLI, the REST API, MCP or the comm channel.
 
-**Operator console** — the dashboard's one-glance "what needs my attention right now" summary: five sections (`questions_waiting`, `held_blocked`, `lanes`, `usage`, `ci_release`), each reporting a count, a one-line summary and the PWA anchor where the operator acts on it. It is a read roll-up of the question channel, the held/blocked triage states and uncommitted-work holds, lane fill and the capacity queue, the burn guard and usage projection, and the repo CI watch; it never writes anything. A section switched off, or whose subsystem is not running, reports `available: false` with a reason instead of failing the whole read. Switches: `dashboard.console.enabled` and the five `dashboard.console.show_*` keys, each defaulting to true while absent. Read it on REST (`GET /api/dashboard/console`), MCP (`dashboard_console_get`), CLI (`datawatch dashboard console`, or `--json` for the raw body), the chat verb `dashboard console`, or the five console cards on the PWA Dashboard view. See [howto/dashboard-operator-console.md](howto/dashboard-operator-console.md).
+**Operator console** — the dashboard's one-glance "what needs my attention right now" summary: five sections (`questions_waiting`, `held_blocked`, `lanes`, `usage`, `ci_release`), each reporting a count, a one-line summary and the PWA anchor where the operator acts on it. It is a read roll-up of the question channel, the held/blocked triage states and uncommitted-work holds, lane fill and the capacity queue, the burn guard and usage projection, and the repo CI watch; it never writes anything. The **CI & release** section carries a `release` object while it is available: the running and latest release, the ship policy, the watch mode and its Settings link when the watch is off, and up to five failing or hung runs (its `count` is the number of CI runs under watch). A section switched off, or whose subsystem is not running, reports `available: false` with a reason instead of failing the whole read. Switches: `dashboard.console.enabled` and the five `dashboard.console.show_*` keys, each defaulting to true while absent. Read it on REST (`GET /api/dashboard/console`), MCP (`dashboard_console_get`), CLI (`datawatch dashboard console`, or `--json` for the raw body), the chat verb `dashboard console`, or the five console cards on the PWA Dashboard view. See [howto/dashboard-operator-console.md](howto/dashboard-operator-console.md).
 
 **Arc summary** — the dashboard's read of one arc (an Automation) as its stages in order: `bugs`, `features`, `final`, each with total, done, running, blocked and a percent. Maintenance work is a separate count, never a stage. A blocked stage is named with a plain-language reason. It also carries the shared lane usage and the plan usage in points and tokens (never dollars). Read it on REST (`GET /api/dashboard/arc`, optional `?arc=`), MCP (`dashboard_arc_get`), CLI (`datawatch dashboard arc`, or `--json`), the chat verb `dashboard arc`, or the **Arc** card on the PWA Dashboard view (opt-in: Edit → Add Card → Arc; it refreshes about every 30 seconds and keeps the last data if a refresh fails). A part the daemon cannot read reports `available: false` with a reason. `dashboard.console.enabled` governs it; it has no setting of its own. See [howto/dashboard-arc-view.md](howto/dashboard-arc-view.md) and [howto/dashboard-operator-console.md](howto/dashboard-operator-console.md#arc-summary).
+
+**Console card** — one of the five dashboard cards the operator console adds to the Dashboard view (Questions waiting, Held & blocked, Lanes, Usage, CI & release). A console card opens the PWA anchor of its console section; it carries a help link to the operator console how-to, and it disappears from the board and the Add-Card picker when `dashboard.console.enabled` is false (a stored layout is rewritten once to add the cards back when the console is switched on again). The console cards are separate from the feature cards (Network, Lane pulse, Gantt, …); see *Inactive card*.
 
 **Console card** — one of the five dashboard cards the operator console adds to the Dashboard view (Questions waiting, Held & blocked, Lanes, Usage, CI & release). A console card opens the PWA anchor of its console section; it carries a help link to the operator console how-to, and it disappears from the board and the Add-Card picker when `dashboard.console.enabled` is false (a stored layout is rewritten once to add the cards back when the console is switched on again). The console cards are separate from the other board cards (EKG, constellation, Gantt, …); see *Inactive card*.
 
@@ -2870,7 +2901,7 @@ Infrastructure:
 - [`howto/guardrail-library.md`](howto/guardrail-library.md) — SAST/secrets/deps/LLM grader scan profiles
 - [`howto/file-service.md`](howto/file-service.md) — federated file service: upload/delete files, peers/ + discussions/ subdirs, config caps (v8.3.0)
 - [`howto/discussion-scopes.md`](howto/discussion-scopes.md) — discussion scopes: WAL-backed per-discussion memory, participant sync, conflict resolution (v8.4.0)
-- [`howto/dashboard.md`](howto/dashboard.md) — mission control: constellation, EKG, sprint pipeline, customisable cards
+- [`howto/dashboard.md`](howto/dashboard.md) — mission control: Network work map, Lane pulse, session cards, customisable cards
 - [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 
 Memory + ops:

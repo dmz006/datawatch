@@ -263,7 +263,7 @@ All six access methods are supported:
 
 | Location | What you see |
 |----------|-------------|
-| **Web UI** | Dashboard → Search Usage card (total/today/week/month, cache hits, daily graph, per provider); Monitor tab → Search Usage tile + History button |
+| **Web UI** | Dashboard → Search Usage card (total/today/week/month, cache hits, daily graph, per provider, and searches by caller: session, Automaton task, MCP client, REST, CLI); Monitor tab → Search Usage tile + History button |
 | **REST API** | `GET /api/websearch/stats?days=N`, `GET /api/websearch/history?limit=&offset=` |
 | **MCP** | `websearch_stats`, `websearch_history` |
 | **CLI** | `datawatch websearch stats`, `datawatch websearch history` |

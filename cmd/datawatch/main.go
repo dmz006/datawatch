@@ -6366,6 +6366,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// vRunCapEnded is set by the onCap hook below when the run cap
 			// ended a verifier session, so the record counts it as run_cap.
 			var vRunCapEnded bool
+			// vStatNode is the compute node the verifier ran on, set once the
+			// lease is held; the per-node pass rate reads it.
+			var vStatNode string
 			defer func() {
 				end := time.Now()
 				var wait, run time.Duration
@@ -6381,6 +6384,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				ok := verr == nil && vres.OK
 				cat := verifierStatsCategory(ok, vres.Category, summary, verifierEscalated, verr, vRunCapEnded)
 				autonomouspkg.DefaultVerifierStats.Record(wait, run, cat)
+				autonomouspkg.DefaultVerifierStats.RecordNodeOutcome(vStatNode, cat)
 				metricsPkg.VerifierRuns.WithLabelValues(cat).Inc()
 				metricsPkg.VerifierWaitSeconds.Add(wait.Seconds())
 				metricsPkg.VerifierRunSeconds.Add(run.Seconds())
@@ -6437,6 +6441,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// vnode is the compute node the verifier's lease holds ("" for a
 			// one-node entry): the judge session or ask call runs there.
 			vnode := vsel.Node
+			vStatNode = vnode
 			if release != nil {
 				vGrantedAt = time.Now()
 			}
@@ -6484,6 +6489,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					}
 					release = lease.Release
 					vnode = lease.Node
+					vStatNode = vnode
 					if lease.Moved {
 						// Run, count and stamp the result under the backend the
 						// lease landed on.

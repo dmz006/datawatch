@@ -345,7 +345,7 @@ diagram with an arrow from a worker back to `Parent`.
 | Claude MCP channel bridge | `internal/channel` + `internal/channel/embed/channel.js` | [docs/claude-channel.md](claude-channel.md), [flow diagram](flow/channel-mode-flow.md) — Node.js dependency documented v4.2.0; native Go rewrite design at [(plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md) |
 | Session telemetry + Status tab | `internal/server/hook_events.go` | [docs/howto/session-telemetry.md](howto/session-telemetry.md), [flow diagram](flow/telemetry-flow.md) — hook payloads → structured task tree + persist-on-stop |
 | Guardrail Library + scan unification | `internal/autonomous/guardrail_registry.go` | [docs/howto/guardrail-library.md](howto/guardrail-library.md), [flow diagram](flow/guardrail-flow.md) — named guardrails, profiles, per-Automaton overrides |
-| /dashboard Mission Control | `internal/server/web/app.js` | [docs/howto/dashboard.md](howto/dashboard.md), [flow diagram](flow/dashboard-flow.md) — WS-driven session constellation + EKG waveform + sprint pipeline + expand mode |
+| /dashboard Mission Control | `internal/server/web/app.js` | [docs/howto/dashboard.md](howto/dashboard.md), [flow diagram](flow/dashboard-flow.md) — WS-driven session cards + Network work map + Lane pulse with burn panel + expand mode |
 | Federation CBAC (50 capabilities, 13 groups, `fedCap()`) | `internal/federation` | [docs/operations.md](operations.md) — shipped v7.3.0 |
 | Compute Node routing (direct / docker-network / datawatch-proxy) | `internal/compute`, `internal/inference` | CHANGELOG.md BL318–BL322 — shipped v8.0.0 |
 | LLM proxy router (`/api/proxy/llm/<name>`) | `internal/inference/proxy_router.go`, `internal/server/bl320_proxy_llm.go` | CHANGELOG.md BL320 — shipped v8.0.0 |

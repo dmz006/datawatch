@@ -27,6 +27,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/spendledger"
 	"github.com/dmz006/datawatch/internal/trace"
+	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
 // managerCostSource feeds costreport.Build with the daemon's recorded
@@ -366,6 +368,7 @@ func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 		billing = s.resolvedBilling()
 	}
 
+	req.Usage = s.costReportUsageInput(r.Context(), time.Now())
 	rep, err := costreport.Build(cr, req, src, src, s.exposedRate, billing, time.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -430,4 +433,24 @@ func (s *Server) resolvedBilling() costreport.BillingFunc {
 		}
 		return *l, true
 	})
+}
+
+// costReportUsageInput reads the usage readings the way GET /api/usage/advice
+// does and hands the report the burn per day and the pace line. It returns nil
+// when no calculator is wired, no readings exist or the series cannot be read,
+// so the report then carries no reconciliation.
+func (s *Server) costReportUsageInput(ctx context.Context, now time.Time) *costreport.UsageInput {
+	calc := s.UsageCalculator()
+	if calc == nil {
+		return nil
+	}
+	res, err := calc.Advice(ctx, usagecalc.Options{})
+	if err != nil || res == nil || len(res.Advice.Daily) == 0 {
+		return nil
+	}
+	in := &costreport.UsageInput{PaceLine: res.Advice.PaceLine}
+	for _, d := range res.Advice.Daily {
+		in.Days = append(in.Days, costreport.UsageDay{Start: d.Start, End: d.End, Points: d.Points})
+	}
+	return in
 }

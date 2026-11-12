@@ -49,6 +49,14 @@ type dashLayout struct {
 // defaultDashCards returns the factory-default layout shipped with every
 // instance. These cards carry System=true and cannot be deleted.
 // Mirrors DASH_DEFAULT_LAYOUT in app.js.
+//
+// The six series cards (lane-utilization, throughput-forecast, verifier-health,
+// release-train, review-backlog, defects-per-day) are deliberately NOT here:
+// they are opt-in, offered in Edit → Add Card, and each stays hidden in the
+// grid until its window holds data (DASH_CARD_FEATURES in app.js). Adding
+// them here would make them system cards that every layout carries and
+// nothing can remove. A POST to /api/dashboard/cards adds them as ordinary
+// cards; the test pins that split.
 func defaultDashCards() []dashCard {
 	return []dashCard{
 		{ID: "tree", CS: 2, RS: 2, System: true},

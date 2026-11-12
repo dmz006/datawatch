@@ -257,7 +257,11 @@ RM_KILL_MODE=process scripts/restart-matrix.sh --only verify-script   # daemon p
 
 Set `DATAWATCH_BIN` to a daemon binary built from the tree under test. A full run takes about 25 minutes. The per-state result, the measured cells and the open choices are in `docs/plans/restart-matrix-findings.md`.
 
-`scripts/release-smoke.sh` runs the matrix as section 80, in its own sandboxes and never against production. It runs `--strict` for the states that must survive (`worker-running`, `waiting-capacity`, `waiting-external`, `git-operation`, `automation-branches`, `scheduled-due`, `websocket-clients`, `worker-node-placement`). It skips with a reason the states still left as an open choice in the audit (`verify-script`, `verify-script-mid`, `final-gate`, `verify-session`): this tree fixes the behaviour they measure (detached scripts with durable records; the in-flight verifier adopted), but the skips still record the pre-fix reading and stay until the matrix states implement and re-run the fix. `planning` is no longer an open choice — the recorded decision is that planning survives the restart (live planner session re-attached, complete plan ingested, planning restarted once if nothing usable survives) — but the smoke keeps skipping it with a reason until the matrix state implements that decision; when it implements it, the skip drops and the state is enforced like the must-survive list. Skipping is not a pass: a row that still skips stays in the table above as not surviving while it skips. `SMOKE_RESTART_MATRIX=0` turns the section off; `SMOKE_RESTART_TIMEOUT` bounds each state (default 900 seconds).
+`scripts/release-smoke.sh` runs the matrix as section 80, in its own sandboxes and never against production.
+
+When the smoke targets an external daemon (`DW_BASE`), it also upserts its run at that daemon's smoke progress endpoint (`/api/smoke/progress`, the one the card polls), so the dashboard Smoke Run card shows the run on the daemon an operator watches. A default run's throwaway test daemon is not posted.
+
+It runs `--strict` for the states that must survive (`worker-running`, `waiting-capacity`, `waiting-external`, `git-operation`, `automation-branches`, `scheduled-due`, `websocket-clients`, `worker-node-placement`). It skips with a reason the states still left as an open choice in the audit (`verify-script`, `verify-script-mid`, `final-gate`, `verify-session`): this tree fixes the behaviour they measure (detached scripts with durable records; the in-flight verifier adopted), but the skips still record the pre-fix reading and stay until the matrix states implement and re-run the fix. `planning` is no longer an open choice — the recorded decision is that planning survives the restart (live planner session re-attached, complete plan ingested, planning restarted once if nothing usable survives) — but the smoke keeps skipping it with a reason until the matrix state implements that decision; when it implements it, the skip drops and the state is enforced like the must-survive list. Skipping is not a pass: a row that still skips stays in the table above as not surviving while it skips. `SMOKE_RESTART_MATRIX=0` turns the section off; `SMOKE_RESTART_TIMEOUT` bounds each state (default 900 seconds).
 
 **Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
 
@@ -813,6 +817,29 @@ The combined usage report joins the three bodies: `datawatch cost charts [--grou
 | **Comm channel** | `cost charts [group_by=<g>] [window=<d>]` |
 
 **Still to review (operator):** the cards were built from tests and the REST bodies, not checked on a live daemon with real spend. Confirm on the **Progress and cost** tab that the card order and placement suit you, that a bundled-plan entry and an `api` entry draw as separate money charts with the right unit labels, and that a hidden card's reason shows in **Events**. The `model` grouping is the backend name (the ledger records no finer model name), and the web UI offers Project, Automation and Automaton only.
+
+### Dashboard series cards
+
+The **Lane utilization**, **Throughput forecast** and **Verifier health** cards are opt-in: add them from Edit → Add Card. They read `GET /api/dashboard/series/lane-utilization?window=<duration>` (default `24h`, from `1h` to `168h`), `GET /api/dashboard/series/throughput-forecast?days=<n>` (default `30`, from `1` to `365`) and `GET /api/dashboard/series/verifier-health?window=<duration>` (default `24h`, from `1m` to `168h`). Anything outside those bounds is a `400`. The lane and verifier endpoints need `dashboard:read`; the forecast needs `autonomous:read`, as the progress trend does. All three are read-only. A card with no data stays hidden and says why in one line. The forecast reports `throughput_per_day` (completions per active day over the 24 hours before each snapshot); verifier health reports waits, runs and a pass rate per node (the passing verifier results over all results logged for that node in the window; `null` for a node with none, kept in memory so it starts empty with the daemon). None of them has a setting of its own.
+
+Three more series endpoints feed the Release train, Review backlog and Defects per day dashboard cards (added in Edit → Add Card; they stay out of the default layout and each card stays hidden until its window holds data, with the one-line reason on the card when `dashboard.hide_inactive_cards` is off). All three are `autonomous:read` and read-only: `GET /api/dashboard/series/release-train?days=<n>` (tags cut, CI state and deploy state from the ship status and the repository CI watch), `GET /api/dashboard/series/review-backlog?limit=<n>` (plans waiting for a decision and held questions, each with its age, oldest first) and `GET /api/dashboard/series/defects-per-day?days=<n>` (defects found and fixed per UTC day from the defect intake log; a fix is a tiny fix applied without error). `days` runs from `1` to `90` (default `14`) and `limit` from `1` to `200` (default `50`); anything outside is a `400`. When there is nothing to show, `empty` is true and `empty_reason_key` names the one-line reason the card stays hidden. None of them has a setting of its own. Each of the six series cards (lane utilization, throughput forecast, verifier health, release train, review backlog, defects per day) shows four lines when it has data: what it is for, its state, the reason it is empty when it is, and the next action for the operator.
+
+### Dashboard work map and lane pulse
+
+The **Network** and **Work map** cards read `GET /api/dashboard/work-map`, and the **Lane pulse** card reads `GET /api/dashboard/lane-pulse?window=<duration>` (default `6h`, from `1m` to `168h`; anything else is a `400`). Both are read-only: they change no session, lane or usage state, and they need the `dashboard:read` scope. The work map answers `503` only on a daemon with neither a session store nor a trace store; with no trace store it still answers, and the card says so.
+
+The lane pulse's burn panel reads the usage calculator's advice, so it follows the `usage.calculator.*` keys (see the usage calculator how-to). With the calculator off or unset, the panel shows a reason code instead of a level; the card itself still draws the lane traces.
+
+| Method | How |
+|--------|-----|
+| **YAML config** | None. Both endpoints have no settings of their own. The burn panel reads `usage.calculator.*`. |
+| **CLI** | None. Use the REST endpoints. |
+| **Web UI** | The **Network**, **Work map** and **Lane pulse** cards on the dashboard. A card is hidden from the grid until its data is present, unless `dashboard.hide_inactive_cards` is off. |
+| **REST API** | `GET /api/dashboard/work-map`; `GET /api/dashboard/lane-pulse?window=<duration>` |
+| **MCP** | None. |
+| **Comm channel** | None. |
+
+A client that reads these endpoints must treat the burn block as points only; the endpoints never return dollar figures.
 
 ### Worker start-up size
 

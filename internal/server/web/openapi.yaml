@@ -3287,6 +3287,8 @@ paths:
                         known_tasks: {type: integer}
                         estimated_tasks: {type: number}
                         throughput_3d: {type: number}
+                        prds_per_day_24h: {type: number, description: Completions per active day over the 24 hours before the snapshot}
+                        prds_last_24h: {type: integer, description: Completions in those 24 hours}
                         utilization: {type: number}
                         completed_prds: {type: integer}
                   direction: {type: string, enum: [converging, widening, flat, unknown]}
@@ -9617,6 +9619,40 @@ paths:
       parameters:
         - {name: v, in: query, required: false, schema: {type: string}, description: "Pass 2 for the structured v2 payload"}
       responses: {"200": {description: OK}}
+  /api/websearch/stats:
+    get:
+      summary: Search usage - counts by provider, a daily series, and counts by caller
+      description: |
+        `summary` carries the provider rollup; `daily_series` is a zero-filled
+        daily count; `callers` lists the number of searches made by each kind of
+        caller, largest first. A caller is a session, an Automaton task, an MCP
+        client with no session, a REST call or the CLI. Read-only; needs the
+        analytics capability when called by a federation peer.
+      operationId: websearchStats
+      tags: [Singletons]
+      parameters:
+        - {name: days, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 365, default: 30}, description: Length of the daily series}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  cache_enabled: {type: boolean}
+                  provider_names: {type: array, items: {type: string}}
+                  summary: {type: object}
+                  daily_series: {type: array, items: {type: object}}
+                  callers:
+                    type: array
+                    description: Searches by caller kind, largest first
+                    items:
+                      type: object
+                      properties:
+                        caller: {type: string, enum: [session, automaton, mcp, rest, cli]}
+                        total: {type: integer}
   /api/ollama/stats:
     get:
       summary: Ollama-specific stats — running models, queue depth
@@ -10231,6 +10267,474 @@ paths:
         "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/dashboard/lane-pulse:
+    get:
+      summary: Lane pulse
+      description: |
+        One series per lane and node over a window (default 6 hours, at most 168 hours).
+        A lane is the `llm:` pool a lease or queued request runs against; the node is the
+        compute node it was placed on (empty when none). Each series splits its window into
+        `busy` (a capacity lease held), `waiting` (a request queued for that lane and node;
+        it often overlaps busy because requests queue while a lane is full) and `idle`
+        (neither). Idle counts only from when the capacity ledger began keeping history, so
+        time before that is never shown as idle. The leases and waits come from the same
+        ledger as `GET /api/capacity`: closed intervals from its history plus those still
+        open at the time of the call.
+        The `burn` block is the usage level in points of the weekly allowance against the
+        pace line, read from the usage advice, with the readings in the window. It carries no
+        dollar values. When the usage calculator is not wired or cannot answer, `burn.available`
+        is false and `burn.reason` carries a code (not_wired, advice_unavailable, needs_percent,
+        needs_reading or needs_reset) that clients render from their locale keys; the series still stand.
+      operationId: dashboardLanePulse
+      tags: [Dashboard]
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: Length of the window ending now, as a Go duration such as `6h` or `90m`. Default 6h; from 1m to 168h.
+          schema: {type: string, default: 6h}
+      responses:
+        "200":
+          description: The lane pulse
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  window_from: {type: string, format: date-time}
+                  window_to: {type: string, format: date-time}
+                  window_seconds: {type: integer}
+                  recording_from: {type: string, format: date-time, description: When the capacity ledger began keeping history; omitted when it is not known}
+                  series:
+                    type: array
+                    description: One entry per lane and node that had a lease or a queued request in the window, sorted by lane then node.
+                    items:
+                      type: object
+                      properties:
+                        lane: {type: string}
+                        node: {type: string, description: Compute node the lease ran on; empty when none}
+                        busy_seconds: {type: number}
+                        waiting_seconds: {type: number}
+                        idle_seconds: {type: number}
+                        segments:
+                          type: array
+                          description: Busy, waiting and idle stretches in time order. Busy and waiting may overlap; idle does not overlap either.
+                          items:
+                            type: object
+                            properties:
+                              state: {type: string, enum: [busy, waiting, idle]}
+                              start: {type: string, format: date-time}
+                              end: {type: string, format: date-time}
+                  burn:
+                    type: object
+                    properties:
+                      available: {type: boolean}
+                      reason: {type: string, description: 'Code for why the burn is unavailable, when available is false (not_wired, advice_unavailable, needs_percent, needs_reading, needs_reset); clients map it to a lane_pulse_reason_* locale key'}
+                      stale: {type: boolean, description: True when the readings were served from a last copy because the keeper could not be reached}
+                      points: {type: number, description: Usage level in points of the weekly allowance (0 to 100 at the reset-week scale)}
+                      pace_line: {type: number, description: Where the pace line stands now, in the same points}
+                      ahead_of_pace: {type: boolean}
+                      burn_per_24h: {type: number, description: Recent burn in points per 24 hours}
+                      week_avg_burn_per_24h: {type: number, description: Average burn over the week so far, in points per 24 hours}
+                      readings:
+                        type: array
+                        description: Readings in the window, oldest first, each with its pace line at that moment.
+                        items:
+                          type: object
+                          properties:
+                            at: {type: string, format: date-time}
+                            points: {type: number}
+                            pace_line: {type: number}
+        "400":
+          description: The window is not a duration from 1m to 168h
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/lane-utilization:
+    get:
+      summary: Lane utilization by hour
+      description: |
+        Busy share per lane per clock hour over a window (default 24 hours, from 1 hour to 168 hours).
+        A lane is the `llm:` pool a lease ran against. Each hour's `busy_fraction` is the share of that
+        hour in which at least one lease held the lane, so overlapping leases on several nodes count once.
+        Queued (waiting) requests are not counted. The leases come from the capacity ledger: closed history
+        plus leases still open at the call. An hour that began before the ledger kept history reports a
+        null `busy_fraction`, so it is never shown as idle. The current hour is measured over the time elapsed.
+      operationId: dashboardSeriesLaneUtilization
+      tags: [Dashboard]
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: Length of the window ending now, as a Go duration such as `24h`. Default 24h; from 1h to 168h.
+          schema: {type: string, default: 24h}
+      responses:
+        "200":
+          description: Hourly busy share per lane, oldest hour first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  window_from: {type: string, format: date-time, description: Start of the first hour in the window}
+                  window_to: {type: string, format: date-time}
+                  bucket_seconds: {type: integer, description: Always 3600}
+                  recording_from: {type: string, format: date-time, description: When the capacity ledger began keeping history; omitted when not known}
+                  lanes:
+                    type: array
+                    description: One entry per lane with a busy lease in the window, sorted by lane name.
+                    items:
+                      type: object
+                      properties:
+                        lane: {type: string}
+                        hours:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              start: {type: string, format: date-time}
+                              busy_fraction: {type: number, nullable: true, description: 'Share of the hour, 0 to 1; null before the ledger kept history'}
+        "400":
+          description: The window is not a duration from 1h to 168h
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/throughput-forecast:
+    get:
+      summary: Throughput and completion range by day
+      description: |
+        The saved progress snapshots reduced to one point per day for the last `days` days: the
+        completion range in days (low and high), the throughput per day (`throughput_per_day`:
+        completions per active day over the 24 hours before the snapshot) and the completions behind
+        it (`prds_last_24h`). Points come from the same snapshots as `GET /api/autonomous/progress/trend`.
+        With no snapshot, `points` is an empty array.
+      operationId: dashboardSeriesThroughputForecast
+      tags: [Dashboard]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Number of days of snapshots to read. Default 30; from 1 to 365.
+          schema: {type: integer, default: 30, minimum: 1, maximum: 365}
+      responses:
+        "200":
+          description: The forecast points, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  days: {type: integer}
+                  direction: {type: string, description: The trend's direction, as the progress trend reports it}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {type: string, description: Snapshot date, YYYY-MM-DD}
+                        throughput_per_day: {type: number, description: Completions per active day over the 24 hours before the snapshot}
+                        prds_last_24h: {type: integer, description: Completions in those 24 hours}
+                        completion_low_days: {type: number, nullable: true}
+                        completion_high_days: {type: number, nullable: true}
+                        known_tasks: {type: integer}
+                        estimated_tasks: {type: number}
+        "400":
+          description: days is not a whole number from 1 to 365
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/verifier-health:
+    get:
+      summary: Verifier waits, runs and pass rate per node
+      description: |
+        Verifier queue waits and runs per compute node over a window (default 24 hours, from 1 minute to
+        168 hours). A verifier is recognised by its node verifier pool (`node-verify:<node>`), so only
+        verifier work on a node that has a verifier pool is counted. Times are clipped to the window.
+        The pass rate is per node. The capacity ledger's intervals carry no verdict, so each verifier
+        result is logged with the node whose lease judged it; `pass_rate` is the passing results over all
+        results logged for that node in the window, and is null for a node with none, so a node is never
+        shown as 0% for lack of data. A node that judged results but has no verifier pool appears with
+        zero waits and runs. The log is kept in memory, so it starts empty when the daemon starts.
+      operationId: dashboardSeriesVerifierHealth
+      tags: [Dashboard]
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: Length of the window ending now, as a Go duration such as `24h`. Default 24h; from 1m to 168h.
+          schema: {type: string, default: 24h}
+      responses:
+        "200":
+          description: Verifier waits, runs and pass rate per node
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  window_from: {type: string, format: date-time}
+                  window_to: {type: string, format: date-time}
+                  window_seconds: {type: integer}
+                  recording_from: {type: string, format: date-time, description: When the capacity ledger began keeping history; omitted when not known}
+                  nodes:
+                    type: array
+                    description: One entry per node with verifier activity in the window, sorted by node name.
+                    items:
+                      type: object
+                      properties:
+                        node: {type: string}
+                        runs: {type: integer}
+                        waits: {type: integer}
+                        wait_total_seconds: {type: number}
+                        wait_avg_seconds: {type: number}
+                        run_total_seconds: {type: number}
+                        run_avg_seconds: {type: number}
+                        outcomes: {type: integer, description: Verifier results logged for this node in the window}
+                        passes: {type: integer, description: Those results that passed}
+                        pass_rate: {type: number, nullable: true, description: Passes over outcomes, 0 to 1; null when no result was logged for the node}
+        "400":
+          description: The window is not a duration from 1m to 168h
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/release-train:
+    get:
+      summary: Release train
+      description: |
+        Tags cut, CI state and deploy state over the last `days` days (default 14, from 1 to 90).
+        Tags and deploy state come from the ship status (push and tag outcomes recorded per Automaton);
+        `deploy.state` is the newest recorded push outcome (`ok`, `failed` or `none`). CI comes from the
+        repository CI watch: `ci` lists the watched runs updated in the window, `ci_state` is the worst
+        of them (`failing`, `pending`, `green` or `none`). When nothing is recorded, `empty` is true and
+        `empty_reason_key` is the locale key of the one line saying why the card is hidden.
+      operationId: dashboardSeriesReleaseTrain
+      tags: [Dashboard]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Window length in days, a whole number from 1 to 90. Default 14.
+          schema: {type: integer, default: 14, minimum: 1, maximum: 90}
+      responses:
+        "200":
+          description: Tags, CI runs and deploy state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  days: {type: integer}
+                  window_from: {type: string, format: date-time}
+                  tags:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: {type: string, format: date-time}
+                        prd_id: {type: string, description: Id of the Automaton that shipped}
+                        tag: {type: string}
+                        ok: {type: boolean}
+                  ci_state: {type: string, enum: [failing, pending, green, none]}
+                  ci:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        repo: {type: string}
+                        ref_kind: {type: string}
+                        ref_name: {type: string}
+                        workflow: {type: string}
+                        status: {type: string}
+                        updated_at: {type: string, format: date-time}
+                  deploy:
+                    type: object
+                    properties:
+                      state: {type: string, enum: [ok, failed, none]}
+                      at: {type: string, format: date-time}
+                      prd_id: {type: string}
+                  empty: {type: boolean}
+                  empty_reason_key: {type: string}
+        "400":
+          description: days is not a whole number from 1 to 90
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/review-backlog:
+    get:
+      summary: Review backlog
+      description: |
+        Plans waiting for a decision (the attention list: Automata in an attention status or holding a task
+        for review) and open held questions, each with its age, oldest first. Each list is cut to `limit`
+        entries (default 50, from 1 to 200); `plan_count` and `question_count` are the totals before the cut.
+        `oldest_age_seconds` is the age of the oldest entry returned. When nothing waits, `empty` is true and
+        `empty_reason_key` is the locale key of the one line saying why the card is hidden.
+      operationId: dashboardSeriesReviewBacklog
+      tags: [Dashboard]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Most entries per list, a whole number from 1 to 200. Default 50.
+          schema: {type: integer, default: 50, minimum: 1, maximum: 200}
+      responses:
+        "200":
+          description: Plans and held questions with their age
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  limit: {type: integer}
+                  plan_count: {type: integer}
+                  question_count: {type: integer}
+                  oldest_age_seconds: {type: integer}
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        since: {type: string, format: date-time}
+                        age_seconds: {type: integer}
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        question_id: {type: string}
+                        prd_id: {type: string}
+                        title: {type: string}
+                        state: {type: string, description: The held state the question holds in}
+                        since: {type: string, format: date-time}
+                        age_seconds: {type: integer}
+                  empty: {type: boolean}
+                  empty_reason_key: {type: string}
+        "400":
+          description: limit is not a whole number from 1 to 200
+        "405":
+          description: Only GET is served
+  /api/dashboard/series/defects-per-day:
+    get:
+      summary: Defects found and fixed per day
+      description: |
+        One point per UTC day for the last `days` days (default 14, from 1 to 90), oldest first, from the
+        defect intake decision log. A defect is found on the day its intake record was written; it counts as
+        fixed that day when intake applied a tiny fix without error. Days with no records report zero. When
+        no defect was recorded in the window, `empty` is true and `empty_reason_key` is the locale key of the
+        one line saying why the card is hidden.
+      operationId: dashboardSeriesDefectsPerDay
+      tags: [Dashboard]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Window length in days, a whole number from 1 to 90. Default 14.
+          schema: {type: integer, default: 14, minimum: 1, maximum: 90}
+      responses:
+        "200":
+          description: Daily found and fixed counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  days: {type: integer}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {type: string, description: UTC day, YYYY-MM-DD}
+                        found: {type: integer}
+                        fixed: {type: integer}
+                  total_found: {type: integer}
+                  total_fixed: {type: integer}
+                  empty: {type: boolean}
+                  empty_reason_key: {type: string}
+        "400":
+          description: days is not a whole number from 1 to 90
+        "405":
+          description: Only GET is served
+  /api/dashboard/work-map:
+    get:
+      summary: Work map
+      description: |
+        A graph of the install's active work: nodes for projects, Automations, Automata,
+        Automaton tasks and live sessions, the edges tying them together, and the sessions
+        that are running right now. Node placement axes (`node`, `lane`, `role`) come from
+        each session's placement tags; Automaton and task events and error counts come from
+        the trace roll-up. Task nodes are capped per Automaton (newest first, overflow
+        reported in the Automaton's `tasks_omitted`); a task the trace never linked to an
+        Automaton is left out, and its session still appears under its own placement. When the trace store is absent the
+        graph degrades to placement only (`trace: false`); with neither a session store nor
+        a trace store there is nothing to map and the endpoint reports 503.
+      operationId: dashboardWorkMap
+      tags: [Dashboard]
+      responses:
+        "200":
+          description: The work map
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  trace: {type: boolean, description: Whether the trace store contributed (false degrades the graph to placement only)}
+                  counts:
+                    type: object
+                    description: Node counts keyed by node kind
+                    additionalProperties: {type: integer}
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        kind: {type: string, enum: [project, automation, automaton, task, session]}
+                        label: {type: string}
+                        status:
+                          type: string
+                          description: |
+                            Session nodes carry the session's status word: `running`, `waiting` (waiting for
+                            input), `done` (complete), `error` (failed or killed), or the raw state `rate_limited`
+                            or `stalled`. Task nodes are `ok` or `error` (a failing trace event). Project,
+                            Automation and Automaton containers aggregate their direct children: `error` if any
+                            child is in error, else `running` if any child is running, else `ok`.
+                          enum: [ok, running, waiting, done, error, rate_limited, stalled]
+                        node: {type: string, description: Compute node placement axis}
+                        lane: {type: string, description: Lane placement axis}
+                        role: {type: string, description: Role placement axis}
+                        parent: {type: string, description: Primary container node id}
+                        events: {type: integer, description: Recorded trace events (Automaton and task nodes)}
+                        errors: {type: integer, description: Recorded failing trace events (Automaton and task nodes)}
+                        tasks_omitted: {type: integer, description: Task count beyond the per-Automaton cap (Automaton nodes)}
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        from: {type: string}
+                        to: {type: string}
+                  running:
+                    type: array
+                    description: Sessions running right now, newest first
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        label: {type: string}
+                        state: {type: string}
+                        node: {type: string}
+                        lane: {type: string}
+                        role: {type: string}
+                        updated_at: {type: string, format: date-time}
+        "403": {description: Missing the dashboard read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: No session store and no trace store to build the map, content: {"text/plain": {schema: {type: string}}}}
 
 components:
   securitySchemes:

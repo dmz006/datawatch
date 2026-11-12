@@ -94,10 +94,44 @@ absent (not zero) when the daemon does not have a figure to show:
 | `first_activity` / `last_activity` / `span_seconds` / `active_seconds` | when the group has activity | When the group worked, the span between, and the active time. An Automaton's row carries all of these, so its tokens, time, sessions and tool calls read together. |
 | `window_partial` / `window_note` | when the window cuts the group off | Set when the window is older than the ledger or the group started mid-window. |
 | `units` | `release` rows only | The shipped units the release carries, from the daemon's shipped-unit state; blank when the record has none |
+| `local_tokens` | yes | Tokens of local-model sessions (pi and ollama). Counted, never priced. The card shows them as **Local-model tokens**. |
 
 The body also carries `totals_by_unit` (the same per-unit totals across every
 row) and `retention_days`, `retention_note` and `lifetime_fallback` — see
-[the retention window](#the-retention-window) below.
+[the retention window](#the-retention-window) below. A `totals` block sums the in, out, cache read, cache created and local
+figures for the whole report.
+
+## Cache and local-model tokens
+
+Two token kinds are counted beside input and output, and neither is priced as
+input:
+
+- **Cache read and created** — prompt-cache tokens. A cache read is priced at a
+  tenth of the input rate and a cache creation at 1.25 times it, so they are shown
+  on their own columns and are never folded into `tokens_in`.
+- **Local-model tokens** — the tokens of pi and ollama sessions. A pi session's
+  tokens come from its own session log. They appear in the totals and the
+  local column; they never produce a USD figure.
+
+## Reconciliation against the usage readings
+
+When usage readings exist (`GET /api/usage/readings`), the body carries a
+`reconciliation` block, and the card shows it under the table with the title
+**Against the usage readings**. With no readings there is no block and no
+line.
+
+| Field | Meaning |
+|---|---|
+| `points` / `pace_line` | The usage points the readings show for the window, against the pace line. |
+| `ahead_of_pace` | `true` when the points are ahead of the pace line (the card says so); otherwise the card says within the pace line. |
+| `api_equivalent_usd` | The bundled-plan spend in the window priced at API rates, cache tokens included. |
+| `implied_usd_per_point` | `api_equivalent_usd` divided by `points`. Omitted when either is zero. |
+| `days` | One row per day: `date`, the `points` that day and its `api_equivalent_usd`. |
+
+Read the reconciliation as a cross-check, not a bill: the dollars are what the
+same usage would cost at API list prices, set beside what the plan measured.
+
+The USD column on the card is labelled **API-equivalent USD (unbilled)**.
 
 ### The row labels
 

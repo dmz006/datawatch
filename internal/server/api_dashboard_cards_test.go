@@ -203,6 +203,48 @@ func TestDashCardsAddDuplicateIDFirstWins(t *testing.T) {
 	}
 }
 
+// The six opt-in series cards are addable from Edit → Add Card but never part
+// of the factory defaults or the system-card merge: POST stores each one as an
+// ordinary (non-system) card, and a read of a layout without them does not
+// put them back.
+func TestDashOptInSeriesCardsStayOutOfDefaults(t *testing.T) {
+	optIn := []string{
+		"lane-utilization", "throughput-forecast", "verifier-health",
+		"release-train", "review-backlog", "defects-per-day",
+	}
+	for _, id := range defaultDashCards() {
+		for _, o := range optIn {
+			if id.ID == o {
+				t.Fatalf("opt-in card %q must not be a factory default", o)
+			}
+		}
+	}
+	s, home := dashTestServer(t)
+	writeDashFile(t, home, []dashCard{{ID: "tree", CS: 2, RS: 2, System: true}})
+	for _, o := range optIn {
+		b, _ := json.Marshal(dashCard{ID: o, CS: 6, RS: 1})
+		rr := httptest.NewRecorder()
+		s.dashCardsAddHandler(rr, httptest.NewRequest(http.MethodPost, "/api/dashboard/cards", bytes.NewReader(b)))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("POST %s: want 200, got %d body=%s", o, rr.Code, rr.Body.String())
+		}
+	}
+	cards := readDashFile(t, home)
+	for _, o := range optIn {
+		n, c := countID(cards, o)
+		if n != 1 {
+			t.Fatalf("%s count after add = %d, want 1", o, n)
+		}
+		if c.System {
+			t.Errorf("%s stored as a system card; opt-in cards must be removable", o)
+		}
+	}
+	// A read of the stored layout keeps the opt-in cards (no re-add, no dup).
+	if n, _ := countID(readDashFile(t, home), "defects-per-day"); n != 1 {
+		t.Fatalf("defects-per-day after re-read = %d, want 1", n)
+	}
+}
+
 // dashboard.hide_inactive_cards round trip: absent key reads its
 // default (true), PUT false then GET shows false, saved to disk it
 // loads back false; the default restores when the key is absent.

@@ -269,3 +269,45 @@ func truncateRunes(s string, n int) string {
 	}
 	return string([]rune(s)[:n])
 }
+
+// Usage is the token usage a session log records, summed over its assistant
+// turns.
+type Usage struct {
+	Input      int
+	Output     int
+	CacheRead  int
+	CacheWrite int
+}
+
+// ReadUsage sums the usage of every assistant turn in the session log at path.
+// Lines that are not valid JSON are skipped, like in Read.
+func ReadUsage(path string) (Usage, error) {
+	var u Usage
+	f, err := os.Open(path)
+	if err != nil {
+		return u, fmt.Errorf("pilog: %w", err)
+	}
+	defer f.Close() //nolint:errcheck
+
+	r := bufio.NewReader(f)
+	for {
+		line, rerr := r.ReadBytes('\n')
+		if line = bytes.TrimSpace(line); len(line) > 0 {
+			var ev event
+			if json.Unmarshal(line, &ev) == nil && ev.Type == "message" && ev.Message != nil &&
+				ev.Message.Role == "assistant" && ev.Message.Usage != nil {
+				m := ev.Message.Usage
+				u.Input += m.Input
+				u.Output += m.Output
+				u.CacheRead += m.CacheRead
+				u.CacheWrite += m.CacheWrite
+			}
+		}
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				return u, nil
+			}
+			return u, fmt.Errorf("pilog: read %s: %w", path, rerr)
+		}
+	}
+}
