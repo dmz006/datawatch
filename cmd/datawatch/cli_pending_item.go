@@ -19,80 +19,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 const pendingItemsRoute = "/api/autonomous/pending-items"
-
-// ---- what the routes return ----
-
-type pendingItemCLISource struct {
-	Configured bool   `json:"configured"`
-	Path       string `json:"path"`
-}
-
-type pendingItemCLIRefresh struct {
-	Configured bool       `json:"configured"`
-	At         *time.Time `json:"at"`
-	Rows       int        `json:"rows"`
-	Added      int        `json:"added"`
-	Updated    int        `json:"updated"`
-	Done       int        `json:"done"`
-	Dropped    int        `json:"dropped"`
-	Kept       int        `json:"kept"`
-	Skipped    int        `json:"skipped"`
-	Error      string     `json:"error"`
-}
-
-type pendingItemCLIAutomation struct {
-	AutomationID string `json:"automation_id"`
-	Name         string `json:"name"`
-	MemberID     string `json:"member_id"`
-	Held         bool   `json:"held"`
-}
-
-type pendingItemCLIItem struct {
-	ID          string                     `json:"id"`
-	Ref         string                     `json:"ref"`
-	Title       string                     `json:"title"`
-	State       string                     `json:"state"`
-	Source      string                     `json:"source"`
-	AutomatonID string                     `json:"automaton_id"`
-	Automations []pendingItemCLIAutomation `json:"automations"`
-}
-
-type pendingItemCLIHeld struct {
-	AutomationID string    `json:"automation_id"`
-	Name         string    `json:"name"`
-	MemberID     string    `json:"member_id"`
-	ItemID       string    `json:"item_id"`
-	Title        string    `json:"title"`
-	Ref          string    `json:"ref"`
-	Since        time.Time `json:"since"`
-	Reason       string    `json:"reason"`
-}
-
-type pendingItemCLIList struct {
-	Policy      string                `json:"policy"`
-	AutoResume  bool                  `json:"auto_resume"`
-	Source      pendingItemCLISource  `json:"source"`
-	LastRefresh pendingItemCLIRefresh `json:"last_refresh"`
-	Items       []pendingItemCLIItem  `json:"items"`
-	Held        []pendingItemCLIHeld  `json:"held"`
-}
-
-type pendingItemCLIAttach struct {
-	Item      pendingItemCLIItem `json:"item"`
-	Converted []struct {
-		AutomationID string   `json:"automation_id"`
-		MemberIDs    []string `json:"member_ids"`
-		InsertIDs    []string `json:"pending_insert_ids"`
-	} `json:"converted_automations"`
-	Resumed []string `json:"resumed_automations"`
-	Notes   []string `json:"notes"`
-}
 
 // ---- the request ----
 
@@ -158,174 +91,47 @@ func pendingItemOutput(cmd *cobra.Command, body []byte, asJSON bool, render func
 }
 
 // ---- plain text ----
+//
+// The text is built by internal/autonomous/pending_item_text.go, the same
+// renderer the chat verbs use.
 
-func pendingItemTime(t time.Time) string {
-	if t.IsZero() {
-		return "an unknown time"
-	}
-	return t.UTC().Format("2006-01-02 15:04 UTC")
-}
-
-func onOff(b bool) string {
-	if b {
-		return "on"
-	}
-	return "off"
-}
-
-// renderPendingItemList writes the policy line, one block per item, the Automata
-// held on an item that is not in the list, and the file registry line.
 func renderPendingItemList(w io.Writer, body []byte) error {
-	var r pendingItemCLIList
-	if err := json.Unmarshal(body, &r); err != nil {
-		return fmt.Errorf("decode pending items: %w", err)
+	r, err := autonomous.ParsePendingItemList(body)
+	if err != nil {
+		return err
 	}
-	var b strings.Builder
-	policy := r.Policy
-	if policy == "" {
-		policy = "hold"
-	}
-	fmt.Fprintf(&b, "Pending items (policy: %s, auto-resume: %s):\n", policy, onOff(r.AutoResume))
-	holds := map[string]pendingItemCLIHeld{}
-	for _, h := range r.Held {
-		holds[h.AutomationID+"/"+h.ItemID] = h
-	}
-	shown := map[string]bool{}
-	if len(r.Items) == 0 {
-		fmt.Fprintln(&b, "  none")
-	}
-	for _, it := range r.Items {
-		shown[it.ID] = true
-		line := fmt.Sprintf("  %s  %-8s  %s", it.ID, it.State, it.Title)
-		if it.Ref != "" {
-			line += fmt.Sprintf(" [ref %s]", it.Ref)
-		}
-		if it.Source != "" && it.Source != "internal" {
-			line += fmt.Sprintf(" (%s)", it.Source)
-		}
-		fmt.Fprintln(&b, line)
-		if it.AutomatonID != "" {
-			fmt.Fprintf(&b, "      Automaton %s attached\n", it.AutomatonID)
-		}
-		for _, a := range it.Automations {
-			if h, ok := holds[a.AutomationID+"/"+it.ID]; ok && a.Held {
-				fmt.Fprintln(&b, "      "+pendingItemHoldLine(h))
-				continue
-			}
-			fmt.Fprintf(&b, "      in Automation %s\n", pendingItemAutomationLabel(a.Name, a.AutomationID))
-		}
-	}
-	var extra []pendingItemCLIHeld
-	for _, h := range r.Held {
-		if !shown[h.ItemID] {
-			extra = append(extra, h)
-		}
-	}
-	if len(extra) > 0 {
-		fmt.Fprintln(&b, "Held on an item not listed above:")
-		for _, h := range extra {
-			fmt.Fprintln(&b, "  "+pendingItemHoldLine(h))
-		}
-	}
-	if r.Source.Configured {
-		fmt.Fprintf(&b, "File registry: %s\n", r.Source.Path)
-		fmt.Fprintln(&b, "  "+pendingItemRefreshLine(r.LastRefresh, "last refresh"))
-	} else {
-		fmt.Fprintln(&b, "File registry: not configured")
-	}
-	_, err := io.WriteString(w, b.String())
+	_, err = io.WriteString(w, autonomous.RenderPendingItemList(r, 0))
 	return err
 }
 
-func pendingItemAutomationLabel(name, id string) string {
-	if name == "" {
-		return id
-	}
-	return fmt.Sprintf("%q (%s)", name, id)
-}
-
-// pendingItemHoldLine is the hold line of one held Automation.
-func pendingItemHoldLine(h pendingItemCLIHeld) string {
-	line := fmt.Sprintf("held: Automation %s waits since %s",
-		pendingItemAutomationLabel(h.Name, h.AutomationID), pendingItemTime(h.Since))
-	if h.Reason != "" {
-		line += ": " + h.Reason
-	}
-	return line
-}
-
-// pendingItemRefreshLine is one line of refresh counts.
-func pendingItemRefreshLine(r pendingItemCLIRefresh, label string) string {
-	if r.At == nil {
-		return label + ": never"
-	}
-	line := fmt.Sprintf("%s %s: %d rows, %d added, %d updated, %d done, %d dropped, %d kept, %d skipped",
-		label, pendingItemTime(*r.At), r.Rows, r.Added, r.Updated, r.Done, r.Dropped, r.Kept, r.Skipped)
-	if r.Error != "" {
-		line += "; error: " + r.Error
-	}
-	return line
-}
-
 func renderPendingItemCreated(w io.Writer, body []byte) error {
-	var it pendingItemCLIItem
-	if err := json.Unmarshal(body, &it); err != nil {
-		return fmt.Errorf("decode pending item: %w", err)
+	it, err := autonomous.ParsePendingItem(body)
+	if err != nil {
+		return err
 	}
-	var b strings.Builder
-	line := fmt.Sprintf("Recorded pending item %s (%s): %s", it.ID, it.State, it.Title)
-	if it.Ref != "" {
-		line += fmt.Sprintf(" [ref %s]", it.Ref)
-	}
-	fmt.Fprintln(&b, line)
-	_, err := io.WriteString(w, b.String())
+	_, err = io.WriteString(w, autonomous.RenderPendingItemCreated(it))
 	return err
 }
 
 func renderPendingItemAttached(w io.Writer, body []byte) error {
-	var r pendingItemCLIAttach
-	if err := json.Unmarshal(body, &r); err != nil {
-		return fmt.Errorf("decode attach result: %w", err)
+	r, err := autonomous.ParsePendingItemAttach(body)
+	if err != nil {
+		return err
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Attached Automaton %s to pending item %s (%s): %s\n",
-		r.Item.AutomatonID, r.Item.ID, r.Item.State, r.Item.Title)
-	for _, c := range r.Converted {
-		parts := []string{}
-		if len(c.MemberIDs) > 0 {
-			parts = append(parts, "members "+strings.Join(c.MemberIDs, ", "))
-		}
-		if len(c.InsertIDs) > 0 {
-			parts = append(parts, "held inserts "+strings.Join(c.InsertIDs, ", "))
-		}
-		fmt.Fprintf(&b, "  converted in Automation %s: %s\n", c.AutomationID, strings.Join(parts, "; "))
-	}
-	for _, id := range r.Resumed {
-		fmt.Fprintf(&b, "  resumed Automation %s\n", id)
-	}
-	for _, n := range r.Notes {
-		fmt.Fprintf(&b, "  note: %s\n", n)
-	}
-	_, err := io.WriteString(w, b.String())
+	_, err = io.WriteString(w, autonomous.RenderPendingItemAttached(r))
 	return err
 }
 
 func renderPendingItemRefreshed(w io.Writer, body []byte) error {
-	var r pendingItemCLIRefresh
-	if err := json.Unmarshal(body, &r); err != nil {
-		return fmt.Errorf("decode refresh result: %w", err)
-	}
-	if !r.Configured {
-		_, err := io.WriteString(w, "No pending item file registry is configured (autonomous.automation.pending_item_source.path); nothing was read.\n")
+	r, err := autonomous.ParsePendingItemRefresh(body)
+	if err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, pendingItemRefreshLine(r, "Refreshed")+"\n"); err != nil {
+	text, refreshErr := autonomous.RenderPendingItemRefreshed(r)
+	if _, err := io.WriteString(w, text); err != nil {
 		return err
 	}
-	if r.Error != "" {
-		return fmt.Errorf("refresh failed: %s", r.Error)
-	}
-	return nil
+	return refreshErr
 }
 
 // ---- the commands ----
