@@ -106,6 +106,10 @@ How it behaves:
   silent for more than an hour, the status says so, which usually means the
   kinds list is too narrow or the wake is not reaching a session.
 
+For the whole path (choosing events, subscribing to a peer, extension
+registration, MCP resource subscriptions and what a peer forwards), see
+[The event-driven supervisor](automaton-event-driven-supervisor.md).
+
 Review before relying on it: the wake is off by default and nothing turns it on
 for you. Check that the kinds list matches the states you want a pass for,
 and that a supervisor session is running.

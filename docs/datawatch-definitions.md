@@ -1793,6 +1793,7 @@ are CRUD-ed and persisted (`automations.jsonl`, managed via REST
 `/api/automations` and MCP `automation_*` tools) but no execution loop
 consumes the edges yet.
 
+<a id="event-kind-registry-entry"></a>
 **Event kind registry** — the one in-daemon list of every lifecycle event
 kind a subscription or notify set may name, each with a one-line
 description and a group (`automaton`, `task`, `review`, `capacity`,
@@ -2200,6 +2201,23 @@ The settings under `autonomous.decisions` (Settings → Automata) control the de
 - **`supervisor_loop.wake.fallback_interval_minutes`** — How often, in minutes, the supervisor still runs when no event wakes it. Between 1 and 1440. The default of 20 equals the scheduled check, so turning the wake on changes nothing about the schedule.
 <a id="supervisor-wake-set"></a>
 - **`supervisor-wake` subscription set** — The built-in set of lifecycle subscriptions the daemon registers while [`supervisor_loop.wake.enabled`](#supervisor-loop-wake-enabled) is on, one per kind in [`supervisor_loop.wake.kinds`](#supervisor-loop-wake-kinds). Matching events are folded within the quiet window and typed into the supervisor session as a `supervisor wake: <kind> automaton=<id> task=<id>` line. Nothing is registered while the wake is off, and your own subscriptions are never changed. If no supervisor session is running the wake is dropped and the scheduled check covers it. Status: `GET /api/supervisor-loop/wake`, `datawatch supervisor-loop wake`, `supervisor wake` on the comm channel, the `wake` object of the `supervisor_loop_stats` MCP tool, and **Settings → Automata → Supervisor wake**.
+
+Terms used by the [event-driven supervisor how-to](howto/automaton-event-driven-supervisor.md):
+
+<a id="event-kind"></a>
+- **Event kind** — the name of one sort of lifecycle event, such as `task.failed` or `automaton.stuck_running`. The kinds are a closed set held in the [event kind registry](#event-kind-registry-entry); a subscription, the notify set and `supervisor_loop.wake.kinds` may name only a kind in it, and an unknown kind is refused when you save. Built-in kinds are fixed; an extension adds its own at start-up with `autonomous.RegisterEventKind` (lowercase dotted name, a one-line description of at most 200 characters, one of the groups Automaton, Task, Review, Capacity or Budget). Registering a kind makes it valid and lists it on every surface; it does not emit it. List them with `datawatch autonomous event-kinds`.
+<a id="subscription"></a>
+- **Subscription** — one stored rule that says "when an event matching this filter fires, deliver it to this sink". The filter names kinds and/or a level, and may narrow to one Automaton, one task or one peer. A subscription never widens what the notify set allows. It is different from the *wake*, which is a built-in set the daemon keeps for the supervisor, and from an *MCP resource subscription*, which belongs to one MCP session and stores nothing. See [lifecycle event subscription](#lifecycle-event-subscription).
+<a id="sink"></a>
+- **Sink** — where a subscription delivers: `comm` (a messaging channel), `session` (a datawatch session), `topic` (the push topic bus), `alert` (the in-app alert store), `mcp_queue` (a named queue a client polls), `webhook` (an outbound HTTPS call) or `peer` (another federation peer). An extension may register a further sink type with `autonomous.RegisterSinkType`; the daemon accepts and stores it, but its delivery engine does not deliver to it, so the extension must deliver the events itself.
+<a id="wake"></a>
+- **Wake** — starting a supervisor pass because an event arrived instead of waiting for the next scheduled check. It is controlled by `supervisor_loop.wake.enabled`, `supervisor_loop.wake.kinds`, `supervisor_loop.wake.coalesce_seconds` and `supervisor_loop.wake.fallback_interval_minutes`, and delivers a `supervisor wake: <kind> automaton=<id> task=<id>` line into the supervisor session. In this release the settings are stored, validated and reported on every surface, but the daemon does not yet call the code that registers the wake at start-up, so a stored subscription with a session sink is the way to get the same result today.
+<a id="coalesce"></a>
+- **Coalesce** — fold events that arrive close together into one delivery. For the wake it is the quiet window `supervisor_loop.wake.coalesce_seconds` (0 to 3600, default 30; 0 wakes on every event): events inside the window share one pass, and events that arrive during a pass wait for the next one. For a stored subscription it is the `coalesce` flag, which batches human-facing sinks (comm and alert) per quiet window.
+<a id="fallback-check"></a>
+- **Fallback check** — the scheduled supervisor pass that still runs when no event wakes the supervisor, so a missed or never-sent event is caught on the next pass. Its interval is `supervisor_loop.wake.fallback_interval_minutes` (1 to 1440, default 20, the same as the scheduled check). The setting is stored and reported today; no scheduler reads it yet.
+<a id="peer-event"></a>
+- **Peer event** — a lifecycle event that came from a federation peer: one the peer forwarded to this daemon (it carries `peer`, the sender's registered name, and a `forward` block with the origin host and hops), or, in the pull direction that no setting switches on yet, one read from the peer's pending-events queue. A peer event feeds notification sinks, the wake and MCP resource subscriptions; it is never written to Automaton state and never forwarded on. Only lifecycle events cross a peer: session output, secrets and configuration do not. See [Peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding).
 
 **Tag subtree count** — the number of distinct Automata under a tag, counting Automata that carry the tag or any tag below it. An Automaton that carries two of the tags in the subtree is counted once. It is the main count the tag browser shows. Sessions have their own subtree count, which also includes the tags a session inherits. The direct count (Automata carrying exactly that tag) is available as a tooltip when `autonomous.tags.direct_counts_visible` is on. See [howto/automata-tags.md](howto/automata-tags.md).
 
