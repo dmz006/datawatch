@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -36,5 +37,26 @@ func TestClassifyTaskCommitPathsUnsafePaths(t *testing.T) {
 				t.Errorf("%q must go to pathspec unchanged, got %v", tc.path, pathspec)
 			}
 		})
+	}
+}
+
+func TestIsDaemonIgnoreChangeUnsafePaths(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+	abs := filepath.Join(other, ".gitignore")
+	if err := os.WriteFile(abs, []byte("x\n"+daemonIgnoreComment+"\n"+daemonIgnoreDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(ctx context.Context, d string, args ...string) (string, error) { return "x\n", nil }
+	for _, rel := range []string{"../.gitignore", abs, ".gitignore\x00x"} {
+		if isDaemonIgnoreChange(context.Background(), dir, rel, run) {
+			t.Errorf("%q must be false", rel)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("x\n"+daemonIgnoreComment+"\n"+daemonIgnoreDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !isDaemonIgnoreChange(context.Background(), dir, ".gitignore", run) {
+		t.Error("daemon-appended lines on a normal path must be true")
 	}
 }

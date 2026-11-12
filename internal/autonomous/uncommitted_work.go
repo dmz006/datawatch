@@ -194,7 +194,11 @@ func ignoreFileLines(text string) map[string]bool {
 // compared with an empty one. Any other change, including one the worker made,
 // is not the daemon's.
 func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
-	cur, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel))) // #nosec G304 -- rel is a fixed ignore file name and dir is the Automaton's own project directory
+	cleaned, ok := localRelPath(rel)
+	if !ok {
+		return false
+	}
+	cur, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(cleaned))) // #nosec G304 -- cleaned passed localRelPath and dir is the Automaton's own project directory
 	if err != nil {
 		return false
 	}
