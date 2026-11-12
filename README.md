@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.162.0 (2026-11-12).** Registry rows and findings are now datawatch records, with REST, six MCP tools, a CLI, chat verbs, a Plan records section on the Projects page, an import of the plans README and findings files, and a project field on Automata. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.162.1 (2026-11-12).** A cancelled task is a skipped outcome, so an Automaton with only completed and cancelled tasks goes to the completion review, a stuck Automaton blocked only by cancelled tasks advances, and a task that is not running can be removed while the Automaton runs. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
