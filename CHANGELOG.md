@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Sessions Filters sheet no longer re-renders while it is open.** Refreshes (the 10 Hz presence heartbeat, WS updates, the stale-banner flip, the “show more” paging, saved-view renames) were redrawing the sheet and destroying the open Group-by dropdown, the focused search box, scroll positions and any open picker. The repaint now keeps the operator's live control nodes — same select/input node, same value, same focus, same scroll — and refreshes the sheet's text and counts in place (state-chip counts, the Group-by select's options, the saved-view chips). A change that would touch a control that currently has focus is deferred and flushed exactly once when the control is released. The same preservation applies to the search box.
+- **PWA regression test** simulating a refresh with the Group-by select focused and open asserts the select is the same DOM node with value and focus kept, scroll kept, and counts still update in place (deferred while open).
+
 ## v9.159.0 — Sessions tiles and cards show where they run and where the model runs
 
 ### Added
