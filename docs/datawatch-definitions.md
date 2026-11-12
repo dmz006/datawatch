@@ -1269,7 +1269,11 @@ Walkthrough with commands: [`howto/compute-nodes.md`](howto/compute-nodes.md#cer
 - **Routing** — direct / docker-network / datawatch-proxy with conditional sub-fields
 - **Hardware** — OS, arch, GPU vendor/model/count, VRAM, RAM, CPU cores. The daemon auto-suggests "Computed max" concurrent requests based on VRAM × GPU count.
 - **Capacity** — declared max concurrent requests (operator override)
-- **Observer peer** — bind this node to a registered federated observer peer for live process/GPU stats correlation
+- **Observer peer** — bind this node to a registered federated observer peer for live process/GPU stats correlation. A peer that pushes stats never creates a node and never supplies an address; if a node with the peer's name exists the peer is bound to it and the node's address is never changed by a push
+
+**Observed peers with no node:** a peer that pushes stats and has no matching node is listed here on the Compute page, in the node list REST response (`observed_peers`), the `compute node list` CLI output and comm reply, and the `compute_node_list` MCP tool. **Add as a compute node** opens the normal node form with the name filled and the address empty; nothing is created until you submit it. Federated peers and compute nodes are separate: keep a peer for monitoring and add an LLM node only when wanted.
+
+**Auto-created nodes that never answered** (`unanswered_auto_created`): a review report of nodes created automatically by earlier versions whose address has never answered a probe. Nodes are never deleted or disabled automatically; review and delete them by hand with the delete action. A node leaves the report when its address answers a probe or health check, or when you delete or recreate it.
 
 **Save-time probe:** the daemon runs a connectivity check on every create/update. Use `?probe=skip` to bypass for emergency saves when the node is temporarily unreachable.
 
