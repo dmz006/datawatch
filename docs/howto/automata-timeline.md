@@ -177,14 +177,19 @@ value must be a single word, so use the id there.
 
 Two places draw the same chart object:
 
-- **The Automaton Timeline card.** A dashboard card (the *Automaton
-  Timeline* entry in the Add-Card panel) that stacks every project's
+- **The Automaton Timeline card.** A dashboard card in the default board
+  layout (a full-width system card, present on every board) that stacks
+  every project's
   Automata as Gantt charts, grouped by project under a one-line summary of
   what is showing. Above the charts is a filter bar with five dropdowns —
-  project, automation, stage, kind, tag — each with an *All* option and its
-  choices drawn from the data in front of you. A filter change re-reads the
-  chart at once, and the dashboard's own refresh repaints the card about
-  every thirty seconds. When a refresh fails the card keeps its last good
+  project, automation, stage, kind, tag — each with an *All* option; the
+  project, automation, stage and tag choices are drawn from the data in
+  front of you (the kind dropdown is the exception — see the flag under
+  [Common pitfalls](#common-pitfalls)). The
+  chart is read when the card is first rendered and again on each filter
+  change (a read already in flight is awaited, not duplicated); the
+  dashboard's ticks in between just repaint the card from the already-loaded
+  state, they do not re-read it. When a re-read fails the card keeps its last good
   data and says it is stale; when it never loaded, it says so with the
   error. A project with nothing left to draw after the filters is not
   listed.
@@ -207,8 +212,13 @@ What a chart shows in the web UI:
   the hover tooltip.
 - A **dashed line** marks the **projected finish** when there is one.
 
-The card's five dropdowns are the same five filters as the REST route and
-the MCP tool, so a filtered chart reads the same everywhere.
+The project, automation, stage and tag dropdowns carry the same filter
+names and values as the REST route and the MCP tool, so a filtered chart
+reads the same everywhere. The **kind** dropdown is the one that differs:
+it currently offers `automaton` and `automation`, which are not kinds the
+chart recognises — the chart's kind is `feature`, `bug` or `other`, the
+value the REST, MCP and CLI surfaces take. That mismatch is flagged under
+[Common pitfalls](#common-pitfalls).
 
 ## Where to read it
 
@@ -232,6 +242,16 @@ read capability.
 - **An empty chart after a filter.** The filter value was not recognised —
   unknown values return an empty chart on purpose, not an error. Check the
   project directory spelling, the Automaton id or title, and the tag.
+- **The card's kind dropdown does not match the chart's kind.** Picking a
+  value in the card's *kind* dropdown (`automaton` or `automation`) leaves
+  the card empty: those are not kinds the chart knows. The chart's kind is
+  `feature`, `bug` or `other` — the value `GET /api/autonomous/timeline?kind=…`,
+  `autonomous_timeline(kind=…)`, `datawatch autonomous timeline --kind …` and
+  the comm channel `timeline kind=…` all take. **Flagged for review:** the
+  card's kind options should become `feature`, `bug`, `other` (the unused
+  locale keys `timeline_card_kind_automaton` / `timeline_card_kind_automation`
+  in the five locale bundles are where that fix lands); until then, narrow by
+  kind on the other surfaces and use the card's other four filters.
 - **A bar ends at `T` although the work is not done.** Open members end at
   today by design; their true end appears when they finish.
 - **`no projection` on a running Automaton.** Not enough of its members
