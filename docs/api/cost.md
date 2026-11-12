@@ -186,6 +186,40 @@ curl -s 'http://127.0.0.1:8929/api/cost/report?group_by=backend&since=2026-10-01
 #   the billing label and the API-equivalent point figures
 ```
 
+## Cost series (GET /api/cost/series)
+
+The cost report over time: the spend ledger bucketed by hour or day, one line
+per Automaton, project or model. Tokens are the value on every point; money
+rides beside them in its own unit and is never summed across units.
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `group_by` | `automaton` \| `project` \| `model` | `automaton` |
+| `window` | how far back from now: `36h`, `7d`, `2w` | `cost_report.default_window_days` (7) |
+| `bucket` | `hour` \| `day` | `hour` for windows up to 48 hours, `day` beyond |
+
+`project` is the Automaton's project tag, or its project directory's name when
+it has no tag. `model` is the backend the session ran on; the spend ledger
+records no finer model name. Spend with no owner lands under `unattributed`.
+
+| Field | Meaning |
+|-------|---------|
+| `buckets[]` | Every bucket start (UTC) in the window, in order |
+| `groups[].key` | The Automaton, project or model; a group with no spend in the window is omitted, so an empty window gives `groups: []` |
+| `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tokens_in`, `tokens_out`, `tokens` and `units` |
+| `points[].units[]` | The bucket's money per billing unit, ordered `dollars`, `points`, `none`: `dollars` for metered API spend, `points` and `percent` for a bundled plan, tokens and time only for free local inference. A figure is omitted where no rate or `monthly_price` is set, and all of them where `cost_report.show_usd_estimates` is off |
+| `groups[].unit_totals[]` / `totals_by_unit[]` | The same per-unit totals for a line and for the whole series |
+| `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the spend that is unknown rather than zero |
+
+Errors: `400` for a bad `group_by`, `window` or `bucket`, or a window and
+bucket that need more than 1000 points per line; `503` when the manager is not
+available.
+
+```bash
+curl -s 'http://127.0.0.1:8929/api/cost/series?group_by=project&window=7d'
+curl -s 'http://127.0.0.1:8929/api/cost/series?group_by=model&window=24h&bucket=hour'
+```
+
 ---
 
 # Billing profiles (`usage.billing`)
