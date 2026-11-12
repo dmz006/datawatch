@@ -595,7 +595,7 @@ func joinLines(lines []string) string {
 
 func (s *Server) toolGetConfig() mcpsdk.Tool {
 	return mcpsdk.NewTool("get_config",
-		mcpsdk.WithDescription("Get the current datawatch configuration. Returns all config sections (section=session includes liveness_window_seconds and liveness_idle_timeout_overrides)."),
+		mcpsdk.WithDescription("Get the current datawatch configuration. Returns all config sections (section=session includes liveness_window_seconds and liveness_idle_timeout_overrides; section=mcp includes allow_self_config and allow_sensitive_writes, the effective on/off state of the self-config and sensitive-write gates)."),
 		mcpsdk.WithString("section", mcpsdk.Description("Optional: specific section to return (e.g. 'memory', 'session', 'ollama')")),
 	)
 }
