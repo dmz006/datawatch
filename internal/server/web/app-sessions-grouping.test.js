@@ -496,7 +496,7 @@ test('project axis: project: system tag, else project_dir, else ungrouped', () =
   const by = { axis: 'project' };
   // Automaton task session in a worktree, tagged with its project.
   assert.equal(sbx._sessionsGroupKeyFor({
-    prd_id: 'prd-A', project_dir: '/home/x/.datawatch/prd-worktrees/wt',
+    prd_id: 'prd-A', project_dir: '/home/<user>/.datawatch/prd-worktrees/wt',
     system_tags: ['project:datawatch'],
   }, by), 'datawatch');
   // Object-shaped system tag entries work too.
@@ -522,10 +522,10 @@ test('project axis: server project field first; Automaton row never groups by wo
   // Worktree-based Automaton session, no tag: the server-resolved field.
   assert.equal(sbx._sessionsGroupKeyFor({
     prd_id: 'prd-A', project: 'datawatch',
-    project_dir: '/home/x/.datawatch/prd-worktrees/wt',
+    project_dir: '/home/<user>/.datawatch/prd-worktrees/wt',
   }, by), 'datawatch');
   // Plain session in the repository folder: same group.
-  assert.equal(sbx._sessionsGroupKeyFor({ project: 'datawatch', project_dir: '/home/x/datawatch' }, by), 'datawatch');
+  assert.equal(sbx._sessionsGroupKeyFor({ project: 'datawatch', project_dir: '/home/<user>/datawatch' }, by), 'datawatch');
   // Two candidate tags resolve deterministically (sorted, first), any order.
   assert.equal(sbx._sessionsGroupKeyFor({ system_tags: ['project:zeta', 'project:alpha'] }, by), 'alpha');
   assert.equal(sbx._sessionsGroupKeyFor({ system_tags: ['project:alpha', 'project:zeta'] }, by), 'alpha');

@@ -178,7 +178,7 @@ func TestSessionGroupProjectAxis(t *testing.T) {
 func TestSessionGroupProjectResolution(t *testing.T) {
 	rows := []sessionGroupRow{
 		{ID: "a1", FullID: "h/a1", State: session.StateRunning, PRDID: "prd1",
-			ProjectDir: "/home/u/.datawatch/prd-worktrees/prd1/task",
+			ProjectDir: "/home/<user>/.datawatch/prd-worktrees/prd1/task",
 			SystemTags: []string{"role:worker", "project:datawatch"}},
 		{ID: "p1", FullID: "h/p1", State: session.StateRunning, ProjectDir: "/repo/plain"},
 		{ID: "n1", FullID: "h/n1", State: session.StateRunning},
