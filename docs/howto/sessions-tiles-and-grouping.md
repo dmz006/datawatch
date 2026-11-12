@@ -352,7 +352,7 @@ same groups, the same counts and state mixes, wherever you read them:
 
 The Sessions page controls above: the one toolbar row (search, Filters with
 its badge, server chips, mode toggle), the Filters sheet (Group by with the
-tag-prefix entries, Views, status chips), the one-line status counts, Show
+tag-prefix entries, Views, status chips), Show
 more paging, collapsible group headers with the fold-all control and the
 **+N** tag chip on phones. All of it is localised in the five locales — the
 labels you see are the translated ones in your PWA language.
@@ -537,7 +537,7 @@ in your tag registry.
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
-| One-line status counts + state filter | PWA, above the list | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
+| State filter | PWA, Filters sheet | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
 | Saved views (mode + axis + prefix + filter) | PWA Filters sheet | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
 | Tile ⋯ menu actions | PWA, per tile | no | Stop / Commands (waiting_input) / Restart / Delete / Summary (if summarizer on) / Watch / Mute |
 | Progress on tiles; done/total on automaton blocks | PWA tile bar; grouped read (CLI, comm) | no | tile bar is lifecycle-based; automaton blocks carry their done/total terminal-session tally |
