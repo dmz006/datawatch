@@ -32968,6 +32968,172 @@ window.laneFillCardHtml = function(status, cap) {
     `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + degraded + alertsHtml + `</div>`;
 };
 
+// ── Lane utilization dashboard card ─────────────────────────────────────────
+// laneUtilizationCardHtml(view) draws the card from GET
+// /api/autonomous/lane-utilization. view: {win, data, error}. It has a window
+// picker, a stacked time series of busy share per lane, a table per lane, the
+// lane fill mode with its newest decisions, and plan usage in points and
+// tokens (never dollars). The same runs feed the Gantt lane rows. Every
+// server string is escaped; every visible string goes through t().
+const LANE_UTIL_WINDOWS = [['1h', 'lane_utilization_window_1h'], ['6h', 'lane_utilization_window_6h'], ['24h', 'lane_utilization_window_24h'], ['7d', 'lane_utilization_window_7d']];
+const LANE_UTIL_DEFAULT_WINDOW = '24h';
+const LANE_UTIL_DECISION_ROWS = 5;
+const LANE_UTIL_COLOURS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+const LANE_UTIL_DOCS_HREF = '/diagrams.html#docs/howto/automata-resources.md';
+const LANE_UTIL_REFRESH_MS = 30000;
+function _laneUtilPct(share) {
+  const n = Number(share);
+  return (isFinite(n) ? Math.round(Math.max(0, Math.min(1, n)) * 100) : 0) + '%';
+}
+function _laneUtilDuration(sec) {
+  const s = Math.round(Number(sec) || 0);
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+  return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+}
+function _laneUtilNum(n) {
+  const v = Number(n);
+  return isFinite(v) ? String(Math.round(v * 10) / 10) : '0';
+}
+function _laneUtilLaneMix(lane) {
+  const counts = {};
+  (Array.isArray(lane.runs) ? lane.runs : []).forEach(r => {
+    const b = String((r && r.backend) || '').trim();
+    if (b) counts[b] = (counts[b] || 0) + 1;
+  });
+  return Object.keys(counts).map(b => `${b} ×${counts[b]}`).join(', ');
+}
+// _laneUtilChartHtml stacks each lane's busy share per bucket. The vertical
+// axis runs from 0 to the lane count, so a full stack means every lane busy.
+function _laneUtilChartHtml(lanes) {
+  const n = lanes.length;
+  const cols = lanes.reduce((m, l) => Math.max(m, Array.isArray(l.buckets) ? l.buckets.length : 0), 0);
+  if (!n || cols < 1) return '';
+  const W = 400, H = 90;
+  const xAt = i => (cols === 1 ? W / 2 : (i / (cols - 1)) * W);
+  const base = new Array(cols).fill(0);
+  let svg = '';
+  const legend = [];
+  lanes.forEach((l, li) => {
+    const colour = LANE_UTIL_COLOURS[li % LANE_UTIL_COLOURS.length];
+    const top = base.map((b, i) => {
+      const bk = Array.isArray(l.buckets) ? l.buckets[i] : null;
+      const share = Math.max(0, Math.min(1, Number(bk && bk.busy_share) || 0));
+      return b + share;
+    });
+    const up = top.map((v, i) => `${xAt(i).toFixed(1)},${(H - (v / n) * H).toFixed(1)}`);
+    const down = base.map((v, i) => `${xAt(i).toFixed(1)},${(H - (v / n) * H).toFixed(1)}`).reverse();
+    svg += `<polygon points="${up.concat(down).join(' ')}" fill="${colour}" opacity="0.75"><title>${escHtml(String(l.id || ''))}</title></polygon>`;
+    for (let i = 0; i < cols; i++) base[i] = top[i];
+    legend.push(`<span class="lane-util-legend-item" style="margin-right:8px;"><span style="display:inline-block;width:8px;height:8px;background:${colour};border-radius:2px;"></span> ${escHtml(String(l.id || ''))}</span>`);
+  });
+  return `<div class="lane-util-chart" style="margin-top:6px;">` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('lane_utilization_chart_label'))}" style="display:block;background:var(--bg);border:1px solid var(--border);border-radius:3px;">${svg}</svg>` +
+    `<div style="font-size:11px;color:var(--text2);margin-top:2px;">${legend.join('')}</div></div>`;
+}
+function _laneUtilTableHtml(lanes) {
+  const th = k => `<th style="text-align:left;padding:2px 6px;font-weight:600;">${escHtml(t(k))}</th>`;
+  const head = `<tr>${th('lane_utilization_col_lane')}${th('lane_utilization_col_busy')}${th('lane_utilization_col_idle')}${th('lane_utilization_col_runs')}${th('lane_utilization_col_wait')}${th('lane_utilization_col_mix')}${th('lane_utilization_col_flag')}</tr>`;
+  const rows = lanes.map(l => {
+    const runs = Array.isArray(l.runs) ? l.runs.length : 0;
+    const qw = l.queue_wait || {};
+    const wait = Number(qw.count) > 0 ? _laneUtilDuration(qw.mean_seconds) : t('lane_utilization_none');
+    const flagged = !!l.idle_with_eligible_work;
+    const flag = flagged
+      ? `<span class="lane-util-flag" style="color:var(--error,#ef4444);font-weight:600;">${escHtml(t('lane_utilization_flag_idle_eligible'))}${l.first_eligible_item ? ' — ' + escHtml(String(l.first_eligible_item)) : ''}</span>`
+      : '';
+    const td = c => `<td style="padding:2px 6px;overflow-wrap:anywhere;">${c}</td>`;
+    return `<tr class="lane-util-row${flagged ? ' lane-util-row-flagged' : ''}" data-lane-id="${escHtml(String(l.id || ''))}">` +
+      td(escHtml(`${l.id || ''}${l.type ? ' · ' + l.type : ''}`)) + td(escHtml(_laneUtilPct(l.busy_share))) + td(escHtml(_laneUtilPct(l.idle_share))) +
+      td(String(runs)) + td(escHtml(wait)) + td(escHtml(_laneUtilLaneMix(l) || t('lane_utilization_none'))) + td(flag) + `</tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;margin-top:6px;"><table class="lane-util-table" style="width:100%;border-collapse:collapse;font-size:11px;"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+function _laneUtilFillHtml(fill) {
+  if (!fill || typeof fill !== 'object') return '';
+  const key = _laneFillKey(LANE_FILL_MODE_KEYS, fill.mode);
+  const mode = key ? t(key) : String(fill.mode || '');
+  const decisions = (Array.isArray(fill.decisions) ? fill.decisions : []).slice(0, LANE_UTIL_DECISION_ROWS).map(d => {
+    const clock = _laneFillClock(d && d.at);
+    const text = [d && d.lane_id, d && d.action, d && (d.title || d.reason)].filter(Boolean).join(' · ');
+    return `<div class="lane-util-decision" style="padding:2px 0;border-top:1px solid rgba(128,128,128,.25);overflow-wrap:anywhere;"><span style="color:var(--text2);">${escHtml(clock)}</span> ${escHtml(text)}</div>`;
+  }).join('');
+  return `<div class="lane-util-fill" style="margin-top:8px;font-size:11px;"><div style="font-weight:600;">${escHtml(t('lane_utilization_fill_heading'))}: ${escHtml(mode)}</div>` +
+    (decisions || `<div style="color:var(--text2);">${escHtml(t('lane_utilization_fill_none'))}</div>`) + `</div>`;
+}
+function _laneUtilPlanHtml(plan) {
+  if (!plan || typeof plan !== 'object') return '';
+  const pct = Number(plan.percent_of_plan);
+  const parts = [t('lane_utilization_plan_points', [_laneUtilNum(plan.points), _laneUtilNum(plan.plan_points)]), t('lane_utilization_plan_tokens', [String(Math.round(Number(plan.tokens) || 0))])];
+  if (isFinite(pct) && Number(plan.plan_points) > 0) parts.push(t('lane_utilization_plan_percent', [_laneUtilNum(pct)]));
+  return `<div class="lane-util-plan" style="margin-top:8px;font-size:11px;"><span style="font-weight:600;">${escHtml(t('lane_utilization_plan_heading'))}:</span> ${escHtml(parts.join(' · '))}</div>`;
+}
+window.laneUtilizationCardHtml = function(view) {
+  view = view || {};
+  const win = LANE_UTIL_WINDOWS.some(w => w[0] === view.win) ? view.win : LANE_UTIL_DEFAULT_WINDOW;
+  const picker = `<label style="font-size:11px;margin-left:auto;color:var(--text2);">${escHtml(t('lane_utilization_window_label'))} ` +
+    `<select class="lane-util-window" onchange="laneUtilizationSetWindow(this.value)" style="font-size:11px;">${LANE_UTIL_WINDOWS.map(([k, lk]) =>
+      `<option value="${k}"${k === win ? ' selected' : ''}>${escHtml(t(lk))}</option>`).join('')}</select></label>`;
+  const head = `<div class="card-head" style="display:flex;align-items:center;gap:6px;"><span style="font-weight:600;">${escHtml(t('lane_utilization_title'))}</span> ${_resourceHelpHtml('lane_utilization_help_text', LANE_UTIL_DOCS_HREF)}${picker}</div>`;
+  let body;
+  const data = view.data;
+  if (view.error) {
+    body = `<div class="lane-util-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;margin-top:6px;overflow-wrap:anywhere;">${escHtml(t('lane_utilization_failed', [String(view.error)]))}</div>`;
+  } else if (!data || typeof data !== 'object') {
+    body = `<div class="lane-util-loading" style="color:var(--text2);font-size:12px;margin-top:6px;">${escHtml(t('lane_utilization_loading'))}</div>`;
+  } else {
+    const lanes = Array.isArray(data.lanes) ? data.lanes.filter(l => l && typeof l === 'object') : [];
+    if (!lanes.length) {
+      body = `<div class="lane-util-empty" style="color:var(--text2);font-size:12px;margin-top:6px;">${escHtml(t('lane_utilization_empty'))}</div>`;
+    } else {
+      const mix = (Array.isArray(data.backend_mix) ? data.backend_mix : []).map(b => `${b.backend} ${_laneUtilPct(b.share)}`).join(', ');
+      body = _laneUtilChartHtml(lanes) + _laneUtilTableHtml(lanes) +
+        (mix ? `<div class="lane-util-mix" style="margin-top:6px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_utilization_mix', [mix]))}</div>` : '') +
+        _laneUtilFillHtml(data.lane_fill) + _laneUtilPlanHtml(data.plan_usage);
+    }
+  }
+  return `<div class="lane-util-card" style="padding:6px 8px;font-size:12px;min-width:0;">${head}${body}</div>`;
+};
+// Loader state: one fetch feeds the card and the Gantt lane rows.
+const _laneUtil = { win: LANE_UTIL_DEFAULT_WINDOW, data: null, error: '', at: 0, busy: false };
+function _laneUtilPaint() {
+  const el = document.getElementById('dashLaneUtilCard');
+  if (el) el.innerHTML = window.laneUtilizationCardHtml(_laneUtil);
+}
+window.laneUtilizationLoad = function(win) {
+  if (win && LANE_UTIL_WINDOWS.some(w => w[0] === win)) _laneUtil.win = win;
+  const asked = _laneUtil.win;
+  _laneUtil.busy = true;
+  return apiFetch('/api/autonomous/lane-utilization?window=' + encodeURIComponent(asked))
+    .then(body => {
+      if (asked !== _laneUtil.win) return;
+      _laneUtil.data = body; _laneUtil.error = ''; _laneUtil.at = Date.now();
+    })
+    .catch(e => {
+      if (asked !== _laneUtil.win) return;
+      _laneUtil.data = null; _laneUtil.error = String((e && e.message) || e); _laneUtil.at = Date.now();
+    })
+    .then(() => { _laneUtil.busy = false; _laneUtilPaint(); });
+};
+window.laneUtilizationSetWindow = function(win) {
+  _laneUtil.data = null; _laneUtil.error = '';
+  _laneUtilPaint();
+  return window.laneUtilizationLoad(win);
+};
+// _laneUtilPump refetches when the data is stale; the dashboard loop and the
+// Gantt call it, and it never starts a second request while one is in flight.
+function _laneUtilPump() {
+  if (_laneUtil.busy || Date.now() - _laneUtil.at < LANE_UTIL_REFRESH_MS) return;
+  window.laneUtilizationLoad();
+}
+function _dashRenderLaneUtilization() {
+  const el = document.getElementById('dashLaneUtilCard');
+  if (!el) return;
+  if (!el.firstChild) _laneUtilPaint();
+  _laneUtilPump();
+}
+window._laneUtilState = _laneUtil;
+
 // ── Headline cards (progress, cost, forecast) ───────────────────────────────
 // metricCardHtml(spec) draws one fixed-size card: the headline number large,
 // its unit labelled beneath, and the trend. spec: {id, titleKey, helpKey,
@@ -48058,6 +48224,7 @@ function _dashLoop(ts) {
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
+    _dashRenderLaneUtilization();
     _dashRenderConsole();
     _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
@@ -48836,6 +49003,8 @@ const DASH_CARD_DEFS = [
   { id: 'memory-scope', label: 'Memory Scopes', icon: '🧠', defaultCs: 3,
     body: () => '<div id="dashMemoryScopeCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   // BL391 — multi-provider web search usage tile.
+  { id: 'lane-utilization', label: 'Lane utilization', labelKey: 'lane_utilization_title', icon: '▤', defaultCs: 6,
+    body: () => '<div id="dashLaneUtilCard" style="height:100%;overflow-y:auto;"></div>' },
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
@@ -50567,6 +50736,21 @@ function _ganttStateColour(s, accent, muted) {
   return ({ completed: '#10b981', running: accent, in_progress: accent, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || muted);
 }
 
+// _laneUtilGanttLanes turns the lane utilization runs into Gantt lane rows
+// clipped to the Gantt window [winStart, now]. A run with no end is still
+// running. Lanes with no run in the window are kept, so an idle lane shows.
+function _laneUtilGanttLanes(winStart, now) {
+  const data = _laneUtil.data;
+  const lanes = data && Array.isArray(data.lanes) ? data.lanes : [];
+  return lanes.filter(l => l && l.id).map(l => ({
+    id: l.id,
+    runs: (Array.isArray(l.runs) ? l.runs : []).map(r => {
+      const a = Date.parse(r && r.start);
+      const e = Date.parse(r && r.end);
+      return { a, b: (isNaN(e) || e <= 0) ? now : e, title: r && r.title, backend: r && r.backend, stage: r && r.stage };
+    }).filter(r => !isNaN(r.a) && r.b > winStart && r.a < now).map(r => Object.assign(r, { a: Math.max(r.a, winStart), b: Math.min(r.b, now) })),
+  }));
+}
 function _drawGantt() {
   const svgEl = document.getElementById('dashGanttSvg');
   if (!svgEl) return;
@@ -50590,7 +50774,10 @@ function _drawGantt() {
   const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
   const stC = s => _ganttStateColour(s, acc, txt2);
   const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / WIN_MS)) * BAR_W;
+  const laneRows = _laneUtilGanttLanes(winStart, now);
+  _laneUtilPump();
   let totalH = HEADER_H + GAP;
+  if (laneRows.length) totalH += AUTO_H + laneRows.length * STORY_H + GAP;
   for (const p of prds) {
     totalH += AUTO_H;
     if (_dash._ganttTreeExpand[p.id] !== false) totalH += (p.stories || []).length * STORY_H;
@@ -50613,6 +50800,21 @@ function _drawGantt() {
   html += `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${totalH}" stroke="${acc}" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>`;
   html += `<text x="${nowX.toFixed(1)}" y="10" text-anchor="middle" font-size="8" fill="${acc}" font-weight="bold">NOW</text>`;
   let y = HEADER_H + GAP;
+  if (laneRows.length) {
+    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}"/>`;
+    html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600">${escHtml(t('lane_utilization_gantt_heading'))}</text>`;
+    y += AUTO_H;
+    laneRows.forEach((l, li) => {
+      html += `<text x="8" y="${y + STORY_H / 2 + 4}" font-size="9" fill="${txt}" opacity="0.8">${escHtml(String(l.id).slice(0, 24))}</text>`;
+      for (const r of l.runs) {
+        const bx = tsX(r.a), bx2 = Math.min(W - 16, tsX(r.b));
+        const tip = [r.title, r.backend, r.stage].filter(Boolean).join(' · ');
+        html += `<rect x="${bx.toFixed(1)}" y="${y + 2}" width="${Math.max(3, bx2 - bx).toFixed(1)}" height="${STORY_H - 4}" rx="2" fill="${LANE_UTIL_COLOURS[li % LANE_UTIL_COLOURS.length]}" opacity="0.8"><title>${escHtml(tip)}</title></rect>`;
+      }
+      y += STORY_H;
+    });
+    y += GAP;
+  }
   if (prds.length === 0) {
     html += `<text x="${W / 2}" y="${HEADER_H + 50}" text-anchor="middle" font-size="13" fill="${txt2}" opacity="0.6">No active automata — start an Automaton to see its timeline</text>`;
     html += `<text x="${W / 2}" y="${HEADER_H + 68}" text-anchor="middle" font-size="10" fill="${txt2}" opacity="0.4">Live story bars appear here as hooks fire</text>`;
