@@ -1279,6 +1279,12 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 Key terms used across the docs, API, and hook payloads.
 
+**per-turn chunked output capture** — planned (design pass approved,
+not implemented): recording a session's output in one chunk per turn so
+session history does not depend on tmux scrollback. Today history comes
+from `output.log` (written by `tmux pipe-pane`) plus the tmux scrollback
+buffer. Do not rely on chunked capture existing yet.
+
 **SessionTelemetry** — structured telemetry accumulated from hook
 payloads for a session. Contains the current task, active tool and
 file, sprint ancestry, task list with server-stamped timings, test
