@@ -174,12 +174,12 @@ so the picker shows exactly the prefixes you can narrow to — e.g.
 
 | Axis | What groups | Notes |
 |---|---|---|
-| `tag` | the first matching tag (own tags + inherited) | A session with several tags lands in exactly one group (the first in the sorted tag list). Sessions with no matching tag collect in the **ungrouped** group. |
+| `tag` | the first matching tag (own tags + inherited) | A session with several tags lands in exactly one group (the first in the sorted tag list; tags are trimmed and a repeated tag counts once). Sessions with no matching tag collect in the **ungrouped** group. |
 | `tag` + prefix | the first tag carrying that prefix | Only tags with the prefix (e.g. `automation:`) form groups; everything else goes to the ungrouped group. This is how you get the "just the automation cut" or "just the compute-node cut". |
 | `state` | the session's state | One group per state (running, waiting_input, complete, …) — handy for a quick "what is stuck" scan. |
-| `node` | the node that runs the session | In the web UI a peer's session lands under the peer's name and every session of this daemon under its real hostname; the header shows the node's name. In the grouped read (REST, MCP, CLI, comm) the key is the session's hostname. The ungrouped group catches sessions without a node ref. See [the node axis](#the-node-axis-in-the-web-ui). |
-| `project` | the session's project directory | The ungrouped group catches sessions without one. |
-| `automaton` | the Automaton the session belongs to | **Sub-task nesting**: sessions sit under the Automaton block, and inside it under their story block. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. |
+| `node` | the node that runs the session | In the web UI a peer's session lands under the peer's name and every session of this daemon under its real hostname; the header shows the node's name. In the grouped read (REST, MCP, CLI, comm) the key is the session's hostname, and a session with no hostname of its own is keyed under this daemon's hostname because it ran here. The ungrouped group catches only a row with no node name at all. See [the node axis](#the-node-axis-in-the-web-ui). |
+| `project` | the session's project directory | Trailing slashes are dropped, so `/work/app` and `/work/app/` form one group (the page and the grouped read use the same key). The ungrouped group catches sessions without one. |
+| `automaton` | the Automaton the session belongs to | **Sub-task nesting**: sessions sit under the Automaton block, and inside it under their story block. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. In the web UI, an Automaton's task sessions that run on a federation peer are included too (see [the node axis](#the-node-axis-in-the-web-ui)). |
 
 Group mechanics, in every mode:
 
@@ -193,7 +193,8 @@ Group mechanics, in every mode:
   cards, tiles or compact rows — and the body pages with its own **Show
   more** step (shown/total) when it is longer than a page.
 - **Sorting.** Groups sort by key, and the ungrouped group always sorts
-  last.
+  last — in the web UI and in the grouped read alike. Inside an Automaton
+  block the root story (shown as **Story**) leads, then the other stories by id.
 - **Header title.** In the web UI a group header on the **automaton**,
   **project** and **node** axes shows the record's human title — the
   Automaton's title, the project's name, the node's name — never the raw id.
@@ -214,10 +215,11 @@ it specially:
   The aggregated read's internal `local` tag is never a group name, so this
   daemon's sessions are not split in two and never appear under "local".
 - **Peers are loaded on demand.** While the page is in local mode and the
-  node axis is selected, the Sessions page also reads the aggregated
+  node axis or the Automaton axis is selected (an Automaton's task sessions
+  may run on a peer), the Sessions page also reads the aggregated
   sessions list and merges the peers' rows in. They refresh with the
   page's regular refreshes and are dropped again as soon as you switch to
-  any other axis (or to an applied saved view on another axis), so the
+  any other axis (or to an applied saved view on another axis; the node and Automaton axes keep them), so the
   plain local list is unchanged. The read is read-only; if it fails the
   page keeps the rows it holds.
 - **Not the same as the grouped read.** The REST, MCP, CLI and comm
