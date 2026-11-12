@@ -67,7 +67,7 @@ while absent. An explicit `false` sticks through saves and YAML round trips.
 | `dashboard.console.show_lanes` | the `lanes` section |
 | `dashboard.console.show_usage` | the `usage` section |
 | `dashboard.console.show_ci_release` | the `ci_release` section |
-| `dashboard.hide_inactive_cards` | the dashboard board itself — when true (the default) cards with no live data are hidden from the grid and the Add-Card picker |
+| `dashboard.hide_inactive_cards` | the dashboard board itself — when true (the default), the five feature cards (Integration status, Guardrails, Smoke Run, Memory Scopes, Search Usage) hide from the grid and the Add-Card picker while they have no live data; the console cards and the other system cards (Automata, Network, Live Events, Sessions, Timeline · 6h, **Automaton Timeline**, 30-Day Activity, Multi-EKG) are not gated by it |
 
 ## YAML
 
@@ -117,17 +117,19 @@ from any read surface above. With `dashboard.hide_inactive_cards` on (the
 default), cards that have no live data stay out of the grid and the Add-Card
 picker; set it false to keep them visible so you can pin your layout.
 
-The board also carries its own feature card besides the five console cards:
-the **Automaton Timeline** card, the Gantt chart of your Automata across
+The board also carries its own system card besides the five console cards:
+the **Automaton Timeline** card (part of the default layout, full board
+width), the Gantt chart of your Automata across
 every project — each stage a band, each member a bar with its start and end,
 blocked and waiting spans hatched on top, a solid today line and a dashed
 projected-finish line — with its own five filters (project, automation,
 stage, kind, tag). It reads `GET /api/autonomous/timeline`, which is a
 different read from the console's five sections: the console is the
 roll-up, the Timeline card is the interval chart. It needs the autonomous
-feature running for its data, and like the other feature cards it leaves the
-grid and the Add-Card picker while it has no live data under
-`dashboard.hide_inactive_cards` (the default). It is a different thing from
+feature running for its data, and when the chart has nothing the card stays
+in place and shows a one-line empty message — it is not one of the five
+feature cards that `dashboard.hide_inactive_cards` (the default) hides. It
+is a different thing from
 the board's 6h Gantt card, which draws the last six hours of session
 activity. See [automata-timeline.md](automata-timeline.md) for how the chart
 reads and how its blocked and waiting time is measured.
@@ -194,6 +196,9 @@ parses the same verb.
 - Counts are point-in-time reads of the backing subsystems; refresh by
   re-reading.
 - `dashboard.hide_inactive_cards` affects the dashboard board, not the
-  console: the console's five sections are listed exactly as above, while the
-  separate feature cards (EKG, Gantt, heatmap, …) are hidden from the grid
-  and the Add-Card picker while they have no live data.
+  console: the console's five sections are listed exactly as above, while
+  the five feature-gated cards (Integration status, Guardrails, Smoke Run,
+  Memory Scopes, Search Usage) are hidden from the grid and the Add-Card
+  picker while they have no live data. The other cards — Multi-EKG, 6h
+  Gantt, 30-Day Activity, the **Automaton Timeline**, and the rest of the
+  default layout — stay in place and show their empty state instead.
