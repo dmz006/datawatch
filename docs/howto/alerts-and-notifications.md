@@ -128,15 +128,26 @@ datawatch alerts --mark-all-read
    - A **state row** above the list, shown only when it has something
      to say: a `Cached` badge when the list came from this browser's
      storage, a small `Loading…` while a refresh runs, and the
-     `Data may be out of date` marker when the last refresh failed or
-     the data is older than 2 minutes (Alerts polls every 30 s, so it
-     uses a short fixed 2-minute window — other list cards use
-     5 minutes). There is no "Last updated N s ago" counter.
+     `Data may be out of date` marker when the data is older than
+     2 minutes (Alerts polls every 30 s, so it uses a short fixed
+     2-minute window — other list cards use 5 minutes). There is no
+     "Last updated N s ago" counter.
+   - **Refresh failed.** When a refetch errors, the card keeps the
+     cached rows it already has and shows a small failure banner with
+     a `Retry` button instead of an empty list or a rebuilt page,
+     with the `Data may be out of date` marker joining it. A failed
+     *first* load (nothing cached) shows the banner and `Retry`
+     alone — there is no cached data to be stale about.
    - Three tabs labelled by what their number counts: **Active
-     sessions** (N), **Historical sessions** (N), and **System
-     alerts** (N). The heading above the list counts the alerts in
-     the selected tab (e.g. "5 alerts in 3 active sessions"), and it
-     matches the `all` filter chip because both read the same total.
+     sessions** (N) where N is the number of active sessions in the
+     tab, **Historical sessions** (N) where N is the number of ended
+     sessions that have alerts, and **System alerts** (N) where N is
+     the number of system alerts. In other words the first two buttons
+     count *sessions* and the third counts *alerts*. The heading
+     above the list always counts the *alerts* in the selected tab
+     (e.g. "5 alerts in 3 active sessions"), and it matches the `all`
+     filter chip because both read the same total — and the four
+     category chips (prompts / errors / warn / info) sum to it.
    - Filter chips: all / prompts / errors / warn / info — each
      chip carries its own count (e.g. `all ×7  prompts ×2  errors
      ×1  warn ×1  info ×3`), and the chip counts count the alerts
@@ -147,7 +158,12 @@ datawatch alerts --mark-all-read
      or chronological (newest-first flat list)
    - Rows wrap on narrow viewports: long session names, titles and
      messages break within the card instead of clipping past the
-     phone screen
+     phone screen. The wrapping is pure CSS (flex-wrap +
+     overflow-wrap on the card and session header), so the full text
+     is always rendered — a 128-character unbroken session id or a
+     300-character message still fits — and the markup is
+     width-agnostic: the same rows render at 360 px and 390 px with
+     no viewports-specific branching
    - Sessions sorted: `waiting_input` → `running` → `completed`
    - Prompt alerts include a **Quick reply** dropdown for saved commands
    - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
@@ -479,7 +495,14 @@ tool, and Settings > Detection timing in the PWA.
 - [ ] Alerts tab — Active sessions sub-tab with prompt card highlighted yellow and quick-reply dropdown
 - [ ] Alerts tab — System alerts sub-tab with pipeline failure alert
 - [ ] Alerts tab at a 390 px phone viewport: header `?` help link present (no help link inside the list), state row a single line when shown, long session names and alert messages wrapping inside their cards with no horizontal overflow (add a screenshot of the post-tidy view)
+- [ ] Failed-refresh state on the phone: cached rows kept, failure banner with `Retry` visible (optional — needs a dropped network connection to trigger)
 - [ ] Mobile app Alerts screen (Android) — Active tab with waiting_input push badge
+
+**Still needs operator review** — the code-level behavior above is
+covered by the PWA test suite (all 28 Alerts-tab tests pass), but none
+of it has been confirmed on a real device yet: the 390 px screenshot,
+the rebuild/restart of the daemon so the new layout is served, and a
+hard-refresh of the PWA tab on the phone.
 
 ---
 
