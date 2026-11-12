@@ -108,11 +108,17 @@ the order the boot-resume scan took them:
 - `prd_id` — the Automaton's id;
 - `outcome` — `planning_restarted` for the automatic restart,
   `planning_ingested` for a plan recovered from the planner's output file,
-  `planning_reset_to_draft` for the reset;
+  `planning_reset_to_draft` for the reset, `backoff_restored` for a usage
+  back-off flag read back from disk (no `prd_id`; see
+  [Across a daemon restart](automata-capacity.md#across-a-daemon-restart));
 - `reason` — the policy in force, what the planner session left behind,
   whether the one automatic restart was already used, and how many live
   planner sessions with no reader were ended;
 - `at` — when the daemon took it.
+
+When an Automaton's backend is backed off at boot, its entry's `reason` ends
+with a sentence saying new session starts for that backend wait in the capacity
+queue and live sessions are left alone.
 
 The array is empty until the daemon has restarted with a planning Automaton
 in flight, and it lives for the life of the daemon process that booted; the

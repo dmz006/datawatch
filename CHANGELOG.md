@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Back-off flags across a restart.** The capacity how-to, operations guide, glossary, restart how-tos and audit lists now describe the saved back-off flag: it is written to disk, reinstalled at daemon start, recorded as a boot-resume entry, an alert and a restored audit event, and never touches a running session. Operator review notes are in `docs/operations.md`.
+
 ## v9.158.0 — Lane utilization view
 
 ### Added
