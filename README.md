@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.144.1 (2026-11-12).** A rejudge of a blocked Automaton now runs a fresh completion review of its current head commit and reuses the stored verdict only when the head and the rules text are unchanged. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.145.0 (2026-11-12).** The Projects tab hides empty lines and sections by default, and a Show empty lines and sections checkbox brings them back; the choice is remembered per viewer. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
