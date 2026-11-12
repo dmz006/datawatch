@@ -4730,7 +4730,7 @@ Only `off`, `warn` and `block` are accepted. `PUT /api/config` and
 `PUT /api/autonomous/config` reject anything else with HTTP 400; a bad value
 that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
 
-The drift checker runs git without any program a repository's own configuration names (no file-system monitor, hooks or external diff program), and it refuses to check a project folder that is empty, relative or starts with a dash.
+**How the checks run git.** The file drift check and this check run git read-only (`diff`, `log`) with `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a program that a project's own git configuration names (a file-system monitor, a hooks directory or an external diff program) is never started by the check. A project folder that is empty, relative or starts with a dash is refused (`invalid git directory`) and git is not run; that task gets no finding from the check. There is no setting for this and the modes above are unchanged. Operator review: a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git).
 
 ### Reading and writing it
 
