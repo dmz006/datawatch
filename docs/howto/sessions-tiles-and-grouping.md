@@ -106,7 +106,7 @@ If you only need one of the three, jump to the matching section:
 - want the grid of tiles → [View modes](#view-modes)
 - want the tag / prefix / Automaton cut → [Grouping](#grouping)
 - want to keep a cut for later → [Saved views](#saved-views)
-- want to read the same cut from another channel → [All channels](#all-channels--the-shared-read)
+- want to read the same cut from another channel → [All channels](#all-channels-the-shared-read)
 
 ## The toolbar row
 
