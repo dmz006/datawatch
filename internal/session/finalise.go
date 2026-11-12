@@ -19,6 +19,9 @@ type FinaliseResult struct {
 	// Folders counts the finalised records whose project folder still exists
 	// afterwards. Folders are never touched by the finaliser.
 	Folders int
+	// Unparseable counts saved session files (session.json) that could not be
+	// read or parsed during a folder pass. They are also counted in Skipped.
+	Unparseable int
 	// At is the time the pass ran.
 	At time.Time
 	// TerminalListOK is false when the terminal listing failed, in which case
