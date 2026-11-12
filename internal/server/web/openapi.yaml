@@ -1038,6 +1038,10 @@ paths:
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
         key reads as 30 and an explicit `0` turns triage alerts off; a negative or
         non-integer value is rejected with 400),
+        `autonomous.automation.child_inherit` (true|false, default true; when on, a child
+        Automaton inherits settings from its parent Automaton, and false restores the
+        earlier behaviour; an unset key reads as true and a non-boolean value is rejected
+        with 400),
         `autonomous.automation.pending_item_policy` (hold|skip, default hold),
         `autonomous.automation.pending_item_auto_resume` (true|false, default true),
         `autonomous.automation.pending_item_source.path` (a file path; empty = no file
@@ -5355,6 +5359,7 @@ paths:
                 project_dir: {type: string}
                 backend: {type: string}
                 effort: {type: string}
+                parent_prd_id: {type: string, description: "Optional parent Automaton id. The new Automaton inherits the parent's project, Automation, backend, model, tags and priority; an explicit project_dir, backend or model wins. A parent id stands in for project_dir and project_profile. An unknown parent is a 404 and nothing is created."}
                 kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
                 lane_preference: {type: string, enum: [gpu, claude, any, ""], description: "Optional lane preference: gpu, claude or any. Omit or leave empty for any lane. An unknown value is refused before anything is created"}
       responses:

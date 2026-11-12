@@ -496,6 +496,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_stuck_running_seconds",
 		// Automaton merge-pending check: the two settings fields, the two
 		// operator-visible merge badge labels and the safe-to-delete card title.
+		"settings_automation_child_inherit",
 		"settings_automation_merge_pending_mode",
 		"settings_automation_merge_pending_alert_minutes",
 		"merge_state_pending",

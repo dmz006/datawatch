@@ -7049,6 +7049,22 @@ The routes answer 503 while Automata are disabled and need the autonomous read c
 
 ---
 
+## Child inheritance (a child Automaton starts from its parent)
+
+A child Automaton (one a running Automaton spawns for a task, a fix Automaton filed from a scan, or a defect filed with a parent) starts from its parent's setup instead of from nothing. The full how-to is [howto/automaton-child-inheritance.md](howto/automaton-child-inheritance.md).
+
+| Key | Meaning | Default | Allowed |
+|---|---|---|---|
+| `autonomous.automation.child_inherit` | Whether a child inherits from its parent at creation | `true` (an unset key reads `true`) | `true`, `false` (any other value is refused with 400 on `PUT /api/config`) |
+
+**What is inherited**, each only where the creation gave no value of its own: the project link and the project's repository directory (never a worktree path), the parent's Automation (the child joins it right after the parent, through the normal insert, so held inserts and `agent_insert_policy` apply), backend and model as a pair, verification backend and model, tags, and priority. A Sonnet or Haiku parent never gives a child an Opus or Fable model; the pair is clamped to the parent's entry.
+
+**What is recorded.** One `child_inherit` decision on the child names the parent, what was inherited, what was clamped and what was skipped. It is written once per child; a second pass changes nothing. Inheritance never fails a creation.
+
+**Turning it off.** `datawatch config set autonomous.automation.child_inherit false`, `PUT /api/config`, or comm `configure autonomous.automation.child_inherit=false`. `false` copies nothing and records nothing. The key is read when each child is created, so a change applies to the next child with no restart and does not touch existing children.
+
+---
+
 ## Merged-member policy (a member Automaton cancelled after its work shipped)
 
 When a member Automaton of an Automation ends cancelled, the Automation has no `on_complete` edge to follow and becomes `blocked`. That is right when the member's work never landed and wrong when it did: the member's branch (`automaton/<id>`) is already merged into the project's default branch and only the Automaton was cancelled afterwards. The merged-member policy decides what the Automation does in that case. When a member ends cancelled or completed, the coordinator asks read-only git whether the member's branch is merged on the default branch, and if it is, `autonomous.automation.merged_member_policy` chooses the outcome. A branch that is not merged, has no commits ahead of the default branch, or whose state git cannot read always keeps the blocked outcome, whatever the policy. The check never merges, deletes, pushes or checks out a branch.

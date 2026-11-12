@@ -1367,6 +1367,16 @@ autonomous:
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
   #
+  # child_inherit: bool, default true (an unset key reads true). When on, a
+  # child Automaton (a task's child, a fix Automaton, a defect with a parent)
+  # starts from its parent at creation: project link and repository directory,
+  # the parent's Automation, backend/model, verification backend/model, tags
+  # and priority, each only where creation set nothing itself. false restores
+  # the earlier behavior. A non-boolean value is refused with 400. Set with
+  # `datawatch config set autonomous.automation.child_inherit=false`, comm
+  # `configure autonomous.automation.child_inherit=false` or PUT /api/config.
+  # Read at each child's creation; no restart.
+  #
   # merged_member_policy: string, `completed` (default), `manual` or `block`.
   # Decides what an Automaton does when a member ends cancelled or completed
   # and its work is already merged into the project's own default branch (the
@@ -1703,6 +1713,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    child_inherit: true
     merged_member_policy: completed
     agent_insert_policy: allow
     # Repo CI watch: lets the automation coordinator watch the CI runs of

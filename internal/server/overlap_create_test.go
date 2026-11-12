@@ -42,6 +42,10 @@ func (f *overlapFakeAutonomous) put(p *autonomous.PRD) {
 	f.order = append(f.order, p.ID)
 }
 
+func (f *overlapFakeAutonomous) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return f.CreatePRD("", "", "", "", "")
+}
+
 func (f *overlapFakeAutonomous) CreatePRD(spec, projectDir, backend, model, effort string) (any, error) {
 	p := &autonomous.PRD{
 		ID:         fmt.Sprintf("new-%d", len(f.order)+1),

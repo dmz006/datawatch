@@ -814,6 +814,12 @@ type AutomationConfig struct {
 	// Effective* accessors of the config type.
 	DependencyUpdate config.DependencyUpdateConfig `json:"dependency_update"`
 
+	// ChildInherit mirrors autonomous.automation.child_inherit. Pointer on
+	// purpose: unset (nil) reads the default (on) via EffectiveChildInherit,
+	// and an explicit false survives a merge round trip. When on, a child
+	// Automaton inherits from its parent at creation (child_inherit.go).
+	ChildInherit *bool `json:"child_inherit,omitempty"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
@@ -922,6 +928,15 @@ func (c AutomationConfig) EffectiveCreateSearchThreshold() float64 {
 		return 0.5
 	}
 	return *c.CreateSearchThreshold
+}
+
+// EffectiveChildInherit returns whether a child Automaton inherits from its
+// parent: true when unset, the explicit value otherwise.
+func (c AutomationConfig) EffectiveChildInherit() bool {
+	if c.ChildInherit == nil {
+		return config.DefaultChildInherit
+	}
+	return *c.ChildInherit
 }
 
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
@@ -3436,8 +3451,30 @@ func (m *Manager) AutomationStore() *AutomationStore { return m.automations }
 // CreatePRD records a draft PRD without decomposing — call Decompose
 // next or pass to Run() which decomposes lazily.
 func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effort) (*PRD, error) {
+	return m.createPRD(spec, projectDir, backend, model, effort, "")
+}
+
+// CreatePRDWithParent is CreatePRD for an Automaton that has a parent: it
+// records the parent link and depth, then lets the child inherit from the
+// parent (inheritFromParent, autonomous.automation.child_inherit). A non-empty
+// projectDir, backend or model is explicit and wins over inheritance. An empty
+// parentPRDID is plain CreatePRD; an unknown parent is refused.
+func (m *Manager) CreatePRDWithParent(spec, projectDir, backend, model string, effort Effort, parentPRDID string) (*PRD, error) {
+	return m.createPRD(spec, projectDir, backend, model, effort, strings.TrimSpace(parentPRDID))
+}
+
+// createPRD is the body of CreatePRD and CreatePRDWithParent.
+func (m *Manager) createPRD(spec, projectDir, backend, model string, effort Effort, parentPRDID string) (*PRD, error) {
 	if err := m.checkInjectionGuard("prd spec", spec); err != nil {
 		return nil, err
+	}
+	var parent *PRD
+	if parentPRDID != "" {
+		p, ok := m.store.GetPRD(parentPRDID)
+		if !ok {
+			return nil, fmt.Errorf("create prd: parent prd %q not found", parentPRDID)
+		}
+		parent = p
 	}
 	if err := validateModelForBackend(backend, model); err != nil {
 		return nil, fmt.Errorf("create prd: %w", err)
@@ -3477,6 +3514,22 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 			})
 			_ = m.store.SavePRD(prd)
 		}
+	}
+	// A child starts from its parent's setup (child_inherit.go). It runs after
+	// the defaults above so inherited values replace them, and before defect
+	// intake so a child that joined its parent's Automation is not offered
+	// elsewhere.
+	if parent != nil {
+		m.store.WithLock(func() {
+			prd.ParentPRDID = parent.ID
+			prd.Depth = parent.Depth + 1
+		})
+		_ = m.store.SavePRD(prd)
+		m.inheritFromParent(prd, parent, childExplicit{
+			ProjectDir: projectDir != "",
+			Backend:    backend != "",
+			Model:      model != "",
+		})
 	}
 	// Defect intake (defect_intake.go): an Automaton filed with kind bug is
 	// offered to the Automation named by autonomous.defect_intake_automation
@@ -7476,6 +7529,9 @@ func (m *Manager) CreateFixPRD(prdID string) (*PRD, error) {
 	if err := m.store.SavePRD(child); err != nil {
 		return nil, err
 	}
+	// The fix child starts from the scanned Automaton's setup; its project
+	// directory becomes the repository directory, never a worktree path.
+	m.inheritFromParent(child, prd, childExplicit{})
 	return child, nil
 }
 

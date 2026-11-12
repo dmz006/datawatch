@@ -861,6 +861,9 @@ type AutonomousAPI interface {
 	SetConfig(any) error
 	Status() any
 	CreatePRD(spec, projectDir, backend, model, effort string) (any, error)
+	// CreatePRDWithParent is CreatePRD for an Automaton with a parent id; the
+	// child inherits from the parent and explicit values win.
+	CreatePRDWithParent(spec, projectDir, backend, model, effort, parentPRDID string) (any, error)
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)
@@ -6903,6 +6906,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Merge-pending check: the mode reads off when unset, the alert
 				// minutes read the 30-minute default when unset and an explicit
 				// 0 stays 0 (the merge-pending alert off).
+				"child_inherit":               s.cfg.Autonomous.Automation.EffectiveChildInherit(),
 				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
 				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
 				// Effective, not raw: an empty value reads the "completed"
@@ -7408,6 +7412,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}
+		}
+	}
+	// Child inherit: a boolean. Any other type rejects the whole PUT.
+	if v, ok := patch["autonomous.automation.child_inherit"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.child_inherit: must be true or false", http.StatusBadRequest)
+			return
 		}
 	}
 	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
@@ -9995,6 +10006,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// an explicit 0 (0 = triage alert off) is preserved.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.TriageAlertMinutes = &n
+			}
+		case "autonomous.automation.child_inherit":
+			// Validated above in handlePutConfig; a non-bool is left unchanged.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.ChildInherit = &b
 			}
 		case "autonomous.automation.merge_pending_mode":
 			// Validated above in handlePutConfig; a value that fails the

@@ -779,6 +779,23 @@ func (a *API) CreatePRD(spec, projectDir, backend, model, effort string) (any, e
 	return prd, err
 }
 
+// CreatePRDWithParent is CreatePRD for an Automaton with a parent: the Manager
+// records the link and the child inherits from the parent, with explicit
+// project_dir, backend and model winning. An unknown parent is refused.
+func (a *API) CreatePRDWithParent(spec, projectDir, backend, model, effort, parentPRDID string) (any, error) {
+	if projectDir != "" {
+		var err error
+		if projectDir, err = a.M.CheckProjectDir(projectDir); err != nil {
+			return nil, fmt.Errorf("project_dir refused: %w", err)
+		}
+	}
+	prd, err := a.M.CreatePRDWithParent(spec, projectDir, backend, model, Effort(effort), parentPRDID)
+	if err == nil && prd != nil {
+		a.M.EmitPRDUpdate(prd.ID)
+	}
+	return prd, err
+}
+
 func (a *API) GetPRD(id string) (any, bool) {
 	p, ok := a.M.Store().GetPRD(id)
 	if !ok {

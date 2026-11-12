@@ -503,9 +503,37 @@ func prettyJSON(body string) string {
 //	autonomous run <prd-id>
 //	autonomous cancel <prd-id>
 //	autonomous learnings
-//	autonomous create <spec…>
+//	autonomous create <spec…> [--parent <automaton-id>]
 //
 // `prd` is accepted as a shorter alias for `autonomous`.
+// autonomousCreateUsage is the comm-channel usage line for creating an Automaton.
+const autonomousCreateUsage = "usage: autonomous create <spec> [--parent <automaton-id>]   (a child inherits its parent's project, Automation, backend, model, tags and priority)"
+
+// splitCreateParent removes a --parent <id> (or --parent=<id>) option from the
+// words of an "autonomous create" command and returns the remaining spec
+// words, the parent id and a usage error message (empty when fine).
+func splitCreateParent(words []string) (spec []string, parent string, errMsg string) {
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case w == "--parent":
+			if i+1 >= len(words) || strings.HasPrefix(words[i+1], "--") {
+				return nil, "", autonomousCreateUsage
+			}
+			parent = strings.TrimSpace(words[i+1])
+			i++
+		case strings.HasPrefix(w, "--parent="):
+			parent = strings.TrimSpace(strings.TrimPrefix(w, "--parent="))
+			if parent == "" {
+				return nil, "", autonomousCreateUsage
+			}
+		default:
+			spec = append(spec, w)
+		}
+	}
+	return spec, parent, ""
+}
+
 // shippedRecordUsage is the comm-channel usage line for recording shipped state.
 const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit> [release=<release>] [source=merge_step|backfill] [merged_at=<RFC3339>] [automation=true]"
 
@@ -658,7 +686,7 @@ func (r *Router) handleAutonomousListVerb(args []string) {
 
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|event-log [kind=K] [project=P] [q=TEXT] [limit=1..10] [before=CURSOR]|event-kinds [group=G]|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|generated-artefacts [set <key> <on|off>]|change-record <id>|regenerate <id> <kind>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-node <automaton> <task> <node|clear>|set-story-node <automaton> <story> <node|clear>|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|lane-utilization [window]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-shadow|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|checks [automaton-id]|ship [automaton-id]|rules [automaton-id]|rules set <key> <value> [project-dir]|restart-interruptions|decisions [automaton-id]|planning-routing [show|test|scorecard]|decision-records [automaton-id]|decision-record <id>|decision-record create <json>|decision-record withdraw <id> [reason]|repo-ci-watch|supervisor-watch|supervisor jobs|supervisor runs [job=X] [outcome=Y] [limit=N]|supervisor wake [status|set key=value ...]|peer-events [status|start <peer> <queue> [since=N]|stop <peer>]|supervisor run job=NAME [input=X] [candidates=A,B]|merge|safe-to-delete|cleanup|lint config|lint config-set key=value|lint dry-run <id>|lint findings <id>|uncommitted-work [automaton-id]|unlanded-work [keep|archive-branch|delete-worktree <branch> [confirm]]|protected-paths [automaton-id]|authorize-paths <automaton-id> <path> [<path>...]|authorize-paths <automaton-id> clear|request-watch [session <id>|automaton <id>]|host-load|merged-members [automation-id]|pending-items [waiting|attached|done] [automation-id]|pending-item-add <title...> [ref=<label>]|pending-item-attach <item-id> <automaton-id>|pending-items-refresh|overlap <text>|security-failure [run-id]|tags [counts]|tags sweep [dry-run]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|session-tags list|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions|requirements-report [text|json]|model-pull-consent-get|model-pull-consent-set model=<name> [deny=<name> ...] [publisher=<p> ...]|branch-refresh <id> enabled|disabled|inherit|branch-refresh-stats|node-versions <name>|standard-tasks}"
+	help := "usage: autonomous {status|list|event-log [kind=K] [project=P] [q=TEXT] [limit=1..10] [before=CURSOR]|event-kinds [group=G]|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|generated-artefacts [set <key> <on|off>]|change-record <id>|regenerate <id> <kind>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-node <automaton> <task> <node|clear>|set-story-node <automaton> <story> <node|clear>|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec> [--parent <automaton-id>]|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|lane-utilization [window]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-shadow|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|checks [automaton-id]|ship [automaton-id]|rules [automaton-id]|rules set <key> <value> [project-dir]|restart-interruptions|decisions [automaton-id]|planning-routing [show|test|scorecard]|decision-records [automaton-id]|decision-record <id>|decision-record create <json>|decision-record withdraw <id> [reason]|repo-ci-watch|supervisor-watch|supervisor jobs|supervisor runs [job=X] [outcome=Y] [limit=N]|supervisor wake [status|set key=value ...]|peer-events [status|start <peer> <queue> [since=N]|stop <peer>]|supervisor run job=NAME [input=X] [candidates=A,B]|merge|safe-to-delete|cleanup|lint config|lint config-set key=value|lint dry-run <id>|lint findings <id>|uncommitted-work [automaton-id]|unlanded-work [keep|archive-branch|delete-worktree <branch> [confirm]]|protected-paths [automaton-id]|authorize-paths <automaton-id> <path> [<path>...]|authorize-paths <automaton-id> clear|request-watch [session <id>|automaton <id>]|host-load|merged-members [automation-id]|pending-items [waiting|attached|done] [automation-id]|pending-item-add <title...> [ref=<label>]|pending-item-attach <item-id> <automaton-id>|pending-items-refresh|overlap <text>|security-failure [run-id]|tags [counts]|tags sweep [dry-run]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|session-tags list|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions|requirements-report [text|json]|model-pull-consent-get|model-pull-consent-set model=<name> [deny=<name> ...] [publisher=<p> ...]|branch-refresh <id> enabled|disabled|inherit|branch-refresh-stats|node-versions <name>|standard-tasks}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -1344,15 +1372,27 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous children", prettyJSON(out))
 	case "create":
 		if len(args) < 2 {
-			r.reply("autonomous create failed", "usage: autonomous create <spec>")
+			r.reply("autonomous create failed", autonomousCreateUsage)
 			return
 		}
-		spec := strings.TrimSpace(strings.Join(args[1:], " "))
+		specArgs, parent, perr := splitCreateParent(args[1:])
+		if perr != "" {
+			r.reply("autonomous create failed", perr)
+			return
+		}
+		spec := strings.TrimSpace(strings.Join(specArgs, " "))
+		if spec == "" {
+			r.reply("autonomous create failed", autonomousCreateUsage)
+			return
+		}
 		if msg, refuse := commTruncationRefusal("create", "spec", spec); refuse {
 			r.reply("autonomous create failed", msg)
 			return
 		}
 		body := map[string]any{"spec": spec}
+		if parent != "" {
+			body["parent_prd_id"] = parent
+		}
 		raw, _ := json.Marshal(body)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds", string(raw))
 		if err != nil {

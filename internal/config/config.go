@@ -4419,11 +4419,16 @@ type AutonomousAutomationConfig struct {
 	RepoCIWatch RepoCIWatchConfig `yaml:"repo_ci_watch" json:"repo_ci_watch"`
 	// DependencyUpdate — the weekly dependency update Automation knobs
 	// (autonomous.automation.dependency_update.*). See DependencyUpdateConfig.
-	DependencyUpdate         DependencyUpdateConfig `yaml:"dependency_update" json:"dependency_update"`
-	MergePendingMode         string                 `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
-	MergePendingAlertMinutes *int                   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
-	MergedMemberPolicy       string                 `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
-	AgentInsertPolicy        string                 `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	DependencyUpdate DependencyUpdateConfig `yaml:"dependency_update" json:"dependency_update"`
+	// ChildInherit is the autonomous.automation.child_inherit setting. It is
+	// ON by default: unset reads true via EffectiveChildInherit, so an
+	// existing config file keeps the new behaviour, and an explicit false
+	// restores the old behaviour.
+	ChildInherit             *bool  `yaml:"child_inherit,omitempty" json:"child_inherit,omitempty"`
+	MergePendingMode         string `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
+	MergePendingAlertMinutes *int   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
+	MergedMemberPolicy       string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
+	AgentInsertPolicy        string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
 	// SecurityFailureConfig: the one default (an unset or empty mode reads
@@ -6042,6 +6047,18 @@ func ValidateMergePendingMode(mode string) error {
 	}
 	return fmt.Errorf("autonomous.automation.merge_pending_mode: unknown mode %q (use %s, %s or %s)",
 		mode, MergePendingModeOff, MergePendingModeShadow, MergePendingModeOn)
+}
+
+// DefaultChildInherit is the autonomous.automation.child_inherit default (on).
+const DefaultChildInherit = true
+
+// EffectiveChildInherit returns whether child Automata inherit from their
+// parent: true when unset, the explicit value otherwise.
+func (c AutonomousAutomationConfig) EffectiveChildInherit() bool {
+	if c.ChildInherit == nil {
+		return DefaultChildInherit
+	}
+	return *c.ChildInherit
 }
 
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
