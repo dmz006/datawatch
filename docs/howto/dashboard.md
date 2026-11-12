@@ -251,6 +251,12 @@ setting per card.
 - **Data:** `GET /api/dashboard/series/lane-utilization?window=<duration>` (default `24h`, `1h` to `168h`): for each lane and clock hour, the share of that hour a lane held a lease.
 - **Off:** hidden until a lane held a lease in the window. Empty line: "No lane has held a lease in the last 24 hours — this card fills as lanes run." Opt-in.
 
+### Lane utilization detail card
+
+- **For:** each lane's busy and idle share, queue wait, backend mix, the lane fill mode and plan usage in points and tokens, over a window you pick. The [lane utilization how-to](lane-utilization.md) covers the figures.
+- **Data:** `GET /api/autonomous/lane-utilization?window=<1h|6h|24h|7d>`, from the Automata ledgers; the Gantt adds a Lane utilization layer from the same runs.
+- **Off:** shows a loading line, then a message when the read fails or no lane held work in the window. Opt-in.
+
 ### Throughput forecast card
 
 - **For:** how many Automata should finish soon at the current pace.

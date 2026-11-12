@@ -413,6 +413,20 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_lane_utilization`** — read how the lanes were used over a window ending now: per-lane busy and idle time in buckets, plus the lane fill status with its newest decisions. Read-only; returns the JSON of `GET /api/autonomous/lane-utilization` unchanged.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `window` | no | Window length as a duration such as `6h`, `24h` or `7d` (default `24h`) |
+  | `bucket` | no | Number of time buckets, a whole number |
+  | `decisions` | no | How many of the newest decisions to return, a whole number |
+
+  ```
+  autonomous_lane_utilization()
+  autonomous_lane_utilization(window="7d", bucket=14, decisions=20)
+  ```
+
+  A value out of range is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
 - **`onboarding_report`** — read the onboarding report: what is configured (backends, models, projects, comm channels, memory, merge pipeline), what is missing, and what to try next with a how-to link for each step. `format` is `text` (the default, rendered by the same function as the REST route, the CLI and the comm verb) or `json` (the REST body). Read-only; says so when `onboarding_report.enabled` is off. Same data as `GET /api/automation/onboarding-report`.
 - **`compute_served_models`** — read which models each compute node serves right now. Without arguments it lists every enabled node with its served models and whether the list could be read. Give `model` (and optionally `node` and `backend`) to also get the answer to "would this node accept this model?" — the same check an Automaton makes when a task or story is pinned to a node, so the two never disagree. A node's list is kept for `autonomous.model_routing.served_models_cache_seconds` (default 300); `refresh=true` reads it from the node again. Read-only. Needs the compute read capability when called by a federated peer.
 

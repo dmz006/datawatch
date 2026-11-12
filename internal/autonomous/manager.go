@@ -1352,6 +1352,9 @@ var builtinTypes = []AutomatonType{
 // Manager is the public façade for the autonomous package.
 type Manager struct {
 	mu sync.Mutex
+	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
+	// Guarded by mu; nil means no usage is reported.
+	laneUtilUsage LaneUtilizationUsageSource
 	// Memory ceiling for verification script runs (verification_scope.go).
 	// Guarded by mu; nil limits = uncapped.
 	resourceLimits   *config.ResourceLimitsConfig

@@ -34,6 +34,7 @@ Subcommands:
                                   Draw the Automata timeline as text bars: work, blocked, today, projected finish
   progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
   lane-fill [--limit N] [--json]  Lane fill: each lane, queued eligible counts and the newest decisions
+  lane-utilization [--window 24h] [--bucket N] [--decisions N] [--json]  How the lanes were used over a window
   infra-retries [automaton-id] [--limit N] [--json]
                                   Infrastructure retries: the retry policy in effect and the tasks retried
                                   or held because the machinery around them failed, newest first
@@ -223,6 +224,7 @@ Subcommands:
 		newAutonomousProgressTrendCmd(),
 		newAutonomousTimelineCmd(),
 		newAutonomousLaneFillCmd(),
+		newAutonomousLaneUtilizationCmd(),
 		newAutonomousInfraRetriesCmd(),
 		newAutonomousMergePipelineCmd(),
 		newAutonomousMergeShadowCmd(),
