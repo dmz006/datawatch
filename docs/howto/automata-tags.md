@@ -419,14 +419,20 @@ listed as **federated** for every kind that can be sent to a peer.
   axes it carried before, including role, kind, stage and Automaton.
 - An axis you have turned off (see [The ten axes](#the-ten-axes)) is left out
   of every row.
-- **Sessions started before this change** keep the tags they had. To bring
-  them up to the full set, preview with `datawatch autonomous tags sweep
-  --dry-run`, then run `datawatch autonomous tags sweep`.
+- **Sessions started before this change** keep the tags they had. They
+  recorded no launch facts, so `datawatch autonomous tags sweep` leaves them
+  unchanged rather than guessing at the missing role, kind, stage or
+  Automaton; the sweep only rebuilds the full set for a session whose record
+  carries launch facts. Preview with `datawatch autonomous tags sweep
+  --dry-run`; to give an old session the extra axes, restart it with launch
+  facts or set the tags yourself.
 
 **For the operator to review:** the table reflects the start paths in the
 current code. Confirm that the Council and Eval rows (no Automaton axes) and
 the Supervisor row (no `automaton`, `automation` or `stage`) match what you
-expect before the next release.
+expect before the next release. Also note that sessions started before this
+change may stay without role, kind, stage or Automaton tags: the sweep does
+not infer launch facts they never recorded.
 
 ### Filtering by a tag or an axis
 
