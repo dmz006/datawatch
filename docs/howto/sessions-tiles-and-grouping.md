@@ -3,7 +3,7 @@ docs:
   index: true
   topics: [sessions, pwa, tags, automation, mcp, cli]
 exec_params:
-  - {name: group_by, required: false, description: "Group axis: tag, state, node, project or automaton"}
+  - {name: group_by, required: false, description: "Group axis: tag, state, node, model, project or automaton"}
   - {name: tag_prefix, required: false, description: "With group_by=tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group"}
 exec_steps:
   - tool: list_sessions
@@ -20,7 +20,7 @@ exec_steps:
 # How-to: Sessions — tiles, grouping and saved views
 
 The Sessions page can now be read three ways — **list**, **tiles** or
-**compact** — and cut by **group**: by tag, tag prefix, state, node, project,
+**compact** — and cut by **group**: by tag, tag prefix, state, node, model, project,
 or by the Automaton that spawned each session. A session's placement tags
 (compute:, peer:, backend:, lane:, role:, project:) make the tag axis double
 as a placement browser, and a sub-task nesting under the owning Automaton
@@ -39,7 +39,7 @@ of that:
 1. **View mode** — how each session is drawn: `list` (one card per row),
    `tiles` (a grid of work tiles that stacks left-to-right and up-down), or
    `compact` (the same tile grid drawn at a smaller size).
-2. **Group by** — none, or one axis: `tag`, `state`, `node`, `project` or
+2. **Group by** — none, or one axis: `tag`, `state`, `node`, `model`, `project` or
    `automaton`. On the tag axis you can narrow to a tag prefix, so only tags
    under that prefix form groups and everything else collects in the
    ungrouped group.
@@ -188,7 +188,11 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   - a state chip (running / waiting_input / rate_limited / complete /
     failed / killed),
   - `backend · model` (e.g. `claude-code · claude-opus`),
-  - the node or peer the session runs on,
+  - **Runs on** — the real name of the host the session runs on (a federated
+    session names its peer, never the word “local”), and **Model on** — where the
+    model is served, the compute node for pi and Ollama or **Anthropic cloud** for a
+    Claude session (the line is left out when it cannot be named). Each fact
+    carries a hover title that says what it means,
   - its tags (own + inherited; more than fit collapse into a shared
     overflow chip — on a phone-width screen the tags collapse to a single
     **+N** chip, where N is how many tags are hidden),
@@ -205,7 +209,7 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   The menu stays visible in every grid mode precisely because the tile
   carries menu items.
 - **Compact** is the same tile grid as Tiles at a smaller size: the same
-  tiles, with the same content (name, state chip, `backend · model`, node,
+  tiles, with the same content (name, state chip, `backend · model`, the Runs on and Model on facts,
   tags, last-activity time and lifecycle bar) and the same **⋯ overflow
   menu**, laid out in the same multi-column grid with smaller tiles, tighter
   padding and smaller type, so more sessions fit on screen. It never turns
@@ -270,7 +274,7 @@ its existing load-more behaviour for the non-paged view.
 The **Group by** picker (in the Filters sheet) offers:
 
 ```
-No grouping │ State │ Node │ Project │ Tag │ Tag(automation:) │ Tag(compute:) … │ Automaton
+No grouping │ State │ Node │ Model │ Project │ Tag │ Tag(automation:) │ Tag(compute:) … │ Automaton
 ```
 
 Each option groups on exactly one thing, and a session with no match for the
@@ -296,6 +300,7 @@ placement choice saved before this change is picked up once and carried over.
 | `tag` + prefix | the first tag carrying that prefix | Only tags with the prefix (e.g. `automation:`) form groups; everything else goes to the ungrouped group. This is how you get the "just the automation cut" or "just the compute-node cut". |
 | `state` | the session's state | One group per state (running, waiting_input, complete, …) — handy for a quick "what is stuck" scan. |
 | `node` | the node that runs the session | Lists sessions from every node, this daemon and federation peers, each under the node that runs it. In the web UI a peer's session lands under the peer's name and every session of this daemon under its real hostname; the header shows the node's name. In the grouped read (REST, MCP, CLI, comm) the key is the session's hostname, and a session with no hostname of its own is keyed under this daemon's hostname because it ran here. The ungrouped group catches only a row with no node name at all. See [the node axis](#the-node-axis-in-the-web-ui). |
+| `model` | where the session's model is served | The PWA-only **Model on** fact as a group: pi/Ollama sessions gather under the compute node that serves them (the same name as the tile's Model on line), every Claude session lands under **Anthropic cloud**, and a session whose model cannot be named lands in the ungrouped group. This axis groups the model's home, not the session's host — the **node** axis does that. |
 | `project` | the datawatch project the session belongs to | Read in this order: the project of the session's Automaton (its worktree is mapped back to the repository it belongs to and matched against the registered projects); then a `project:` tag on the session (several tags: the first in sorted order); then the registered project of the session's own working folder, mapped the same way, so a session in a worktree lands with the repository's sessions. When an Automaton is known but no project resolves, the group is that Automaton's title, never the worktree folder. The working folder is used only when no project or Automaton is known (trailing slashes are dropped, so `/work/app` and `/work/app/` form one group); a session with none of these lands in the ungrouped group. The same rule applies on REST, MCP, CLI, the comm verb and the PWA. |
 | `automaton` | the Automaton the session belongs to | **Story and task nesting**: sessions sit under the Automaton block, and inside it under their story block, with the task sessions nested in their story. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. In the web UI, an Automaton's task sessions that run on a federation peer are included too (see [the node axis](#the-node-axis-in-the-web-ui)). |
 
@@ -634,7 +639,8 @@ in your tag registry.
   expand with its **Show more** (shown/total) step; the header count is
   the full group, not the rendered page.
 - **`invalid group_by` from the API/CLI.** The axis must be exactly one of
-  `tag`, `state`, `node`, `project`, `automaton`.
+  `tag`, `state`, `node`, `project`, `automaton`. `model` is a PWA-only axis:
+  it groups the **Model on** fact on the web page and is not an API/CLI value.
 - **Project groups show a folder path instead of a project name.** The session has no `project:` placement tag and no owning Automaton project, so it falls back to its working folder. Tag the session with a `project:` tag to group it by project.
 
 ## Related guides
