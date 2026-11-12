@@ -155,6 +155,7 @@ func newProjectsRecordCommands() []*cobra.Command {
 		newProjectsSetCmd(),
 		newProjectsArcsCmd(),
 		newProjectsHistoryCmd(),
+		newProjectsTimelineCmd(),
 	}
 }
 
@@ -315,6 +316,39 @@ func newProjectsHistoryCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 0, "maximum history items (daemon default when unset)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "continue from a next_cursor returned by an earlier call")
+	return cmd
+}
+
+func newProjectsTimelineCmd() *cobra.Command {
+	var level, parent, automaton, focus, cursor string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "timeline <name>",
+		Short: "Show when each arc, Automaton and task of a project started and finished",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			q := url.Values{}
+			for k, v := range map[string]string{"level": level, "parent": parent, "automaton": automaton, "focus": focus, "cursor": cursor} {
+				if v != "" {
+					q.Set(k, v)
+				}
+			}
+			if limit > 0 {
+				q.Set("limit", strconv.Itoa(limit))
+			}
+			path := projectRecordPath(args[0], "/timeline")
+			if enc := q.Encode(); enc != "" {
+				path += "?" + enc
+			}
+			return daemonGet(path)
+		},
+	}
+	cmd.Flags().StringVar(&level, "level", "", "rows to show: arcs (default), automata or tasks")
+	cmd.Flags().StringVar(&parent, "parent", "", "with --level automata: the arc id, or none for Automata no arc holds")
+	cmd.Flags().StringVar(&automaton, "automaton", "", "with --level tasks: the Automaton id")
+	cmd.Flags().StringVar(&focus, "focus", "", "one arc id (or none): its Automata and their tasks in one reply")
+	cmd.Flags().IntVar(&limit, "limit", 0, "maximum rows per page (daemon default when unset)")
 	cmd.Flags().StringVar(&cursor, "cursor", "", "continue from a next_cursor returned by an earlier call")
 	return cmd
 }

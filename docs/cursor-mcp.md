@@ -139,6 +139,7 @@ Selected core tools:
 | `project_set_arcs` | replace a project's ordered arc list (`automation_id`, `priority`, `state`); `[]` clears it |
 | `project_rollup` | a project's arcs with their Automata, task progress, points and throughput (optional `window`, days) |
 | `project_history` | one page of a project's finished Automata, daily progress and Gantt rows (`limit`, `cursor`) |
+| `project_timeline` | one level of a project's timeline: first and last time per arc, Automaton and task (`level`, `parent`, `automaton`, `focus`, `limit`, `cursor`) |
 | `project_policy_effective` | a project's effective policy with the tier that supplies each setting (optional `automaton`) |
 | `project_alias_delete` | remove a project alias; the directory is not touched |
 | `question_get` | read one stored question and its current answer (the asker's return path) |

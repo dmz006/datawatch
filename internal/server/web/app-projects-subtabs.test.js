@@ -179,20 +179,20 @@ test('#projects and #projects/acme both open Overview', async () => {
 });
 
 test('the Gantt sub-tab draws the Gantt alone and keeps the size cap', async () => {
-  const gantt = [];
-  for (let i = 0; i < 30; i++) {
-    gantt.push(row('automaton', 'a' + i, '', 'A' + i, 20 - i * 0.5, 19 - i * 0.5));
-    gantt.push(row('task', 'a' + i, 't' + i, 'T', 20 - i * 0.5, 19 - i * 0.5));
+  const { sb, out } = await open({ hash: '#projects/acme/gantt' });
+  const rows = [];
+  for (let i = 0; i < 60; i++) {
+    rows.push({ kind: 'arc', id: 'a' + i, title: 'A' + i, state: 'active', first: new Date(Date.now() - (20 - i * 0.2) * 86400000).toISOString(), last: new Date(Date.now() - 1000).toISOString(), running: false, has_children: false, children_count: 0 });
   }
-  const { sb, out } = await open({ hash: '#projects/acme/gantt', gantt });
+  run(sb, `_projectsState.selected = 'acme'; _projectsState.gantt = { name: 'acme', rows: ${JSON.stringify(rows)}, next: '', error: '', loading: false, kids: {}, preset: 'all', view: null, expanded: {} }`);
   run(sb, "_projectsState.subtab = 'gantt'");
   sb._projectsPaint();
   assert.equal(activeBody(out.view), 'gantt');
   const body = out.view.slice(out.view.indexOf('id="projectsSubtabBody"'));
   assert.match(body, /id="projectGantt"/);
   assert.doesNotMatch(body, /project-merge-pipeline|project-policy-effective|id="projectEvents"|project-progress/, 'no other section is in the body');
-  assert.match(body, /Showing 40 of 60 rows; the newest are drawn first\./);
-  assert.equal((body.match(/height="12"/g) || []).length, 40, 'at most 40 bars are drawn');
+  assert.match(body, /Showing 40 of 60 rows\./);
+  assert.equal((body.match(/data-kind="arc"/g) || []).length, 40, 'at most 40 rows are drawn');
 });
 
 test('the Policy sub-tab holds the effective policy and the merge pipeline, with Settings links only', async () => {

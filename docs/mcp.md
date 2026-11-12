@@ -278,7 +278,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Agents | `agent_list/get/spawn/terminate/logs/audit` |
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
-| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs`, `project_rollup`, `project_history`, `project_policy_effective` |
+| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs`, `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -2175,13 +2175,14 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 | `project_set_arcs` | write | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |
+| `project_timeline` | read | `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (arc id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one arc id or `none`, unpaged), `limit`, `cursor` |
 | `project_policy_effective` | read | `name` (required), `automaton` (optional top tier) |
 | `project_alias_delete` | write | `name` (required); the directory is not touched |
 
 Arc objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
 `automation_id` is required and must be unique within the project; an empty state means `planned`.
 
-`project_rollup` and `project_history` need the autonomous read capability and the
+`project_rollup`, `project_history` and `project_timeline` need the autonomous read capability and the
 two write tools need the autonomous write capability. Costs in the roll-up are
 usage points, never API dollars. `weekly_share`, `branch_retention_days` and
 `major_trigger` are stored and shown; the scheduler, the worktree cleanup and the

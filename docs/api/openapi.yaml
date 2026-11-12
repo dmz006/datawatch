@@ -9344,6 +9344,63 @@ paths:
         "400": {description: Bad limit or cursor}
         "404": {description: Unknown project}
         "503": {description: Automations not available}
+  /api/projects/{name}/timeline:
+    get:
+      summary: Project timeline with first and last time per arc, Automaton and task
+      description: |
+        Returns one level of the project's timeline at a time so a client does not
+        fetch every task up front. `level=arcs` (default) gives one row per arc
+        spanning the earliest to the latest activity of its Automata and their
+        tasks, plus a row of kind `unassigned` for Automata no arc holds (matched
+        by project directory only as a fallback). `level=automata` lists Automata
+        under `parent` (an arc id, or `none` for Automata with no arc).
+        `level=tasks` lists the tasks of the Automaton named by `automaton`.
+        `focus` returns one arc's Automata and their tasks in a single reply.
+        Work still running has `last` null and `running` true. An arc with no
+        Automata or no timestamps has `first` and `last` null.
+      operationId: projectsTimeline
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: level, in: query, required: false, schema: {type: string, enum: [arcs, automata, tasks], default: arcs}, description: "Which level to return"}
+        - {name: parent, in: query, required: false, schema: {type: string}, description: "level=automata: arc id, or the value none for Automata with no arc"}
+        - {name: automaton, in: query, required: false, schema: {type: string}, description: "level=tasks: the Automaton id"}
+        - {name: focus, in: query, required: false, schema: {type: string}, description: "One arc id (or none): its Automata and tasks in one reply, not paged"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}, description: "Rows per page"}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "next_cursor of the previous page"}
+      responses:
+        "200":
+          description: The timeline rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  generated_at: {type: string, format: date-time}
+                  level: {type: string}
+                  parent: {type: string}
+                  limit: {type: integer}
+                  total: {type: integer}
+                  has_more: {type: boolean}
+                  next_cursor: {type: string}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [arc, automaton, task, unassigned]}
+                        id: {type: string}
+                        title: {type: string}
+                        state: {type: string}
+                        first: {type: string, format: date-time, nullable: true}
+                        last: {type: string, format: date-time, nullable: true}
+                        running: {type: boolean}
+                        has_children: {type: boolean}
+                        children_count: {type: integer}
+        "400": {description: Bad level, limit, cursor, or missing automaton}
+        "404": {description: Unknown project, arc or Automaton}
+        "503": {description: Automations not available}
   /api/projects/{name}/policy/effective:
     get:
       summary: Effective policy for one project

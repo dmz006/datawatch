@@ -68,37 +68,52 @@ function page(sb, roll = ROLLUP, sub = 'overview') {
   return sb._projectPageHTML(FULL, roll, '', hist());
 }
 
-function svgOf(html) {
-  const m = /<svg class="project-gantt-svg"[\s\S]*?<\/svg>/.exec(html);
-  assert.ok(m, 'the Gantt SVG is drawn');
-  return m[0];
+// seedGantt gives the selected project a Gantt state with two arc rows, as if
+// the timeline's first page had arrived.
+function seedGantt(sb) {
+  const now = Date.now();
+  const rows = [
+    { kind: 'arc', id: 'auto-a', title: 'Login', state: 'done', first: iso(now - 5 * DAY), last: iso(now - 3 * DAY), running: false, has_children: true, children_count: 1 },
+    { kind: 'arc', id: 'auto-b', title: 'Cart', state: 'active', first: iso(now - 2 * DAY), last: null, running: true, has_children: true, children_count: 1 },
+  ];
+  vm.runInContext(`_projectsState.selected = 'acme'; _projectsState.gantt = { name: 'acme', rows: ${JSON.stringify(rows)}, next: '', error: '', loading: false, kids: {}, preset: 'all', view: null, expanded: {} }`, sb);
+}
+
+function chartOf(html) {
+  const i = html.indexOf('<div class="project-gantt-scroll">');
+  assert.ok(i >= 0, 'the Gantt chart is drawn');
+  const j = html.indexOf('id="projectSection-', i);
+  return html.slice(i, j < 0 ? undefined : j);
 }
 
 // ---- size cap (inside the Gantt sub-tab) ----
 
-test('the Gantt SVG is capped by a class rule and carries no viewport-relative unit', () => {
+test('the Gantt chart is capped by a class rule and carries no viewport-relative unit', () => {
   const { sb } = load();
-  const svg = svgOf(page(sb, ROLLUP, 'gantt'));
-  assert.ok((svg.match(/<rect /g) || []).length >= 2, 'at least two bars');
-  assert.match(svg, /^<svg class="project-gantt-svg"/);
+  seedGantt(sb);
+  const chart = chartOf(page(sb, ROLLUP, 'gantt'));
+  assert.ok((chart.match(/class="project-gantt-bar/g) || []).length >= 2, 'at least two bars');
+  assert.match(chart, /^<div class="project-gantt-scroll">/);
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  const rule = /\.project-gantt-svg\s*\{([^}]*)\}/.exec(css);
-  assert.ok(rule, 'a .project-gantt-svg rule exists in style.css');
+  const rule = /\.project-gantt-chart\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'a .project-gantt-chart rule exists in style.css');
   const mw = /max-width:\s*(\d+)px/.exec(rule[1]);
-  assert.ok(mw && Number(mw[1]) > 0, 'the rule sets a fixed pixel max-width');
+  assert.ok(mw && Number(mw[1]) === 720, 'the rule sets the 720px max-width');
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(rule[1]), 'the rule has no viewport-relative unit');
-  assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(svg), 'the SVG markup has no viewport-relative unit');
-  const section = page(sb, ROLLUP, 'gantt').match(/id="projectGantt"[\s\S]*?<\/svg>/)[0];
+  assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(chart), 'the chart markup has no viewport-relative unit');
+  const section = page(sb, ROLLUP, 'gantt').match(/id="projectGantt"[\s\S]*?project-gantt-chart/)[0];
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(section), 'the Gantt block has no viewport-relative unit');
 });
 
-test('SVG font sizes are fixed numbers', () => {
-  const { sb } = load();
-  const svg = svgOf(page(sb, ROLLUP, 'gantt'));
-  const sizes = svg.match(/font-size="[^"]*"/g) || [];
-  assert.ok(sizes.length >= 3, 'text elements carry font-size');
-  for (const s of sizes) assert.match(s, /^font-size="\d+(\.\d+)?"$/, s + ' is a plain number');
-  assert.doesNotMatch(svg, /font-size:/, 'no inline font-size style');
+test('Gantt text sizes are fixed pixels in style.css and the labels are sticky', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  for (const cls of ['project-gantt-label', 'project-gantt-tick', 'project-gantt-now', 'project-gantt-planned']) {
+    const rule = new RegExp('\\.' + cls + '\\s*\\{([^}]*)\\}').exec(css);
+    assert.ok(rule, cls + ' has a rule');
+    const fs1 = /font-size:\s*([^;]+);/.exec(rule[1]);
+    assert.ok(fs1 && /^\d+(\.\d+)?px$/.test(fs1[1].trim()), cls + ' font-size is plain px');
+  }
+  assert.match(css, /\.project-gantt-label\s*\{[^}]*position:\s*sticky;\s*left:\s*0/);
 });
 
 // ---- order ----

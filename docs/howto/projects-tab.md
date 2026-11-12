@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history]
+  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline]
 exec_steps:
   - tool: project_list
     description: List the registered projects. Each entry carries its directory, its default backend and its stored policy. Read-only
@@ -14,6 +14,10 @@ exec_steps:
   - tool: project_history
     description: Read one project's history, newest first, one page at a time. Finished and archived Automata, daily progress and Gantt rows. Read-only
     args: {name: core-api, limit: 20}
+    read_only: true
+  - tool: project_timeline
+    description: Read when each arc, Automaton and task of one project started and finished, one level at a time (arcs by default). Work still running has no last time. Read-only
+    args: {name: core-api, level: arcs}
     read_only: true
   - tool: project_policy_effective
     description: Read the effective policy of one project and the tier that supplies each setting. Read-only
@@ -31,7 +35,7 @@ exec_steps:
 
 The **Projects** sub-tab is where you look at one project as a whole. It gathers the
 project's arcs (the ordered Automations the project works through), the Automata
-and sessions under each arc, progress in points, a Gantt of recent work, the
+and sessions under each arc, progress in points, an expandable Gantt timeline with a focus view per Automation, the
 finished history, the policy and merge pipeline that apply to it, and the events
 that belong to it. Use it to answer "where does this project stand, what is next,
 and what did it cost" without opening each Automation.
@@ -225,7 +229,7 @@ are spread across them, one page sub-tab at a time.
 |---|---|---|
 | Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days |
 | Arcs | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
-| Gantt | Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
+| Gantt | Gantt | One expandable timeline. It opens with one row per arc and a bar from the arc's first to its last task, coloured by state; work still running is drawn to now and reads "now". Click a row's arrow to open the Automata under the arc, and an Automaton's arrow to open its tasks; an arc with no activity yet reads **Planned** with no bar. Automata that no arc holds sit in the **Automata with no arc** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; the mouse wheel zooms and a drag pans the chart. Each arc row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
 | Unassigned | Unassigned Automata | Automata of this project that no arc holds |
 | History | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Policy | Effective policy, Merge pipeline | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section; then the read-only merge pipeline, with an **Open settings** link at the Merge pipeline group |
@@ -242,6 +246,16 @@ Collapsing only changes what is shown. On a wide browser the Gantt is capped at
 720 pixels wide, left-aligned, so its text keeps its authored size instead of
 growing with the window; on a phone it is unchanged. The cards cannot be hidden
 or reordered.
+
+**For the operator to review (timeline):** the operator decision of 2026-11-12 (rebuild
+the Gantt as one expandable timeline with a focus view per Automation) is now in the
+web app. Which rows are expanded is remembered per project in this browser's local
+storage (key `cs_projects_gantt_expanded_<project>`), like the section state below, and has
+no REST, MCP, CLI, chat or configuration form; a browser that blocks storage shows
+everything collapsed. The old fixed 7, 30 and 90 day window and the history Gantt rows in
+the page are gone (the range selector now defaults to **All time**); `GET /api/projects/{name}/history` still returns its `gantt` rows
+for other clients. The mobile apps are not covered by this change and need a parity
+check (see `docs/plans/parity-issues/`).
 
 **For the operator to review:** the remembered open or closed state uses the
 browser's local storage and has no REST, MCP, CLI, chat or configuration form.
@@ -308,7 +322,78 @@ datawatch projects history core-api --limit 20
 
 Each page carries `next_cursor` when there is more. Pass it back with
 `--cursor` to read the next page. The Gantt rows cover every matching Automaton
-and are not paged.
+and are not paged. The web app no longer draws them; it draws the project
+timeline below.
+
+#### The project timeline
+
+The timeline read answers "when did each arc, Automaton and task of this project
+start and finish" without fetching every task up front. It returns one level at a
+time. Ask for the arcs first, then ask only for the rows you open:
+
+```bash
+datawatch projects timeline core-api                                  # arcs
+datawatch projects timeline core-api --level automata --parent <arc-id>
+datawatch projects timeline core-api --level tasks --automaton <automaton-id>
+datawatch projects timeline core-api --focus <arc-id>                 # one arc, everything under it
+```
+
+- **Arcs** (the default): one row per arc, spanning the earliest start to the
+  latest finish of its Automata and their tasks. A row of kind `unassigned`
+  holds Automata that no arc holds (matched by project directory only as a
+  fallback). `--parent none` lists those Automata.
+- **Automata**: the Automata under one arc. **Tasks**: the tasks of one
+  Automaton.
+- **Focus**: one arc's Automata and all their tasks in a single reply. It is not
+  paged.
+- Each row has `first` and `last`. Work still running has `last` empty and
+  `running` true, so a client draws it to now. An arc with no Automata or no
+  recorded times has both empty. `has_children` and `children_count` say
+  whether a row can be opened.
+- Levels other than focus are paged: `--limit` (1 to 200, default 50) and
+  `--cursor` with the `next_cursor` of the previous page.
+- Templates are left out. Reading needs the autonomous read capability, and the
+  answer is 503 while Automata are disabled.
+
+The timeline is a pure read. It has no configuration key and stores nothing. It
+never signals, stops or ends a session or an Automaton.
+
+**Which Automata belong to an arc, and to the project.** The explicit project link
+on the Automaton comes first. Matching by project directory is only a fallback,
+used when an Automaton carries no explicit link. An Automaton that no arc holds
+sits in the `unassigned` group.
+
+The same read is available over REST, MCP and chat:
+
+```bash
+curl -s "$DATAWATCH/api/projects/core-api/timeline?level=arcs&limit=50"   # REST
+# MCP: project_timeline {name: core-api, level: arcs}
+# Chat: project timeline core-api level=arcs
+```
+
+Example chat reply (a running arc reads `now`):
+
+```
+core-api timeline (arcs, 2 of 2)
+arc   Core API 2.0     2026-10-02 09:14 → now      active
+arc   Docs refresh     2026-10-20 11:02 → 2026-11-03 16:40   done
+```
+
+REST and MCP return the same rows as JSON (`rows`, with `has_more` and
+`next_cursor` when there is another page).
+
+#### Focus on one Automation
+
+**Focus** opens one Automation's own timeline on a page of its own: every Automaton
+under it with every task, in one read of the timeline with `focus=<id>`, so nothing
+is capped or paged. The range runs from the first task to the last (the header
+reads "First task … – last task …"), with the same presets, wheel zoom and drag pan
+as the Gantt; each Automaton can be collapsed and the state is remembered. An
+Automation with nothing started reads "This Automation has no Automata or tasks yet.
+It is planned." and is not an error. **Back** returns to the project page, or to the
+Automation page when you came from its header. From the Automation page the Focus
+button looks the Automation up in each project in turn and skips projects that do not
+hold it. The page only reads; it stores nothing and sends no write.
 
 ### 8. Move work through the arcs
 
@@ -381,7 +466,9 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `arcs`, `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
 | Switch between Overview, Arcs, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
-| Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
+| Change the range of the Gantt | Gantt header: **All time**, 90, 30 or 7 days; wheel to zoom, drag to pan |
+| Expand or collapse a Gantt row | The arrow at the left of an arc, an Automaton or the **Automata with no arc** group; **Load more** pages a long level |
+| Focus on one Automation | **Focus** on an arc's Gantt row or card, or in the header of the Automation page; **Back** returns |
 | Page through history | **Load more** at the foot of History |
 | Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the **Policy** page sub-tab opens the Automata tab, expands that section and scrolls to it) |
 | Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the **Policy** page sub-tab opens the Automata tab, expands that card and scrolls to it) |
@@ -403,6 +490,7 @@ surfaces below.
 | `PUT /api/projects/{name}/arcs` | Replace the ordered arcs (a bare array or `{"arcs": [...]}`); 404 for an unknown project |
 | `GET /api/projects/{name}/rollup?window=7` | Roll-up: arcs in order, Automata, tasks, points, throughput; `window` 1 to 365 days |
 | `GET /api/projects/{name}/history?limit=50&cursor=…` | History page and Gantt rows |
+| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: first and last time per arc, Automaton and task; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, arc or Automaton |
 | `GET /api/projects/{name}/policy/effective?automaton=<id>` | Effective policy with the tier of each setting |
 | `DELETE /api/projects/{name}` | Remove the alias; the directory is not touched |
 
@@ -433,6 +521,7 @@ capability; a federated peer is checked against the same two.
 | `project_set_arcs` | `name`, `arcs` (required) | Replace the arcs; `[]` clears them |
 | `project_rollup` | `name`; `window` | The roll-up |
 | `project_history` | `name`; `limit`, `cursor` | One history page |
+| `project_timeline` | `name`; `level`, `parent`, `automaton`, `focus`, `limit`, `cursor` | One level of the project timeline (arcs by default) |
 | `project_policy_effective` | `name`; `automaton` | Effective policy with tiers |
 | `project_alias_delete` | `name` | Remove the alias |
 
@@ -463,6 +552,7 @@ Example call, set the arcs:
 | `datawatch projects arcs <name>` | Print the arcs in order |
 | `datawatch projects arcs <name> --set id:priority:state,…` | Replace the arcs; `--set ""` clears them |
 | `datawatch projects history <name> [--limit N] [--cursor …]` | History page |
+| `datawatch projects timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline |
 | `datawatch projects policy …` | Policy verbs; see [project-automation-policy](project-automation-policy.md) |
 | `datawatch projects delete <name>` | Remove the alias; the directory is not touched |
 
@@ -477,6 +567,7 @@ Send these from Signal, Telegram or another connected channel:
 | `project show <name>` | Record fields, one per line; `-` for unset |
 | `project arcs <name>` | Arcs in order |
 | `project progress <name>` | Roll-up: tasks, points and throughput per arc |
+| `project timeline <name> [level=arcs\|automata\|tasks] [parent=<arc>\|none] [automaton=<id>] [focus=<arc>\|none] [limit=<n>] [cursor=<c>]` | One line per row: kind, title, first and last time (`now` while running); says how to continue when more rows exist |
 | `project set <name> <field> <value>` | Set one field: `owner`, `repository`, `default_branch`, `description`, `default_backend`, `major_trigger`, `weekly_share`, `branch_retention_days` |
 | `project policy <name> [automaton]` | Effective policy (see [project-automation-policy](project-automation-policy.md)) |
 

@@ -115,6 +115,7 @@ entries:
   - project_rollup
   - project_set_arcs
   - project_summary
+  - project_timeline
   - project_upsert
   commands:
   - project-summary
@@ -1431,6 +1432,7 @@ entries:
   - /remote/
   - GET /api/projects/{name}/history
   - GET /api/projects/{name}/rollup
+  - GET /api/projects/{name}/timeline
   settings:
   - acme
   - dashboard
