@@ -836,3 +836,19 @@ test('settings_task_max_attempt_seconds and settings_task_no_progress_seconds ex
       'settings_task_no_progress_seconds missing or empty in ' + locale + ' locale');
   }
 });
+
+test('autonomous settings expose archive_grace_minutes as a whole-number field with translations', () => {
+  const field = findField('autonomous', 'autonomous.archive_grace_minutes');
+  assert.ok(field, 'autonomous.archive_grace_minutes missing from autonomous card fields');
+  assert.equal(field.type, 'number');
+  assert.equal(field.min, 0);
+  assert.equal(field.step, 1);
+  assert.equal(field.placeholder, '60');
+  assert.equal(field.labelKey, 'settings_archive_grace_minutes');
+  const en = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
+  for (const loc of LOCALE_LIST) {
+    const b = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, loc + '.json'), 'utf8'));
+    assert.ok(typeof b.settings_archive_grace_minutes === 'string' && b.settings_archive_grace_minutes.length > 0, loc + ' missing key');
+    if (loc !== 'en') assert.notEqual(b.settings_archive_grace_minutes, en.settings_archive_grace_minutes, loc + ' is an English placeholder');
+  }
+});
