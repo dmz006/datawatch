@@ -42,6 +42,10 @@ type PostShipSettings struct {
 	// NotifyTemplate is the notify hook's message body. May contain
 	// {project} and {version}.
 	NotifyTemplate string
+	// WriteThrough is autonomous.plan_records.write_through. When set and
+	// the Runner has a RecordWriter, the registry_row hook records the row
+	// as a plan record and leaves the registry file alone.
+	WriteThrough bool
 }
 
 // PostShipHook is one entry of the post-ship hook list. Exactly one of

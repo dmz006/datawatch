@@ -53,7 +53,7 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	engine.Client = autonomouspkg.NewSupervisorModelClient(amgr, supervisorLoopSessionFn(cfg))
 	jobs := &supervisorloop.ModelJobs{Engine: engine, SettingsFn: settings}
 	amgr.SetSupervisorModelJobs(jobs)
-	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings)
+	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings, srv.PlanRecordStore)
 	steps := autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks)
 	coord.SetSupervisorLoopSteps(steps)
 	if srv != nil {
