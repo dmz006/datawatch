@@ -670,7 +670,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousMerge(), tracked(s.handleAutonomousMerge))
 	mcpSrv.AddTool(s.toolAutonomousSafeToDelete(), tracked(s.handleAutonomousSafeToDelete))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
-	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
+	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork))         // autonomous_uncommitted_work: policy, scope and held tasks
+	mcpSrv.AddTool(s.toolAutonomousPendingItems(), tracked(s.handleAutonomousPendingItems))               // autonomous_pending_items: pending items, policy, file registry, held Automations
+	mcpSrv.AddTool(s.toolAutonomousPendingItemAdd(), tracked(s.handleAutonomousPendingItemAdd))           // autonomous_pending_item_add: record a waiting item
+	mcpSrv.AddTool(s.toolAutonomousPendingItemAttach(), tracked(s.handleAutonomousPendingItemAttach))     // autonomous_pending_item_attach: attach an Automaton to a waiting item
+	mcpSrv.AddTool(s.toolAutonomousPendingItemsRefresh(), tracked(s.handleAutonomousPendingItemsRefresh)) // autonomous_pending_items_refresh: read the file registry now
 	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))
 	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
 	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))

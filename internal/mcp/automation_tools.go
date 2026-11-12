@@ -358,8 +358,9 @@ func (s *Server) handleAutomationSkipMember(_ context.Context, req mcpsdk.CallTo
 }
 
 func (s *Server) toolAutomationInsertMember() mcpsdk.Tool {
-	opts := append(automationControlBase("Insert a PRD as a new member of an Automation. On a draft it lands in the graph at once; on a running Automation it is held until the operator approves it (automation_approve_insert). reason is required."),
-		mcpsdk.WithString("prd_id", mcpsdk.Required(), mcpsdk.Description("The member PRD to insert.")),
+	opts := append(automationControlBase("Insert a new member into an Automation: an Automaton (prd_id) or a pending item (pending_item_id), exactly one of the two. On a draft it lands in the graph at once; on a running Automation it is held until the operator approves it (automation_approve_insert). A pending item member waits at the cursor until an Automaton is attached (autonomous_pending_item_attach). reason is required."),
+		mcpsdk.WithString("prd_id", mcpsdk.Description("The Automaton to insert. Give this or pending_item_id, not both.")),
+		mcpsdk.WithString("pending_item_id", mcpsdk.Description("The pending item to insert (an ID from autonomous_pending_items or autonomous_pending_item_add). Give this or prd_id, not both.")),
 		mcpsdk.WithString("name", mcpsdk.Description("Optional display name for the inserted member.")),
 		mcpsdk.WithBoolean("urgent", mcpsdk.Description("Take the next slot instead of the end of the chain. Only one urgent insert may be pending at a time.")),
 		mcpsdk.WithString("after", mcpsdk.Description("Insert directly after this member ID. Leave empty for the end of the chain; an urgent insert must leave it empty.")),
@@ -371,7 +372,20 @@ func (s *Server) handleAutomationInsertMember(_ context.Context, req mcpsdk.Call
 	if req.GetString("reason", "") == "" {
 		return mcpsdk.NewToolResultText("error: reason is required to insert a member"), nil
 	}
-	member := map[string]any{"prd_id": req.GetString("prd_id", "")}
+	prdID := strings.TrimSpace(req.GetString("prd_id", ""))
+	itemID := strings.TrimSpace(req.GetString("pending_item_id", ""))
+	switch {
+	case prdID != "" && itemID != "":
+		return mcpsdk.NewToolResultText("error: give either prd_id or pending_item_id, not both"), nil
+	case prdID == "" && itemID == "":
+		return mcpsdk.NewToolResultText("error: prd_id or pending_item_id is required to insert a member"), nil
+	}
+	member := map[string]any{}
+	if itemID != "" {
+		member["pending_item_id"] = itemID
+	} else {
+		member["prd_id"] = prdID
+	}
 	if v := req.GetString("name", ""); v != "" {
 		member["name"] = v
 	}

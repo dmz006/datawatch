@@ -175,7 +175,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
-	}, append(verifierPolicyConfigTools(), infraRetryConfigOptions()...)...)...)
+	}, append(append(verifierPolicyConfigTools(), infraRetryConfigOptions()...), pendingItemConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -329,6 +329,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {
 		auto["agent_insert_policy"] = v
+	}
+	// Pending item keys (autonomous.automation.pending_item_policy,
+	// pending_item_auto_resume and the pending_item_source fields). Each value
+	// is checked with config.ValidatePendingItemKey before anything is sent.
+	pendingItem, err := pendingItemConfigArgs(req)
+	if err != nil {
+		return toolError("autonomous_config_set", err), nil
+	}
+	for k, v := range pendingItem {
+		auto[k] = v
 	}
 	if len(auto) > 0 {
 		body["automation"] = auto
