@@ -443,6 +443,7 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 		allowModelSwap                                           bool
 		tlsCAFile, tlsCertFingerprint                            string
 		tlsInsecureSkipVerify                                    bool
+		verifyTLS                                                bool
 	)
 	use := "add <name>"
 	short := "Add a new ComputeNode"
@@ -499,6 +500,7 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 				"tls_ca_file":              tlsCAFile,
 				"tls_cert_fingerprint":     tlsCertFingerprint,
 				"tls_insecure_skip_verify": tlsInsecureSkipVerify,
+				"verify_tls":               verifyTLS,
 			}
 			// The nullable verifier slots are -1 by default, meaning "unset":
 			// omitted from the body so POST leaves them at the node's derived
@@ -560,6 +562,7 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 	cmd.Flags().StringVar(&tlsCAFile, "tls-ca-file", "", "PEM CA bundle trusted in addition to the system roots when connecting to this node over https (update replaces the whole node, so omitting this clears it)")
 	cmd.Flags().StringVar(&tlsCertFingerprint, "tls-cert-fingerprint", "", "SHA-256 fingerprint of the node's leaf certificate, 64 hex chars, colons allowed (update replaces the whole node, so omitting this clears the pin)")
 	cmd.Flags().BoolVar(&tlsInsecureSkipVerify, "tls-insecure-skip-verify", false, "turn certificate checking off for this node; audited and shown in the PWA; cannot be combined with --tls-ca-file or --tls-cert-fingerprint (update replaces the whole node, so omitting this turns checking back on)")
+	cmd.Flags().BoolVar(&verifyTLS, "verify-tls", false, "when set, model pulls to this node verify its certificate against the system roots; default off (update replaces the whole node, so omitting this turns it off)")
 	return cmd
 }
 

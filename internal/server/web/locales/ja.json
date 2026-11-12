@@ -376,6 +376,8 @@
   "compute_tls_cert_fingerprint_ph": "AB:CD:…（16進数64文字）",
   "compute_tls_insecure_skip_verify": "証明書の検証をスキップする（非推奨）",
   "compute_tls_insecure_skip_verify_warn": "このノードの証明書検証はオフになります。ネットワーク経路上の誰でもノードになりすまし、APIキーを含む送信内容を読み取ったり改ざんしたりできます。",
+  "compute_verify_tls": "モデル取得時にTLSを検証する",
+  "compute_verify_tls_help": "オンにすると、このノードへのモデル取得時にシステムのルート証明書でノードの証明書を検証します。登録されるノードは通常、自己署名証明書を使うプライベートネットワーク上にあるため、既定ではオフです。",
   "compute_tls_off_badge": "TLS検証オフ",
   "compute_tls_off_badge_tip": "このノードの証明書検証はオフです。ネットワーク経路上の誰でもノードになりすまし、APIキーを含む送信内容を読み取ったり改ざんしたりできます。代わりにCAファイルまたは固定したフィンガープリントを使用してください。",
   "compute_tls_pinned_badge": "固定済み",

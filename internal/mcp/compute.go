@@ -53,6 +53,7 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 		mcpsdk.WithString("tls_ca_file", mcpsdk.Description("path to a PEM CA bundle trusted in addition to the system roots when connecting to this node over https. Cannot be combined with tls_insecure_skip_verify. Empty = system roots only.")),
 		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("SHA-256 fingerprint of this node's leaf certificate (64 hex chars, colons allowed). Cannot be combined with tls_insecure_skip_verify. Empty = no pin.")),
 		mcpsdk.WithBoolean("tls_insecure_skip_verify", mcpsdk.Description("turn certificate checking off for this node. Default false. Every use is audited and shown in the PWA. Cannot be combined with tls_ca_file or tls_cert_fingerprint.")),
+		mcpsdk.WithBoolean("verify_tls", mcpsdk.Description("when true, model pulls to this node verify its https certificate against the system roots. Default false (off).")),
 	)
 }
 
@@ -80,6 +81,7 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("tls_ca_file", mcpsdk.Description("path to a PEM CA bundle trusted in addition to the system roots when connecting to this node over https. Update replaces the whole node, so omitting this clears it. Cannot be combined with tls_insecure_skip_verify.")),
 		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("SHA-256 fingerprint of this node's leaf certificate (64 hex chars, colons allowed). Update replaces the whole node, so omitting this clears the pin. Cannot be combined with tls_insecure_skip_verify.")),
 		mcpsdk.WithBoolean("tls_insecure_skip_verify", mcpsdk.Description("turn certificate checking off for this node. Default false. Every use is audited and shown in the PWA. Update replaces the whole node, so omitting this resets it to false (verification back on). Cannot be combined with tls_ca_file or tls_cert_fingerprint.")),
+		mcpsdk.WithBoolean("verify_tls", mcpsdk.Description("when true, model pulls to this node verify its https certificate against the system roots. Default false (off). Update replaces the whole node, so omitting this resets it to false.")),
 	)
 }
 
@@ -583,6 +585,7 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		body["tls_cert_fingerprint"] = v
 	}
 	body["tls_insecure_skip_verify"] = req.GetBool("tls_insecure_skip_verify", false)
+	body["verify_tls"] = req.GetBool("verify_tls", false)
 	return body
 }
 

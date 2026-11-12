@@ -4537,6 +4537,7 @@ orchestrator:
 #     # tls_ca_file: /etc/datawatch/ca.pem      # private CA: trust this PEM bundle as well as the system roots
 #     # tls_cert_fingerprint: "AB:CD:..."       # single self-signed cert: pin its SHA-256 leaf fingerprint (64 hex chars, colons optional)
 #     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)
+#     # verify_tls: false                       # true = model pulls to this node verify its certificate against the system roots; default off
 
 # ── Compute pin keeper ──
 # Node drain state (drained, drain_until, drain_reason) is runtime state kept in

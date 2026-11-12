@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.149.0 — Measured headroom check for a verifier cap above 1
+## v9.150.0 — Measured headroom check for a verifier cap above 1
 
 ### Added
 
@@ -17,6 +17,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **On-demand compute-node headroom measurement.** `POST /api/compute/nodes/{name}/headroom` measures a node now and stores the result in the daemon's one headroom store; `GET` reads it back with its age, freshness and the verifier cap it supports. Both are on the MCP tools `compute_node_headroom_measure` and `compute_node_headroom_get`, the CLI `datawatch compute headroom measure|get <node>` and the comm verb `compute headroom [measure] <node>`. A measurement runs only when asked, only on a node that holds no lease (a busy node is refused with 409) and only with a model the model-pull consent allows (403 otherwise).
 - PWA: the compute node detail shows a Headroom card (last measurement, age, fresh or stale, supported cap) with a Measure now button and a Parallel verifiers field with Save; Settings has the two new headroom settings, in all five languages.
 - Docs: the compute nodes how-to, the definitions, the API and MCP mapping, the OpenAPI spec and the testing tracker describe the measured headroom check.
+
+## v9.149.0 — Per-node verify_tls option for model pulls
+
+### Added
+
+- **Per-node `verify_tls` option for model pulls.** A compute node now has a `verify_tls` field. When it is on, model pulls to that node verify the node's HTTPS certificate against the system roots. The default is off, so behavior is unchanged for existing nodes (registered nodes are usually on a private network with self-signed certificates). Because updating a node replaces the whole node, omitting `verify_tls` on an update turns it off.
+- The option is on every surface: the node record and config file, the REST compute node calls (always returned, including an explicit false), the MCP compute node add and update tools, the CLI (`--verify-tls`), the chat compute commands, and a "Verify TLS for model pulls" checkbox on the node form in the web page, in all five languages.
+- Docs: the compute nodes how-to, the definitions entry (Compute node TLS verification), the operations notes and the API reference describe the option.
 
 ## v9.148.1 — Repair a failed Automaton in place and grace-period archiving of cancelled Automata
 

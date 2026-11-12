@@ -356,6 +356,8 @@
   "compute_tls_cert_fingerprint_ph": "AB:CD:… (64 hex characters)",
   "compute_tls_insecure_skip_verify": "Skip certificate verification (not recommended)",
   "compute_tls_insecure_skip_verify_warn": "Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.",
+  "compute_verify_tls": "Verify TLS for model pulls",
+  "compute_verify_tls_help": "When on, model pulls to this node verify its certificate against the system roots. Off by default because registered nodes are usually on a private network with self-signed certificates.",
   "compute_tls_off_badge": "TLS verification OFF",
   "compute_tls_off_badge_tip": "Certificate verification is OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys. Use a CA file or a pinned fingerprint instead.",
   "compute_tls_pinned_badge": "pinned",

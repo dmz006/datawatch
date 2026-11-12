@@ -3246,9 +3246,12 @@ paths:
                     type: integer
                     minimum: 0
                     description: Extra context memory in MB one verifier slot holds; used to size the advice figure from the node's free GPU memory. 0 = none.
+                  verify_tls:
+                    type: boolean
+                    description: When true, model pulls to this node verify its https certificate against the system roots. Always returned, including an explicit false. Default false.
     put:
       summary: Replace one compute node
-      description: 'Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. A verifier_slots above 1 is refused with 409 unless the node''s fresh headroom measurement supports it (the message names the node, the measured free memory and the shortfall). Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).'
+      description: 'Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. A verifier_slots above 1 is refused with 409 unless the node''s fresh headroom measurement supports it (the message names the node, the measured free memory and the shortfall). Omitting verify_tls sets it to false. Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).'
       operationId: computeNodePut
       tags: [Compute]
       parameters:
@@ -3265,6 +3268,7 @@ paths:
                 verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
                 verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
                 verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}
+                verify_tls: {type: boolean, description: When true, model pulls to this node verify its https certificate against the system roots. Default false. Update replaces the whole node so omitting it means false.}
       responses:
         "200":
           description: The updated node record

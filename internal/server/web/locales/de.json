@@ -376,6 +376,8 @@
   "compute_tls_cert_fingerprint_ph": "AB:CD:… (64 Hex-Zeichen)",
   "compute_tls_insecure_skip_verify": "Zertifikatsprüfung überspringen (nicht empfohlen)",
   "compute_tls_insecure_skip_verify_warn": "Die Zertifikatsprüfung ist für diesen Knoten AUS. Jeder im Netzwerkpfad kann ihn imitieren und alles Gesendete lesen oder verändern, auch API-Schlüssel.",
+  "compute_verify_tls": "TLS bei Modell-Downloads prüfen",
+  "compute_verify_tls_help": "Wenn aktiviert, prüfen Modell-Downloads auf diesen Node sein Zertifikat gegen die System-Stammzertifikate. Standardmäßig aus, weil registrierte Nodes meist in einem privaten Netzwerk mit selbstsignierten Zertifikaten laufen.",
   "compute_tls_off_badge": "TLS-Prüfung AUS",
   "compute_tls_off_badge_tip": "Die Zertifikatsprüfung ist für diesen Knoten AUS. Jeder im Netzwerkpfad kann ihn imitieren und alles Gesendete lesen oder verändern, auch API-Schlüssel. Verwenden Sie stattdessen eine CA-Datei oder einen festgelegten Fingerabdruck.",
   "compute_tls_pinned_badge": "festgelegt",

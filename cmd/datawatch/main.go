@@ -123,7 +123,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.149.0"
+var Version = "9.150.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -20101,6 +20101,7 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		VerifierMinFreeMemMB:  c.VerifierMinFreeMemMB,
 		VerifierContextMB:     c.VerifierContextMB,
 		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
+		VerifyTLS:             c.VerifyTLS,
 		TLSCAFile:             c.TLSCAFile,
 		TLSCertFingerprint:    c.TLSCertFingerprint,
 	}

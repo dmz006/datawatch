@@ -10992,6 +10992,7 @@ const DOCS_LINKS_BY_KEY = {
   compute_tls_ca_file: DOCS_DEFINITIONS + '#compute-node-tls-verification',
   compute_tls_cert_fingerprint: DOCS_DEFINITIONS + '#compute-node-tls-verification',
   compute_tls_insecure_skip_verify: DOCS_DEFINITIONS + '#compute-node-tls-verification',
+  compute_verify_tls: DOCS_DEFINITIONS + '#compute-node-tls-verification',
   // Settings -> Comms
   comms: DOCS_DEFINITIONS + '#settings-comms',
   comms_auth: DOCS_DEFINITIONS + '#authentication',
@@ -14708,6 +14709,7 @@ window.openComputeAddPanel = function(existingNode) {
   const initTLSCA = (existingNode && existingNode.tls_ca_file) || '';
   const initTLSFP = (existingNode && existingNode.tls_cert_fingerprint) || '';
   const initTLSSkip = !!(existingNode && existingNode.tls_insecure_skip_verify);
+  const initVerifyTLS = !!(existingNode && existingNode.verify_tls);
   const modal = document.createElement('div');
   modal.id = 'computeAddPanel';
   modal.dataset.editName = isEdit ? existingNode.name : '';
@@ -14757,6 +14759,11 @@ window.openComputeAddPanel = function(existingNode) {
             ${escHtml(t('compute_tls_insecure_skip_verify')||'Skip certificate verification (not recommended)')}${defsLink('compute_tls_insecure_skip_verify')}
           </label>
           <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+            <input id="computeNewVerifyTLS" type="checkbox" ${initVerifyTLS ? 'checked' : ''} />
+            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls')}${defsLink('compute_verify_tls')}
+          </label>
+          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'When on, model pulls to this node verify its certificate against the system roots. Off by default because registered nodes are usually on a private network with self-signed certificates.')}</div>
         </div>
       </div>
       <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
@@ -15019,6 +15026,7 @@ window.computeTestConnectionDraft = function() {
       tls_ca_file: tlsSkip ? '' : ((document.getElementById('computeNewTLSCAFile')||{}).value || '').trim(),
       tls_cert_fingerprint: tlsSkip ? '' : ((document.getElementById('computeNewTLSFingerprint')||{}).value || '').trim(),
       tls_insecure_skip_verify: tlsSkip,
+      verify_tls: !!((document.getElementById('computeNewVerifyTLS')||{}).checked),
     }),
   }).then(() => {
     return apiFetch('/api/compute/nodes/' + encodeURIComponent(probeName) + '/health', { method: 'GET' });
@@ -15128,6 +15136,7 @@ window.computeAddNode = function() {
       tls_ca_file: tlsSkip ? '' : ((document.getElementById('computeNewTLSCAFile')||{}).value || '').trim(),
       tls_cert_fingerprint: tlsSkip ? '' : ((document.getElementById('computeNewTLSFingerprint')||{}).value || '').trim(),
       tls_insecure_skip_verify: tlsSkip,
+      verify_tls: !!((document.getElementById('computeNewVerifyTLS')||{}).checked),
     }),
   }).then(() => {
     showToast(isEdit ? '✓ ComputeNode updated' : '✓ ComputeNode added', 'success', 2000);

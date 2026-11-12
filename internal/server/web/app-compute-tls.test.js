@@ -82,13 +82,15 @@ function renderEditor(node) {
   return rendered.join('\n');
 }
 
-test('the editor renders the certificate verification group with three help links', () => {
+test('the editor renders the certificate verification group with four help links', () => {
   const html = renderEditor(baseNode);
   assert.match(html, /id="computeNewTLSCAFile"/);
   assert.match(html, /id="computeNewTLSFingerprint"/);
   assert.match(html, /id="computeNewTLSSkip" type="checkbox"/);
+  assert.match(html, /id="computeNewVerifyTLS" type="checkbox"/);
+  assert.doesNotMatch(html, /id="computeNewVerifyTLS" type="checkbox"[^>]*checked/);
   const links = html.match(/#docs\/datawatch-definitions\.md#compute-node-tls-verification/g) || [];
-  assert.equal(links.length, 3, 'one help link per field');
+  assert.equal(links.length, 4, 'one help link per field');
   // Warning line is hidden until the skip box is ticked.
   assert.match(html, /id="computeNewTLSSkipWarn" style="display:none;/);
 });
@@ -98,6 +100,11 @@ test('the editor prefills the CA file and fingerprint from the node and locks th
   assert.match(html, /id="computeNewTLSCAFile"[^>]*value="\/etc\/ssl\/lab-ca\.pem"/);
   assert.match(html, /id="computeNewTLSFingerprint"[^>]*value="AB:CD"/);
   assert.match(html, /id="computeNewTLSSkip" type="checkbox"[^>]*disabled/);
+});
+
+test('the editor prefills the verify_tls checkbox from the node', () => {
+  const html = renderEditor({ ...baseNode, verify_tls: true });
+  assert.match(html, /id="computeNewVerifyTLS" type="checkbox"[^>]*checked/);
 });
 
 test('the editor prefills a true opt-out: box ticked, other inputs disabled, warning visible', () => {
