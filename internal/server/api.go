@@ -1255,7 +1255,7 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 }
 
 // SetRestartFunc wires the daemon self-restart function.
-func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
+func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
 
 // SetRestartFuncForce wires the force-aware restart function (the restart
 // guard). It takes precedence over SetRestartFunc's function for /api/restart.
