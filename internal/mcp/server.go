@@ -598,6 +598,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                           // BL6
 	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                           // BL6
 	mcpSrv.AddTool(s.toolCostReport(), tracked(s.handleCostReport))                         // cost report (internal/costreport)
+	mcpSrv.AddTool(s.toolCostCharts(), tracked(s.handleCostCharts))                         // combined usage report (read-only)
 	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                         // BL9
 	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))             // GH#201
 	mcpSrv.AddTool(s.toolSelfConfigAudit(), tracked(s.handleSelfConfigAudit))               // BL412 (self-config audit view)

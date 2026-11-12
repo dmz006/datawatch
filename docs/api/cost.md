@@ -288,6 +288,44 @@ curl -s 'http://127.0.0.1:8929/api/cost/failures'
 curl -s 'http://127.0.0.1:8929/api/cost/failures?group_by=automation&window=8w'
 ```
 
+## Combined usage report (CLI, comm channel, MCP)
+
+The three views above (cost over time, tool usage, retries and failure
+categories) joined into one payload and one text rendering. It has no route of
+its own: each surface reads the three routes above and joins the bodies with
+the same helper, so no figure is computed twice.
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch cost charts [--group-by automaton\|project\|model\|automation] [--window 7d] [--json]`; text by default, the combined payload with `--json` |
+| Comm channel | `cost charts [group_by=<g>] [window=<d>]`, replying with the same text |
+| MCP | `cost_charts` (read-only, `analytics:read`), with optional `group_by` and `window`, returning the combined payload as JSON |
+
+`group_by` and `window` are optional and are forwarded to each route
+unchanged, so each view applies its own default. Cost over time and tool usage
+group by `automaton`, `project` or `model`; retries and failures group by
+`project`, `automation` or `automaton`. A grouping one view does not know
+(`model` for retries and failures, `automation` for the other two) leaves that
+view on its default, and the payload says so in `notes`.
+
+| Field | Meaning |
+|---|---|
+| `group_by`, `window` | The request, as given (absent when not named) |
+| `cost_over_time` | The body of `GET /api/cost/series` |
+| `tool_usage` | The body of `GET /api/cost/tool-usage`; a count per group, never a tool name |
+| `failures` | The body of `GET /api/cost/failures` |
+| `notes` | Where a view did not follow the requested grouping |
+
+A view that fails fails the report, naming the view: a `503` from the
+Automaton manager shows as a retries-and-failures error. The text rendering
+shows one section per view, one line per group, money per billing unit and
+never added across units.
+
+```bash
+datawatch cost charts --group-by project --window 14d
+datawatch cost charts --json | jq '.failures.total_retries'
+```
+
 ---
 
 # Billing profiles (`usage.billing`)

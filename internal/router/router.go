@@ -1480,6 +1480,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleCostCmd(cmd)
 	case CmdCostReport:
 		r.handleCostReportCmd(cmd)
+	case CmdCostCharts:
+		r.handleCostChartsCmd(cmd)
 	case CmdTrace:
 		r.handleTraceCmd(cmd)
 	case CmdCooldown:
