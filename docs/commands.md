@@ -685,7 +685,7 @@ draws the text bars from that same object. See
 **Syntax:**
 ```
 timeline
-timeline project=/home/dmz/projB
+timeline project=/srv/projects/gateway
 timeline automaton=<id>
 timeline kind=bug
 ```
