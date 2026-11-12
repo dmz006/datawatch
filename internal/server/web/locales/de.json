@@ -4848,5 +4848,11 @@
   "branch_refresh_override_default": "Daemon-Einstellung verwenden",
   "branch_refresh_override_on": "Immer aktualisieren",
   "branch_refresh_override_off": "Nie aktualisieren",
-  "branch_refresh_override_saved": "Überschreibung der Branch-Aktualisierung gespeichert"
+  "branch_refresh_override_saved": "Überschreibung der Branch-Aktualisierung gespeichert",
+  "compute_observed_peers_title": "Observed peers with no node",
+  "compute_observed_peers_hint": "These peers report in but have no compute node. Adding one needs an address you enter.",
+  "compute_observed_peer_add": "Add as a compute node",
+  "compute_observed_peer_add_tip": "Open the add form with this peer name filled in. You type the address; nothing is created until you save.",
+  "compute_unanswered_title": "Auto-created nodes that never answered",
+  "compute_unanswered_hint": "For review only. Nothing here is changed or removed automatically."
 }
