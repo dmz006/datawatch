@@ -6882,7 +6882,7 @@ The supervisor kinds ride on passes the daemon already runs, so enabling them ad
 
 One setting feeds them: the capacity-wait threshold is half of `autonomous.capacity_wait_timeout_seconds` (default 4 h, so the event fires after 2 h of waiting); lowering the timeout lowers the threshold with it. The condition and capacity state lives in memory, so after a daemon restart a condition that still holds fires once more on the first pass that sees it.
 
-The kinds come from one in-daemon registry with a description and group per kind; a plugin may register its own kinds and sink types at start-up (reference: [api/autonomous.md](api/autonomous.md#lifecycle-event-kinds)). The registry is listed by REST `GET /api/autonomous/event-kinds`, the MCP tool `autonomous_event_kinds` and the CLI `datawatch autonomous event-kinds [--group G] [--json]`; the PWA pickers still carry a copy of the built-in list.
+The kinds come from one in-daemon registry with a description and group per kind; a plugin may register its own kinds and sink types at start-up (reference: [api/autonomous.md](api/autonomous.md#lifecycle-event-kinds)). The registry is listed by REST `GET /api/autonomous/event-kinds`, the MCP tool `autonomous_event_kinds` the CLI `datawatch autonomous event-kinds [--group G] [--json]` and the comm verb `autonomous event-kinds [group=<g>]`; the PWA pickers still carry a copy of the built-in list.
 
 **Turning it off — by scope:**
 

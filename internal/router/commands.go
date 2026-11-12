@@ -1985,6 +1985,7 @@ audit [actor=x action=y limit=N] query operator audit log
 audit self-config [limit=N]      query self-config audit log: allowed + denied config-write attempts
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
+autonomous event-kinds [group=<g>]   every event kind a subscription can match, by group (* wakes the supervisor by default)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
