@@ -213,31 +213,30 @@ description and whether it is in the default set that wakes the supervisor.
 | REST | `GET /api/autonomous/event-kinds`. |
 | Web UI | the kind checkboxes in **Add subscription** (see the PWA walkthrough below). |
 
-**Preview a filter against the Events log.** Over REST, post the filter to
+**Preview a filter.** Over REST, post the filter to
 `POST /api/autonomous/subscriptions/preview`:
 
 ```sh
 curl -s -X POST "$DATAWATCH/api/autonomous/subscriptions/preview" \
   -H 'Content-Type: application/json' \
-  -d '{"kinds":["retry","error"],"owner":"<automaton-id>"}'
-# {"count":3,"window_hours":24,"sample":[ ...newest matches, at most 20... ]}
+  -d '{"kinds":["task.failed","automaton.stuck_running"],"owner":"<automaton-id>"}'
+# {"count":3,"window_hours":24,"sample":[ ...newest matches, at most 20... ],"lifecycle_since":"2026-11-12T08:00:00Z"}
 ```
 
-The preview stores nothing and changes no subscription. It counts the last 24
-hours of the stream the **Events** tab shows (see
-[Automata events](automata-events.md)), so `kinds` takes that stream's own kinds:
-`watch`, `decision`, `retry`, `check`, `cleanup`, `alert` and `error`. An
-empty list means every kind, and `project` and `owner` narrow to one project or
-one Automaton. It does not apply the notify set.
+The preview stores nothing and changes no subscription. `kinds` takes the
+lifecycle kinds that `GET /api/autonomous/event-kinds` lists, which are the
+ones the picker shows, and also the kinds of the stream the **Events** tab shows
+(see [Automata events](automata-events.md)): `watch`, `decision`, `retry`,
+`check`, `cleanup`, `alert` and `error`. A kind that is neither is refused with
+a `400` (`unknown kind`). An empty list means every Events log kind, `owner`
+narrows to one Automation or Automaton, and `project` narrows the Events log
+kinds. It does not apply the notify set.
 
-**Review before relying on it.** The preview's kinds are not the lifecycle
-event kinds a subscription filters on. A lifecycle kind such as `task.failed`
-is refused with a `400` (`unknown kind`), and the web form's "Would have
-matched in the last day" line posts the lifecycle kinds you tick, so it reports
-`Preview unavailable` for them instead of a count. Treat the count as unavailable
-for lifecycle kinds until the preview and the picker use the same vocabulary;
-saving a subscription is not affected. There is no CLI, comm or MCP form of the
-preview.
+**Review before relying on it.** A lifecycle kind is counted from the
+lifecycle events this daemon has recorded in memory since it started, and
+`lifecycle_since` in the answer says when that recording began. Right after a
+restart a low count may mean a short history rather than a quiet day. There is
+no CLI, comm or MCP form of the preview.
 
 ## Test a subscription before you rely on it
 
@@ -277,7 +276,7 @@ Open an Automaton in the PWA (**Automata** → the Automaton) and choose the
    tick and is skipped while nothing is ticked. A refused or failed preview
    shows "Preview unavailable" and never blocks saving. Read
    [Find the kinds and preview a filter](#find-the-kinds-and-preview-a-filter)
-   before trusting the count: the preview does not yet accept lifecycle kinds.
+   before trusting the count: it covers the events since the daemon started.
    The **?** beside "Event kinds" opens this page.
    Choose the scope (this Automaton or all automata), an optional task id,
    the sink type and its target, and optionally send-input text (session
@@ -695,19 +694,29 @@ their own schedule, and when the peer comes back the exchange resumes with no
 daemon restart. Events dropped while it was away are not replayed: forwarding
 has no outbox.
 
-### Reading a peer's events (not switched on by any setting yet)
+### Reading a peer's events
 
-The daemon code also has the opposite direction: a **peer event subscription**
-that reads a registered peer's pending-events queue
-(`GET /api/autonomous/events`) with that peer's stored bearer token and feeds
-each event into local dispatch with `peer` set. Nothing in this release starts
-it: there is no setting, command, REST route, MCP tool or PWA control for it, so
-you cannot turn it on yet. The glossary entry and the rules it will follow
-(needs `autonomous:read` on the peer, lifecycle events only, no echo loops) are
-in [datawatch-definitions.md](../datawatch-definitions.md#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
-and [operations.md](../operations.md#outbound-webhook-sink-and-peer-forwarding-ships-disabled).
-Until it is wired, use peer forwarding (the sending peer pushes) to get a
-peer's events onto this daemon.
+A **peer event subscription** is the opposite direction: this daemon reads a
+registered peer's pending-events queue (`GET /api/autonomous/events`) with that
+peer's stored bearer token and feeds each event into local dispatch with `peer`
+set. Turn on `autonomous.notify.forwarding.enabled` and
+`autonomous.notify.forwarding.peer_events`, then start a read:
+
+```sh
+datawatch autonomous peer-events start hub-east ops   # peer name, queue name
+datawatch autonomous peer-events status
+datawatch autonomous peer-events stop hub-east
+```
+
+The peer needs `autonomous:read` for this daemon and a queue filled by an
+`mcp_queue` subscription there. The same controls exist as the `autonomous
+peer-events` comm verb, `/api/autonomous/peer-events` on REST and the
+`autonomous_peer_events` and `autonomous_peer_events_control` MCP tools. The
+rules it follows (lifecycle events only, no echo loops) are in
+[datawatch-definitions.md](../datawatch-definitions.md#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
+and [operations.md](../operations.md#outbound-webhook-sink-and-peer-forwarding-ships-disabled);
+the whole walkthrough is in
+[The event-driven supervisor](automaton-event-driven-supervisor.md#reading-a-peers-events-the-pull-direction).
 
 ## Storage, audit & restart behavior
 

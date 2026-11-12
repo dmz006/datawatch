@@ -804,6 +804,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))
 	mcpSrv.AddTool(s.toolSupervisorLoopEval(), tracked(s.handleSupervisorLoopEval))
 	mcpSrv.AddTool(s.toolSupervisorLoopStats(), tracked(s.handleSupervisorLoopStats))
+	mcpSrv.AddTool(s.toolAutonomousPeerEvents(), tracked(s.handleAutonomousPeerEvents))
+	mcpSrv.AddTool(s.toolAutonomousPeerEventsControl(), tracked(s.handleAutonomousPeerEventsControl))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))

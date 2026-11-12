@@ -46,6 +46,7 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/supervisorloop"
 	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 	"github.com/dmz006/datawatch/internal/trace"
@@ -497,6 +498,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/questions/quality", api.handleQuestionQuality) // effective question quality policy (exact path wins over the /api/questions/ subtree)
 	apiMux.HandleFunc("/api/questions/", api.handleQuestions)
 	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
+	apiMux.HandleFunc("/api/autonomous/peer-events", api.handleAutonomousPeerEvents)  // peer event subscriber: read
+	apiMux.HandleFunc("/api/autonomous/peer-events/", api.handleAutonomousPeerEvents) // peer event subscriber: start, stop
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
@@ -1313,6 +1316,13 @@ func (s *HTTPServer) SetQuestions(api QuestionsAPI) {
 func (s *HTTPServer) SetSupervisorLoop(c SupervisorLoopControl) {
 	s.api.SetSupervisorLoop(c)
 }
+
+// SetPeerEvents wires the peer event subscriber control behind
+// /api/autonomous/peer-events.
+func (s *HTTPServer) SetPeerEvents(c PeerEventControl) { s.api.SetPeerEvents(c) }
+
+// SetSupervisorWake wires the record behind GET /api/supervisor-loop/wake.
+func (s *HTTPServer) SetSupervisorWake(r *supervisorloop.WakeRecord) { s.api.SetSupervisorWake(r) }
 
 // SetAutonomousEvents wires the pending-events queue behind the mcp_queue
 // subscription sink for /api/autonomous/events. Nil disables the endpoint

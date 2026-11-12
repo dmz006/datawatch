@@ -304,6 +304,7 @@ Subcommands:
 		newAutonomousSubscriptionTestCmd(),
 		newAutonomousEventsCmd(),
 		newAutonomousEventLogCmd(),
+		newAutonomousPeerEventsCmd(),
 		newAutonomousEventKindsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
 		newAutonomousTriageCmd(),
@@ -1985,6 +1986,9 @@ Valid kinds:
   task.session_cleared task.session_started task.verifying task.waiting_capacity
   scope_warning guardrail_warn
   question.answered question.withdrawn
+  automaton.merge_ready automaton.stuck_running automaton.tasks_done_or_cancelled
+  burn_guard.rung_changed judge.verdict_block judge.verdict_pass judge.verdict_warn
+  task.capacity_wait_too_long task.final_gate_failed
 
 Opt-in kinds (off by default, list them to turn them on):
   task.session_started task.session_cleared scope_warning guardrail_warn

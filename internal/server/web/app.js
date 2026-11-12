@@ -19234,6 +19234,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.notify.webhook.max_body_bytes', label: 'Webhook payload cap (bytes, 0 = 65536)', labelKey: 'settings_notify_webhook_max_body_bytes', type: 'number', placeholder: '65536' },
     { key: 'autonomous.notify.webhook.signature_tolerance_seconds', label: 'Webhook replay window for receivers (sec, 0 = 300)', labelKey: 'settings_notify_webhook_signature_tolerance', type: 'number', placeholder: '300' },
     { key: 'autonomous.notify.forwarding.enabled', label: 'Peer forwarding of lifecycle events: enabled', labelKey: 'settings_notify_forwarding_enabled', helpKey: 'settings_notify_forwarding_enabled_help', type: 'toggle' },
+    { key: 'autonomous.notify.forwarding.peer_events', label: 'Read a peer\'s lifecycle events (peer event subscriber)', type: 'toggle' },
     { key: 'autonomous.notify.forwarding.max_hops', label: 'Forwarding hop cap (0 = 3)', labelKey: 'settings_notify_forwarding_max_hops', type: 'number', placeholder: '3' },
     { key: 'autonomous.notify.forwarding.max_attempts', label: 'Forwarding attempts per event (0 = 5)', labelKey: 'settings_notify_forwarding_max_attempts', type: 'number', placeholder: '5' },
     { key: 'autonomous.notify.forwarding.backoff_seconds', label: 'Forwarding retry delays (sec, comma-separated)', labelKey: 'settings_notify_forwarding_backoff_seconds', type: 'text', placeholder: '1, 4, 16, 64', csv: true },

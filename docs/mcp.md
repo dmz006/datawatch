@@ -269,7 +269,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set`, `usage_autolanes_status` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
-| Lifecycle subscriptions | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`, `autonomous_event_kinds` |
+| Lifecycle subscriptions | `autonomous_peer_events`, `autonomous_peer_events_control`, `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`, `autonomous_event_kinds` |
 | Search before create | `autonomous_overlap_search` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -933,6 +933,8 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   `subscription-update` takes the same flags as `subscribe` and replaces the configuration; unlike `subscribe`, `--task` does not imply `--one-shot`. From a comm channel: `autonomous subscription-update <id> key=value...` (keys `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`; unnamed fields keep their stored value) and `autonomous subscription-test <id>`. A channel can only update or test subscriptions it owns; any other id gets the same not-found answer.
 
 - **`autonomous_events_pending`** — poll the pending lifecycle events of a named queue, for a generic MCP client that cannot receive pushes. Create the queue by subscribing with `autonomous_subscribe` using `sink_type` `mcp_queue` and `sink_target` set to the queue name (letters, digits and `. _ : -`); matching events then accumulate there, bounded per queue (`autonomous.notify.pending_events_max`, default 500).
+- **`autonomous_peer_events`** — read the peer event subscriber: `{"enabled":bool,"running":[peer names]}`, where `enabled` is `autonomous.notify.forwarding.peer_events`. Takes no arguments; any argument is refused. Read-only. Returns the body of `GET /api/autonomous/peer-events`.
+- **`autonomous_peer_events_control`** — start or stop reading a federation peer's lifecycle events into this daemon's local dispatch. `action` (`start` or `stop`) and `peer` are required; `start` also needs `queue` (the peer's pending-events queue) and takes an optional `since` cursor. Start needs `autonomous.notify.forwarding.enabled` and `autonomous.notify.forwarding.peer_events` both true and a peer that grants `autonomous:read`; otherwise it is refused with the reason. The read lasts until stopped or the daemon restarts. Calls `POST /api/autonomous/peer-events/start` or `/stop`.
 
   | Parameter | Required | Description |
   |---|---|---|

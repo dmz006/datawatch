@@ -177,6 +177,8 @@ func applyLifecycleNotifyKey(n *config.AutonomousNotifyConfig, key string, v int
 		}
 	case "autonomous.notify.forwarding.enabled":
 		n.Forwarding.Enabled = toBool(v)
+	case "autonomous.notify.forwarding.peer_events":
+		n.Forwarding.PeerEvents = toBool(v)
 	case "autonomous.notify.forwarding.backoff_seconds":
 		if list, err := notifyBackoffList(v); err == nil {
 			n.Forwarding.BackoffSeconds = list
@@ -234,6 +236,7 @@ func webhookNotifySurface(w config.AutonomousNotifyWebhookConfig) map[string]int
 func forwardingNotifySurface(f config.AutonomousNotifyForwardingConfig) map[string]interface{} {
 	return map[string]interface{}{
 		"enabled":                 f.Enabled,
+		"peer_events":             f.PeerEvents,
 		"max_hops":                f.EffectiveMaxHops(),
 		"max_attempts":            f.EffectiveMaxAttempts(),
 		"backoff_seconds":         f.EffectiveBackoffSeconds(),

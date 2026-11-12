@@ -85,6 +85,8 @@ autonomous_merge_pipeline_set_record
 autonomous_merge_pipeline_validate
 autonomous_merge_shadow_status
 autonomous_overlap_search
+autonomous_peer_events
+autonomous_peer_events_control
 autonomous_prd_add_story
 autonomous_prd_add_task
 autonomous_prd_approve

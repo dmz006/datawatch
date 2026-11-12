@@ -5257,7 +5257,8 @@ paths:
         yet seen were evicted from the queue. Requires the `autonomous:read`
         capability. 503 when the daemon runs without the subscription engine.
         A federation peer holding that capability can read this queue; the
-        daemon's peer event subscription does so, though nothing starts it yet.
+        daemon's peer event subscription does so once started with
+        `POST /api/autonomous/peer-events/start`.
       operationId: autonomousEventsPending
       tags: [Autonomous]
       parameters:
@@ -5273,6 +5274,77 @@ paths:
         "400": {description: "Missing queue, or non-numeric since/limit"}
         "403": {description: "Caller lacks the autonomous:read capability"}
         "503": {description: "Pending events queue not wired"}
+  /api/autonomous/peer-events:
+    get:
+      summary: Read the peer event subscriber
+      description: |
+        Whether this daemon reads federation peers' lifecycle events
+        (`autonomous.notify.forwarding.peer_events`) and the peers it is reading
+        right now. Requires the `autonomous:read` capability.
+      operationId: autonomousPeerEventsStatus
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Subscriber state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  running: {type: array, items: {type: string}}
+        "403": {description: "Caller lacks the autonomous:read capability"}
+        "503": {description: "Peer event subscriber not wired"}
+  /api/autonomous/peer-events/start:
+    post:
+      summary: Start reading a federation peer's lifecycle events
+      description: |
+        Starts one reading goroutine for `peer`, which reads the peer's pending-events
+        queue `queue` after the cursor `since` and feeds each lifecycle event into
+        this daemon's local dispatch. Needs `autonomous.notify.forwarding.enabled`
+        and `autonomous.notify.forwarding.peer_events` both true, and a federation
+        peer that grants `autonomous:read`. The read lasts until stopped or the
+        daemon restarts. Requires the `autonomous:write` capability.
+      operationId: autonomousPeerEventsStart
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [peer, queue]
+              properties:
+                peer: {type: string}
+                queue: {type: string}
+                since: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200": {description: "Started: {peer, queue, started: true}"}
+        "400": {description: "Bad body or missing peer"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "409": {description: "Peer event reading is off, or the peer is already being read"}
+        "422": {description: "The peer was refused (unknown, not federated, no read capability, no token, bad URL)"}
+        "503": {description: "Peer event subscriber not wired"}
+  /api/autonomous/peer-events/stop:
+    post:
+      summary: Stop reading a federation peer's lifecycle events
+      description: Ends the reading goroutine of `peer`. `stopped` is false when none was running. Requires the `autonomous:write` capability.
+      operationId: autonomousPeerEventsStop
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [peer]
+              properties:
+                peer: {type: string}
+      responses:
+        "200": {description: "{peer, stopped}"}
+        "400": {description: "Bad body or missing peer"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "503": {description: "Peer event subscriber not wired"}
   /api/autonomous/event-kinds:
     get:
       summary: List every lifecycle event kind, grouped
@@ -5311,14 +5383,16 @@ paths:
     post:
       summary: Preview what a filter would have matched in the last day
       description: |
-        Counts what a filter matches in the last 24 hours of the Events log and
-        returns the newest matches. Reads only; nothing is stored. `kinds` are
-        the Events log's own kinds (`watch`, `decision`, `retry`, `check`,
-        `cleanup`, `alert`, `error`), not the lifecycle event kinds listed by
-        `GET /api/autonomous/event-kinds`; an empty list matches every kind and
-        any other kind is a 400. `project` and `owner` match exactly (an empty
-        value matches all). The notify set is not applied. Requires the
-        `autonomous:read` capability.
+        Counts what a filter matches in the last 24 hours and returns the newest
+        matches. Reads only; nothing is stored. `kinds` may be Events log kinds
+        (`watch`, `decision`, `retry`, `check`, `cleanup`, `alert`, `error`), counted
+        from the Events log, or lifecycle kinds listed by
+        `GET /api/autonomous/event-kinds`, counted from the lifecycle events this
+        daemon recorded since it started (`lifecycle_since` says when recording
+        began); an empty list matches every Events log kind and any other kind is a
+        400. `project` and `owner` match exactly (an empty value matches all);
+        `project` narrows the Events log kinds only. The notify set is not applied.
+        Requires the `autonomous:read` capability.
       operationId: autonomousSubscriptionPreview
       tags: [Autonomous]
       requestBody:
@@ -5341,6 +5415,7 @@ paths:
                 properties:
                   count: {type: integer}
                   window_hours: {type: integer}
+                  lifecycle_since: {type: string, format: date-time, description: "When lifecycle recording began; present when the request named a lifecycle kind"}
                   sample:
                     type: array
                     maxItems: 20
