@@ -154,9 +154,15 @@ no "all servers" form: while **All servers** is the active entry they are
 deliberately not re-rendered, so they keep showing the single server whose
 data they last rendered (operator decision, 2026-10-07).
 
-The active entry is remembered by the browser: it persists in
-`state.activeServer` for the duration of the session, so the dropdown
-follows you as you navigate between pages. It works with any number of
+The active entry is remembered by the browser, per device (this browser's
+local storage): the dropdown follows you as you navigate between pages, and
+when you reload the page or come back later the same entry is already
+selected — the boot round of data fetches runs against it, so restoring the
+choice costs no second refresh. If a saved peer has since been removed or
+disabled, the PWA starts on **All servers** instead and keeps that, so the
+stale choice does not survive the next reload. (With local storage blocked
+the choice simply lives in memory for the page's lifetime, as it did before
+the choice was saved.) It works with any number of
 registered peers — one native entry list, not a chip row, so a roster of
 two or of two hundred is the same control, with long names truncating to an
 ellipsis instead of wrapping the header. Being a native selection control,
