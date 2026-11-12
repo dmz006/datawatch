@@ -19,9 +19,9 @@ const TRANSLATED = LANGS.filter(l => l !== 'en');
 // English on purpose. Anything else identical to English is a missing
 // translation.
 const SAME_IN_LANGUAGE = {
-  de: ['projects_page_repository', 'projects_page_arcs'],
+  de: ['projects_page_repository', 'projects_page_arcs', 'projects_manage_col_name', 'projects_manage_field_name'],
   es: [],
-  fr: ['projects_field_description', 'projects_page_arcs', 'projects_page_points'],
+  fr: ['projects_field_description', 'projects_page_arcs', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description'],
   ja: [],
 };
 
