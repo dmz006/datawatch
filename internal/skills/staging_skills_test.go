@@ -175,7 +175,7 @@ func TestStagingLeakCheckCatchesBadContent(t *testing.T) {
 		"version string":     "added in v" + "1.2.3",
 		"semantic number":    "needs 4.5.6 or later",
 		"private ipv4 10":    "host " + "10." + "0.0.5",
-		"private ipv4 192":   "host " + "192.168." + "1.1",
+		"private ipv4 192":   "host " + "192" + ".168." + "1.1",
 		"private ipv4 172":   "host " + "172.16." + "0.1",
 		"absolute home path": "file " + "/home/" + "someone/x",
 		"email address":      "mail " + "a" + "@" + "example.com",
