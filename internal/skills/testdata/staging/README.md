@@ -15,3 +15,7 @@ Each subfolder is one skill and must hold:
 
 The staging tests in `internal/skills/staging_skills_test.go` check the
 format and scan every file for content that must not leave the project.
+
+Currently staged: `session-lifecycle` and `durable-session-notes`. The gap
+ranking report that would name further skills is not in the repository, so no
+other skills have been added; the notes are recorded in `session-lifecycle/USAGE.md`.
