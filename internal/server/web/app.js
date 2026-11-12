@@ -27301,6 +27301,8 @@ const _dash = {
   _smokeFetching: false,
   _console: null,           // cached GET /api/dashboard/console payload (operator console cards)
   _consoleFetching: false,  // guard against concurrent console fetches
+  _arc: null,               // cached GET /api/dashboard/arc payload (arc view card)
+  _arcFetching: false,      // guard against concurrent arc fetches
   _smokePollMs: 2500,      // fast poll during active run
   _featPumpAt: 0,          // 2026-11-02 dashboard card audit: last pump time
   // BL403 Phase 4 — plugin widget cards
@@ -46345,6 +46347,12 @@ function _dashLoop(ts) {
     _dashFetchConsole();
   }
 
+  // Arc view: GET /api/dashboard/arc on the same ~30s tick, only while the
+  // board carries the card (it is opt-in, not part of the default layout).
+  if (_dash._frameCount % 900 === 0 && !_dash._arcFetching && document.getElementById('dashArcCard')) {
+    _dashFetchArc();
+  }
+
   // Fetch heatmap data every ~60s
   if ((_dash._frameCount === 1 || _dash._frameCount % 1800 === 0) && !_dash._heatmapFetching) {
     _dash._heatmapFetching = true;
@@ -46839,12 +46847,218 @@ function _dashConsoleDef(spec) {
   };
 }
 
+// ── Arc view (GET /api/dashboard/arc) ───────────────────────────────────
+// The arc is one Automation shown as its stages in the order they run
+// (bugs, features, final), each with a progress bar. Maintenance work is a
+// separate lane (counts only, never a stage). A blocked stage is named with
+// the daemon's plain-language reason. Below that: the shared Claude and pi
+// lanes (in flight against the cap, queued work by priority) and the plan
+// usage in points and tokens. Money is never shown: the plan is flat.
+// Every visible string is a t() key (dash_arc_*); the only text that is not
+// a key is data the daemon sends (arc name, reasons). Refresh rides the
+// dashboard loop's ~30s tick (see _dashLoop), so no interval of its own.
+const DASH_ARC_CARD_ID = 'arc-view';
+
+// _dashArcNum: a finite number from a payload field, else 0.
+function _dashArcNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// _dashArcFmt: whole numbers grouped for the active UI language; decimals
+// are limited to one place. Falls back to a plain string where Intl or the
+// locale is unavailable.
+function _dashArcFmt(v, decimals) {
+  const n = _dashArcNum(v);
+  const d = decimals || 0;
+  try {
+    const loc = (window._i18n && window._i18n.current) || undefined;
+    return n.toLocaleString(loc, { minimumFractionDigits: d, maximumFractionDigits: d });
+  } catch (e) {
+    return n.toFixed(d);
+  }
+}
+
+// _dashArcPct: a percent clamped to 0..100 for the bar width.
+function _dashArcPct(v) {
+  return Math.max(0, Math.min(100, _dashArcNum(v)));
+}
+
+// _dashArcLabel: a translated name for a known id (stage or lane kind),
+// the raw id (escaped) for an unknown one.
+function _dashArcLabelText(prefix, id) {
+  const key = prefix + String(id || '').replace(/[^a-z_]/g, '');
+  const s = t(key);
+  return s && s !== key ? s : String(id || '');
+}
+function _dashArcLabel(prefix, id) {
+  return escHtml(_dashArcLabelText(prefix, id));
+}
+
+function _dashArcSection(titleKey, inner) {
+  return `<div class="dash-arc-sec"><div class="dash-arc-h">${escHtml(t(titleKey))}</div>${inner}</div>`;
+}
+
+function _dashArcUnavailable(reason) {
+  return `<div class="dash-arc-line dash-arc-reason">${escHtml(reason || t('dash_arc_unavailable'))}</div>`;
+}
+
+function _dashArcBar(pct) {
+  const p = _dashArcPct(pct);
+  return `<div class="dash-arc-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"><div class="dash-arc-fill" style="width:${p}%"></div></div>`;
+}
+
+// _dashArcStagesHTML: the stages in the order the daemon sent them, each
+// with its bar and counts.
+function _dashArcStagesHTML(arc) {
+  if (!arc || !arc.available) return _dashArcUnavailable(arc && arc.reason);
+  const blockedId = arc.blocked_stage ? arc.blocked_stage.stage : '';
+  const rows = (arc.stages || []).map(st => {
+    const total = _dashArcNum(st.total), done = _dashArcNum(st.done);
+    const running = _dashArcNum(st.running), blocked = _dashArcNum(st.blocked);
+    const cls = 'dash-arc-stage' + (st.stage === blockedId || blocked > 0 ? ' dash-arc-stage-blocked' : '');
+    return `<div class="${cls}" data-stage="${escHtml(st.stage)}">
+      <div class="dash-arc-row"><span class="dash-arc-name">${_dashArcLabel('dash_arc_stage_', st.stage)}</span>
+        <span class="dash-arc-count">${escHtml(t('dash_arc_stage_done', [done, total]))} · ${escHtml(_dashArcFmt(st.percent, 1))}%</span></div>
+      ${_dashArcBar(st.percent)}
+      <div class="dash-arc-line">${escHtml(t('dash_arc_stage_active', [running, blocked]))}</div>
+    </div>`;
+  }).join('');
+  return rows || _dashArcUnavailable(t('dash_arc_no_stages'));
+}
+
+// _dashArcMaintenanceHTML: the maintenance lane, separate from the stages.
+function _dashArcMaintenanceHTML(arc) {
+  const m = arc && arc.available ? arc.maintenance_queue : null;
+  if (!m) return _dashArcUnavailable(arc && arc.available ? t('dash_arc_maintenance_none') : (arc && arc.reason));
+  return `<div class="dash-arc-line">${escHtml(t('dash_arc_maintenance_counts',
+    [_dashArcNum(m.total), _dashArcNum(m.done), _dashArcNum(m.running), _dashArcNum(m.blocked)]))}</div>`;
+}
+
+// _dashArcBlockedHTML: the blocked stage with the daemon's reason, or a
+// plain "nothing blocked" line.
+function _dashArcBlockedHTML(arc) {
+  if (!arc || !arc.available) return _dashArcUnavailable(arc && arc.reason);
+  const b = arc.blocked_stage;
+  if (!b) return `<div class="dash-arc-line">${escHtml(t('dash_arc_blocked_none'))}</div>`;
+  return `<div class="dash-arc-blocked"><div class="dash-arc-name">${escHtml(t('dash_arc_blocked_stage', [_dashArcLabelText('dash_arc_stage_', b.stage)]))}</div>
+    <div class="dash-arc-line dash-arc-reason">${escHtml(b.reason || '')}</div></div>`;
+}
+
+// _dashArcLanesHTML: Claude and pi lanes (in flight / cap) and the queued
+// work by priority, highest priority first within a lane.
+function _dashArcLanesHTML(lanes) {
+  if (!lanes || !lanes.available) return _dashArcUnavailable(lanes && lanes.reason);
+  const rows = (lanes.lanes || []).map(l => {
+    const inflight = _dashArcNum(l.in_flight), cap = _dashArcNum(l.cap);
+    const pct = cap > 0 ? inflight / cap * 100 : 0;
+    return `<div class="dash-arc-lane" data-lane="${escHtml(l.kind)}">
+      <div class="dash-arc-row"><span class="dash-arc-name">${_dashArcLabel('dash_arc_lane_', l.kind)}</span>
+        <span class="dash-arc-count">${escHtml(t('dash_arc_lane_load', [inflight, cap]))}</span></div>
+      ${_dashArcBar(pct)}
+    </div>`;
+  }).join('');
+  const queued = (lanes.queued_by_priority || []).slice().sort((a, b) => {
+    const la = String(a.lane), lb = String(b.lane);
+    if (la !== lb) return la < lb ? -1 : 1;
+    return _dashArcNum(b.priority) - _dashArcNum(a.priority);
+  });
+  const qrows = queued.length
+    ? queued.map(q => `<div class="dash-arc-line" data-queued-lane="${escHtml(q.lane)}">${escHtml(t('dash_arc_queued_row',
+        [_dashArcLabelText('dash_arc_lane_', q.lane), _dashArcNum(q.priority), _dashArcNum(q.count)]))}</div>`).join('')
+    : `<div class="dash-arc-line">${escHtml(t('dash_arc_queued_none'))}</div>`;
+  const note = lanes.reason ? `<div class="dash-arc-line dash-arc-reason">${escHtml(lanes.reason)}</div>` : '';
+  return (rows || _dashArcUnavailable(t('dash_arc_no_lanes'))) +
+    `<div class="dash-arc-h dash-arc-h2">${escHtml(t('dash_arc_queued'))}</div>` + qrows + note;
+}
+
+// _dashArcUsageHTML: plan usage in points (with a bar) and tokens. Points
+// and tokens only — there is no money figure to show.
+function _dashArcUsageHTML(usage) {
+  if (!usage) return _dashArcUnavailable('');
+  let html = '';
+  if (usage.points) {
+    const p = usage.points;
+    html += `<div class="dash-arc-row"><span class="dash-arc-name">${escHtml(t('dash_arc_points'))}</span>
+      <span class="dash-arc-count">${escHtml(t('dash_arc_points_used', [_dashArcFmt(p.used, 1), _dashArcFmt(p.allowance, 1), _dashArcFmt(p.percent, 1)]))}</span></div>
+      ${_dashArcBar(p.percent)}
+      <div class="dash-arc-line">${escHtml(t('dash_arc_points_remaining', [_dashArcFmt(p.remaining, 1)]))}</div>`;
+  } else {
+    html += _dashArcUnavailable(usage.reason);
+  }
+  if (usage.tokens) {
+    const k = usage.tokens;
+    html += `<div class="dash-arc-line dash-arc-tokens">${escHtml(t('dash_arc_tokens',
+      [_dashArcFmt(k.total), _dashArcFmt(k.in), _dashArcFmt(k.out)]))}</div>`;
+  } else if (usage.tokens_reason) {
+    html += _dashArcUnavailable(usage.tokens_reason);
+  }
+  return html;
+}
+
+// _dashArcCardHTML: the whole card from the cached payload.
+function _dashArcCardHTML() {
+  const d = _dash ? _dash._arc : null;
+  if (!d) {
+    return `<div class="dash-arc"><div class="dash-arc-line">${escHtml(t('dash_arc_loading'))}</div></div>`;
+  }
+  if (d.available === false && !(d.arc && d.arc.available)) {
+    // Whole summary off or nothing readable: say why, once.
+    return `<div class="dash-arc">${_dashArcUnavailable(d.reason || (d.arc && d.arc.reason))}</div>`;
+  }
+  const arc = d.arc || {};
+  const head = arc.available && arc.name
+    ? `<div class="dash-arc-title">${escHtml(t('dash_arc_title_named', [arc.name]))}</div>` : '';
+  return `<div class="dash-arc">${head}
+    ${_dashArcSection('dash_arc_stages', _dashArcStagesHTML(arc))}
+    ${_dashArcSection('dash_arc_blocked', _dashArcBlockedHTML(arc))}
+    ${_dashArcSection('dash_arc_maintenance', _dashArcMaintenanceHTML(arc))}
+    ${_dashArcSection('dash_arc_lanes', _dashArcLanesHTML(d.lanes))}
+    ${_dashArcSection('dash_arc_usage', _dashArcUsageHTML(d.usage))}
+  </div>`;
+}
+
+function _dashRenderArc() {
+  const el = document.getElementById('dashArcCard');
+  if (el) el.innerHTML = _dashArcCardHTML();
+}
+
+// _dashFetchArc: GET /api/dashboard/arc, one in flight at a time; a failed
+// fetch keeps the last payload on screen.
+function _dashFetchArc() {
+  if (_dash._arcFetching) return Promise.resolve(_dash._arc || null);
+  _dash._arcFetching = true;
+  return apiFetch('/api/dashboard/arc')
+    .then(d => {
+      _dash._arc = d || null;
+      if (_dash._arc) _dashRenderArc();
+      return _dash._arc;
+    })
+    .catch(() => null)
+    .finally(() => { _dash._arcFetching = false; });
+}
+
+function _dashArcDef() {
+  return {
+    id: DASH_ARC_CARD_ID,
+    label: 'Arc',
+    labelKey: 'dash_arc_card',
+    icon: '◔',
+    defaultCs: 6,
+    body: () => `<div id="dashArcCard" style="height:100%;overflow-y:auto;padding:4px 8px;">${_dashArcCardHTML()}</div>`,
+  };
+}
+
 const DASH_CARD_DEFS = [
   // Operator console cards first (they open the default board, not buried):
   // one number + one line + one acting link each, fed together by the single
   // shared /api/dashboard/console fetch above. Present in the grid and in
   // the Add-Card picker only while dashboard.console.enabled is on.
   ...DASH_CONSOLE_CARDS.map(_dashConsoleDef),
+  // Arc view: the Automation arc as ordered stages, the maintenance lane,
+  // the blocked stage, shared lane usage and plan usage. Opt-in via the
+  // Add-Card picker (not in DASH_DEFAULT_LAYOUT).
+  _dashArcDef(),
   // GH#204 phase 4 — opt-in "Integration status" card: latest posted
   // scheduled-job results, one row per schedule. Listed FIRST in
   // DASH_CARD_DEFS so it sits at the very top of the Add-Card picker
@@ -47178,6 +47392,7 @@ function _dashBuildGrid(layout) {
   // the board carries at least one console card; per-tick refresh then
   // happens in _dashLoop.
   if (kept.some(e => DASH_CONSOLE_IDS.has(e.id))) _dashFetchConsole().catch(() => {});
+  if (kept.some(e => e.id === DASH_ARC_CARD_ID)) _dashFetchArc().catch(() => {});
   _dashRenderIntegrationStatus();
   _dashRenderPluginWidgets();
   _drawGantt();

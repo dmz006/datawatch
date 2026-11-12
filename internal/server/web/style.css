@@ -7328,6 +7328,24 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .dash-console-link { align-self:center; font-size:11px; color:var(--accent); text-decoration:none; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 .dash-console-link:hover { text-decoration:underline; }
 
+/* ── Arc view card (GET /api/dashboard/arc) ──────────────────────────────
+   Ordered stage bars, a blocked-stage callout, the maintenance lane, shared
+   lane usage and plan usage. Theme tokens only, so dark/light is free. */
+.dash-arc { display:flex; flex-direction:column; gap:8px; font-size:11px; }
+.dash-arc-title { font-size:13px; font-weight:700; color:var(--text); }
+.dash-arc-sec { display:flex; flex-direction:column; gap:4px; }
+.dash-arc-h { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text2); }
+.dash-arc-h2 { margin-top:4px; }
+.dash-arc-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.dash-arc-name { font-weight:600; color:var(--text); }
+.dash-arc-count { color:var(--text2); white-space:nowrap; }
+.dash-arc-line { color:var(--text2); }
+.dash-arc-reason { color:var(--text); }
+.dash-arc-bar { height:6px; border-radius:3px; background:var(--bg3, var(--bg2)); overflow:hidden; }
+.dash-arc-fill { height:100%; background:var(--accent); }
+.dash-arc-stage-blocked .dash-arc-fill { background:var(--error, #e5534b); }
+.dash-arc-blocked { border-left:3px solid var(--error, #e5534b); padding-left:6px; }
+
 /* Observer sections below System Statistics: fluid rows, wrapping text and
    40px tap targets at phone widths. The classes carry no rule above the
    breakpoint except the flex-row defaults, so 768px and wider is unchanged. */
