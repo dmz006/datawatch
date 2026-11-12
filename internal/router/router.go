@@ -1437,6 +1437,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleCapacityAdmission(cmd.Text)
 	case CmdProgress:
 		r.handleProgress(cmd.Text)
+	case CmdTimeline:
+		r.handleTimeline(cmd.Text)
 	case CmdConfigure:
 		r.handleConfigureAttributed(cmd, at)
 	case CmdCopy:

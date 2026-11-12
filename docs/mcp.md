@@ -249,7 +249,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
@@ -384,6 +384,23 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Without saved snapshots `points` is empty and `direction` is `unknown`. A `days` value outside 1 to 365 is refused.
+- **`autonomous_timeline`** — read the Automata interval chart: every project that moved, each with its Automata (kind, status), its stages (bands) and its members (bars) with start and end, their blocked and waiting intervals (each with a reason, an end while the stretch is still open), the `today` marker and the projected finish per Automaton with the reason behind it (or why there is none). Times are UTC; the text bars drawn from the same object promise day precision. An Automaton with `end` set is finished — its date is its end, not a projection. An unknown filter value answers an **empty chart, not an error**, so a typo shows up as "no projects". Read-only; returns the same object as `GET /api/autonomous/timeline`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `project` | no | Only the Automata of this project directory |
+  | `automaton` | no | Only this Automaton, by id or title (with it, only that Automaton's chart comes back) |
+  | `stage` | no | Only this stage (story), by id or title |
+  | `kind` | no | Only Automata of this kind: `feature`, `bug` or `other` |
+  | `tag` | no | Only the Automata carrying this tag |
+
+  ```
+  autonomous_timeline()
+  autonomous_timeline(kind="bug")
+  autonomous_timeline(automaton="a1b2c3d4")
+  ```
+
+  Needs the autonomous read capability when called by a federated peer; the route answers 503 while autonomous is disabled.
 - **`autonomous_lane_fill_status`** — read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest planner decisions (newest first) and any idle-lane alerts. A decision that refused an Automaton carries `eligibility_reason` (`stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`); the key is absent when the decision is not a refusal. `lane_counts` gives, for `gpu` and `claude`, the configured count, the effective count the last poll used and its source (`config` or `llm_caps`), and `modes` gives the mode in effect for each lane kind. Read-only; returns the same object as `GET /api/autonomous/lane-fill`.
 
   | Parameter | Required | Description |

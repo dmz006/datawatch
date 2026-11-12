@@ -3297,6 +3297,94 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/timeline:
+    get:
+      summary: Timeline chart
+      description: |
+        Read-only interval chart of the Automata that moved in the last N days:
+        one project at a time, each with its Automata, each with its stages and
+        tasks as bars with their start and end, blocked and waiting intervals with
+        their reason, and the projected finish with the reason behind it. `today`
+        is the server clock; `counts` totals what the chart shows. Optional query
+        `project`, `automaton` (id or title — with it only that Automaton's chart
+        comes back), `stage` (id or title), `kind` (`feature`, `bug` or `other`)
+        and `tag`; every parameter optional, an unknown value comes back as an
+        empty chart, not an error. Changes no state. Needs the autonomous read
+        capability when called by a federated peer.
+      operationId: autonomousTimeline
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: false, description: Only the Automata of this project directory, schema: {type: string}}
+        - {name: automaton, in: query, required: false, description: Only this Automaton, by id or title, schema: {type: string}}
+        - {name: stage, in: query, required: false, description: Only this stage (story), by id or title, schema: {type: string}}
+        - {name: kind, in: query, required: false, description: Only Automata of this kind, schema: {type: string, enum: [feature, bug, other]}}
+        - {name: tag, in: query, required: false, description: Only the Automata carrying this tag, schema: {type: string}}
+      responses:
+        "200":
+          description: The timeline chart. Empty `projects` (an array) when nothing matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  today: {type: string, format: date-time, description: The server clock the chart is drawn against}
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        project: {type: string}
+                        automata:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id: {type: string}
+                              title: {type: string}
+                              project: {type: string}
+                              kind: {type: string, enum: [feature, bug, other]}
+                              tags: {type: array, items: {type: string}}
+                              status: {type: string}
+                              start: {type: string, format: date-time, nullable: true}
+                              end: {type: string, format: date-time, nullable: true, description: Set only when the Automaton is finished}
+                              stages:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    id: {type: string}
+                                    title: {type: string}
+                                    status: {type: string}
+                                    start: {type: string, format: date-time, nullable: true}
+                                    end: {type: string, format: date-time, nullable: true, description: Set only when the stage is done}
+                                    members:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          id: {type: string}
+                                          title: {type: string}
+                                          status: {type: string}
+                                          start: {type: string, format: date-time, nullable: true}
+                                          end: {type: string, format: date-time, nullable: true}
+                                          intervals: {type: array, items: {type: object, description: "kind (blocked or waiting), start, end (null while open), reason"}}
+                              intervals: {type: array, items: {type: object, description: "kind (blocked or waiting), start, end (null while open), reason"}}
+                              projected_finish: {type: string, format: date-time, nullable: true}
+                              projection_reason: {type: string, description: Why the projection is absent or "finished"}
+                  counts:
+                    type: object
+                    properties:
+                      projects: {type: integer}
+                      automata: {type: integer}
+                      stages: {type: integer}
+                      members: {type: integer}
+                      blocked: {type: integer}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/compute/served-models:
     get:
       summary: Models each compute node serves

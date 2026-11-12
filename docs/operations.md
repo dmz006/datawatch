@@ -1343,6 +1343,8 @@ Each key is reachable through all five configuration methods (MCP agents use `co
 | `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
 | `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
 
+**Timeline chart.** The interval chart of the Automata (the Gantt-style view across all projects — every task as a bar with its start and end, blocked and waiting intervals, the today marker and the projected finish) is a pure read: no configuration key, no state, nothing stored when it is read, and therefore nothing to change live and nothing that needs a restart. It needs autonomous enabled (the route answers 503 when autonomous is off) and, for a federated peer, the autonomous read capability. Every surface — `GET /api/autonomous/timeline`, MCP `autonomous_timeline`, `datawatch autonomous timeline` (with `--json` for the raw body), and the `timeline` comm channel command — decodes the exact same object, so the surfaces can never disagree. See [howto/automata-timeline.md](howto/automata-timeline.md).
+
 ### Identity backups
 
 The daemon protects the operator identity (`identity.yaml` in the data

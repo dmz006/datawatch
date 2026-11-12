@@ -2622,6 +2622,10 @@ func (a *API) ProgressSource() ProgressSource { return a.M.Store() }
 // when snapshots are not enabled.
 func (a *API) ProgressSnapshots() *ProgressSnapshotStore { return a.M.ProgressSnapshotStore() }
 
+// TimelineRecords returns every PRD record for the timeline chart — the
+// manager's store, newest first.
+func (a *API) TimelineRecords() []*PRD { return a.M.Store().ListPRDs() }
+
 // ListRepoCIWatchRecords returns the repo CI watch records currently
 // stored, newest first — the whole list for a repository with a clean
 // head is empty.

@@ -781,6 +781,38 @@ autonomous set-story-node <automaton-id> <story-id> clear
 Exactly four words are expected after `autonomous`; anything else is answered with the usage line.
 
 The model routing settings are configuration keys, not commands: `configure autonomous.model_routing.refusal_mode=warn`, and the other `autonomous.model_routing.*` keys. See [howto/model-routing.md](howto/model-routing.md).
+---
+
+### `timeline [project=<dir>] [automaton=<id>] [stage=<id>] [kind=<kind>] [tag=<id>]`
+
+Draw the Automata interval chart: when each member's work ran, what is
+blocked now, and when the rest is projected to finish. Read-only, and built
+from the same object as `GET /api/autonomous/timeline` and the
+`autonomous_timeline` MCP tool; the CLI `datawatch autonomous timeline`
+draws the text bars from that same object. See
+[howto/automata-timeline.md](howto/automata-timeline.md).
+
+**Syntax:**
+```
+timeline
+timeline project=/srv/projects/gateway
+timeline automaton=<id>
+timeline kind=bug
+```
+
+- `project` narrows to the Automata of one project directory; `automaton` to
+  one Automaton by id or title (titles with spaces work on the CLI and the MCP
+  tool; on the comm channel the value must be a single word); `stage` to one
+  stage by id or title; `kind` to the Automata of one kind; `tag` to the
+  Automata carrying that tag. A mistake in the arguments is answered with the
+  usage line and nothing is sent to the daemon.
+
+**What the reply shows:**
+- a header line with the chart date and the counts of projects, Automata,
+  stages, members and blocked members;
+- one line per Automaton: its state and how many of its members are done and
+  blocked, then either the finished date or the projected finish date when
+  the run has enough finished members to pace from.
 
 ---
 
@@ -1385,6 +1417,9 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `standard-tasks [--project <dir-or-alias>] [--json]` | List the standard tasks the decomposer adds to each story — the built-in pack (changelog entry, parity-issue draft, docs set, bounded load-step rule, final gate, version note) with any operator overrides resolved for the `--project`: a table of `ID TITLE KIND ENABLED MODE RUNNER` (`mode` is `llm`, `daemon` or `off`; `runner` is `session`, `script gate`, `daemon` or `none`); `--json` prints the `GET /api/autonomous/standard-tasks[?project=…]` body `{enabled, tasks[]}` untouched. A read: nothing is written. Chat word: `standard tasks` (or `autonomous standard-tasks`) |
 | `progress [--json] [--automation <id>] [--tag <id>]... [--tag-match any\|all] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--tag` is repeatable and `--tag-match all` counts only Automata carrying every selected tag (any one by default). `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id> ...] [tag_match=<any\|all>] [since=<date>] [until=<date>]` |
 | `progress-trend [--days <n>] [--tag <id>]... [--tag-match any\|all] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `--tag` is repeatable and scopes the tags the reply reports. `GET /api/autonomous/progress/trend`; chat: `progress trend [days] [tag=<id> ...] [tag_match=<any\|all>]` |
+| `progress [--json] [--automation <id>] [--tag <id>] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id>] [since=<date>]` |
+| `progress-trend [--days <n>] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `GET /api/autonomous/progress/trend`; chat: `progress trend [days]` |
+| `timeline [--json] [--project <dir>] [--automaton <id>] [--stage <id>] [--kind <kind>] [--tag <id>]` | Draw the Automata timeline as text bars: one line per member, every bar scaled to the same span — `#` work, `X` blocked time, `~` waiting time, `T` the today marker column, `P` the projected finish line; `--json` prints the `GET /api/autonomous/timeline` body untouched; chat: `timeline [project=<dir>] [automaton=<id>] [stage=<id>] [kind=<kind>] [tag=<id>]`. See [howto/automata-timeline.md](howto/automata-timeline.md) |
 | `lane-fill [--limit <n>] [--json]` | Lane fill: each GPU and Claude lane with what it is running or why it is idle, a `Lane counts:` line (effective, configured and source for each lane kind, for example `gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`), a `Mode per lane kind:` line when a kind's mode differs from the base mode, the queued eligible counts and the newest decisions; a decision that refused an Automaton shows its reason code in brackets in front of the reason text, for example `[stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit` (`--limit` 1 to 1000, default 50). `--json` prints the `GET /api/autonomous/lane-fill` body untouched; a bad `--limit` is refused before anything is sent |
 | `merge-shadow status` / `merge-shadow compare <automaton-id>` | Merge shadow (Phase 4, shadow mode): `status` prints the matched / different comparison counts per release size (`patch`, `minor`, `major`, `none`) summed over all projects, or the one line `no merge shadow comparison exists yet`; `compare <automaton-id>` prints that Automaton's comparison — release size, matched / different / not-compared counts, and each difference as `<field> [<severity>]: planned “\<planned\>”, landed “\<landed\>”` — or `no merge shadow comparison exists for Automaton <id>`. Read-only: `GET /api/autonomous/merge/shadow`; chat: `autonomous merge-shadow` (one summary line, or `No merge comparisons yet`). Walkthrough: [howto/merge-shadow.md](howto/merge-shadow.md) |
 | `triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` | Triage records: one row per failed or blocked Automaton — identity, the failed task, first-seen and alarm times, the retry budgets shown as given, the notes, and the alarm threshold in `alert_minutes`. `--status` is `failed` or `blocked` (case-sensitive, refused locally for anything else); an empty list prints its own line. `--json` prints the `GET /api/autonomous/triage` body untouched; chat: `autonomous triage [automation-id]` (one optional positional argument, the automation id) |
@@ -1437,6 +1472,11 @@ Comm channels for the progress figures: `progress [automation=<id>] [tag=<id> ..
 and `progress trend [days] [tag=<id> ...] [tag_match=<any|all>]` (see their
 own section above), and
 `autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
+
+Comm channel for the timeline chart: `timeline [project=<dir>] [automaton=<id>] [stage=<id>] [kind=<kind>] [tag=<id>]`
+(see its own section above) replies with the summary the CLI draws its text
+bars from: the counts line, then one line per Automaton with its done and
+blocked members and its finished or projected date.
 
 Comm channels for lane fill: `autonomous lane-fill [limit]` replies with the same lines as the CLI: one line per lane,
 the lane counts line, the per-kind modes line when a kind's mode differs from the base mode, the queued

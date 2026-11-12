@@ -1,6 +1,6 @@
 // The Automaton detail view's tab strip (.prd-detail-tabs).
 //
-// _renderDetailTabStrip emits eight tabs when the Scan and Rules tabs are
+// _renderDetailTabStrip emits nine tabs when the Scan and Rules tabs are
 // enabled and six otherwise (Trace is always shown); style.css lets the strip scroll horizontally
 // (overflow-x:auto, nowrap, 40px touch-target min-height); the tab swap in
 // switchAutomataDetailTab re-renders the strip and then calls
@@ -42,18 +42,18 @@ function ruleBody(sel) {
   return out;
 }
 
-test('strip emits all eight tabs in order when scan and rules are enabled', () => {
+test('strip emits all nine tabs in order when scan and rules are enabled', () => {
   const sb = load();
   const html = sb._renderDetailTabStrip({ scan_enabled: true, rules_enabled: true }, 'overview');
   assert.deepEqual(tabKeys(html),
-    ['overview', 'stories', 'decisions', 'memory', 'subscriptions', 'scan', 'rules', 'trace']);
+    ['overview', 'stories', 'timeline', 'decisions', 'memory', 'subscriptions', 'scan', 'rules', 'trace']);
   assert.match(html, /class="output-tabs prd-detail-tabs"/);
 });
 
 test('strip omits Scan and Rules when neither is enabled nor has results', () => {
   const sb = load();
   const html = sb._renderDetailTabStrip({}, 'overview');
-  assert.deepEqual(tabKeys(html), ['overview', 'stories', 'decisions', 'memory', 'subscriptions', 'trace']);
+  assert.deepEqual(tabKeys(html), ['overview', 'stories', 'timeline', 'decisions', 'memory', 'subscriptions', 'trace']);
 });
 
 test('strip shows Scan or Rules independently, including from past results', () => {
@@ -133,7 +133,7 @@ test('switchAutomataDetailTab re-renders the strip with the chosen tab active, c
 
   sb.switchAutomataDetailTab('stories');
   assert.equal(vm.runInContext('_automataDetailTab', sb), 'stories');
-  assert.deepEqual(tabKeys(written.strip).length, 8);
+  assert.deepEqual(tabKeys(written.strip).length, 9);
   assert.match(written.strip, /class="output-tab active"[^>]*switchAutomataDetailTab\('stories'\)/);
   assert.doesNotMatch(written.strip, /class="output-tab active"[^>]*switchAutomataDetailTab\('overview'\)/);
   const storiesBody = written.body;

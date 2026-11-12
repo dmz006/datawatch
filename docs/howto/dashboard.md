@@ -26,6 +26,12 @@ per-session deep-dives — all driven by WebSocket, zero polling.
 - **Sprint pipeline** — shown when Automata are running. Horizontal stage
   bar with story nodes, gate rings (pass/fail from guardrail verdicts), and
   stage colours matching story status.
+- **Automaton Timeline card** — the Gantt chart of your Automata across
+  every project: each stage a band, each member a bar with its start and
+  end, blocked/waiting time hatched on top, a solid today line and a dashed
+  projected-finish line, plus five filters (project, automation, stage,
+  kind, tag). A different thing from the 6h Gantt card; see
+  [automata-timeline.md](automata-timeline.md).
 - **Integration status (opt-in)** — one row per schedule: status badge,
   summary and time of the latest posted result, an inline SVG sparkline of
   recent statuses (oldest → newest, capped at 60), and a click-through into
@@ -107,6 +113,7 @@ animation loop.
 - [guardrail-library.md](guardrail-library.md) — guardrail library and profiles
 - [autonomous-planning.md](autonomous-planning.md) — Automata lifecycle
 - [dashboard-arc-view.md](dashboard-arc-view.md) — the opt-in Arc card: stages, maintenance lane, blocked stage, lanes and plan usage in points and tokens
+- [automata-timeline.md](automata-timeline.md) — the Automata interval chart across all projects (not the 6h Gantt card on this dashboard)
 - [api/mobile-surface.md](../api/mobile-surface.md) — WebSocket events for mobile/Wear/Auto
 
 ## See also

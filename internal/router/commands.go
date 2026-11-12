@@ -36,6 +36,7 @@ const (
 	CmdCapacity          CommandType = "capacity"
 	CmdCapacityAdmission CommandType = "capacity-admission"
 	CmdProgress          CommandType = "progress" // progress [automation=..] | progress trend [days]
+	CmdTimeline          CommandType = "timeline" // timeline [project=..] [automaton=..] [stage=..] [kind=..] [tag=..]
 	CmdConfigure         CommandType = "configure"
 	CmdCopy              CommandType = "copy"
 	CmdPrompt            CommandType = "prompt"
@@ -1227,6 +1228,9 @@ func Parse(text string) Command {
 	case lower == "progress" || strings.HasPrefix(lower, "progress "):
 		return Command{Type: CmdProgress, Text: strings.TrimSpace(text[len("progress"):])}
 
+	case lower == "timeline" || strings.HasPrefix(lower, "timeline "):
+		return Command{Type: CmdTimeline, Text: strings.TrimSpace(text[len("timeline"):])}
+
 	case lower == "capacity admission" || strings.HasPrefix(lower, "capacity admission "):
 		return Command{Type: CmdCapacityAdmission, Text: strings.TrimSpace(text[len("capacity admission"):])}
 
@@ -1935,6 +1939,7 @@ capacity                        show Automata capacity pools, holders and wait q
 capacity admission <backend> [node] [model]  would a start be admitted now, queued or moved elsewhere (changes nothing)
 progress [automation=<id>] [project=<id>] [automaton=<id>] [group=<project|automation|automaton>] [tag=<id>] [since=<date>] [until=<date>]  Automata progress: counts, rates, work left, completion range, totals by group
 progress trend [days]           how the completion range moved over the saved daily snapshots
+timeline [project=<dir>] [automaton=<id>] [stage=<id>] [kind=<kind>] [tag=<id>]  the Automata timeline: counts, blocked, projected finish
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
 configure platform_context enabled on|off   turn the platform context on or off

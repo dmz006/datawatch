@@ -30,6 +30,8 @@ Subcommands:
   status                          Loop status (running, active PRDs, queued/running tasks)
   progress [--json] [--automation ID] [--tag ID] [--since DATE] [--until DATE]
                                   Progress counts, rates, work left and the completion range
+  timeline [--json] [--project DIR] [--automaton ID] [--stage ID] [--kind KIND] [--tag ID]
+                                  Draw the Automata timeline as text bars: work, blocked, today, projected finish
   progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
   lane-fill [--limit N] [--json]  Lane fill: each lane, queued eligible counts and the newest decisions
   infra-retries [automaton-id] [--limit N] [--json]
@@ -219,6 +221,7 @@ Subcommands:
 	cmd.AddCommand(
 		newAutonomousProgressCmd(),
 		newAutonomousProgressTrendCmd(),
+		newAutonomousTimelineCmd(),
 		newAutonomousLaneFillCmd(),
 		newAutonomousInfraRetriesCmd(),
 		newAutonomousMergePipelineCmd(),

@@ -193,6 +193,7 @@ autonomous_template_get
 autonomous_template_instantiate
 autonomous_template_list
 autonomous_template_update
+autonomous_timeline
 autonomous_triage
 autonomous_type_list
 autonomous_type_register

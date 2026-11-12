@@ -60,6 +60,10 @@ func isAutomationObjectKey(key string) bool {
 		key == "settings_placement_group_help" ||
 		key == "settings_placement_automation" ||
 		key == "settings_placement_automation_help" ||
+		// Timeline card: the Automation filter and its kind label name the
+		// Automation object, so the Automation word is correct there.
+		key == "timeline_card_filter_automation" ||
+		key == "timeline_card_kind_automation" ||
 		key == "settings_placement_automation_template"
 }
 
@@ -309,6 +313,10 @@ func TestLocales_AutomationKeyExemptionIsNarrow(t *testing.T) {
 	}{
 		{"nav_automation", true},
 		{"automation_pause", true},
+		{"timeline_card_filter_automation", true},
+		{"timeline_card_kind_automation", true},
+		{"timeline_card_kind_automaton", false},
+		{"timeline_card_filter_project", false},
 		{"fab_launch_auto", false},
 		{"automata_status_draft", false},
 		{"nav_automata", false},
