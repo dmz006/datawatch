@@ -114,9 +114,10 @@ func (s *Server) writeAutonomousPlanningResult(w http.ResponseWriter, r *http.Re
 
 // writeAutonomousCancelResult writes the reply for the DELETE cancel route.
 // view=compact returns the write view for prd and carries killed, the number
-// of sessions the cancel stopped, in killed_sessions. Any other view keeps
+// of sessions the cancel attempted to end, in killed_sessions, and killedLive,
+// how many of those were still live when the cancel began, in killed_live_sessions. Any other view keeps
 // the full reply that the caller built in full, so its shape does not change.
-func (s *Server) writeAutonomousCancelResult(w http.ResponseWriter, r *http.Request, prd any, killed int, full any) {
+func (s *Server) writeAutonomousCancelResult(w http.ResponseWriter, r *http.Request, prd any, killed, killedLive int, full any) {
 	if r.URL.Query().Get("view") != "compact" || isNilPRD(prd) {
 		writeJSONOK(w, full)
 		return
@@ -128,6 +129,7 @@ func (s *Server) writeAutonomousCancelResult(w http.ResponseWriter, r *http.Requ
 	}
 	view := autonomous.BuildWriteView(p, "", "", "")
 	view.KilledSessions = killed
+	view.KilledLiveSessions = killedLive
 	writeJSONOK(w, view)
 }
 
