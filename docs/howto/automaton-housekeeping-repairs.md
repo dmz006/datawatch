@@ -24,11 +24,18 @@ what causes it, whether the daemon can fix it safely by itself, what it does and
 after how long, and what is always left for you.
 
 **Where the code stands.** The watch is report-only in every mode today: it
-records and alerts, and it acts on nothing. The repair groups below are the
-settings that decide whether a repair acts, and each group defaults to `report`,
-so a daemon that never sets them behaves as it does now. The grace periods are
-the waits before a repair acts; a repair never acts on the poll that first sees a
+records and alerts, and it acts on nothing. The four repair groups, their
+settings and the grace periods below describe the behavior the repairs are
+being built to have; the settings are not read by the daemon yet, so setting
+one changes nothing today. Once a group is available it defaults to `report`,
+so a daemon that never sets it behaves as it does now. The grace periods are the
+waits before a repair acts; a repair never acts on the poll that first sees a
 finding.
+
+**Operator review before relying on this page.** The default grace values (30
+minutes, 60 for `WORKTREE`), the single-reset rule for a failed task, and which
+kinds sit in which group are the proposed design, not yet confirmed by you.
+Check them against the shipped settings before you turn any group to `on`.
 
 Names are the script's printed words. The watch's own `kind` for the same
 problem is given where one exists (for example `STUCK` and `MERGE WAIT` have no
