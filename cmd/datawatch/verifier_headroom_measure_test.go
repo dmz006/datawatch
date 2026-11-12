@@ -49,7 +49,7 @@ func newMeasurerFixture(t *testing.T, store *compute.HeadroomStore, cfgSlots int
 	t.Helper()
 	f := &measurerFixture{
 		probe: &fakeHeadroomProbe{freeMB: 8192, resident: "qwen:4b", perRequest: 1024},
-		now:   time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC),
+		now:   time.Now(), // the admission gate reads the real clock, so the fixture starts at it
 	}
 	node := &compute.Node{Name: "gpubox", Kind: "ollama", Address: "http://gpubox:11434", VerifierSlots: ptrInt(cfgSlots)}
 	f.m = newVerifierHeadroomMeasurer(store,
