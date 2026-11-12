@@ -4521,6 +4521,63 @@ function _sessionTagMatchesQuery(entry, q) {
   return hay.some(h => h.indexOf(q) >= 0);
 }
 
+// _sessionComputeNodeNames returns the node names a session resolves to for
+// the compute axis, most authoritative first: the canonical node key
+// (_sessionsNodeKey — a peer by its peer name, a local row by the host's real
+// name, never the word 'local' or 'all'), then the value each of its tags
+// stamped as a compute node. Aliases of one host collapse onto the host's
+// real name, and peer rows resolve even when they carry no compute tag at all.
+function _sessionComputeNodeNames(s) {
+  if (!s) return [];
+  const out = [];
+  const push = v => {
+    v = String(v || '');
+    if (!v || v === 'local' || v === 'all' || v === SESSIONS_GROUP_UNGROUPED) return;
+    if (out.indexOf(v) < 0) out.push(v);
+  };
+  let nk = '';
+  try { nk = _sessionsNodeKey(s); } catch (_) { nk = ''; }
+  push(nk);
+  const lists = [s.tags, s.system_tags, s.inherited_tags];
+  for (let i = 0; i < lists.length; i++) {
+    if (!Array.isArray(lists[i])) continue;
+    const L = lists[i];
+    for (let j = 0; j < L.length; j++) {
+      const n = String(L[j] || '');
+      if (n.indexOf('compute:') === 0) push(n.slice('compute:'.length));
+    }
+  }
+  return out;
+}
+window._sessionComputeNodeNames = _sessionComputeNodeNames;
+
+// _sessionsComputeGroupEntries is the compute axis's chip entries, built from
+// the sessions themselves in state.sessions rather than from the raw
+// "compute:<value>" tag values the tag inventory reports. A peer's sessions
+// (rows tagged s.server=<peer> by the aggregated read) never carry a compute
+// tag at all, so the inventory cannot know them; and a local session whose
+// compute tag is an alias of the local host would otherwise split one node
+// into several chips. Keying each session by _sessionComputeNodeNames collapses
+// both problems to the very name the node grouping already uses: one entry per
+// node, aliases merged, peers listed by the name they are registered under.
+function _sessionsComputeGroupEntries(q) {
+  const needle = String(q || '').trim().toLowerCase();
+  const by = {};
+  (state.sessions || []).forEach(s => {
+    if (!s) return;
+    const names = _sessionComputeNodeNames(s);
+    if (!names.length) return;
+    const key = names[0];
+    if (needle && String(key).toLowerCase().indexOf(needle) < 0) return;
+    by[key] = (by[key] || 0) + 1;
+  });
+  const out = [];
+  Object.keys(by).forEach(k => out.push({ entry: { tag: 'compute:' + k, axis: 'compute', value: k }, count: by[k] }));
+  out.sort((a, b) => (b.count - a.count) || a.entry.value.localeCompare(b.entry.value));
+  return out;
+}
+window._sessionsComputeGroupEntries = _sessionsComputeGroupEntries;
+
 // _sessionTagVisibleGroups returns the chip groups for the current search:
 // [{ key, entries: [{ entry, count }] }], tags sorted by count then label,
 // tags with no session in the current list dropped unless selected.
@@ -4535,11 +4592,17 @@ function _sessionTagVisibleGroups() {
   entries.forEach(e => {
     if (!e || !e.tag || seen.has(e.tag) || _sessionTagIsSystemScoped(e)) return;
     seen.add(e.tag);
+    // The compute axis is rebuilt per node from state.sessions below; its raw
+    // "compute:<value>" tags would split the local host by alias and leave
+    // every peer out (they carry no compute tag).
+    if (_sessionTagAxisOf(e) === 'compute') return;
     const n = counts[e.tag] || 0;
     if (n === 0 && sel.indexOf(e.tag) < 0) return;
     if (!_sessionTagMatchesQuery(e, q)) return;
     (groups[_sessionTagGroupOf(e)] = groups[_sessionTagGroupOf(e)] || []).push({ entry: e, count: n });
   });
+  const compute = _sessionsComputeGroupEntries(q);
+  if (compute.length) groups.compute = compute;
   return _SESSION_TAG_GROUPS.filter(k => groups[k] && groups[k].length).map(k => ({
     key: k,
     entries: groups[k].sort((a, b) => (b.count - a.count) || _sessionTagEntryLabel(a.entry).localeCompare(_sessionTagEntryLabel(b.entry))),
@@ -4635,7 +4698,9 @@ function _sessionTagAutomatonResultsHTML() {
 function _sessionTagFilterPanelHTML() {
   const inv = state._sessionTagInventory;
   const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
-  if (!entries.length) return '';
+  // The compute group comes from state.sessions, not the inventory (peers are
+  // invisible to it), so paint the sheet as soon as either source has rows.
+  if (!entries.length && !_sessionsComputeGroupEntries('').length) return '';
   const ui = _sessionTagUI();
   const sel = _sessionTagSelection();
   const phTags = _stx('sessions_filters_tag_search_ph', 'Search tags');
@@ -56573,6 +56638,16 @@ function _sessionTagFilter(sessions) {
   if (!keys.length) return sessions;
   const mode = _tagBrowseMode('session');
   const test = (s, key) => {
+    // Compute chips name the node a session runs on, not a raw tag value: a
+    // peer entry matches its own rows (which never carry a compute tag) and
+    // the local entry matches the local rows even when their compute tag is
+    // an alias of the host name. Resolved via _sessionComputeNodeNames so the
+    // filter and the group entries agree on every name they can show.
+    const k = String(key);
+    if (k.indexOf('compute:') === 0) {
+      const node = k.slice('compute:'.length);
+      if (node) { let names; try { names = _sessionComputeNodeNames(s); } catch (_) { names = []; } if (names.indexOf(node) >= 0) return true; }
+    }
     const own = Array.isArray(s.tags) ? s.tags : [];
     const inherited = Array.isArray(s.inherited_tags) ? s.inherited_tags : [];
     const set = _tagBrowseItemSet({ tags: own.concat(inherited) }, tree);
