@@ -5076,8 +5076,9 @@ function _sessionsGroupValidate(by) {
 
 // Group choice persistence: one source of truth, state.sessionGroupBy
 // (axis plus tag prefix), saved on this device. Storage may be blocked, so
-// every access is guarded. The toolbar placement control reads and writes the
-// same field (axis "a" is the tag prefix "a:").
+// every access is guarded. The sheet's Group by dropdown is the one control
+// that reads and writes this field (a placement axis "a" is the tag prefix
+// "a:").
 const SESSIONS_GROUP_STORE_KEY = 'dw_sessions_group_by';
 const SESSIONS_GROUP_LEGACY_KEY = 'dw_sessions_group_axis';
 
@@ -5124,7 +5125,10 @@ function _sessionsGroupSave() {
 function _sessionsTagPlacement(sess, tagPrefix) {
   const src = sess || {};
   const seen = {};
-  const tags = [].concat(src.tags || [], src.inherited_tags || [])
+  // Effective tags = the session's own, its inherited, and its system
+  // (placement) tags — the same union the server counts for tag filters
+  // (Manager.sessionEffectiveTagIDs).
+  const tags = [].concat(src.tags || [], src.inherited_tags || [], src.system_tags || [])
     .map(t => (typeof t === 'string') ? t.trim() : '')
     .filter(t => t && !seen[t] && (seen[t] = true)).sort();
   if (tagPrefix) {
@@ -5615,7 +5619,18 @@ function renderSessionsGroupPicker(by) {
     automaton: _stx('sessions_group_automaton', 'Automaton'),
   }[axis] || axis);
   let prefixOpts = '';
-  const prefixes = _sessionsGroupPrefixOptions();
+  let prefixes = _sessionsGroupPrefixOptions();
+  // Placement axes discovered on the loaded sessions (compute, peer, …) are
+  // groupable tag prefixes too; the labelled dropdown is the one Group by
+  // control, so it offers them alongside the registry tag prefixes.
+  try {
+    Object.keys(_placementTagsByAxis(state.sessions)).forEach(ax => {
+      if (!ax) return;
+      const pfx = ax + ':';
+      if (prefixes.indexOf(pfx) < 0) prefixes.push(pfx);
+    });
+    prefixes.sort();
+  } catch (_) { /* no placement data: registry prefixes only */ }
   // The tag registry may not be loaded (or may be empty mid-refresh); the
   // chosen prefix must stay an option or the select snaps to "No grouping".
   if (cur && cur.axis === 'tag' && cur.tagPrefix && prefixes.indexOf(cur.tagPrefix) < 0) {
@@ -5879,7 +5894,6 @@ function _sessionsActiveFilterCount() {
   let n = 0;
   try {
     if (_sessionsGroupCurrent()) n++;
-    else if (!state.sessionTreeView && typeof _sessionsGroupAxis === 'function' && _sessionsGroupAxis()) n++;
     const chip = state.sessionStateChip;
     if (chip && chip !== 'all') n++;
     const ft = String(state.sessionFilter || '').trim().toLowerCase();
@@ -5910,7 +5924,7 @@ function _sessionsSheetHTML(parts) {
   const statusBody = `<div class="state-filter-chips sessions-sheet-chips">${p.stateBadges || ''}${watchBtn}</div>`
     + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips">${p.llmBadges}</div>` : '')
     + (p.tagPanel ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_tags', 'Tags'))} ${p.tagHelp || ''}</div>${p.tagPanel}` : '');
-  const groupBody = renderSessionsGroupPicker(p.groupBy) + _sessionsGroupControl();
+  const groupBody = renderSessionsGroupPicker(p.groupBy);
   return `<div class="sessions-sheet-backdrop" id="sessionsSheetBackdrop" onclick="sessionsFiltersBackdrop(event)">
     <div class="sessions-sheet" role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
       <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
@@ -55358,20 +55372,6 @@ function _placementTagsByAxis(sessionList) {
   return Object.fromEntries(_placementAxisOrder(Object.keys(map)).map(ax => [ax, [...map[ax]].sort((a, b) => a.localeCompare(b))]));
 }
 
-// _sessionsGroupAxis is the placement axis of the active grouping (''=off);
-// it reads the shared state.sessionGroupBy, not a second field.
-function _sessionsGroupAxis() {
-  const by = _sessionsGroupCurrent();
-  if (by && by.axis === 'tag' && /.:$/.test(by.tagPrefix || '')) return by.tagPrefix.slice(0, -1);
-  return '';
-}
-
-// setSessionsGroupAxis switches the grouping through the shared setter.
-window.setSessionsGroupAxis = function(axis) {
-  const a = String(axis || '');
-  setSessionGroupBy(a ? 'tag|' + a + ':' : '');
-};
-
 // _sessionGroupTagClick toggles one placement tag in the session tag
 // selection: the registry ID when the tag is registered, the tag name
 // otherwise; _sessionTagFilter understands both.
@@ -55424,17 +55424,6 @@ function _sessionsGroupCards(sessions, axis) {
     html += pg.items.map(s => sessionCard(s, idx++, sessions.length)).join('') + _listMoreHTML('session', g.key, pg);
   });
   return html;
-}
-
-// _sessionsGroupControl is the sessions toolbar's axis dropdown. It appears
-// while some placement tag is known.
-function _sessionsGroupControl() {
-  const axes = _placementAxisOrder(Object.keys(_placementTagsByAxis(state.sessions)));
-  const cur = _sessionsGroupAxis();
-  if (cur && axes.indexOf(cur) < 0) axes.push(cur);
-  if (!axes.length) return '';
-  const opts = [''].concat(axes).map(a => `<option value="${escAttr(a)}" ${a === cur ? 'selected' : ''}>${a ? escHtml(a) : escHtml(_tagT('sessions_group_none', 'No grouping'))}</option>`).join('');
-  return `<span class="backend-filter-badge group-axis-control${cur ? ' active' : ''}" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(_tagT('sessions_group_tip', 'Group the session list by a placement (system) tag'))}"><span>⚙️</span><select style="border:none;background:transparent;color:inherit;font:inherit;font-size:11px;padding:0;max-width:96px;" onchange="setSessionsGroupAxis(this.value)" aria-label="${escHtml(t('sessions_group_by_label') || 'Group by placement')}">${opts}</select></span>`;
 }
 
 function _sessionTagChipList(sess) {
