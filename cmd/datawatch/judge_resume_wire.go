@@ -98,7 +98,6 @@ func wireJudgeResume(amgr *autonomouspkg.Manager, mgr *session.Manager, cfg *con
 			// Out of budget: the manager has already resumed its
 			// fall-through judge run, and that run's adoption guard
 			// re-waits on the session where it still lives.
-			return
 		}()
 	})
 }

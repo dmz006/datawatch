@@ -244,9 +244,8 @@ func TestJudgeResumeReattachBudgetFallsThroughToJudgeRun(t *testing.T) {
 	}
 	// The waiter registration is cleaned up after the budget expires — a
 	// late delivery is a no-op, not a crash.
-	if !m.ConsumeJudgeResult(prd.ID, unit.ID, &GuardrailVerdict{Outcome: "pass"}) {
-		// expected: nobody waits any more
-	}
+	// Expected: nobody waits any more, so the call reports false.
+	_ = m.ConsumeJudgeResult(prd.ID, unit.ID, &GuardrailVerdict{Outcome: "pass"})
 }
 
 func TestJudgeResumeConsumeWithoutWaiterIsNoop(t *testing.T) {

@@ -32,6 +32,6 @@ func restartCLIGuard(force bool, fetch func(path string, q url.Values) ([]byte, 
 	if !rep.NeedsForce {
 		return nil
 	}
-	fmt.Fprint(out, restartGuardReportWith(rep, "datawatch restart --force"))
+	_, _ = fmt.Fprint(out, restartGuardReportWith(rep, "datawatch restart --force"))
 	return fmt.Errorf("restart refused: running work would be interrupted; pass --force to restart anyway")
 }

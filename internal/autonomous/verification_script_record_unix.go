@@ -87,6 +87,7 @@ func runVerifyRecorded(argv []string, dir, scriptPath string, l *verifyLaunch) (
 		case waitErr = <-done:
 		case <-ctx.Done():
 			timedOut = true
+			// end-reason-ok: kills a verification script run's own OS process group at its deadline, not a datawatch session
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			waitErr = <-done
 		}
@@ -127,6 +128,7 @@ func runVerifyRecorded(argv []string, dir, scriptPath string, l *verifyLaunch) (
 // daemon ends a script run it is waiting on after a restart.
 func killVerifyGroup(pid int) {
 	if pid > 0 {
+		// end-reason-ok: ends the process group of a verification script run the daemon was waiting on after a restart, not a datawatch session
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 }
@@ -136,6 +138,6 @@ func appendFile(path, s string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, _ = f.WriteString(s)
 }
