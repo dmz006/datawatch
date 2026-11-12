@@ -60,3 +60,56 @@ func TestIsDaemonIgnoreChangeUnsafePaths(t *testing.T) {
 		t.Error("daemon-appended lines on a normal path must be true")
 	}
 }
+
+func TestClassifyTaskCommitPathsPathGuardTable(t *testing.T) {
+	_, wt := uwcWorktree(t)
+	uwWrite(t, wt, "inside.txt", "in\n")
+	cases := []struct {
+		name, path string
+		wantAdd    bool
+		wantSkip   bool
+	}{
+		{"traversal", "../escape.txt", true, false},
+		{"nul byte", "a\x00b", true, false},
+		{"in base", "inside.txt", true, false},
+		{"in base missing", "nowhere.txt", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			add, pathspec, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
+			if tc.wantAdd && (len(add) != 1 || len(pathspec) != 1) {
+				t.Errorf("want add+pathspec, got add=%v pathspec=%v", add, pathspec)
+			}
+			if tc.wantSkip && len(skipped) != 1 {
+				t.Errorf("want skipped, got %v", skipped)
+			}
+			if !tc.wantSkip && len(skipped) != 0 {
+				t.Errorf("must not skip, got %v", skipped)
+			}
+		})
+	}
+}
+
+func TestIsDaemonIgnoreChangePathGuardTable(t *testing.T) {
+	dir := t.TempDir()
+	body := "x\n" + daemonIgnoreComment + "\n" + daemonIgnoreDir + "\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(ctx context.Context, d string, args ...string) (string, error) { return "x\n", nil }
+	cases := []struct {
+		name, rel string
+		want      bool
+	}{
+		{"traversal", "../.gitignore", false},
+		{"nul byte", ".gitignore\x00x", false},
+		{"in base", ".gitignore", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isDaemonIgnoreChange(context.Background(), dir, tc.rel, run); got != tc.want {
+				t.Errorf("%q = %v, want %v", tc.rel, got, tc.want)
+			}
+		})
+	}
+}
