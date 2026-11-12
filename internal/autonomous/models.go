@@ -1679,6 +1679,10 @@ type GuardrailVerdict struct {
 	// describes the current head. Empty on verdicts recorded before this
 	// field existed and whenever the cache is disabled.
 	JudgedCommitSHA string `json:"judged_commit_sha,omitempty"`
+	// RulesFingerprint is the hash of the rules text the judge read when this
+	// verdict was made. A verdict recorded without one is treated as stale by
+	// a rejudge and judged again once.
+	RulesFingerprint string `json:"rules_fingerprint,omitempty"`
 	// JudgeOutputPath is the full path of the judge output file that
 	// backed this verdict. Empty when there was no file.
 	JudgeOutputPath string `json:"judge_output_path,omitempty"`
