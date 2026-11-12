@@ -7721,3 +7721,8 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   padding: 3px 8px;
   width: 130px;
 }
+
+/* Project Gantt: the SVG viewBox is 640 wide, so capping at 720px keeps its
+   text at the authored size on wide screens; below the cap it fills the
+   container. Left-aligned (block, no auto margins). */
+.project-gantt-svg { width: 100%; max-width: 720px; }
