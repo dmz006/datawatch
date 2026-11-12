@@ -6,7 +6,7 @@ docs:
 # How-to: the Automation view
 
 The **Automation** view is the place in the web app where you build, watch and
-steer chains of Automata. It is the first sub-tab of the **Automata** tab: open
+steer chains of Automata. It is a sub-tab of the **Automata** tab, second after **Projects**: open
 Automata in the bottom navigation and Automation is selected on the sub-tab bar,
 left of **Automata**, **Events** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
@@ -49,7 +49,7 @@ datawatch starts the next Automaton by itself. See
 works behind the scenes.
 
 The bottom navigation has no Automation button of its own. Inside the Automata
-tab, the sub-tab bar reads **Automation**, **Automata**, **Events**, **Templates**. The
+tab, the sub-tab bar reads **Projects**, **Automation**, **Automata**, **Events**, **Templates**. The
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
 
@@ -594,8 +594,8 @@ there too.
 
 ## Related
 
-- [projects-tab.md](projects-tab.md): the Projects tab, a separate top-level
-  tab that groups an Automation under its project as an arc, with the project's
+- [projects-tab.md](projects-tab.md): the Projects sub-tab, the first sub-tab of
+  the Automata view (left of Automation), which groups an Automation under its project as an arc, with the project's
   Automata, sessions, progress, history and policy on one page
 - [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
   Automaton in your Automations — how the pass fills, refreshes and clears
