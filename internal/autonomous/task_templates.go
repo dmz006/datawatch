@@ -358,6 +358,7 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 		if auto.EffectiveTaskTemplateMode(id) == config.TaskTemplateModeDaemon {
 			task.DaemonRun = true
 			task.ReadOnly = false
+			recordDaemonTaskInputs(&task)
 		}
 		newTasks = append(newTasks, task)
 		applied = append(applied, id)
