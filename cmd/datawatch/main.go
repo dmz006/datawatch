@@ -2068,6 +2068,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
+	// Finalise session records whose process is gone. Started after the
+	// resume so the start-up run sees recovered and resumed sessions first.
+	// The interval is read from the live config on every cycle.
+	startSessionFinaliser(ctx, mgr, func() int { return cfg.Session.FinaliseIntervalMinutes })
 	mgr.StartOneShotReaper(ctx)
 
 	// v5.26.27 — sweep orphan project_profile clones under
