@@ -78,7 +78,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | task_routing
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -1214,14 +1214,18 @@ type Task struct {
 	EffortCeiling string `json:"effort_ceiling,omitempty"`
 	// ClaudeRetries counts retries of this task that ran on Claude, for
 	// usage.burn_guard.retry_limit_claude.
-	ClaudeRetries int                 `json:"claude_retries,omitempty"`
-	CreatedAt     time.Time           `json:"created_at"`
-	UpdatedAt     time.Time           `json:"updated_at"`
-	StartedAt     *time.Time          `json:"started_at,omitempty"`
-	CompletedAt   *time.Time          `json:"completed_at,omitempty"`
-	Error         string              `json:"error,omitempty"`
-	Verification  *VerificationResult `json:"verification,omitempty"`
-	RetryCount    int                 `json:"retry_count,omitempty"`
+	// TaskRouting is the recorded result of the task-type routing table for
+	// this task: its type, the profile and row used, and what was chosen (or
+	// why nothing was). Nil until routing has looked at the task.
+	TaskRouting   *TaskRoutingDecision `json:"task_routing,omitempty"`
+	ClaudeRetries int                  `json:"claude_retries,omitempty"`
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
+	StartedAt     *time.Time           `json:"started_at,omitempty"`
+	CompletedAt   *time.Time           `json:"completed_at,omitempty"`
+	Error         string               `json:"error,omitempty"`
+	Verification  *VerificationResult  `json:"verification,omitempty"`
+	RetryCount    int                  `json:"retry_count,omitempty"`
 	// PriorAttemptCount (v9.2.1) — how many times this task has been reset
 	// and re-queued (ResetTask) for a fresh attempt. Unlike RetryCount
 	// (which ResetTask zeroes to start the next attempt's auto-retry budget
@@ -2228,4 +2232,39 @@ type BranchRefresh struct {
 	LastResult     string    `json:"last_result"` // clean | conflict | skipped | error
 	LastMainCommit string    `json:"last_main_commit,omitempty"`
 	Stopped        bool      `json:"stopped,omitempty"`
+}
+
+// TaskRoutingResult is the worker and verification LLM the routing table
+// chose for a task.
+type TaskRoutingResult struct {
+	WorkerBackend       string `json:"worker_backend,omitempty"`
+	WorkerModel         string `json:"worker_model,omitempty"`
+	Effort              string `json:"effort,omitempty"`
+	VerificationBackend string `json:"verification_backend,omitempty"`
+	VerificationModel   string `json:"verification_model,omitempty"`
+}
+
+// TaskRoutingDecision is the recorded outcome of the task-type routing table
+// for one task (Task.TaskRouting).
+type TaskRoutingDecision struct {
+	// TaskType is the task type the task was classified as.
+	TaskType string `json:"task_type"`
+	// Profile is the routing profile that was consulted.
+	Profile string `json:"profile,omitempty"`
+	// Row is the task type key of the table row used. Empty when no row
+	// decided the LLM.
+	Row string `json:"row,omitempty"`
+	// ClassifiedBy is how the type was decided: template_kind | title_spec | default.
+	ClassifiedBy string `json:"classified_by"`
+	// Applied is true when the row's choice was written to the task.
+	Applied bool `json:"applied"`
+	// Result is what was chosen. Nil when nothing was applied.
+	Result *TaskRoutingResult `json:"result,omitempty"`
+	// SecondChoiceUsed is true when the row's first choice was refused and
+	// its second choice was applied instead.
+	SecondChoiceUsed bool `json:"second_choice_used,omitempty"`
+	// Reason says why nothing was applied, for example "task LLM set by
+	// operator", "story LLM set", "Automaton LLM set", "routing disabled" or
+	// "hand edited".
+	Reason string `json:"reason,omitempty"`
 }

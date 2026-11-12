@@ -1354,6 +1354,9 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
+	// taskRoutingBackendKnown reports whether an LLM backend is known to the
+	// registry; nil skips the check (SetTaskRoutingBackendCheck).
+	taskRoutingBackendKnown func(backend string) bool
 	mu sync.Mutex
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
 	// Guarded by mu; nil means no usage is reported.
@@ -3391,6 +3394,9 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		})
 		prd.ScopeWarnings = scopeWarnings
 	})
+	// Task-type routing: every task the planner materialized gets the active
+	// profile's row (a no-op while routing is off), before approval.
+	m.ApplyTaskRoutingToPRD(prd)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
@@ -5127,6 +5133,9 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 			}
 		})
 	}
+	// Task-type routing: a new task starts with the active profile's row
+	// unless an LLM is set above it. Existing tasks are never re-routed.
+	m.ApplyTaskRouting(prd, task)
 	note := fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title)
 	if len(dependsOn) > 0 {
 		note += fmt.Sprintf(" depends_on=%v", dependsOn)
