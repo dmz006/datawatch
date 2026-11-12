@@ -3938,6 +3938,132 @@ function _projectsGanttSortChildren(rows, edges) {
   return cyclic ? base : out;
 }
 
+// ---- Dependency edges -------------------------------------------------------
+// Thin arrows over the Gantt: from the end of a task bar to the start of each
+// task that lists it in depends_on, and from an Automaton bar to the Automata
+// that follow it (the timeline reply's edges list). Edges only read the rows
+// already drawn; a collapsed row never gets edges computed. Drawing never
+// touches a session.
+const _PROJECTS_GANTT_EDGE_KEY = 'cs_projects_gantt_edges';
+const _PROJECTS_GANTT_EDGE_MAX = 120;
+const _PROJECTS_GANTT_ROW_H = 22;
+let _projectsGanttEdgeModeValue = null;
+
+// _projectsGanttCleanEdges keeps the {from,to} pairs of a reply's edges list.
+function _projectsGanttCleanEdges(list) {
+  return (Array.isArray(list) ? list : []).filter(e => e && typeof e.from === 'string' && typeof e.to === 'string' && e.from && e.to && e.from !== e.to)
+    .map(e => ({ from: e.from, to: e.to, kind: e.kind || '' }));
+}
+
+// _projectsGanttEdgeMode is 'on' (default), 'all' (show every drawn edge) or
+// 'off'. The choice is remembered as a convenience only.
+function _projectsGanttEdgeMode() {
+  if (_projectsGanttEdgeModeValue) return _projectsGanttEdgeModeValue;
+  let v = '';
+  try { v = localStorage.getItem(_PROJECTS_GANTT_EDGE_KEY) || ''; } catch (_) { v = ''; }
+  _projectsGanttEdgeModeValue = (v === 'off' || v === 'all') ? v : 'on';
+  return _projectsGanttEdgeModeValue;
+}
+
+// _projectsGanttEdges is the pure geometry of the edges. items are the drawn
+// Gantt items (_projectsGanttFlatten shape), edges the {from,to} list, and opts
+// { range:{start,end}, now, mode, max, rowH }. It returns one entry per edge
+// whose two ends are drawn rows with a span: x1/x2 in percent of the track,
+// y1/y2 in px from the first row, and d, an elbow path in those units. Beyond
+// max edges the rest are marked extra (shown only for a focused end) unless
+// mode is 'all'. Mode 'off' returns nothing.
+function _projectsGanttEdges(items, edges, opts) {
+  opts = opts || {};
+  const mode = opts.mode || 'on';
+  if (mode === 'off' || !opts.range) return [];
+  const rowH = opts.rowH || _PROJECTS_GANTT_ROW_H;
+  const max = opts.max == null ? _PROJECTS_GANTT_EDGE_MAX : opts.max;
+  const now = opts.now != null ? opts.now : Date.now();
+  const rs = opts.range.start, span = (opts.range.end - rs) || 1;
+  const pct = ts => Math.max(0, Math.min(100, (ts - rs) / span * 100));
+  const at = {};
+  (items || []).forEach((it, idx) => {
+    if (!it || it.type !== 'row' || !it.row || !it.row.id) return;
+    const sp = _projectsGanttSpan(it.row, now);
+    if (sp) at[it.row.id] = { idx, row: it.row, sp };
+  });
+  const pairs = [], seen = {};
+  const add = (from, to) => {
+    const k = from + '\u0000' + to;
+    if (from === to || seen[k] || !at[from] || !at[to]) return;
+    seen[k] = true;
+    pairs.push([from, to]);
+  };
+  Object.keys(at).forEach(id => {
+    const dep = at[id].row.depends_on;
+    (Array.isArray(dep) ? dep : []).forEach(d => add(d, id));
+  });
+  (Array.isArray(edges) ? edges : []).forEach(e => { if (e) add(e.from, e.to); });
+  return pairs.map(([from, to], i) => {
+    const a = at[from], b = at[to];
+    const x1 = pct(a.sp.b), x2 = pct(b.sp.a);
+    const y1 = a.idx * rowH + rowH / 2, y2 = b.idx * rowH + rowH / 2;
+    const xm = x2 > x1 + 2 ? (x1 + x2) / 2 : x1 + 1;
+    const f = n => +n.toFixed(2);
+    return { from, to, x1: f(x1), x2: f(x2), y1, y2, extra: mode !== 'all' && i >= max,
+      d: `M${f(x1)} ${y1}H${f(xm)}V${y2}H${f(x2)}` };
+  });
+}
+
+// _projectsGanttCollectEdges gathers the edges lists of the surface: its own
+// (a focus page) and those of expanded rows only.
+function _projectsGanttCollectEdges(g) {
+  let out = Array.isArray(g.edges) ? g.edges.slice() : [];
+  const kids = g.kids || {}, expanded = g.expanded || {};
+  Object.keys(kids).forEach(k => { if (expanded[k] && kids[k] && kids[k].edges) out = out.concat(kids[k].edges); });
+  return out;
+}
+
+// _projectsGanttEdgesSvg draws the edge layer, or '' when there is nothing.
+function _projectsGanttEdgesSvg(items, g, range, now) {
+  const list = _projectsGanttEdges(items, _projectsGanttCollectEdges(g), { range, now, mode: _projectsGanttEdgeMode() });
+  if (!list.length) return '';
+  const h = items.length * _PROJECTS_GANTT_ROW_H;
+  const paths = list.map(e => {
+    const tip = `M${e.x2 - 0.9} ${e.y2 - 3}L${e.x2} ${e.y2}L${e.x2 - 0.9} ${e.y2 + 3}Z`;
+    return `<g class="project-gantt-edge${e.extra ? ' extra' : ''}" data-from="${escHtml(e.from)}" data-to="${escHtml(e.to)}" aria-hidden="true"><path d="${e.d}" fill="none" vector-effect="non-scaling-stroke"/><path d="${tip}" class="project-gantt-edge-tip"/></g>`;
+  }).join('');
+  return `<svg class="project-gantt-edges" aria-hidden="true" focusable="false" viewBox="0 0 100 ${h}" preserveAspectRatio="none" style="height:${h}px">${paths}</svg>`;
+}
+
+// projectsGanttEdgeFocus highlights the edges of a hovered or keyboard-focused
+// bar (on = 1) and releases them (on = 0). It only toggles classes.
+function projectsGanttEdgeFocus(el, on) {
+  try {
+    const chart = el && el.closest ? el.closest('.project-gantt-chart') : null;
+    const svg = chart ? chart.querySelector('.project-gantt-edges') : null;
+    if (!svg) return;
+    const id = el.getAttribute('data-id') || '';
+    let any = false;
+    svg.querySelectorAll('.project-gantt-edge').forEach(g => {
+      const hit = !!on && !!id && (g.getAttribute('data-from') === id || g.getAttribute('data-to') === id);
+      if (hit) any = true;
+      g.classList.toggle('hl', hit);
+    });
+    svg.classList.toggle('has-focus', any);
+  } catch (_) { /* highlight is cosmetic */ }
+}
+window.projectsGanttEdgeFocus = projectsGanttEdgeFocus;
+
+// projectsGanttEdgeMode flips the Edges toggle ('toggle') or the show-all state
+// ('all') and redraws both Gantt surfaces.
+function projectsGanttEdgeMode(action) {
+  const cur = _projectsGanttEdgeMode();
+  let next;
+  if (action === 'all') next = cur === 'all' ? 'on' : 'all';
+  else next = cur === 'off' ? 'on' : 'off';
+  _projectsGanttEdgeModeValue = next;
+  try { localStorage.setItem(_PROJECTS_GANTT_EDGE_KEY, next); } catch (_) { /* not remembered */ }
+  _projectsGanttRepaint();
+  if (typeof _projectsFocusRepaint === 'function') _projectsFocusRepaint();
+}
+window.projectsGanttEdgeMode = projectsGanttEdgeMode;
+
 // _projectsGanttBarState maps an arc's state (planned, active, done) onto the
 // state colours the Timeline uses; Automaton and task states pass through.
 function _projectsGanttBarState(r) {
@@ -4053,8 +4179,8 @@ function _projectsGanttRangeRows(g) {
 
 // The two surfaces that draw the Gantt: the project page and the focus page. The
 // draw code reads its handler names, element ids and row cap from one of these.
-const _PROJECTS_GANTT_UI = { preset: 'projectsGanttPreset', toggle: 'projectsGanttToggle', more: 'projectsGanttMore', wheel: 'projectsGanttWheel', down: 'projectsGanttDown', axisId: 'projectGanttAxis', chartId: 'projectGanttChart', rangeId: 'projectGanttRange', rangeTextKey: 'projects_gantt_range_text', emptyKey: 'projects_gantt_empty', cap: _PROJECTS_GANTT_MAX_ROWS, focusButtons: true };
-const _PROJECTS_FOCUS_UI = { preset: 'projectsFocusPreset', toggle: 'projectsFocusToggle', more: 'projectsFocusToggle', wheel: 'projectsFocusWheel', down: 'projectsFocusDown', axisId: 'projectFocusAxis', chartId: 'projectFocusChart', rangeId: 'projectFocusRange', rangeTextKey: 'projects_gantt_focus_range_text', emptyKey: 'automation_gantt_focus_empty', cap: Infinity, focusButtons: false };
+const _PROJECTS_GANTT_UI = { preset: 'projectsGanttPreset', toggle: 'projectsGanttToggle', more: 'projectsGanttMore', wheel: 'projectsGanttWheel', down: 'projectsGanttDown', axisId: 'projectGanttAxis', chartId: 'projectGanttChart', rangeId: 'projectGanttRange', rangeTextKey: 'projects_gantt_range_text', emptyKey: 'projects_gantt_empty', cap: _PROJECTS_GANTT_MAX_ROWS, focusButtons: true, edgeMode: 'projectsGanttEdgeMode', edge: 'projectsGanttEdgeFocus' };
+const _PROJECTS_FOCUS_UI = { preset: 'projectsFocusPreset', toggle: 'projectsFocusToggle', more: 'projectsFocusToggle', wheel: 'projectsFocusWheel', down: 'projectsFocusDown', axisId: 'projectFocusAxis', chartId: 'projectFocusChart', rangeId: 'projectFocusRange', rangeTextKey: 'projects_gantt_focus_range_text', emptyKey: 'automation_gantt_focus_empty', cap: Infinity, focusButtons: false, edgeMode: 'projectsGanttEdgeMode', edge: 'projectsGanttEdgeFocus' };
 
 // _projectGanttPalette reads the theme colours the Gantt draws with, falling
 // back to the dashboard defaults where the page has no computed style.
@@ -4097,7 +4223,10 @@ function _projectGanttInnerHTML(g, ui) {
   const buttons = _PROJECTS_GANTT_PRESETS.map(([k, , labelKey]) =>
     `<button type="button" class="project-gantt-preset${k === preset ? ' active' : ''}" data-preset="${k}" aria-pressed="${k === preset ? 'true' : 'false'}" onclick="${ui.preset}('${k}')">${escHtml(t(labelKey))}</button>`).join('');
   const rangeText = t(ui.rangeTextKey, [new Date(range.start).toLocaleDateString(), new Date(range.end).toLocaleDateString()]);
-  const top = `<div class="project-gantt-toolbar"><span class="project-gantt-range-label">${escHtml(t('projects_gantt_range_label'))}</span>${buttons}<span class="project-gantt-range" id="${ui.rangeId}">${escHtml(rangeText)}</span></div>`;
+  const em = _projectsGanttEdgeMode();
+  const edgeBtns = `<button type="button" class="project-gantt-preset project-gantt-edges-toggle${em !== 'off' ? ' active' : ''}" aria-pressed="${em !== 'off' ? 'true' : 'false'}"${em === 'off' ? ` title="${escHtml(t('projects_gantt_edges_off'))}"` : ''} onclick="${ui.edgeMode}('toggle')">${escHtml(t('projects_gantt_edges'))}</button>`
+    + (em !== 'off' ? `<button type="button" class="project-gantt-preset project-gantt-edges-all${em === 'all' ? ' active' : ''}" aria-pressed="${em === 'all' ? 'true' : 'false'}" onclick="${ui.edgeMode}('all')">${escHtml(t('projects_gantt_edges_all'))}</button>` : '');
+  const top = `<div class="project-gantt-toolbar"><span class="project-gantt-range-label">${escHtml(t('projects_gantt_range_label'))}</span>${buttons}${edgeBtns}<span class="project-gantt-range" id="${ui.rangeId}">${escHtml(rangeText)}</span></div>`;
   if (!g.rows.length) {
     return top + `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t(ui.emptyKey))}</div>`;
   }
@@ -4137,8 +4266,8 @@ function _projectGanttInnerHTML(g, ui) {
       const x1 = pct(sp.a), x2 = pct(sp.b);
       const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
       const stKey = _projectsGanttStatusKey(r.status);
-      const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + r.release : ''}`;
-      track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
+      const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + t('projects_gantt_release_detail', [r.release]) : ''}`;
+      track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" tabindex="0" data-id="${escHtml(r.id || '')}" onmouseenter="${ui.edge}(this,1)" onmouseleave="${ui.edge}(this,0)" onfocus="${ui.edge}(this,1)" onblur="${ui.edge}(this,0)" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
     }
     const focusBtn = ui.focusButtons && r.kind === 'arc' ? projectsFocusButtonHtml(r.id, label, 'project') : '';
@@ -4147,7 +4276,7 @@ function _projectGanttInnerHTML(g, ui) {
   const note = capped.total > capped.items.length
     ? `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [capped.items.length, capped.total]))}</div>` : '';
   return top + `<div class="project-gantt-scroll"><div class="project-gantt-chart" id="${ui.chartId}" role="group" aria-label="${escHtml(t('projects_gantt_heading'))}" onwheel="${ui.wheel}(event)" onpointerdown="${ui.down}(event)">`
-    + `<div class="project-gantt-row project-gantt-axis"><div class="project-gantt-label"></div><div class="project-gantt-track" id="${ui.axisId}">${ticks}</div></div>${rows}</div></div>${note}`;
+    + `<div class="project-gantt-row project-gantt-axis"><div class="project-gantt-label"></div><div class="project-gantt-track" id="${ui.axisId}">${ticks}</div></div>${rows}${_projectsGanttEdgesSvg(capped.items, g, range, now)}</div></div>${note}`;
 }
 
 // _projectsGanttRepaint redraws only the Gantt body when it is on the page, so
@@ -4164,7 +4293,7 @@ function _projectsGanttRepaint() {
 // an object with a rows array reads as no rows.
 function _projectsGanttBody(r) {
   const b = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
-  return { rows: (Array.isArray(b.rows) ? b.rows : []).filter(x => x && typeof x === 'object'), next: b.next_cursor || '' };
+  return { rows: (Array.isArray(b.rows) ? b.rows : []).filter(x => x && typeof x === 'object'), next: b.next_cursor || '', edges: _projectsGanttCleanEdges(b.edges) };
 }
 
 function _projectsGanttUrl(name, key, row, cursor) {
@@ -4202,6 +4331,7 @@ function _projectsGanttFetch(g, key, append) {
     if (!live()) return;
     const b = _projectsGanttBody(r);
     slot.rows = (append ? slot.rows : []).concat(b.rows);
+    slot.edges = (append ? (slot.edges || []) : []).concat(b.edges);
     slot.next = b.next;
     slot.loaded = true;
     if (!key) g.error = '';
@@ -4452,6 +4582,7 @@ function projectsFocusOpen(id, title, from) {
     f.rows = tree.rows;
     f.kids = tree.kids;
     f.rangeRows = tree.tasks;
+    f.edges = _projectsGanttCleanEdges(body.edges);
     // With nothing remembered every Automaton opens, so every task is listed.
     if (!f.remembered) tree.rows.forEach(r => { if (r.has_children) f.expanded[_projectsGanttKey(r)] = true; });
     f.error = '';
