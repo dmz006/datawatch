@@ -383,7 +383,7 @@ func TestBuildProjectRollup_MergeTimeFallsBackToLastUpdate(t *testing.T) {
 func TestBuildProjectRollup_WorktreeAutomatonWithLink(t *testing.T) {
 	recent := rollupNow.Add(-1 * time.Hour)
 	wt := &autonomous.PRD{
-		ID: "wt", ProjectDir: "/home/u/.datawatch/prd-worktrees/wt1", Status: autonomous.PRDCancelled,
+		ID: "wt", ProjectDir: "/srv/work/.datawatch/prd-worktrees/wt1", Status: autonomous.PRDCancelled,
 		UpdatedAt: recent, Git: autonomous.GitWorkflow{Branch: "auto/wt"},
 		Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{rollupTask("t", &recent)}}},
 	}

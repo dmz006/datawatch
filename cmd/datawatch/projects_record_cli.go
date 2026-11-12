@@ -163,7 +163,7 @@ func newProjectsShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show a project's record and its roll-up (arcs, Automata, tasks, points, throughput)",
-		Long: "Show a project's record and its roll-up.\n\nThroughput counts Automata finished and tasks finished in the window. An Automaton is finished when it is completed, when it is cancelled or archived and its work branch is already on the project's default branch, or when it carries a shipped record. A task counts from its own completion time, whatever the Automaton's final status.",
+		Long:  "Show a project's record and its roll-up.\n\nThroughput counts Automata finished and tasks finished in the window. An Automaton is finished when it is completed, when it is cancelled or archived and its work branch is already on the project's default branch, or when it carries a shipped record. A task counts from its own completion time, whatever the Automaton's final status.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			recordBody, err := daemonJSONBody(http.MethodGet, projectRecordPath(args[0], ""), nil)
