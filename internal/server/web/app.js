@@ -3211,7 +3211,7 @@ function _projectsManageHTML(list) {
       <label style="font-size:13px;">${escHtml(t('projects_manage_field_name'))}<br>
         <input type="text" id="projectsManageName" data-projects-manage="name" ${inp} value="${escHtml(d.name)}" ${editing ? 'readonly' : ''} oninput="projectsManageInput('name',this.value)"></label>
       <label style="font-size:13px;">${escHtml(t('projects_manage_field_dir'))}<br>
-        <input type="text" id="projectsManageDir" data-projects-manage="dir" ${inp} value="${escHtml(d.dir)}" placeholder="/home/user/project" oninput="projectsManageInput('dir',this.value)"></label>
+        <input type="text" id="projectsManageDir" data-projects-manage="dir" ${inp} value="${escHtml(d.dir)}" placeholder="/path/to/project" oninput="projectsManageInput('dir',this.value)"></label>
       <label style="font-size:13px;">${escHtml(t('projects_manage_field_description'))}<br>
         <input type="text" id="projectsManageDescription" data-projects-manage="description" ${inp} value="${escHtml(d.description)}" oninput="projectsManageInput('description',this.value)"></label>
       <label style="font-size:13px;">${escHtml(t('projects_manage_field_backend'))}<br>
