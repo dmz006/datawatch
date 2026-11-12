@@ -3154,11 +3154,18 @@ audit is written outside the gate: a refusal is visible in the trail.
 
 - Web UI: Settings → General → **Self-config** card → **Allow sensitive writes**
   (the help text is translated in the five locales);
-- CLI: `datawatch config set mcp.allow_sensitive_writes false`, and
-  `datawatch config get mcp.allow_sensitive_writes` to read it back;
+- CLI: `datawatch config set mcp.allow_sensitive_writes false` (sent as a JSON
+  boolean, like `mcp.allow_self_config`; `datawatch config set --help` names
+  both keys), and `datawatch config get mcp.allow_sensitive_writes` to read it
+  back;
 - REST: `PUT /api/config` with `{"mcp.allow_sensitive_writes": false}`;
   `GET /api/config` returns the effective boolean under `mcp`;
-- comm channel: `configure mcp.allow_sensitive_writes=false`;
+- comm channel: `configure mcp.allow_sensitive_writes=false`; `configure list`
+  names the key. The reply ends "Restart may be required." — generic wording of
+  the verb; this key is applied live;
+- MCP read-back: `get_config` with `section=mcp` reports
+  `allow_sensitive_writes` next to `allow_self_config`, each as its effective
+  on/off state (an unset key reads on);
 - YAML: edit the `mcp:` block and restart.
 
 A change through the Web UI, CLI, REST or comm channel is applied to the
@@ -3196,6 +3203,14 @@ setting is wired today and need an operator decision or a follow-up:
    from the code, not exercised end to end.
 5. The refusal and audit wording above is the code's current text; confirm it
    before it is quoted in operator runbooks.
+6. The comm `configure` confirmation for this key still ends "Restart may be
+   required.", although the change is applied to the running daemon. The text
+   is shared by every key the verb sets; decide whether it should say "applied"
+   for keys that need no restart, and verify with `get_config section=mcp` or
+   `datawatch config get mcp.allow_sensitive_writes` until then.
+7. The new help and read-back text (`configure list`, `datawatch config set
+   --help`, the `get_config` description) was checked against the code and its
+   tests, not against a running daemon with a real comm channel attached.
 
 Walk-through and a sample audit record:
 [`howto/self-config-capability.md`](howto/self-config-capability.md#sensitive-writes-a-separate-switch).

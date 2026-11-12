@@ -315,9 +315,10 @@ restart is needed.
 | Surface | How |
 |---|---|
 | **Web UI** | Settings → General → **Self-config** card → **Allow sensitive writes** toggle. The row's help text reads: "On: a model session may run secret, identity and daemon-control tools. Off: each such call is refused and audited. Operator-run calls from the PWA, REST and CLI are unaffected." It is translated in English, German, Spanish, French and Japanese |
-| **CLI** | `datawatch config set mcp.allow_sensitive_writes false` (sends `PUT /api/config` to the running daemon); read it back with `datawatch config get mcp.allow_sensitive_writes` |
+| **CLI** | `datawatch config set mcp.allow_sensitive_writes false` (sends `PUT /api/config` to the running daemon as a JSON boolean, the same way `mcp.allow_self_config` is sent); read it back with `datawatch config get mcp.allow_sensitive_writes`. `datawatch config set --help` names both MCP permission keys and their `true`/`false` values. A refusal from the daemon is printed and the command exits non-zero |
 | **REST API** | `PUT /api/config` with `{"mcp.allow_sensitive_writes": false}`; `GET /api/config` returns the **effective** value as the boolean `mcp.allow_sensitive_writes` (a config that never set the key reads `true`) |
-| **Comm channel** | `configure mcp.allow_sensitive_writes=false` |
+| **Comm channel** | `configure mcp.allow_sensitive_writes=false`. `configure list` names the key as `mcp.allow_sensitive_writes (true/false; default true)`. The confirmation reads `Set mcp.allow_sensitive_writes = false. Restart may be required.` — that is the verb's generic wording; for this key the change is already live and no restart is needed |
+| **MCP (read back)** | `get_config` with `section: "mcp"` returns `allow_sensitive_writes` beside `allow_self_config`, each as its **effective** on/off state (so a config that never set the key reads `true`). Reading is never gated. To change the value over MCP a session uses `config_set`, which is the path described in the warning below |
 | **YAML** | the `mcp:` block, then restart the daemon (a hand edit is only read at start) |
 
 ```yaml
