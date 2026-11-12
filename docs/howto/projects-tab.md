@@ -40,6 +40,14 @@ Projects is the first sub-tab of the **Automata** view, to the left of
 **Automation**. The sub-tab order is **Projects**, **Automation**, **Automata**,
 **Events**, **Templates**. It is not a tab of its own in the bottom navigation.
 
+Once you pick a project, its page is split into its own strip of **page
+sub-tabs** (labelled **Project sections** for screen readers), and only one body
+shows at a time: **Overview**, **Arcs**, **Gantt**, **Unassigned**, **History**,
+**Policy** and, when there is something to show, **Events**. They are the
+sub-tabs of one project's page, not of the Automata view; this guide says "page
+sub-tab" for them and "sub-tab" for **Projects** itself. See
+[The page sub-tabs](#the-page-sub-tabs).
+
 The sub-tab shows what the daemon holds and links to the Settings entries where
 you change things. It also has a **Manage projects** block where you add, edit and
 remove a project (its name, directory, description and default backend) without
@@ -203,23 +211,43 @@ project starts with.
 
 ### 6. Open the page in the web app
 
-Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the top:
+Choose **Automata**, then the **Projects** sub-tab, then `core-api`. The project
+name and a strip of page sub-tabs sit at the top of the page; the blocks below
+are spread across them, one page sub-tab at a time.
 
-| Block | What it shows |
-|---|---|
-| Header | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share |
-| Progress | Tasks and Automata done, cost in points, throughput over the last seven days |
-| Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
-| Unassigned Automata | Automata of this project that no arc holds |
-| Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
-| History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
-| Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |
-| Merge pipeline | Read-only, with an **Open settings** link that opens Settings on the Automata tab at the Merge pipeline group |
-| Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
+| Page sub-tab | Blocks on it | What they show |
+|---|---|---|
+| Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days |
+| Arcs | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
+| Gantt | Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
+| Unassigned | Unassigned Automata | Automata of this project that no arc holds |
+| History | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
+| Policy | Effective policy, Merge pipeline | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section; then the read-only merge pipeline, with an **Open settings** link at the Merge pipeline group |
+| Events | Notes, event stream | Notes for empty sections (no arcs, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share, with the event stream filtered to this project below them. This page sub-tab is not in the strip while the project has no notes |
 
 A row links to its Automaton view, and a session link opens the session. The
-**Overview** choice in the picker is the cross-project in-flight view, not a
-project.
+**Overview** choice in the project picker is the cross-project in-flight view,
+not a project, and it has no page sub-tabs.
+
+#### The page sub-tabs
+
+- **One body at a time.** Choose a page sub-tab to show its body; the others are
+  not drawn. The strip scrolls sideways on a narrow screen.
+- **Remembered.** The page sub-tab you last chose is remembered per viewer in the
+  browser (`cs_projects_subtab`), not by the daemon, so it has no REST, MCP, CLI,
+  chat or configuration form. It applies to whichever project you open next, and a
+  browser that blocks storage opens **Overview** each time.
+- **Addressable.** The address of a page sub-tab is `#projects/<name>/<subtab>`,
+  where `<subtab>` is `arcs`, `gantt`, `unassigned`, `history`, `policy` or
+  `events`. `#projects/<name>` opens **Overview**, and so does an address that
+  names an unknown page sub-tab. Opening `#projects` with no project name keeps
+  the remembered page sub-tab. Choosing a page sub-tab rewrites the address in
+  place without adding a browser history entry.
+- **Events falls back.** If the remembered or addressed page sub-tab is **Events**
+  and the project has no notes, the page opens **Overview** instead.
+- **Overview first.** The first thing a project page shows is the header and the
+  progress, as before; the blocks that used to follow them on the same page are
+  now one choice away.
 
 #### The show-empty checkbox
 
@@ -316,10 +344,12 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
 | Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
+| Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `arcs`, `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
+| Switch between Overview, Arcs, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
 | Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
 | Page through history | **Load more** at the foot of History |
-| Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the page opens the Automata tab, expands that section and scrolls to it) |
-| Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the page opens the Automata tab, expands that card and scrolls to it) |
+| Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the **Policy** page sub-tab opens the Automata tab, expands that section and scrolls to it) |
+| Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the **Policy** page sub-tab opens the Automata tab, expands that card and scrolls to it) |
 | Add a project | **Manage projects** block under the picker: fill in the form, **Add project**. With no projects the form is already open |
 | Edit a project's directory, description or default backend | **Manage projects**, **Edit** on the project's row, then **Save changes** |
 | Remove a project | **Manage projects**, **Remove** on the project's row, then confirm. Only the record goes; sessions keep running |
@@ -426,6 +456,9 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | **Add project** says "Enter a project name." or "Enter the project directory." | Both fields are required. The directory must be an absolute path |
 | A save or remove shows an error above the form | The daemon refused the change and nothing was saved; read the message, fix the field and try again |
 | Roll-up shows "Could not load the roll-up" | The autonomous store is off or the alias is unknown. Check the daemon with `datawatch projects get <name>` |
+| A block I used to see on the project page is missing | The page now shows one page sub-tab at a time. Find the block in the table under step 6 (for example the Gantt is on **Gantt** and the policy and merge pipeline are on **Policy**) |
+| There is no **Events** page sub-tab | It is left out of the strip while the project has no notes. An `#projects/<name>/events` address or a remembered **Events** choice opens **Overview** in that case |
+| The page opens a page sub-tab I did not pick | The last choice is remembered in this browser. Choose **Overview**, or open `#projects/<name>`, which always opens **Overview** |
 | An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each arc needs a unique id; an arc whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
@@ -455,6 +488,25 @@ the lane defaults. Use REST, MCP or the CLI for those.
   same reason; rename it only if you also redirect the links that point here.
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
+- **Page sub-tab order and grouping.** Inside a project the strip reads Overview,
+  Arcs, Gantt, Unassigned, History, Policy, Events (the 2026-11-12 decision "b - sub
+  tabs", "the order is good"). The strip is not in the order the old single page
+  listed its blocks (Gantt used to follow Unassigned). Header and Progress share
+  **Overview**, and Effective policy and Merge pipeline share **Policy**; confirm
+  that grouping.
+- **Events can be unreachable.** The **Events** page sub-tab appears only while the
+  project has notes (empty sections, a missing weekly share, a failed roll-up). The
+  event stream filtered to the project sits under those notes, so with no notes the
+  stream has no page sub-tab to show it. Confirm that is intended.
+- **Remembered page sub-tab is global.** The remembered page sub-tab is one value
+  per browser, not per project, so it carries over when you open another project.
+- **Screenshots and translations.** This page has no screenshots of the old single
+  page to replace. The seven labels and the "Project sections" label ship in the
+  English, German, Spanish, French and Japanese locales; a native speaker has not
+  reviewed the four translations.
+- **Mobile parity.** The Android and iPhone apps show a project as one screen.
+  Matching page sub-tabs there are tracked in datawatch-app and are not part of
+  this change.
 - **Empty-state link.** The empty Projects picker used to show an **Open Settings**
   button that went to Project policy. This page now describes the **Manage
   projects** form as the place to start, and the button is no longer listed.
