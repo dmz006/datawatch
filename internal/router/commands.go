@@ -97,6 +97,7 @@ const (
 	CmdRest       CommandType = "rest"
 	CmdCost       CommandType = "cost"
 	CmdCostReport CommandType = "cost_report"
+	CmdCostCharts CommandType = "cost_charts"
 	CmdTrace      CommandType = "trace"
 	CmdCooldown   CommandType = "cooldown"
 	CmdStale      CommandType = "stale"
@@ -1349,6 +1350,11 @@ func Parse(text string) Command {
 		// "report" is never read as a session id.
 		return Command{Type: CmdCostReport, Text: strings.TrimSpace(text[len("cost report"):])}
 
+	case lower == "cost charts" || strings.HasPrefix(lower, "cost charts "):
+		// "cost charts [group_by=<g>] [window=<d>]" → the combined usage
+		// report (cost over time, tool usage, retries and failures).
+		return Command{Type: CmdCostCharts, Text: strings.TrimSpace(text[len("cost charts"):])}
+
 	case lower == "trace" || strings.HasPrefix(lower, "trace "):
 		// "trace session <id> [k=v ...]", "trace automaton <id> [k=v ...]",
 		// "trace rollup [dimension=<d>] [key=<k>]", "trace coverage [backend=<b>]".
@@ -1965,6 +1971,7 @@ help                            show this help
 — v3.7.x parity (Sx2) —
 cost [<full_id>]                 token+USD rollup (or per-session)
 cost report [group_by=<g>] [since=<t>] [until=<t>]   grouped cost report (report engine: group_by automaton|automation|backend|release|week; bundled-plan rows show the API-equivalent estimate, usage points and share of the monthly price)
+cost charts [group_by=<g>] [window=<d>]   combined usage report: cost over time, tool usage, retries and failures (group_by automaton|project|model|automation; window 36h, 7d, 2w)
 trace session <id> | trace automaton <id> [tool=<t>] [backend=<b>] [kind=<k>] [errors=true] [limit=<n>]   trace events and roll-up of a session or an Automaton
 trace rollup [dimension=<d>] [key=<k>] | trace coverage [backend=<b>]   trace roll-ups and how much of each backend the trace covers
 cooldown                         show global rate-limit cooldown

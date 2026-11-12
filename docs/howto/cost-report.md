@@ -365,6 +365,7 @@ default.
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; settings with `configure cost_report.<key>=<value>` |
+| **Combined usage report** | Cost over time, tool usage, and retries and failures in one reading: `datawatch cost charts [--group-by <g>] [--window <d>] [--json]`, the comm channel `cost charts [group_by=<g>] [window=<d>]`, and the read-only MCP `cost_charts` tool. Each reads `GET /api/cost/series`, `GET /api/cost/tool-usage` and `GET /api/cost/failures` and joins them; see `docs/api/cost.md` |
 
 The merged change record (merge report) of an Automaton also carries a cost section, read from the same ledger through the same engine. It lists sessions, tokens in and out, cache read and creation tokens, tool calls, the span, the session ids, and a dollar figure only where a rate is configured (labelled as an API-equivalent on a bundled plan). It adds a window note when the figures cover only part of the Automaton's life, and an unknown-spend note when some spend could not be read. The section is left out when no spend ledger is wired.
 

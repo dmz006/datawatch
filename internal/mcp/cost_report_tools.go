@@ -166,3 +166,39 @@ func (s *Server) handleCostReport(_ context.Context, req mcpsdk.CallToolRequest)
 	}
 	return textOK(string(out)), nil
 }
+
+// toolCostCharts declares the cost_charts tool: the combined usage report,
+// read-only, both arguments optional.
+func (s *Server) toolCostCharts() mcpsdk.Tool {
+	return mcpsdk.NewTool("cost_charts",
+		mcpsdk.WithDescription("Combined usage report over the daemon's spend ledger and Automaton attempts: cost over time "+
+			"(GET /api/cost/series), tool usage (GET /api/cost/tool-usage) and retries and failure categories "+
+			"(GET /api/cost/failures) joined into one payload with cost_over_time, tool_usage and failures sections, "+
+			"each exactly as its REST route returns it. Cost over time and tool usage group by automaton, project or model; "+
+			"retries and failures group by project, automation or automaton. A group_by one view does not know leaves "+
+			"that view on its default and the payload's notes say so. Tool usage carries a count per group, never a tool name. "+
+			"Read-only; needs the REST loopback. group_by and window are optional."),
+		mcpsdk.WithString("group_by", mcpsdk.Description("Optional. One of automaton, project, model, automation. Each view falls back to its own default where it does not group by this.")),
+		mcpsdk.WithString("window", mcpsdk.Description("Optional. How far back from now: 36h, 7d, 2w. Defaults to the cost_report default window (twelve weeks for retries and failures).")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+// handleCostCharts reads the three REST views through the loopback and
+// returns the joined payload as JSON text, the same join the CLI and the
+// comm channel use.
+func (s *Server) handleCostCharts(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	creq := costreport.ChartsRequest{
+		GroupBy: req.GetString("group_by", ""),
+		Window:  req.GetString("window", ""),
+	}
+	charts, err := costreport.FetchCharts(creq, s.proxyGet)
+	if err != nil {
+		return mcpsdk.NewToolResultError("cost_charts: " + err.Error()), nil
+	}
+	out, err := json.Marshal(charts)
+	if err != nil {
+		return mcpsdk.NewToolResultError("cost_charts: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}

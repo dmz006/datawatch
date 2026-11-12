@@ -1175,6 +1175,30 @@ Rows are sorted by key. `rate_configured` is `false` when at least one session i
 
 ---
 
+### `cost_charts`
+
+Read-only. The combined usage report: cost over time (`GET /api/cost/series`), tool usage (`GET /api/cost/tool-usage`) and retries and failure categories (`GET /api/cost/failures`) joined into one payload. It reads the three REST routes through the loopback and returns each body unchanged under `cost_over_time`, `tool_usage` and `failures`, so it needs the REST loopback. Tool usage carries a count per group, never a tool name. Capability: `analytics:read`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `group_by` | string | No | One of `automaton`, `project`, `model`, `automation`. Cost over time and tool usage group by `automaton`, `project` or `model`; retries and failures group by `project`, `automation` or `automaton`. A grouping a view does not know leaves that view on its default and is named in `notes`. |
+| `window` | string | No | How far back from now: `36h`, `7d`, `2w`. Defaults to the `cost_report` default window (twelve weeks for retries and failures). |
+
+**Example response:**
+```json
+{
+  "group_by": "project",
+  "window": "7d",
+  "cost_over_time": {"group_by": "project", "bucket": "day", "groups": [{"key": "datawatch", "tokens": 4500}]},
+  "tool_usage": {"group_by": "project", "groups": [{"key": "datawatch", "tool_calls": 31}], "total_tool_calls": 31},
+  "failures": {"group_by": "project", "groups": [{"key": "datawatch", "attempts": 6, "tasks": 3, "retries": 5}], "total_retries": 5}
+}
+```
+
+The same report is available from the CLI (`datawatch cost charts`) and the comm channel (`cost charts`).
+
 ### `list_sessions`
 
 List all AI coding sessions on this host, including their state and task description.
