@@ -7,6 +7,50 @@ import (
 	"testing"
 )
 
+func TestFixCleanupPermissionsInlineGuardTable(t *testing.T) {
+	base := t.TempDir()
+	inDir := filepath.Join(base, "work")
+	if err := os.Mkdir(inDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inFile := filepath.Join(inDir, "ro.txt")
+	if err := os.WriteFile(inFile, []byte("x"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		path    string
+		refused bool
+	}{
+		{"traversal", filepath.Join("work", "..", "..", "escape"), true},
+		{"traversal absolute", filepath.Join(base, "..", "escape"), true},
+		{"nul byte", "work/a\x00b", true},
+		{"base itself", ".", true},
+		{"in base", "work", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n, err := FixCleanupPermissions(base, []string{tc.path})
+			if tc.refused {
+				if err == nil || !strings.Contains(err.Error(), "outside the worktree base") {
+					t.Fatalf("expected refusal, got n=%d err=%v", n, err)
+				}
+				return
+			}
+			if err != nil || n < 1 {
+				t.Fatalf("fix: n=%d err=%v", n, err)
+			}
+			info, serr := os.Stat(inFile)
+			if serr != nil {
+				t.Fatal(serr)
+			}
+			if info.Mode().Perm()&0o200 == 0 {
+				t.Fatalf("owner write not restored: %v", info.Mode())
+			}
+		})
+	}
+}
+
 func TestFixCleanupPermissionsRefusesBeforeFilesystem(t *testing.T) {
 	base := t.TempDir()
 	outside := t.TempDir()
