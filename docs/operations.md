@@ -2591,7 +2591,12 @@ persistent-failure and usage-error paths).
 `release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
 `bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin`;
 no workflow holds a `TRIVY_VERSION:` value or a literal tag. To bump Trivy,
-edit that one file.
+edit that one file. The tag is `v0.73.0`, the newer of the two values the
+workflows used to carry (the container build had `v0.70.0`): the three
+workflows scan the same shipped images, so they now share one scanner version.
+The vulnerability database is refreshed on every run regardless of the pin;
+a new Trivy release can change scan results and turn a blocking release job
+red, which is why a bump is a deliberate edit.
 
 **Helm in the kind smoke workflow.** `kind-smoke.yaml` no longer pipes the
 moving `get-helm-3` script into `bash`. It runs
@@ -2602,17 +2607,14 @@ retries, 10 s apart, 20 s connect and 120 s total timeouts), unpacks only
 `linux-amd64/helm`, and on a persistent failure exits non-zero naming curl's
 status and the URL. Coverage: `bash scripts/tests/ci-install-helm_test.sh`. The
 Helm pin is separate from the Trivy pin and `check-trivy-version-single.sh` does
-not cover it. Operator review: the archive checksum is not verified, and the
-kind smoke workflow has not run since the change.
+not cover it; the archive checksum is not verified.
 
 `bash scripts/check-trivy-version-single.sh` enforces this (bad or missing
 version file, a literal pin in a workflow, an installer caller that never reads
 the file); its coverage is
 `bash scripts/tests/check-trivy-version-single_test.sh`.
 
-**Operator review:** `containers.yaml` used to pin `v0.70.0` and now follows
-`v0.73.0`, so check that the next container build is not newly red. Also
-confirm the guard runs in `make lint` and `ci.yaml`. Full write-up in
+The guard runs in `make lint` and `ci.yaml`. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
