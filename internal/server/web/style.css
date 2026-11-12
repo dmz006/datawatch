@@ -3088,6 +3088,42 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   margin-bottom: 10px;
 }
 
+/* Alert card + session-header clipping fix: at 320–390 px viewports a
+   single-line flex row with a long session id (60+ chars, no spaces)
+   clipped ("la 12"). Headers wrap, and every text child may break long
+   unbreakable tokens so nothing runs under the card edge. */
+.alert-card {
+  min-width: 0;
+}
+.card.alert-card {
+  overflow: hidden;
+}
+.alert-session-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.alert-session-head > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.alert-session-label,
+.alert-row-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+.alert-row-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .session-card:active {
   background: var(--bg3);
 }

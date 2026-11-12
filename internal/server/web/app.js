@@ -26860,15 +26860,15 @@ function renderAlertDock() {
       const chevron = isLong
         ? `<span style="opacity:0.6;font-size:11px;margin-left:4px;cursor:pointer;" onclick="event.stopPropagation();toggleAlertCard('${escHtml(cardKey)}')" title="${isExpanded ? 'collapse' : 'expand'}">${isExpanded ? '▾ less' : '▸ more'}</span>`
         : '';
-      return `<div class="alert-card" style="margin:6px 8px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${rail};border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.45;">
-        <div style="display:flex;gap:8px;align-items:center;font-size:11px;margin-bottom:4px;">
+      return `<div class="alert-card" style="margin:6px 8px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${rail};border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.45;min-width:0;">
+        <div class="alert-session-head" style="font-size:11px;margin-bottom:4px;flex-wrap:wrap;gap:6px;align-items:center;">
           <span style="color:${rail};font-weight:700;">${icon}</span>
-          <span style="background:var(--bg);padding:1px 6px;border-radius:4px;font-weight:600;">${escHtml(a.type)}</span>
-          <span style="opacity:0.65;font-family:var(--mono,monospace);">${time}</span>
-          ${a.n > 1 ? `<span style="background:var(--accent2);color:var(--bg);padding:1px 6px;border-radius:8px;font-weight:700;">×${a.n}</span>` : ''}
-          <span style="margin-left:auto;cursor:pointer;opacity:0.55;font-size:14px;line-height:1;" onclick="event.stopPropagation();dismissAlertCard(${idx})" title="${escHtml(t('alert_dock_dismiss')||'Dismiss')}">✕</span>
+          <span style="background:var(--bg);padding:1px 6px;border-radius:4px;font-weight:600;white-space:nowrap;">${escHtml(a.type)}</span>
+          <span style="opacity:0.65;font-family:var(--mono,monospace);white-space:nowrap;">${time}</span>
+          ${a.n > 1 ? `<span style="background:var(--accent2);color:var(--bg);padding:1px 6px;border-radius:8px;font-weight:700;white-space:nowrap;">×${a.n}</span>` : ''}
+          <span style="margin-left:auto;cursor:pointer;opacity:0.55;font-size:14px;line-height:1;flex-shrink:0;" onclick="event.stopPropagation();dismissAlertCard(${idx})" title="${escHtml(t('alert_dock_dismiss')||'Dismiss')}">✕</span>
         </div>
-        <div style="${msgStyle}word-wrap:break-word;" onclick="${isLong ? `event.stopPropagation();toggleAlertCard('${escHtml(cardKey)}')` : ''}">${escHtml(a.message)}${chevron}</div>
+        <div style="${msgStyle}overflow-wrap:anywhere;word-break:break-word;min-width:0;max-width:100%;" onclick="${isLong ? `event.stopPropagation();toggleAlertCard('${escHtml(cardKey)}')` : ''}">${escHtml(a.message)}${chevron}</div>
       </div>`;
     }).join('');
     // Cap body height so the dock can't extend down over the input
@@ -45198,6 +45198,35 @@ function _pollForDeepLinkedAlert(alertId, attempt) {
 // see app-alert-deeplink.test.js / app-pwa-expand-persist.test.js for
 // the same pattern. `cmds` is now an explicit parameter instead of a
 // closure capture; callers are unchanged in behavior.
+// Pure alert categorization for the Alerts tab (heading, category chips,
+// row badges): a prompt is a needs-input alert regardless of level;
+// otherwise the alert level decides. Top-level (not inside the
+// _alertsBuildHtml closure) so the counts helper — and the categorization
+// behind it — is directly unit-testable (app-alerts-counts.test.js).
+function _alertCategory(a, sessState) {
+  if (sessState === 'waiting_input' || /\b(needs input|prompt|waiting)\b/i.test((a && a.title) || '')) return 'prompt';
+  if (a && a.level === 'error') return 'error';
+  if (a && a.level === 'warn') return 'warn';
+  return 'info';
+}
+
+// Pure per-tab alert counts. `entries` = the selected tab's session groups
+// [{ alerts:[...], sessState }], `system` = the system alerts when the
+// System tab is selected (else empty). `all` is the total alerts in the
+// tab — the heading and the "all" chip both read it, so they agree — and
+// `sessions` is the number of session groups the tab buttons count.
+function _alertsCounts(entries, system) {
+  const counts = { all: 0, prompt: 0, error: 0, warn: 0, info: 0, sessions: (entries || []).length };
+  const add = (a, sessState) => {
+    const c = _alertCategory(a, sessState);
+    counts[c]++;
+    counts.all++;
+  };
+  for (const e of entries || []) for (const a of (e && e.alerts) || []) add(a, e.sessState);
+  for (const a of system || []) add(a, '');
+  return counts;
+}
+
 function renderAlertCard(a, sessState, isFirst, cmds) {
   const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
   const isWaiting = sessState === 'waiting_input';
@@ -45222,16 +45251,16 @@ function renderAlertCard(a, sessState, isFirst, cmds) {
   const serverBadge = (a.server && a.server !== 'local')
     ? `<span class="server-badge" style="font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(a.server)}">${escHtml(a.server)}</span>`
     : '';
-  return `<div class="card alert-card" id="alert-${escHtml(a.id)}" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+  return `<div class="card alert-card" id="alert-${escHtml(a.id)}" style="margin-bottom:6px;border-left:3px solid ${levelColor};min-width:0;">
+    <div class="alert-session-head" style="justify-content:space-between;margin-bottom:4px;">
       <span style="display:inline-flex;align-items:center;gap:6px;">
         <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
         ${serverBadge}
       </span>
       <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
     </div>
-    <div style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
-    <div style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
+    <div class="alert-row-title" style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
+    <div class="alert-row-body" style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
     ${sessNavBtn}${replyBtns}
   </div>`;
   el.classList.add('alert-deep-link-highlight');
@@ -45353,25 +45382,30 @@ function _alertsBuildHtml(result) {
     const label = sess ? (sess.name || sess.id) : sessID.split('-').pop();
     const stateColor = sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : sessState === 'running' ? 'var(--success)' : 'var(--text2)';
     const stateText = sessState === 'waiting_input' ? 'waiting input' : sessState;
-    const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : escHtml(label);
+    const sessLink = sess ? `<span class="alert-session-label" style="cursor:pointer;text-decoration:underline;max-width:100%;overflow-wrap:anywhere;word-break:break-word;" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : `<span class="alert-session-label" style="max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${escHtml(label)}</span>`;
     const badge = `<span class="state" style="font-size:10px;color:${stateColor};">${stateText}</span>`;
-    const count = `<span style="font-size:11px;color:var(--text2);">${alerts.length} alert${alerts.length !== 1 ? 's' : ''}</span>`;
+    const count = `<span style="font-size:11px;color:var(--text2);min-width:0;overflow-wrap:anywhere;">${alerts.length} ${alerts.length !== 1 ? (t('alert_dock_many')||'alerts') : (t('alert_dock_one')||'alert')}</span>`;
     const toggleId = 'alert-grp-' + sessID.replace(/[^a-z0-9]/gi, '-');
 
     if (collapsed) {
       return `<div class="alert-session-group" style="margin-bottom:8px;">
-        <div class="settings-section-toggle" onclick="document.getElementById('${toggleId}').style.display=document.getElementById('${toggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;">
+        <div class="settings-section-toggle alert-session-head" onclick="document.getElementById('${toggleId}').style.display=document.getElementById('${toggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;flex-wrap:wrap;">
           <span class="settings-chevron" id="${toggleId}-chev">▶</span>
-          ${sessLink} ${badge} ${count}
+          <span style="min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${sessLink}</span>
+          <span style="white-space:nowrap;">${badge}</span>
+          <span style="white-space:nowrap;">${count}</span>
         </div>
+
         <div id="${toggleId}" style="display:none;">
           ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
         </div>
       </div>`;
     }
-    return `<div class="alert-session-group" style="margin-bottom:12px;">
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm) var(--radius-sm) 0 0;border-bottom:1px solid var(--border);">
-        ${sessLink} ${badge} ${count}
+    return `<div class="alert-session-group" style="margin-bottom:12px;min-width:0;">
+      <div class="alert-session-head" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm) var(--radius-sm) 0 0;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+        <span style="min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${sessLink}</span>
+        <span style="white-space:nowrap;">${badge}</span>
+        <span style="white-space:nowrap;">${count}</span>
       </div>
       <div style="padding:4px 0;">
         ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
@@ -45445,34 +45479,37 @@ function _alertsBuildHtml(result) {
   else { allEntries = []; systemForTab = systemAlerts; }
   const tabBtn = (tabId, label, count) => {
     const isActive = tabSel === tabId;
-    return `<button onclick="setAlertsTab('${tabId}')" class="output-tab ${isActive?'active':''}" style="font-size:13px;padding:6px 14px;">${escHtml(label)} (${count})</button>`;
+    return `<button onclick="setAlertsTab('${tabId}')" class="output-tab ${isActive?'active':''}" style="font-size:13px;padding:6px 14px;"><span class="alert-session-label">${escHtml(label)}</span> (${count})</button>`;
   };
-  const tabsRow = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:8px;">
-    ${tabBtn('active', t('alerts_active_tab_label')||'Active', activeTabs.length)}
-    ${tabBtn('historical', t('alerts_historical_tab_label')||'Historical', inactiveTabs.length)}
-    ${tabBtn('system', t('alerts_system_tab_label')||'System', systemAlerts.length)}
+  // Tab buttons count SESSIONS on the two session tabs and the system
+  // alerts on the System tab — the label says what the number counts,
+  // while the heading counts alerts in the selected tab.
+  const tabsRow = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:8px;flex-wrap:wrap;">
+    ${tabBtn('active', t('alerts_tab_active_sessions')||'Active sessions', activeTabs.length)}
+    ${tabBtn('historical', t('alerts_tab_historical_sessions')||'Historical sessions', inactiveTabs.length)}
+    ${tabBtn('system', t('alerts_tab_system_alerts')||'System alerts', systemAlerts.length)}
   </div>`;
 
   // Categorize each alert. `prompt` = needs-input session OR title
   // mentions "needs input"/"prompt"/"waiting"; else use level.
-  const catOf = (a, sessState) => {
-    if (sessState === 'waiting_input' || /\b(needs input|prompt|waiting)\b/i.test(a.title || '')) return 'prompt';
-    if (a.level === 'error') return 'error';
-    if (a.level === 'warn') return 'warn';
-    return 'info';
-  };
-  const catCounts = { all: 0, prompt: 0, error: 0, warn: 0, info: 0 };
-  for (const e of allEntries) {
-    for (const a of e.alerts) {
-      const c = catOf(a, e.sessState);
-      catCounts[c]++;
-      catCounts.all++;
-    }
-  }
-  for (const a of systemForTab) {
-    const c = catOf(a, '');
-    catCounts[c]++;
-    catCounts.all++;
+  // Categorization and per-tab counting are the pure top-level helpers
+  // (_alertCategory / _alertsCounts), alias keeps the old call sites.
+  const catOf = (a, sessState) => _alertCategory(a, sessState);
+  const catCounts = _alertsCounts(allEntries, systemForTab);
+  // Heading for the selected tab: both numbers (alerts in the tab +
+  // sessions it spans), localized one/many. `all` matches the "all" chip
+  // because both read catCounts.all.
+  const oneCount = catCounts.all === 1;
+  let headingKey, headingVars;
+  if (tabSel === 'system') {
+    headingKey = oneCount ? 'alerts_heading_system_one' : 'alerts_heading_system_many';
+    headingVars = [catCounts.all];
+  } else if (tabSel === 'active') {
+    headingKey = oneCount ? 'alerts_heading_active_one' : 'alerts_heading_active_many';
+    headingVars = [catCounts.all, activeTabs.length];
+  } else {
+    headingKey = oneCount ? 'alerts_heading_historical_one' : 'alerts_heading_historical_many';
+    headingVars = [catCounts.all, inactiveTabs.length];
   }
 
   const matchesFilter = (a, sessState) => {
@@ -45494,7 +45531,7 @@ function _alertsBuildHtml(result) {
 
   const topBar = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
-      <span style="font-weight:700;font-size:14px;">🔔 ${catCounts.all} ${catCounts.all === 1 ? 'alert' : 'alerts'}</span>
+      <span style="font-weight:700;font-size:14px;min-width:0;overflow-wrap:anywhere;" title="Alerts in this tab (matches the 'all' chip)">🔔 ${escHtml(t(headingKey, headingVars))}</span>
       <span style="display:flex;gap:0;flex-wrap:wrap;">
         ${chipBtn('all', t('alert_chip_all')||'all', catCounts.all, 'var(--text2)')}
         ${chipBtn('prompt', '🟡 ' + (t('alert_chip_prompt')||'prompts'), catCounts.prompt, 'var(--warning,#f59e0b)')}
@@ -45538,13 +45575,13 @@ function _alertsBuildHtml(result) {
         <option value="">${escHtml(t('alerts_quick_reply_ph')||'Quick reply…')}</option>${opts}
       </select>`;
     }
-    return `<div style="border-left:3px solid ${borderColor};background:${bg};padding:6px 10px;margin:4px 0;border-radius:0 4px 4px 0;">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">
+    return `<div style="border-left:3px solid ${borderColor};background:${bg};padding:6px 10px;margin:4px 0;border-radius:0 4px 4px 0;min-width:0;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;flex-wrap:wrap;">
         ${kindBadge}
         <span style="opacity:0.55;font-family:var(--mono,monospace);font-size:11px;">${time}</span>
-        <span style="font-weight:600;font-size:13px;">${escHtml(a.title)}</span>
+        <span class="alert-row-title" style="font-weight:600;font-size:13px;">${escHtml(a.title)}</span>
       </div>
-      ${a.body ? `<div style="font-size:12px;color:var(--text2);">${escHtml(a.body)}</div>` : ''}
+      ${a.body ? `<div class="alert-row-body" style="font-size:12px;color:var(--text2);">${escHtml(a.body)}</div>` : ''}
       ${replyBtns}
     </div>`;
   };
@@ -45569,7 +45606,7 @@ function _alertsBuildHtml(result) {
     } else {
       bodyHTML = flat.map(item => {
         const label = item.sess ? (item.sess.name || item.sess.id) : (item.sessID === '__system__' ? 'system' : item.sessID.split('-').pop());
-        const sessLink = item.sess ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(item.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
+        const sessLink = item.sess ? `<a class="alert-session-label" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(item.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${escHtml(label)}</a>` : `<span class="alert-session-label" style="color:var(--text2);max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${escHtml(label)}</span>`;
         return `<div style="margin-bottom:2px;"><span style="font-size:10px;color:var(--text2);">${sessLink}</span>${renderRow(item.a, item.sessState)}</div>`;
       }).join('');
     }
@@ -45585,15 +45622,15 @@ function _alertsBuildHtml(result) {
       const lastTime = visible.length > 0 ? new Date(visible[0].created_at).toLocaleTimeString('en-GB', { hour12: false }) : '—';
       const promptCount = visible.filter(a => catOf(a, entry.sessState) === 'prompt').length;
       const promptHint = promptCount > 0 ? ` · <span style="color:var(--warning,#f59e0b);font-weight:700;">🟡 ${promptCount}</span>` : '';
-      const sessLink = (!isSystem && entry.sess) ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(entry.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
+      const sessLink = (!isSystem && entry.sess) ? `<a class="alert-session-label" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(entry.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${escHtml(label)}</a>` : `<span class="alert-session-label" style="max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${escHtml(label)}</span>`;
       const grpId = 'alert-grp-' + (entry.sessID || 'sys').replace(/[^a-z0-9]/gi, '-');
-      return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">
-        <div onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"
-             style="padding:8px 12px;background:var(--bg2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;">
-          <span style="font-weight:700;">${sessLink}</span>
-          ${stateText ? `<span style="color:${stateColor};font-size:11px;">${stateText}</span>` : ''}
-          <span style="color:var(--text2);font-size:11px;">${visible.length} ${visible.length === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}${promptHint}</span>
-          <span style="margin-left:auto;color:var(--text2);font-family:var(--mono,monospace);font-size:11px;">last ${lastTime}</span>
+      return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;min-width:0;">
+        <div class="alert-session-head" onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"
+             style="padding:8px 12px;background:var(--bg2);cursor:pointer;font-size:13px;flex-wrap:wrap;gap:8px;">
+          <span style="font-weight:700;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">${sessLink}</span>
+          ${stateText ? `<span style="color:${stateColor};font-size:11px;white-space:nowrap;">${stateText}</span>` : ''}
+          <span style="color:var(--text2);font-size:11px;white-space:nowrap;">${visible.length} ${visible.length === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}${promptHint}</span>
+          <span style="margin-left:auto;color:var(--text2);font-family:var(--mono,monospace);font-size:11px;white-space:nowrap;">${escHtml(t('alert_session_last')||'last')} <span style="overflow-wrap:anywhere;word-break:break-word;">${lastTime}</span></span>
         </div>
         <div id="${grpId}" style="padding:6px 10px;">
           ${visible.map(a => renderRow(a, entry.sessState || '')).join('')}
