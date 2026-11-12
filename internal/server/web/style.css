@@ -7579,7 +7579,21 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .sessions-show-more { text-align: center; padding: 10px 0 14px; }
 .session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
 .session-tile-grid .work-tile { padding: var(--session-tile-pad); }
-.session-tile-grid-compact { --session-tile-pad: 8px; }
+/* Compact view mode: the same tile grid as Tiles at a smaller size. Scoped to
+   .session-tile-grid-compact only; data-tile-mode stays "tile". */
+.session-tile-grid-compact { --session-tile-pad: 6px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; font-size: 11px; }
+.session-tile-grid-compact .work-tile { gap: 3px; }
+.session-tile-grid-compact .work-tile-title { font-size: 12px; }
+.session-tile-grid-compact .work-tile-status,
+.session-tile-grid-compact .work-tile-meta,
+.session-tile-grid-compact .work-tile-foot,
+.session-tile-grid-compact .work-tile-body,
+.session-tile-grid-compact .session-tile-node,
+.session-tile-grid-compact .work-tile-tags { font-size: 10px; }
+.session-tile-grid-compact .work-tile-tags .tag-chip,
+.session-tile-grid-compact .work-tile-status,
+.session-tile-grid-compact .work-tile-tags > * { padding-top: 0; padding-bottom: 0; line-height: 1.3; }
+.session-tile-grid-compact .work-tile-progress { height: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .sessions-mode-btn, .sessions-summary-chip { transition: none; }
 }
