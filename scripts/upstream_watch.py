@@ -8,7 +8,7 @@ Checks:
      (go.dev, GitHub releases, the Kubernetes stable feed, npm/PyPI/RubyGems
      /crates.io registry JSON APIs — source chosen from how the Dockerfile
      actually downloads the tool).
-  2. Scanner pin: TRIVY_VERSION in .github/workflows/*.y*ml vs the latest
+  2. Scanner pin: the tag in scripts/trivy-version.txt vs the latest
      aquasecurity/trivy release.
   3. Scanner installer: a standing note for any workflow that still fetches
      the Trivy installer from the moving `main` branch (none do since the
@@ -367,22 +367,21 @@ def parse_dockerfile_args(text):
     return pins
 
 
-def trivy_pins_in_workflows(workflow_dir):
-    """[(relpath, trivy_version)] for every workflow that pins TRIVY_VERSION
-    as `TRIVY_VERSION: vX.Y.Z`."""
-    pins = []
-    if not os.path.isdir(workflow_dir):
-        return pins
-    for fn in sorted(os.listdir(workflow_dir)):
-        if not (fn.endswith(".yaml") or fn.endswith(".yml")):
-            continue
-        rel = os.path.join(workflow_dir, fn)
-        with open(rel, encoding="utf-8") as f:
-            for line in f:
-                m = re.match(r"\s*TRIVY_VERSION\s*:\s*(v?[\w.]+)\s*$", line)
-                if m:
-                    pins.append((os.path.relpath(rel, os.path.dirname(os.path.dirname(workflow_dir))), m.group(1)))
-    return pins
+TRIVY_VERSION_FILE = os.path.join("scripts", "trivy-version.txt")
+
+
+def trivy_pin_from_version_file(repo_root):
+    """[(relpath, trivy_version)] from scripts/trivy-version.txt under the
+    repo root (the single place the Trivy tag is pinned). Empty when the file
+    is missing or holds no tag."""
+    path = os.path.join(repo_root, TRIVY_VERSION_FILE)
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        value = f.read().strip()
+    if not re.fullmatch(r"v?[\w.]+", value):
+        return []
+    return [(TRIVY_VERSION_FILE.replace(os.sep, "/"), value)]
 
 
 def find_installer_refs(workflow_dir, needle=TRIVY_MAIN_INSTALLER):
@@ -685,7 +684,7 @@ def check_trivy(repo_root, not_checked):
     """Checks 2 + 3. Returns (findings, standing)."""
     findings, standing = [], []
     workflow_dir = os.path.join(repo_root, ".github", "workflows")
-    for rel, value in trivy_pins_in_workflows(workflow_dir):
+    for rel, value in trivy_pin_from_version_file(repo_root):
         try:
             latest, feed = latest_from_source(TRIVY_LATEST)
         except FeedError as err:
@@ -696,7 +695,7 @@ def check_trivy(repo_root, not_checked):
             findings.append({
                 "kind": "stale_pin",
                 "arg": "TRIVY_VERSION",
-                "dockerfile": rel,  # it's a workflow, report says so below
+                "dockerfile": rel,  # the version file path is the reported location
                 "package": "Trivy",
                 "pinned": value,
                 "latest": latest,

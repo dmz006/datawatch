@@ -89,6 +89,14 @@ def make_worktree(root, dockerfiles=None, workflows=None, dockerfile_dev=None):
             f.write(dockerfile_dev)
 
 
+def make_trivy_version(root, text):
+    """Write scripts/trivy-version.txt under `root`."""
+    d = os.path.join(root, "scripts")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "trivy-version.txt"), "w", encoding="utf-8") as f:
+        f.write(text)
+
+
 def run_check_pins(root, dockerfiles, feed):
     """Build `dockerfiles` under a tempdir and run up.check_pins with the
     fake feed. Returns (findings, unmapped, checked, not_checked)."""
@@ -223,7 +231,7 @@ class UnmappedPinsTest(unittest.TestCase):
 
 # ── (5) Trivy scanner pin vs latest release ─────────────────────────────
 class TrivyPinTest(unittest.TestCase):
-    TRIVY_DOCKERFILE = "env:\n  TRIVY_VERSION: v0.48.3\n"
+    TRIVY_PIN = "v0.48.3\n"
 
     def _trivy_feed(self, latest_tag, installer_main, installer_pin):
         return FakeFeed({
@@ -236,7 +244,7 @@ class TrivyPinTest(unittest.TestCase):
     def test_stale_trivy_pin_compared_to_latest_release(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        make_worktree(tmp.name, workflows={"trivy.yml": self.TRIVY_DOCKERFILE})
+        make_trivy_version(tmp.name, self.TRIVY_PIN)
         not_checked = []
         with patch_feed(self._trivy_feed("v0.50.0", "echo main", "echo main")):
             findings, standing = up.check_trivy(tmp.name, not_checked)
@@ -249,14 +257,13 @@ class TrivyPinTest(unittest.TestCase):
         self.assertEqual(f["pinned"], "v0.48.3")
         self.assertEqual(f["latest"], "v0.50.0")
         self.assertEqual(f["bump"], "minor")
-        self.assertIn(".github/workflows/trivy.yml", f["dockerfile"])
+        self.assertEqual(f["dockerfile"], "scripts/trivy-version.txt")
         self.assertTrue(f["human_only"])
 
     def test_up_to_date_trivy_pin_not_reported(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        make_worktree(tmp.name, workflows={
-            "trivy.yml": "env:\n  TRIVY_VERSION: v0.50.0\n"})
+        make_trivy_version(tmp.name, "v0.50.0\n")
         feed = FakeFeed({
             TRIVY_LATEST_URL: json.dumps({"tag_name": "v0.50.0"}),
             up.TRIVY_MAIN_INSTALLER: "echo installer",
@@ -276,8 +283,8 @@ class InstallerCheckTest(unittest.TestCase):
     def _tmp_tree(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        make_worktree(tmp.name, workflows={
-            "trivy.yml": "env:\n  TRIVY_VERSION: v0.48.3\n"})
+        make_worktree(tmp.name, workflows={"ci.yml": "name: ci\n"})
+        make_trivy_version(tmp.name, "v0.48.3\n")
         return tmp.name
 
     def test_ref_listed_with_file_and_line_count(self):
@@ -432,7 +439,8 @@ class ReportShapeTest(unittest.TestCase):
             tmp.name,
             dockerfiles={"Dockerfile.a":
                          "FROM golang:1.24\nARG GO_VERSION=1.24.2\n"},
-            workflows={"trivy.yml": "env:\n  TRIVY_VERSION: v0.48.3\n"})
+            workflows={"ci.yml": "name: ci\n"})
+        make_trivy_version(tmp.name, "v0.48.3\n")
         feed = FakeFeed({
             up.GO_DL_FEED: go_feed("1.25.0"),
             up.OSV_QUERY: json.dumps({"vulns": []}),
@@ -482,13 +490,12 @@ class CliOfflineEndToEndTest(unittest.TestCase):
                          "ARG GO_VERSION=1.24.2\n"
                          "ARG GOPLS_VERSION=0.20.1\n"},
             workflows={"ci.yml": (
-                "env:\n"
-                "  TRIVY_VERSION: v0.48.3\n"
                 "steps:\n"
                 "  - run: |\n"
                 "      curl -fsSL "
                 "https://raw.githubusercontent.com/aquasecurity/trivy"
                 "/main/contrib/install.sh | sh\n")})
+        make_trivy_version(self.root, "v0.48.3\n")
         fixtures = {
             up.GO_DL_FEED: go_feed("1.25.0", "1.26.0rc1"),
             up.OSV_QUERY: json.dumps({"vulns": []}),
