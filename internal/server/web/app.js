@@ -3911,6 +3911,7 @@ function renderProjectsView() {
     const fromHash = _projectsHashParse(_projectsCurrentHash());
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
+  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   _projectsPaint();
   return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
     // Paint again only while the Projects tab is still the active view.
@@ -3955,6 +3956,7 @@ function _projectsLoadRollup() {
 function selectProjectsView(name) {
   _projectsState.selected = name || _PROJECTS_OVERVIEW;
   _projectsRememberLast(_projectsState.selected);
+  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   try {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
@@ -28916,6 +28918,7 @@ function _automataFetchAll(url, o) {
 function _automataApplyData(d) {
   state._prdBackends = (d.llms || []).filter(l => !l.disabled);
   _automataState.allPrds = d.prds || [];
+  if (typeof _inboxScope === 'function' && _inboxScope().kind === 'project') _automationInboxRescope();
   _automataState.total = d.total || _automataState.allPrds.length;
   _automataState.nextCursor = d.next || '';
   _automataState.capacity = d.capacity || null;
@@ -39941,9 +39944,91 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
 // security failures and open supervisor-watch findings. The counts live here
 // by source key so the badge stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
+const _automationInboxRaw = {};
 const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
 
+// _inboxScope is where the Inbox is read from: the cross-project Overview
+// (everything) or one selected project. A project scope applies only while
+// the Projects tab is shown and the selected name is a known project.
+function _inboxScope() {
+  const sel = (typeof _projectsState !== 'undefined' && _projectsState) ? _projectsState.selected : '';
+  if (!sel || typeof _projectsActive !== 'function' || !_projectsActive()) return { kind: 'overview' };
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list : [];
+  const project = list.find(p => p && p.name === sel);
+  return project ? { kind: 'project', project } : { kind: 'overview' };
+}
+
+function _inboxCleanDir(d) {
+  return (typeof d === 'string') ? d.trim().replace(/\/+$/, '') : '';
+}
+
+// _inboxPrdFor finds the Automaton an item names by prd_id in the Automata
+// list the page already holds ('' items and unknown ids give null).
+function _inboxPrdFor(item) {
+  const id = item && typeof item.prd_id === 'string' ? item.prd_id : '';
+  if (!id || typeof _automataState === 'undefined' || !Array.isArray(_automataState.allPrds)) return null;
+  return _automataState.allPrds.find(p => p && p.id === id) || null;
+}
+
+// _inboxItemInProject is true when the item belongs to the project: the
+// project link first (a "project:<name>" system tag on the item, or on the
+// Automaton its prd_id names), the item's directory only as the fallback
+// (its project_dir, the Automaton's, or a security failure's repo name
+// against the project directory's name). An item with neither is in no
+// project. Pure: the Automata list is the only outside read.
+function _inboxItemInProject(item, project) {
+  if (!item || typeof item !== 'object' || !project || !project.name) return false;
+  const prd = _inboxPrdFor(item);
+  const tagSets = [item.system_tags, prd && prd.system_tags];
+  let linked = false;
+  for (const tags of tagSets) {
+    if (!Array.isArray(tags)) continue;
+    for (const tag of tags) {
+      if (typeof tag === 'string' && tag.indexOf('project:') === 0 && tag.slice(8).trim()) {
+        linked = true;
+        if (tag.slice(8).trim() === project.name) return true;
+      }
+    }
+  }
+  if (linked) return false;
+  const pdir = _inboxCleanDir(project.dir);
+  if (!pdir) return false;
+  const dirs = [item.project_dir, prd && prd.project_dir].map(_inboxCleanDir).filter(Boolean);
+  if (dirs.some(d => d === pdir)) return true;
+  if (!dirs.length && typeof item.repo === 'string' && item.repo) {
+    const base = pdir.split('/').pop();
+    const repoBase = item.repo.replace(/\/+$/, '').split('/').pop();
+    if (base && repoBase === base) return true;
+  }
+  return false;
+}
+
+// _inboxScopeData returns one Inbox source's data cut to the current scope,
+// in the same shape the source's renderer and counter read. The Overview
+// returns the data untouched, so count and list agree in both scopes.
+function _inboxScopeData(key, data) {
+  const scope = _inboxScope();
+  if (scope.kind !== 'project' || !data) return data;
+  const keep = x => _inboxItemInProject(x, scope.project);
+  if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
+  if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
+  if (key === 'automation_questions') {
+    if (data.__automationQuestionsDisabled) return data;
+    if (Array.isArray(data)) return data.filter(keep);
+    return Array.isArray(data.questions) ? Object.assign({}, data, { questions: data.questions.filter(keep) }) : data;
+  }
+  if (key === 'automation_held_questions') {
+    if (!Array.isArray(data.open)) return data;
+    const out = Object.assign({}, data, { open: data.open.filter(e => e && typeof e === 'object' && keep(e)) });
+    if (Array.isArray(data.shadow)) out.shadow = data.shadow.filter(keep);
+    return out;
+  }
+  if (key === 'supervisor') return (typeof data === 'object' && Array.isArray(data.findings)) ? Object.assign({}, data, { findings: data.findings.filter(keep) }) : data;
+  return data;
+}
+
 function _automationInboxCountOf(key, data) {
+  data = _inboxScopeData(key, data);
   if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
   if (key === 'automation_questions') {
@@ -39964,8 +40049,24 @@ function _automationInboxCountOf(key, data) {
 // its data is not counted then and the last open count stays.
 function _automationInboxCountSet(key, data) {
   if (key === 'automation_questions' && typeof _automationQuestionsState !== 'undefined' && _automationQuestionsState.history) return;
+  _automationInboxRaw[key] = data;
   _automationInboxCounts[key] = _automationInboxCountOf(key, data);
   _automationUpdateInboxBadge();
+}
+
+// _automationInboxRescope recomputes every source's count from the data
+// already held, for the scope now in effect, and repaints the badge and the
+// cards from it. No source is refetched. Called when the Projects selection
+// or the hash changes.
+function _automationInboxRescope() {
+  Object.keys(_automationInboxRaw).forEach(k => { _automationInboxCounts[k] = _automationInboxCountOf(k, _automationInboxRaw[k]); });
+  _automationUpdateInboxBadge();
+  if (typeof document === 'undefined') return;
+  _AUTOMATION_INBOX_KEYS.forEach(k => {
+    const ctl = window._listLoaders && window._listLoaders[k];
+    if (ctl && ctl.state && ctl.state.hasData && typeof ctl.paint === 'function') ctl.paint();
+  });
+  if (typeof supervisorWatchRenderCard === 'function' && _automationInboxRaw.supervisor) supervisorWatchRenderCard(_automationInboxRaw.supervisor);
 }
 
 function _automationInboxBadgeCount() {
@@ -39979,7 +40080,7 @@ function _automationInboxBadgeCount() {
 }
 
 function _automationBadgeLabel(n) {
-  return t('automation_subtab_inbox_badge_label', [n]);
+  return t(_inboxScope().kind === 'project' ? 'automation_subtab_inbox_badge_label' : 'automation_subtab_inbox_badge_label_all', [n]);
 }
 
 // The badge is updated in place: no redraw of the body or the bar.
@@ -39990,6 +40091,7 @@ function _automationUpdateInboxBadge() {
   const n = _automationInboxBadgeCount();
   el.textContent = String(n);
   el.setAttribute('aria-label', _automationBadgeLabel(n));
+  el.title = _automationBadgeLabel(n);
   el.style.display = n > 0 ? '' : 'none';
 }
 
@@ -40986,7 +41088,7 @@ function _automationTriageLoader() {
     failedText: msg => t('triage_failed', [msg]),
     active: _automationInboxLoaderActive,
     onData: data => _automationInboxCountSet('automation_triage', data),
-    render: body => window.triageListHtml(body),
+    render: body => window.triageListHtml(_inboxScopeData('automation_triage', body)),
   });
 }
 
@@ -40999,7 +41101,7 @@ function _automationSecurityFailureLoader() {
     failedText: msg => t('automation_security_failure_failed', [msg]),
     active: _automationInboxLoaderActive,
     onData: data => _automationInboxCountSet('automation_security_failure', data),
-    render: body => window.securityFailureListHtml(body),
+    render: body => window.securityFailureListHtml(_inboxScopeData('automation_security_failure', body)),
   });
 }
 
@@ -41091,7 +41193,7 @@ function supervisorWatchRenderCard(view, nowMs) {
   _automationInboxCountSet('supervisor', view);
   const el = document.getElementById(SUPERVISOR_WATCH_CARD_ELEMENT_ID);
   if (!el) return;
-  const html = supervisorWatchCardHtml(view, nowMs);
+  const html = supervisorWatchCardHtml(_inboxScopeData('supervisor', view), nowMs);
   if (!html) { // endpoint missing — hide the card, never show a stale state
     el.style.display = 'none';
     el.innerHTML = '';
@@ -41405,7 +41507,7 @@ function _automationQuestionsLoader() {
     onData: data => _automationInboxCountSet('automation_questions', data),
     render: body => _automationQuestionsState.history
       ? window.questionsHistoryHtml(body)
-      : window.questionsCardHtml(body),
+      : window.questionsCardHtml(_inboxScopeData('automation_questions', body)),
   });
 }
 
@@ -41857,7 +41959,7 @@ function _automationHeldQuestionsLoader() {
     failedText: msg => t('held_question_failed', [msg]),
     active: _automationInboxLoaderActive,
     onData: data => _automationInboxCountSet('automation_held_questions', data),
-    render: body => window.heldQuestionsCardHtml(body),
+    render: body => window.heldQuestionsCardHtml(_inboxScopeData('automation_held_questions', body)),
   });
 }
 

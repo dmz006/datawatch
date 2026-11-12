@@ -2621,6 +2621,7 @@
   "automation_subtab_setup": "Configuration et politique",
   "automation_subtab_housekeeping": "Maintenance",
   "automation_subtab_inbox_badge_label": "%1$s en attente de votre réponse",
+  "automation_subtab_inbox_badge_label_all": "%1$s en attente de votre réponse dans tous les projets",
   "automation_status_draft": "Brouillon",
   "automation_status_active": "Active",
   "automation_status_paused": "En pause",

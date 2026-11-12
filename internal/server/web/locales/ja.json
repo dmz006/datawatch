@@ -2621,6 +2621,7 @@
   "automation_subtab_setup": "設定とポリシー",
   "automation_subtab_housekeeping": "メンテナンス",
   "automation_subtab_inbox_badge_label": "%1$s件が対応待ち",
+  "automation_subtab_inbox_badge_label_all": "すべてのプロジェクトで%1$s件が対応待ち",
   "automation_status_draft": "下書き",
   "automation_status_active": "有効",
   "automation_status_paused": "一時停止中",
