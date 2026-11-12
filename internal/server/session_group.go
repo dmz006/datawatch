@@ -61,9 +61,16 @@ type sessionGroupRow struct {
 	// Automaton task session, of its owning Automaton); the `project:` tag
 	// names the datawatch project.
 	SystemTags []string
-	PRDID      string
-	StoryID    string
-	TaskID     string
+	// OwnerProject / OwnerTitle are the registered project and the title of
+	// the owning Automaton; FolderProject is the registered project the
+	// session's own folder maps to (worktrees mapped back to their
+	// repository). The resolver fills them (session_group_project.go).
+	OwnerProject  string
+	OwnerTitle    string
+	FolderProject string
+	PRDID         string
+	StoryID       string
+	TaskID        string
 }
 
 // sessionGroupMember is one session inside a group or story block. Chips are
@@ -259,16 +266,28 @@ func groupAxisKey(axis, tagPrefix string, row sessionGroupRow) (string, string) 
 	}
 }
 
-// resolveGroupProject returns the project-axis key for a row: the datawatch
-// project name from the `project:` placement system tag first, then the
-// session working folder when no project is known, then ungrouped. An
-// Automaton task session therefore groups under its project, never under its
-// worktree path.
+// resolveGroupProject returns the project-axis key for a row, in a fixed
+// order: the owning Automaton's project; a `project:` tag on the session
+// (sorted, first); the registered project of the session's folder; the
+// Automaton's title when an Automaton is known but no project resolved; the
+// working folder only when neither a project nor an Automaton is known;
+// else ungrouped. A session of an Automaton never groups under its worktree
+// folder.
 func resolveGroupProject(row sessionGroupRow) string {
-	for _, t := range row.SystemTags {
-		if name := strings.TrimSpace(strings.TrimPrefix(t, "project:")); strings.HasPrefix(t, "project:") && name != "" {
-			return name
+	if row.OwnerProject != "" {
+		return row.OwnerProject
+	}
+	if names := sortedProjectTagNames(row.SystemTags); len(names) > 0 {
+		return names[0]
+	}
+	if row.FolderProject != "" {
+		return row.FolderProject
+	}
+	if row.PRDID != "" {
+		if row.OwnerTitle != "" {
+			return row.OwnerTitle
 		}
+		return row.PRDID
 	}
 	if row.ProjectDir != "" {
 		return row.ProjectDir
@@ -311,23 +330,19 @@ func groupChips(row sessionGroupRow, placement string) []string {
 func (s *Server) writeSessionGrouped(w http.ResponseWriter, r *http.Request, sessions []*session.Session, o sessionGroupOptions) {
 	sort.SliceStable(sessions, func(i, j int) bool { return sessionLess(sessions[i], sessions[j]) })
 	rows := make([]sessionGroupRow, 0, len(sessions))
+	resolver := s.groupProjectResolver()
 	for _, sess := range sessions {
 		var inherited []string
 		if s.manager != nil {
 			inherited = s.manager.InheritedTags(sess)
 		}
-		sysTags := sess.SystemTags
-		if s.manager != nil && sess.PRDID != "" {
-			if owner := s.manager.SystemTagsByPRD(sess.PRDID); len(owner) > 0 {
-				sysTags = append(append([]string(nil), sysTags...), owner...)
-			}
-		}
-		rows = append(rows, sessionGroupRow{
+		row := sessionGroupRow{
 			ID: sess.ID, FullID: sess.FullID, Name: sess.Name, State: sess.State,
-			Tags: sess.Tags, InheritedTags: inherited,
-			Hostname: sess.Hostname, ProjectDir: sess.ProjectDir, SystemTags: sysTags,
-			PRDID: sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
-		})
+			Tags: sess.Tags, InheritedTags: inherited, Hostname: sess.Hostname,
+			StoryID: sess.StoryID, TaskID: sess.TaskID,
+		}
+		resolver.fill(&row, sess)
+		rows = append(rows, row)
 	}
 	grouped, err := GroupSessions(rows, o.axis, o.tagPrefix)
 	if err != nil {

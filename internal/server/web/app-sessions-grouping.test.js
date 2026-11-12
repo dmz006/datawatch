@@ -193,8 +193,11 @@ test('state / node / project axes: complete, sorted, correctly counted', (t) => 
   no.forEach(g => assert.equal(g.count, 100));
 
   const pr = sbx._sessionsGroupSessions(sessions, { axis: 'project' });
-  assert.deepEqual(plain(pr.map(g => g.key)), ['/p/alpha', '/p/beta']);
-  pr.forEach(g => assert.equal(g.count, 150));
+  // Automaton sub-task sessions without a server-resolved project group
+  // under their Automaton, never under their working folder.
+  assert.deepEqual(plain(pr.map(g => g.key)), ['/p/alpha', '/p/beta', 'prd-A', 'prd-B']);
+  assert.equal(pr.reduce((n, g) => n + g.count, 0), 300);
+  assert.equal(pr.filter(g => g.key.startsWith('prd-')).reduce((n, g) => n + g.count, 0), 20);
 
   // Unknown session pieces never crash: missing fields bucket to ungrouped.
   const odd = sbx._sessionsGroupSessions(
@@ -510,6 +513,26 @@ test('project axis: project: system tag, else project_dir, else ungrouped', () =
   assert.equal(sbx._sessionsGroupKeyFor({}, by), 'ungrouped');
   assert.equal(sbx._sessionsGroupKeyFor({ system_tags: [] }, by), 'ungrouped');
   assert.equal(sbx._sessionsGroupLabel('datawatch', by), 'datawatch');
+});
+
+// ── project axis: the server-resolved project wins; fallbacks never use a worktree
+test('project axis: server project field first; Automaton row never groups by worktree', () => {
+  const sbx = freshSandbox();
+  const by = { axis: 'project' };
+  // Worktree-based Automaton session, no tag: the server-resolved field.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    prd_id: 'prd-A', project: 'datawatch',
+    project_dir: '/home/x/.datawatch/prd-worktrees/wt',
+  }, by), 'datawatch');
+  // Plain session in the repository folder: same group.
+  assert.equal(sbx._sessionsGroupKeyFor({ project: 'datawatch', project_dir: '/home/x/datawatch' }, by), 'datawatch');
+  // Two candidate tags resolve deterministically (sorted, first), any order.
+  assert.equal(sbx._sessionsGroupKeyFor({ system_tags: ['project:zeta', 'project:alpha'] }, by), 'alpha');
+  assert.equal(sbx._sessionsGroupKeyFor({ system_tags: ['project:alpha', 'project:zeta'] }, by), 'alpha');
+  // Older daemon, Automaton known, no project: the Automaton id, not the worktree folder.
+  assert.equal(sbx._sessionsGroupKeyFor({ prd_id: 'prd-A', project_dir: '/wt/x' }, by), 'prd-A');
+  // Folder only when neither a project nor an Automaton is known.
+  assert.equal(sbx._sessionsGroupKeyFor({ project_dir: '/p/beta' }, by), '/p/beta');
 });
 
 // ── 8. the group select keeps the choice (render, refresh, reload) ───────

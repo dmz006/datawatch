@@ -3876,7 +3876,7 @@ function _sessionsStale() {
 // summary row that omits one means that field is empty now.
 const SESSION_SUMMARY_KEYS = [
   'id', 'full_id', 'name', 'state', 'backend', 'llm_ref', 'project_dir', 'hostname',
-  'created_at', 'updated_at', 'last_activity', 'parent_id', 'est_cost_usd',
+  'project', 'created_at', 'updated_at', 'last_activity', 'parent_id', 'est_cost_usd',
   'tokens_in', 'tokens_out', 'status_line', 'truncated_fields',
 ];
 // _mergeSessionFields is the one merge for an incoming record over the one
@@ -4691,16 +4691,23 @@ function _sessionsTagPlacement(sess, tagPrefix) {
 }
 
 // _sessionsProjectName returns the project named by the session's `project:`
-// placement system tag (entries may be strings or {name} objects), or ''.
+// placement system tags (entries may be strings or {name} objects) — sorted,
+// first — or ''. It is the fallback for a row without a server-resolved
+// `project` field.
 function _sessionsProjectName(sess) {
   const tags = (sess && Array.isArray(sess.system_tags)) ? sess.system_tags : [];
+  const names = [];
   for (let i = 0; i < tags.length; i++) {
     const t = tags[i];
     const raw = (t && typeof t === 'object') ? t.name : t;
     const n = _placementTagName(raw);
-    if (n && _placementAxisOf(n) === 'project') return n.slice('project:'.length).trim();
+    if (n && _placementAxisOf(n) === 'project') {
+      const name = n.slice('project:'.length).trim();
+      if (name) names.push(name);
+    }
   }
-  return '';
+  names.sort();
+  return names.length ? names[0] : '';
 }
 
 function _sessionsGroupKeyFor(sess, by) {
@@ -4712,10 +4719,15 @@ function _sessionsGroupKeyFor(sess, by) {
       return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
         : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
     case 'project':
-      // Same order as the server: the project named by the `project:`
-      // placement tag, else the working folder, else ungrouped.
+      // The server resolves the project (owning Automaton's project, project
+      // tag, registered folder match, Automaton title, folder) and sends it
+      // as `project`, so the PWA agrees with group_by=project. A row without
+      // it (an older daemon) falls back to the project tag, then the
+      // Automaton id, and only without an Automaton the working folder.
+      if (typeof s.project === 'string' && s.project) return s.project;
       return _sessionsProjectName(s)
-        || ((typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED);
+        || ((typeof s.prd_id === 'string' && s.prd_id) ? s.prd_id
+          : ((typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED));
     case 'tag':
       return _sessionsTagPlacement(s, by.tagPrefix);
     case 'automaton':
