@@ -3012,7 +3012,9 @@ function navigate(view, sessionId, fromPopstate) {
       renderAutonomousView();
     } else if (view === 'projects') {
       headerTitle.textContent = t('nav_projects') || 'Projects';
-      renderProjectsView();
+      _automataState.tab = 'projects';
+      state.activeView = 'autonomous';
+      renderAutonomousView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -3104,8 +3106,13 @@ function _projectsCurrentHash() {
 // Picker and body share one render. Loading: the Overview body shows at once.
 // Load failure: Overview with the error. No projects: a message pointing at
 // Settings, with no picker.
+function _projectsActive() {
+  return state.activeView === 'autonomous' && _automataState.tab === 'projects';
+}
+
 function _projectsPaint() {
-  const view = document.getElementById('view');
+  // The Projects page lives in the Automata panel area.
+  const view = document.getElementById('automataPanel');
   if (!view) return;
   const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
   const err = _projectsState.error;
@@ -3122,7 +3129,8 @@ function _projectsPaint() {
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
     // #view, so the picker goes back on top of it afterwards.
-    renderAutonomousView();
+    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML() + '</div>';
+    _automationMount();
     view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
   } else {
     const p = list.find(x => x.name === selected);
@@ -3659,7 +3667,7 @@ function _projectGanttSVG(rows, now) {
 // choice on the page state and repaints while the Projects tab is active.
 function projectsGanttWindow(key) {
   _projectsState.ganttWindow = _PROJECTS_GANTT_WINDOWS.some(w => w[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
-  if (state.activeView === 'projects') _projectsPaint();
+  if (_projectsActive()) _projectsPaint();
 }
 
 // _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
@@ -3695,7 +3703,7 @@ function projectsHistoryMore() {
   const h = _projectsState.hist;
   if (_projectsState.histBusy || !h || !h.next) return Promise.resolve();
   return _projectsLoadHistory(true).then(() => {
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
   });
 }
 
@@ -3703,7 +3711,7 @@ function projectsHistoryMore() {
 // selected project, repainting after each so the arcs show before the history.
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
     return _projectsLoadHistory(false);
   }).then(() => _projectsLoadLinks());
 }
@@ -3716,7 +3724,7 @@ function renderProjectsView() {
   _projectsPaint();
   return _projectsLoad().then(() => _projectsLoadSelected()).then(() => {
     // Paint again only while the Projects tab is still the active view.
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
   });
 }
 
@@ -3760,7 +3768,7 @@ function selectProjectsView(name) {
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
   return _projectsLoadSelected().then(() => {
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
   });
 }
 
@@ -27213,9 +27221,9 @@ function updateAlertBadge() {
 // The sub-tab a first visit to the Automata tab opens on: Automation is the
 // high-level view, and the operator digs deeper from there.
 const _AUTOMATA_DEFAULT_TAB = 'automation';
-// Sub-tabs of the Automata view, in button order. 'events' sits between
-// 'automata' and 'templates'.
-const _AUTOMATA_TABS = ['automation', 'automata', 'events', 'templates'];
+// Sub-tabs of the Automata view, in button order. 'projects' is first;
+// 'events' sits between 'automata' and 'templates'.
+const _AUTOMATA_TABS = ['projects', 'automation', 'automata', 'events', 'templates'];
 // Remembering the last chosen sub-tab is an undecided operator design
 // question: this switch stays off, so every visit starts on the default.
 const _AUTOMATA_REMEMBER_TAB = false;
@@ -27229,7 +27237,7 @@ function _automataInitialTab() {
   return _AUTOMATA_DEFAULT_TAB;
 }
 const _automataState = {
-  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'events' | 'templates'
+  tab: _automataInitialTab(),      // 'projects' | 'automation' | 'automata' | 'events' | 'templates'
   historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
   filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
   selectMode: false,    // BL246 v6.6.0 — per-card checkboxes hidden until Select toggled
@@ -28479,6 +28487,7 @@ function _automataFallbackFromAutomation() {
 }
 
 function _automataHeaderTitle() {
+  if (_automataNormalizeTab() === 'projects') return t('nav_projects') || 'Projects';
   return _automataNormalizeTab() === 'automation'
     ? (t('nav_automation') || 'Automation')
     : (t('automata_tab_automata') || 'Automata');
@@ -28547,6 +28556,7 @@ function switchAutomataTab(tab) {
   }
   st.selected.clear();
   if (prev === 'events' && tab !== 'events') automataEventsStatusStop();
+  if (prev === 'projects' && tab !== 'projects') _automationStopLoaders();
   // Leaving the Events sub-tab ends the polling of its card slots.
   if (prev === 'events' && tab !== 'events') _automationSlotsStop('events');
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
@@ -28576,7 +28586,8 @@ function switchAutomataTab(tab) {
   }
   // Entering the list sub-tabs drops any Automaton detail capacity timer.
   if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
-  if (tab === 'events') renderAutomataEventsPanel();
+  if (tab === 'projects') renderProjectsView();
+  else if (tab === 'events') renderAutomataEventsPanel();
   else if (tab === 'templates') { _templatesSubtabsSyncActive(); _automataMountTmplSubtab(); }
   else _automataShowList();
 }
@@ -37372,6 +37383,7 @@ function renderAutonomousView() {
            All action buttons share the .automata-action-btn class for
            consistent sizing + padding (defined in style.css). -->
       <div class="output-tabs automata-tabs-bar">
+        <button class="output-tab ${st.tab==='projects'?'active':''}" data-tab="projects" onclick="switchAutomataTab('projects')">${escHtml(t('nav_projects'))}</button>
         ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
         <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</button>
@@ -37403,7 +37415,8 @@ function renderAutonomousView() {
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
-    if (st.tab === 'events') renderAutomataEventsPanel();
+    if (st.tab === 'projects') renderProjectsView();
+    else if (st.tab === 'events') renderAutomataEventsPanel();
     else if (st.tab === 'templates') _automataMountTmplSubtab();
     else if (reuse) _automataShowList();
     else loadAutomataPanel();

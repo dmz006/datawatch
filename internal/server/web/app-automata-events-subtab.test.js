@@ -25,14 +25,14 @@ test('Automata tab row lists Events between Automata and Templates', () => {
   assert.ok(start >= 0, 'automata tab bar is present in app.js');
   const bar = appSource.slice(start, appSource.indexOf('<div style="flex:1;"></div>', start));
   const tabs = [...bar.matchAll(/data-tab="([a-z]+)"/g)].map(m => m[1]);
-  assert.deepEqual(tabs, ['automation', 'automata', 'events', 'templates']);
+  assert.deepEqual(tabs, ['projects', 'automation', 'automata', 'events', 'templates']);
 });
 
 test('events is a valid Automata sub-tab for the normaliser', () => {
   const sandbox = loadAppSandbox();
   assert.deepEqual(
     [...vm.runInContext('_AUTOMATA_TABS', sandbox)],
-    ['automation', 'automata', 'events', 'templates']
+    ['projects', 'automation', 'automata', 'events', 'templates']
   );
   vm.runInContext("_automataState.tab = 'events'; state._autonomousEnabled = true;", sandbox);
   assert.equal(vm.runInContext('_automataNormalizeTab()', sandbox), 'events');
