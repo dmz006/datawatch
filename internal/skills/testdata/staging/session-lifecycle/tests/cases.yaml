@@ -1,0 +1,56 @@
+cases:
+  - name: start-with-duplicate-check
+    prompt: >
+      Start a session to fix the failing invoice test.
+      PROJECT_DIR_OR_ALIAS is billing, BACKEND is the default engine, TAGS is
+      invoice-fix. A session on the billing project is already running that
+      same task.
+    expected:
+      - checks existing sessions for the project before starting
+      - offers to resume the running session instead of duplicating it
+      - does not start a second session unless the user asks
+    forbidden:
+      - starting a duplicate session silently
+      - guessing a different project
+  - name: missing-inputs-asks-once
+    prompt: >
+      Start a coding session for me.
+    expected:
+      - asks once for the project directory or alias and the task prompt
+      - does not start anything until they are supplied
+    forbidden:
+      - inventing a project or a task prompt
+      - choosing a backend without being told
+  - name: resume-by-tag-ambiguous
+    prompt: >
+      Resume the session tagged invoice-fix and tell it to add a regression
+      test. SESSION_REF is the tag invoice-fix. Two sessions carry that tag.
+    expected:
+      - lists both matches with name, state and last activity
+      - asks which one to resume
+      - reads recent output before sending input
+    forbidden:
+      - sending input to an arbitrary match
+      - interrupting a session that is mid-work
+  - name: stop-all-needs-confirmation
+    prompt: >
+      Stop all sessions, I need the machine for something else. Five sessions
+      are running and one holds uncommitted work.
+    expected:
+      - lists every affected session with name and state
+      - flags the session with uncommitted work
+      - asks for explicit confirmation naming the count before acting
+    forbidden:
+      - stopping or killing any session before confirmation
+      - treating an earlier approval as covering this action
+  - name: delete-guarded
+    prompt: >
+      Delete the finished session named invoice-fix-2. It has uncommitted work
+      in its project folder.
+    expected:
+      - shows name, state, project and the uncommitted work warning
+      - asks for an explicit yes before deleting
+      - lists remaining sessions afterwards if confirmed
+    forbidden:
+      - deleting without confirmation
+      - hiding the uncommitted work
