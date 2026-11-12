@@ -19384,7 +19384,7 @@ function closeOverlapWarnings() {
 }
 window.closeOverlapWarnings = closeOverlapWarnings;
 
-function openPRDCreateModal() {
+function openPRDCreateModal(presetParentId) {
   // v5.27.0 — operator-reported: backend should only show configured
   // backends; model should list available models for the selected
   // backend; if list isn't available, hide the model selector.
@@ -19406,7 +19406,12 @@ function openPRDCreateModal() {
     state._prdProjectProfiles = projectsArr.map(p => p && (p.name || p)).filter(Boolean);
     state._prdClusterProfiles = clustersArr.map(c => c && (c.name || c)).filter(Boolean);
   });
-  Promise.all([ensureBackends, ensureModels, ensureProfiles, _tagsLoad()]).then(() => {
+  // Optional parent Automaton selector: the existing Automata, newest first.
+  const ensureParents = fetch('/api/autonomous/prds', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+    const arr = Array.isArray(d) ? d : (d && (d.prds || d.automata)) || [];
+    state._prdParentChoices = arr.filter(p => p && p.id && !p.is_template).map(p => ({ id: p.id, title: p.title || p.id }));
+  });
+  Promise.all([ensureBackends, ensureModels, ensureProfiles, ensureParents, _tagsLoad()]).then(() => {
     // v5.26.30 — operator-asked: collapse the three separate fields
     // (project_dir / project_profile / cluster_profile) into a single
     // "Profile" dropdown. The first option is the explicit
@@ -19433,6 +19438,8 @@ function openPRDCreateModal() {
         <input id="prdNewTitle" type="text" class="form-input" placeholder="${t('prd_new_title_ph')||'Short headline'}" />
         <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_new_spec_label')||'Spec — describe the feature in plain English'} ${micButtonHTML('prdNewSpec')}</label>
         <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="${t('prd_new_spec_ph')||'Add a CACHE column to /api/stats…'}" style="resize:vertical;font-family:inherit;"></textarea>
+        <label style="font-size:11px;color:var(--text2);">${t('prd_new_parent_label')||'Parent Automaton (optional)'}</label>
+        <select id="prdNewParent" class="form-select" style="font-size:11px;padding:1px 4px;" title="${escHtml(t('prd_new_parent_help')||'Optional. A child Automaton inherits project, priority and tags from its parent when child inheritance is on.')}">${['<option value="">—</option>'].concat((state._prdParentChoices || []).map(p => `<option value="${escHtml(p.id)}"${p.id === presetParentId ? ' selected' : ''}>${escHtml(p.title)}</option>`)).join('')}</select>
         <label style="font-size:11px;color:var(--text2);">${t('new_session_profile_label')||'Profile'}</label>
         <select id="prdNewProfile" class="form-select" style="font-size:11px;padding:1px 4px;" onchange="_prdNewProfileChanged()">${profileOpts.join('')}</select>
         <div id="prdNewDirRow">
@@ -19514,6 +19521,8 @@ function openPRDCreateModal() {
         backend: usingProfile ? '' : document.getElementById('prdNewBackend').value,
         effort: usingProfile ? '' : document.getElementById('prdNewEffort').value,
       };
+      const parentPrdId = document.getElementById('prdNewParent')?.value || '';
+      if (parentPrdId) body.parent_prd_id = parentPrdId;
       // v5.27.0 — model field is dynamic (input or select inside
       // prdNewModelInner) and may be hidden entirely when no model
       // list is available for the selected backend.
@@ -21265,6 +21274,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.host_load_alert.mode', label: 'Host load check (off, alert or reap; default alert)', labelKey: 'settings_host_load_alert_mode', type: 'select', options: ['off', 'alert', 'reap'], default: 'alert' },
     { key: 'autonomous.host_load_alert.multiple', label: 'Host load alert multiple (a load average above this many times the core count is a breach; default 1.5)', labelKey: 'settings_host_load_alert_multiple', type: 'number', placeholder: '1.5', min: 0, step: 0.1, default: '1.5' },
     { key: 'autonomous.host_load_alert.minutes', label: 'Host load alert minutes (how long a breach must last before it warns that Automata may be slowed; default 10)', labelKey: 'settings_host_load_alert_minutes', type: 'number', placeholder: '10', min: 0, step: 1, default: '10' },
+    // Child inheritance — on by default: an Automaton started from another one inherits its project, priority, tags and Automation membership.
+    { key: 'autonomous.automation.child_inherit', label: 'Child Automata inherit from their parent (default on)', labelKey: 'settings_automation_child_inherit', helpKey: 'settings_automation_child_inherit_help', type: 'toggle' },
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
