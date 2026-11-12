@@ -6588,6 +6588,10 @@ Every key is read live; a bad value is refused on every write path (unknown mode
 
 ---
 
+### Housekeeping repairs: task chain
+
+The `autonomous.housekeeping_repairs.task_chain` group (default `report`) has three repairs for stuck task chains: a task that failed only because a dependency failed is reset once the dependency is done (plain reset, never force); a final gate that failed on a stale gitignored docs mirror runs `make sync-docs` in the Automaton worktree and is retried once; a leaked marker or stray file that blocks a finish is removed with `git clean -f` only when it is untracked and inside the Automaton worktree, then the task is retried once. Each refuses, records a skipped entry and raises one alert when the cause is ambiguous, a second retry would be needed, or the file is tracked. The daemon does not start the repair pass yet, so nothing acts today and the group setting is read from the config file only. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+
 ## Triage records (failed and blocked Automata)
 
 The autonomous engine keeps one triage record per **failed** or **blocked** Automaton, so an operator can see what failed, when it has been sitting, how much retry budget is left, and whether the triage alert has fired — from every surface at once. The record is a **read**: filling it starts, retries and edits nothing.
