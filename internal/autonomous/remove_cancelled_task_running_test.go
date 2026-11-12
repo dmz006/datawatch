@@ -111,3 +111,36 @@ func TestOtherStructuralEditsStillRefusedWhileRunning(t *testing.T) {
 		t.Error("RemoveStory should be refused")
 	}
 }
+
+func TestAddTaskAndLiveRemoveRefusedWhileRunning(t *testing.T) {
+	m, p := seedRunningPRD(t, TaskCompleted)
+	if _, err := m.AddTask(p.ID, p.Story[0].ID, "new", "spec", "op", nil); err == nil {
+		t.Error("AddTask should be refused while running")
+	}
+	for _, st := range []TaskStatus{TaskInProgress, TaskQueued, TaskWaitingCapacity} {
+		m2, p2 := seedRunningPRD(t, st)
+		if _, err := m2.RemoveTask(p2.ID, p2.Story[0].ID, taskIDByTitle(p2, "t-extra"), "op"); err == nil {
+			t.Errorf("status %s: RemoveTask should be refused", st)
+		}
+	}
+}
+
+func TestRemovePendingTaskWhileRunning(t *testing.T) {
+	m, p := seedRunningPRD(t, TaskCompleted)
+	if _, err := m.RemoveTask(p.ID, p.Story[0].ID, taskIDByTitle(p, "t-dep"), "op"); err != nil {
+		t.Fatalf("never-started pending task should be removable: %v", err)
+	}
+	// A pending task that already holds a session is live and is refused.
+	m2, p2 := seedRunningPRD(t, TaskCompleted)
+	id := taskIDByTitle(p2, "t-dep")
+	m2.Store().WithLock(func() {
+		for i := range p2.Story[0].Tasks {
+			if p2.Story[0].Tasks[i].ID == id {
+				p2.Story[0].Tasks[i].SessionID = "live"
+			}
+		}
+	})
+	if _, err := m2.RemoveTask(p2.ID, p2.Story[0].ID, id, "op"); err == nil {
+		t.Fatal("pending task with a session should be refused")
+	}
+}

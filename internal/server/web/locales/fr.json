@@ -1255,6 +1255,7 @@
   "prd_remove_task_confirm": "Remove this task? This cannot be undone.",
   "prd_remove_task_ok": "Task removed.",
   "prd_remove_task_fail": "Remove failed",
+  "prd_remove_task_running_hint": "Retirer cette tâche (un automate en cours accepte une tâche qui n'est ni en cours ni en file d'attente)",
   "prd_cancel_story_fail": "Cancel failed",
   "prd_cancel_story_ok": "Story cancelled.",
   "prd_task_approve": "Approuver cette tâche",

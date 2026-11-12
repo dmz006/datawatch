@@ -1255,6 +1255,7 @@
   "prd_remove_task_confirm": "Remove this task? This cannot be undone.",
   "prd_remove_task_ok": "Task removed.",
   "prd_remove_task_fail": "Remove failed",
+  "prd_remove_task_running_hint": "このタスクを削除(実行中のオートマトンでは、実行中でもキュー待ちでもないタスクを削除できます)",
   "prd_cancel_story_fail": "Cancel failed",
   "prd_cancel_story_ok": "Story cancelled.",
   "prd_task_approve": "このタスクを承認",

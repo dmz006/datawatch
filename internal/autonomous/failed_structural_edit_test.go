@@ -97,9 +97,25 @@ func TestStructuralEditsRefusedOutsideSet(t *testing.T) {
 		if _, err := m.AddTask(prd.ID, "story-1", "x", "y", "op", nil); err == nil {
 			t.Errorf("%s: AddTask accepted", st)
 		}
-		// A running Automaton accepts removal of a task that is not running
-		// and not queued; see remove_cancelled_task_running_test.go.
-		if _, err := m.RemoveTask(prd.ID, "story-1", "task-1b", "op"); err == nil && st != PRDRunning {
+		// A running Automaton accepts removal only of a task that is not
+		// running and not queued; every other status refuses it outright.
+		removable := false
+		if st == PRDRunning {
+			if cur, ok := m.Store().GetPRD(prd.ID); ok {
+				for si := range cur.Story {
+					for ti := range cur.Story[si].Tasks {
+						if tk := &cur.Story[si].Tasks[ti]; tk.ID == "task-1b" {
+							removable = taskRemovableWhileRunning(tk)
+						}
+					}
+				}
+			}
+		}
+		_, err := m.RemoveTask(prd.ID, "story-1", "task-1b", "op")
+		if removable && err != nil {
+			t.Errorf("%s: RemoveTask of a removable task refused: %v", st, err)
+		}
+		if !removable && err == nil {
 			t.Errorf("%s: RemoveTask accepted", st)
 		}
 		if _, err := m.EditStory(prd.ID, "story-1", "t", "", "op"); err == nil {

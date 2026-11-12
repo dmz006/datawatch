@@ -1493,7 +1493,7 @@ func (s *Server) handleAutonomousPRDAddStory(_ context.Context, req mcpsdk.CallT
 
 func (s *Server) toolAutonomousPRDRemoveStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_remove_story",
-		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Accepted in needs_review, revisions_asked, cancelled and failed; while the Automaton is running, a task that is not running and not queued (cancelled, completed, failed, blocked or never started) can also be removed, and other tasks stop depending on it; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
+		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Accepted in needs_review, revisions_asked, cancelled and failed; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to remove")),
 	)
@@ -1546,7 +1546,7 @@ func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallTo
 
 func (s *Server) toolAutonomousPRDRemoveTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_remove_task",
-		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Accepted in needs_review, revisions_asked, cancelled and failed; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
+		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Accepted in needs_review, revisions_asked, cancelled and failed. While the Automaton is running, a task that is not running and not queued (cancelled, completed, failed, blocked or never started) can also be removed, and other tasks stop depending on it; a running, queued or waiting task is refused with an error naming its state. An Automaton parked in needs_review after a blocked completion review can be edited this way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID the task belongs to")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to remove")),

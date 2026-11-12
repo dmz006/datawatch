@@ -1374,6 +1374,7 @@
   "prd_remove_task_confirm": "Remove this task? This cannot be undone.",
   "prd_remove_task_ok": "Task removed.",
   "prd_remove_task_fail": "Remove failed",
+  "prd_remove_task_running_hint": "Remove this task (a running Automaton accepts a task that is not running and not queued)",
   "prd_cancel_story_ok": "Story cancelled.",
   "prd_cancel_story_fail": "Cancel failed",
   "prd_task_error": "Error",
