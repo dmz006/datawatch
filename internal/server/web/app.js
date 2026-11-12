@@ -4905,7 +4905,11 @@ function renderSessionsView() {
     ? (groupBy.axis === 'automaton'
         ? renderSessionsAutomaton(visible, now, viewMode)
         : renderSessionsGrouped(visible, groupBy, now, viewMode))
-    : (state.sessionTreeView
+    : ((state.sessionTreeView && viewMode === 'list')
+        // Invariant: Tiles / Compact / List always render three distinct layouts
+        // with no grouping. The lineage tree is a variant of List only; a
+        // persisted tree flag (its toggle is hidden while filters are collapsed)
+        // must never override a Tiles or Compact choice.
         ? renderSessionsAsTree(visible)
         : (groupAxis
             ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
@@ -5197,6 +5201,12 @@ function _sessionsSetViewMode(mode) {
   if (!m) return;
   state.sessionsViewMode = m;
   _sessionsStoreMode(m);
+  // An explicit mode click is the layout choice: drop the lineage-tree flag so
+  // it cannot keep an invisible override over the chosen mode.
+  if (state.sessionTreeView) {
+    state.sessionTreeView = false;
+    try { localStorage.setItem('cs_session_tree_view', '0'); } catch (_) { /* storage blocked */ }
+  }
   state._sessionsPageLimit = _sessionsPageSize();
   state.selectedSessions.clear();
   if (state.activeView === 'sessions') renderSessionsView();
