@@ -5304,6 +5304,48 @@ paths:
                               wake_default: {type: boolean}
         "403": {description: "Caller lacks the autonomous:read capability"}
         "405": {description: "Method not allowed"}
+  /api/autonomous/subscriptions/preview:
+    post:
+      summary: Preview what a filter would have matched in the last day
+      description: |
+        Counts what a filter matches in the last 24 hours of the Events log and
+        returns the newest matches. Reads only; nothing is stored. `kinds` are
+        the Events log's own kinds (`watch`, `decision`, `retry`, `check`,
+        `cleanup`, `alert`, `error`), not the lifecycle event kinds listed by
+        `GET /api/autonomous/event-kinds`; an empty list matches every kind and
+        any other kind is a 400. `project` and `owner` match exactly (an empty
+        value matches all). The notify set is not applied. Requires the
+        `autonomous:read` capability.
+      operationId: autonomousSubscriptionPreview
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kinds: {type: array, items: {type: string}}
+                project: {type: string}
+                owner: {type: string}
+      responses:
+        "200":
+          description: Match count and newest matches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  window_hours: {type: integer}
+                  sample:
+                    type: array
+                    maxItems: 20
+                    items: {type: object}
+        "400": {description: "Malformed body, or an unknown kind"}
+        "403": {description: "Caller lacks the autonomous:read capability"}
+        "405": {description: "Method not allowed"}
+        "503": {description: "Autonomous is disabled"}
 
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:

@@ -9,6 +9,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **MCP resource subscriptions for lifecycle events, off by default.** The new setting `mcp.resource_subscriptions` (default `false`; restart to apply) lets an MCP client call `resources/subscribe` on `datawatch://events/lifecycle?kinds=…&level=…` and receive `notifications/resources/updated` when a matching Automata event fires. The filter, the event kinds and the delivery gate are the same ones a persisted subscription uses, and the subscription is one more consumer of the existing dispatcher: nothing is stored and no sink or subscription format changes. With the setting off the server advertises and behaves exactly as before. Set it in the `mcp:` block, Settings → General → MCP Server, `PUT /api/config`, `datawatch config set`, comm `configure` or `config_set`; see [docs/mcp.md](docs/mcp.md#resource-subscriptions).
 
+### Changed
+
+- **Docs for subscribable events brought in line with what shipped.** The event kind listing (REST, MCP, CLI, comm channel, web subscription form), the subscription preview route and the MCP resource subscription path are now described in the subscriptions how-to, the operations guide, the definitions, the autonomous API reference, the comm command reference, the API-to-MCP mapping and the OpenAPI reference. The statements that no REST, CLI or comm surface lists the kinds, and that every picker carries a built-in copy, were removed. The how-to and definitions now state that the preview route accepts only the Events log's kinds, so the web form's last-day count does not work for lifecycle kinds yet.
+
 ## v9.136.0 — Supervisor wake settings
 
 ### Added

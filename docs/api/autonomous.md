@@ -180,8 +180,40 @@ its own sink type with `autonomous.RegisterSinkType` (an optional validator;
 a `secret_ref` is refused unless the validator accepts it; targets are capped
 at 512 characters). Registered kinds pass `filter.kinds` validation and
 appear in `ListEventKinds`; registered sinks pass `sink.type` validation.
-There is no REST, CLI or comm surface that lists the registry yet; the PWA
-pickers carry a copy of the built-in list.
+The registry is listed on every surface:
+
+```
+GET    /api/autonomous/event-kinds           every kind, grouped: {groups:[{group, kinds:[{kind, description, wake_default}]}]}
+POST   /api/autonomous/subscriptions/preview what a filter would have matched in the last day; body: {kinds[], project?, owner?}
+```
+
+`GET /api/autonomous/event-kinds` returns the built-in kinds and any kind a
+plugin registered, with `wake_default` true for the kinds in the default set
+that wakes the supervisor (see the `supervisor_loop.wake.kinds` entry in the
+[definitions](../datawatch-definitions.md#supervisor-loop-wake-kinds)). The
+MCP tool is `autonomous_event_kinds`, the CLI is
+`datawatch autonomous event-kinds [--group G] [--json]` and the comm verb is
+`autonomous event-kinds [group=<g>]`. All of them need the autonomous read
+capability.
+
+`POST /api/autonomous/subscriptions/preview` stores nothing. It filters the
+same merged event log as `GET /api/autonomous/event-log` (the stream the
+**Events** tab shows), keeps only the last 24 hours, and replies
+`{"count": n, "window_hours": 24, "sample": [...]}`, where `count` is every
+match and `sample` the newest matches, at most 20. An empty `kinds` list
+matches every kind, and an empty `project` or `owner` matches every project or
+Automaton. The `kinds` it accepts are the event log's own kinds (`watch`,
+`decision`, `retry`, `check`, `cleanup`, `alert`, `error`), not the lifecycle
+event kinds that `GET /api/autonomous/event-kinds` lists; any other kind,
+including a lifecycle kind such as `task.failed`, is a `400`. It reads the
+event log, not the delivery gate, so it does not apply the Automaton's notify
+set. There is no MCP tool, CLI command or comm verb for the preview; the web
+subscription form is its only caller today. See the review note in the
+[subscriptions how-to](../howto/automaton-lifecycle-subscriptions.md#find-the-kinds-and-preview-a-filter).
+
+The PWA subscription form loads its kind list from `GET
+/api/autonomous/event-kinds` and falls back to its built-in list when the call
+fails. The Automaton notify-event pickers still use the built-in list.
 
 ### Notify events (`set_notify_events`)
 The set of lifecycle event kinds (the same known set as the subscription

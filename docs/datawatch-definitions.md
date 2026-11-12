@@ -1792,10 +1792,40 @@ consumes the edges yet.
 **Event kind registry** — the one in-daemon list of every lifecycle event
 kind a subscription or notify set may name, each with a one-line
 description and a group (`automaton`, `task`, `review`, `capacity`,
-`budget`). The subscription validator, the notify-event validator and the
-PWA kind pickers derive from it. A plugin may register further kinds and
-sink types at start-up; they validate like the built-in ones. Full table:
+`budget`). The subscription validator and the notify-event validator derive
+from it, and the web subscription form loads its kind checkboxes from it. The
+Automaton notify-event pickers still carry a built-in copy of the list. A
+plugin may register further kinds and sink types at start-up; they validate
+like the built-in ones. Full table:
 [api/autonomous.md](api/autonomous.md#lifecycle-event-kinds).
+<a id="event-kind-listing"></a>
+**Event kind listing** — the read-only view of the event kind registry, so
+you can see what a subscription can name without reading a table. Each kind
+shows its group, its one-line description and whether it is in the default set
+that wakes the supervisor. REST `GET /api/autonomous/event-kinds`, the
+`autonomous_event_kinds` MCP tool, `datawatch autonomous event-kinds
+[--group G] [--json]`, `autonomous event-kinds [group=<g>]` on the comm channel
+and the kind checkboxes of the web subscription form all show the same list,
+including kinds a plugin registered. It changes nothing.
+<a id="subscription-preview"></a>
+**Subscription preview** — `POST /api/autonomous/subscriptions/preview`, a
+read-only count of what a filter (`kinds`, `project`, `owner`) matches in the
+last 24 hours of the Events log, with the newest 20 matches. It stores nothing
+and does not apply the notify set. Its `kinds` are the Events log's own kinds
+(`watch`, `decision`, `retry`, `check`, `cleanup`, `alert`, `error`), not the
+lifecycle event kinds, so a lifecycle kind such as `task.failed` is refused.
+The web subscription form's "Would have matched in the last day" line is its
+only caller. See [howto/automaton-lifecycle-subscriptions.md](howto/automaton-lifecycle-subscriptions.md#find-the-kinds-and-preview-a-filter).
+<a id="mcp-resource-subscription"></a>
+**MCP resource subscription** — a push path for MCP clients that stores
+nothing. With `mcp.resource_subscriptions` on (off by default; restart to
+apply), a client calls `resources/subscribe` on
+`datawatch://events/lifecycle?kinds=…&level=…` and receives
+`notifications/resources/updated` for each matching lifecycle event. It uses
+the same filter rules, kind list and notify-set gate as a stored
+[lifecycle event subscription](#lifecycle-event-subscription), lives only as
+long as the MCP session (at most 32 per session) and never changes how stored
+subscriptions deliver. See [mcp.md](mcp.md#resource-subscriptions).
 
 **Supervisor event kinds** — the opt-in lifecycle event kinds that let an
 event-driven supervisor wake on a state instead of polling for it. The
@@ -1812,6 +1842,7 @@ once when a judge verdict with that outcome is recorded, and
 `task.final_gate_failed` once when a final gate task fails. None of them
 changes a status, verdict or gate outcome.
 
+<a id="lifecycle-event-subscription"></a>
 **Lifecycle event subscription** — a persisted rule that maps an Automaton
 lifecycle event (PRD/task status changes, `task.session_started` /
 `task.session_cleared`, `prd.updated`, the question kinds, the opt-in
