@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/planrecords"
 	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/trace"
 	"io"
@@ -589,6 +590,10 @@ type Server struct {
 	// /api/autonomous/decision-records; wired by main.go via
 	// SetDecisionRecords; nil (default) makes the routes return 503.
 	decisionRecords DecisionRecordsAPI
+
+	// planRecords — the plans-and-backlog record store behind
+	// /api/plan-records. Nil answers 503.
+	planRecords *planrecords.Store
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).
@@ -6872,7 +6877,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"project_gate_command":        s.cfg.Autonomous.ProjectGateCommand,
 			// Decision record keys: effective values (the shipped defaults when a
 			// key is absent).
-			"decisions": decisionRecordSurface(s.cfg.Autonomous.Decisions),
+			"decisions":    decisionRecordSurface(s.cfg.Autonomous.Decisions),
+			"plan_records": planRecordsSurface(s.cfg.Autonomous.PlanRecords),
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				// Effective, not raw: an unset (nil) value reads the 30-minute
@@ -7877,6 +7883,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The decision record keys: a bad value rejects the whole PUT before
 	// anything is applied, by the same rules the config file load uses.
 	if err := validateDecisionRecordPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The plan-records keys, same rule.
+	if err := validatePlanRecordsPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -10290,6 +10301,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.decisions.enabled", "autonomous.decisions.folder", "autonomous.decisions.folder_glob", "autonomous.decisions.front_matter_delimiter", "autonomous.decisions.front_matter_separator", "autonomous.decisions.front_matter_field_separator", "autonomous.decisions.front_matter_keys", "autonomous.decisions.folder_withdraw_on_delete", "autonomous.decisions.clarity_mode", "autonomous.decisions.clarity_min_text_chars", "autonomous.decisions.clarity_require_tradeoffs", "autonomous.decisions.clarity_require_label", "autonomous.decisions.clarity_tracker_id_pattern", "autonomous.decisions.doc_root", "autonomous.decisions.doc_status_mode", "autonomous.decisions.doc_status_pattern", "autonomous.decisions.doc_status_template", "autonomous.decisions.follow_ups":
 			// Validated in handlePutConfig (validateDecisionRecordPatch).
 			applyDecisionRecordKey(&cfg.Autonomous.Decisions, k, v)
+		case "autonomous.plan_records.enabled", "autonomous.plan_records.write_through", "autonomous.plan_records.import_conflict_policy":
+			// Validated in handlePutConfig (validatePlanRecordsPatch).
+			applyPlanRecordsKey(&cfg.Autonomous.PlanRecords, k, v)
 		case "resource_limits.memory_share_percent":
 			// Validated in handlePutConfig (validateResourceLimitsPatch).
 			if n, ok := toInt(v); ok {
@@ -15612,4 +15626,57 @@ func effectiveReleasePath(v string) string {
 		return config.ReleasePathDirectPush
 	}
 	return v
+}
+
+// validatePlanRecordsPatch checks the autonomous.plan_records keys in a PUT
+// /api/config body. A bad value rejects the whole PUT before anything is
+// applied, by the same rules the config file load uses; each refusal names the
+// key and the valid values.
+func validatePlanRecordsPatch(patch map[string]interface{}) error {
+	for _, k := range []string{"autonomous.plan_records.enabled", "autonomous.plan_records.write_through"} {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				return fmt.Errorf("%s: must be a boolean (true or false)", k)
+			}
+		}
+	}
+	if v, ok := patch["autonomous.plan_records.import_conflict_policy"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("autonomous.plan_records.import_conflict_policy: %v is invalid; use \"suffix\", \"rename\" or \"skip\"", v)
+		}
+		if err := config.ValidatePlanRecordsImportConflictPolicy(str); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyPlanRecordsKey stores one validated autonomous.plan_records key as a
+// pointer, so an explicit false or empty text is told apart from an absent key.
+func applyPlanRecordsKey(p *config.AutonomousPlanRecordsConfig, k string, v interface{}) {
+	switch k {
+	case "autonomous.plan_records.enabled":
+		if b, ok := v.(bool); ok {
+			p.Enabled = &b
+		}
+	case "autonomous.plan_records.write_through":
+		if b, ok := v.(bool); ok {
+			p.WriteThrough = &b
+		}
+	case "autonomous.plan_records.import_conflict_policy":
+		if s, ok := v.(string); ok {
+			p.ImportConflictPolicy = &s
+		}
+	}
+}
+
+// planRecordsSurface is the effective autonomous.plan_records values GET
+// /api/config returns.
+func planRecordsSurface(p config.AutonomousPlanRecordsConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":                p.EffectiveEnabled(),
+		"write_through":          p.EffectiveWriteThrough(),
+		"import_conflict_policy": p.EffectiveImportConflictPolicy(),
+	}
 }

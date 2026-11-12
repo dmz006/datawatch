@@ -46,6 +46,10 @@ import (
 const (
 	// DefaultImportProject is the project alias used when none is given.
 	DefaultImportProject = "datawatch"
+	// The import sources ImportOptions.Source accepts.
+	ImportSourceRegistry = "registry"
+	ImportSourceFindings = "findings"
+	ImportSourceAll      = "all"
 	// DefaultFindingsGlob selects the findings files, relative to the project.
 	DefaultFindingsGlob = "docs/plans/**/*findings*.md"
 	// RegistryREADME is the registry file, relative to the project.
@@ -81,6 +85,9 @@ type Importer struct {
 type ImportOptions struct {
 	// Project is the registered project alias; empty means "datawatch".
 	Project string
+	// Source limits the run to "registry" (the README rows), "findings" (the
+	// findings files) or "all"; empty means "all".
+	Source string
 	// FindingsGlob selects findings files relative to the project; empty means
 	// DefaultFindingsGlob. "**" matches any number of directories.
 	FindingsGlob string
@@ -210,7 +217,19 @@ func (im *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		Flagged: []ImportFlagged{}, Failed: []ImportIssue{}, Files: []string{}}
 
 	var cands []cand
-	readme, err := readArchiveFile(root, RegistryREADME)
+	switch opts.Source {
+	case "", ImportSourceAll, ImportSourceRegistry, ImportSourceFindings:
+	default:
+		return nil, fmt.Errorf("planrecords: source %q is not one of registry, findings or all", opts.Source)
+	}
+	wantRegistry := opts.Source != ImportSourceFindings
+	wantFindings := opts.Source != ImportSourceRegistry
+	var readme string
+	if wantRegistry {
+		readme, err = readArchiveFile(root, RegistryREADME)
+	} else {
+		err = fs.ErrNotExist
+	}
 	switch {
 	case err == nil:
 		res.Files = append(res.Files, RegistryREADME)
@@ -222,9 +241,12 @@ func (im *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 	default:
 		return nil, fmt.Errorf("planrecords: read %s: %w", RegistryREADME, err)
 	}
-	files, err := matchFindingsFiles(root, glob)
-	if err != nil {
-		return nil, err
+	var files []string
+	if wantFindings {
+		files, err = matchFindingsFiles(root, glob)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, rel := range files {
 		text, err := readArchiveFile(root, rel)

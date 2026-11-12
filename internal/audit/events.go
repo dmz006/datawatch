@@ -407,4 +407,17 @@ const (
 	// event: the policy or the node state worked. Details: node, model,
 	// policy, reason.
 	ActionPlacementRefused = "placement_refused"
+
+	// ActionPlanRecordCreated — a plan record (a registry row or a finding) was
+	// created, by a request or an import. Subject: the record title. Details:
+	// uid, id, kind, project, actor.
+	ActionPlanRecordCreated = "plan_record_created"
+	// ActionPlanRecordUpdated — a plan record changed (fields, state or a
+	// rename). Subject: the record title. Details: uid, id, kind, project,
+	// actor, and the changed fields.
+	ActionPlanRecordUpdated = "plan_record_updated"
+	// ActionPlanRecordImported — a plan-records import ran for real (a dry run
+	// is not audited). Subject: the project alias. Details: project, source,
+	// policy, created, unchanged, changed, conflicts, skipped, actor.
+	ActionPlanRecordImported = "plan_record_imported"
 )

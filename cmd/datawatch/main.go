@@ -94,6 +94,7 @@ import (
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
 	"github.com/dmz006/datawatch/internal/pilog"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
+	planrecordspkg "github.com/dmz006/datawatch/internal/planrecords"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
@@ -4113,6 +4114,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
+		}
+		// Plan records (registry rows and findings): one JSON file per record
+		// under the data directory, sealed with the shared per-record file
+		// sealing under --secure. Each write emits an audit event.
+		{
+			var planSealer planrecordspkg.Sealer
+			if encKey != nil {
+				if sl, serr := planrecordspkg.KeySealer(encKey); serr != nil {
+					fmt.Printf("[warn] plan records sealing: %v\n", serr)
+				} else {
+					planSealer = sl
+				}
+			}
+			if encKey == nil || planSealer != nil {
+				prStore, prErr := planrecordspkg.Open(expandHome(cfg.DataDir), planSealer, planrecordspkg.Options{
+					WriteThrough:         cfg.Autonomous.PlanRecords.EffectiveWriteThrough(),
+					ImportConflictPolicy: planrecordspkg.ConflictPolicy(cfg.Autonomous.PlanRecords.EffectiveImportConflictPolicy()),
+					Audit:                server.PlanRecordsAuditFunc(wiredAuditLog),
+				})
+				if prErr != nil {
+					fmt.Printf("[warn] plan records store: %v\n", prErr)
+				} else {
+					httpServer.SetPlanRecords(prStore)
+				}
+			}
 		}
 		// Pre-push secret scan audit (git.secret_scan): ONE sink over the
 		// operator audit log (a nil log yields a no-op reporter) shared by
