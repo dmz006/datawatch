@@ -3877,7 +3877,7 @@ function _sessionsStale() {
 // summary row that omits one means that field is empty now.
 const SESSION_SUMMARY_KEYS = [
   'id', 'full_id', 'name', 'state', 'backend', 'llm_ref', 'project_dir', 'hostname',
-  'created_at', 'updated_at', 'last_activity', 'parent_id', 'est_cost_usd',
+  'project', 'created_at', 'updated_at', 'last_activity', 'parent_id', 'est_cost_usd',
   'tokens_in', 'tokens_out', 'status_line', 'truncated_fields',
 ];
 // _mergeSessionFields is the one merge for an incoming record over the one
@@ -4327,7 +4327,7 @@ function renderSessionsView() {
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
   const sheetHtml = _sessionsSheetHTML({
-    groupBy: _sessionsGroupValidate(state.sessionGroupBy),
+    groupBy: _sessionsGroupCurrent(),
     stateBadges,
     llmBadges: backendTypes.length > 1 ? backendBadges : '',
     tagPanel: tagFilterPanelHtml,
@@ -4417,7 +4417,7 @@ function renderSessionsView() {
   // as collapsible groups (or an Automaton → story tree) in the active mode,
   // each group with its own Show-more step. Without one, the placement-axis
   // dropdown groups (main's toolbar control) or the classic render apply.
-  const groupBy = _sessionsGroupValidate(state.sessionGroupBy);
+  const groupBy = _sessionsGroupCurrent();
   if (groupBy) {
     const gKey = groupBy.axis + '|' + (groupBy.tagPrefix || '');
     if (state._sessionsGroupByKey !== gKey) {
@@ -4425,7 +4425,7 @@ function renderSessionsView() {
       state._sessionsGroupPage = {};
     }
   }
-  const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
+  const groupAxis = '';
   state._visibleForFold = groupBy ? visible : [];
   const cards = groupBy
     ? (groupBy.axis === 'automaton'
@@ -4761,6 +4761,49 @@ function _sessionsGroupValidate(by) {
   };
 }
 
+// Group choice persistence: one source of truth, state.sessionGroupBy
+// (axis plus tag prefix), saved on this device. Storage may be blocked, so
+// every access is guarded. The toolbar placement control reads and writes the
+// same field (axis "a" is the tag prefix "a:").
+const SESSIONS_GROUP_STORE_KEY = 'dw_sessions_group_by';
+const SESSIONS_GROUP_LEGACY_KEY = 'dw_sessions_group_axis';
+
+function _sessionsGroupStorage() {
+  try { return (typeof localStorage !== 'undefined' && localStorage) ? localStorage : null; } catch (_) { return null; }
+}
+
+// _sessionsGroupCurrent returns the validated active grouping, restoring the
+// saved choice the first time it is needed.
+function _sessionsGroupCurrent() {
+  if (state.sessionGroupBy === undefined) {
+    let by = null;
+    try {
+      const ls = _sessionsGroupStorage();
+      if (ls) {
+        const raw = ls.getItem(SESSIONS_GROUP_STORE_KEY);
+        if (raw) by = _sessionsGroupValidate(JSON.parse(raw));
+        else {
+          const legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY);
+          if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
+        }
+      }
+    } catch (_) { by = null; }
+    state.sessionGroupBy = by;
+    state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
+  }
+  return _sessionsGroupValidate(state.sessionGroupBy);
+}
+
+function _sessionsGroupSave() {
+  try {
+    const ls = _sessionsGroupStorage();
+    if (!ls) return;
+    const by = _sessionsGroupValidate(state.sessionGroupBy);
+    if (by) ls.setItem(SESSIONS_GROUP_STORE_KEY, JSON.stringify(by));
+    else ls.setItem(SESSIONS_GROUP_STORE_KEY, '');
+  } catch (_) { /* storage blocked: the choice lives in memory for the page */ }
+}
+
 // _sessionsTagPlacement follows the server's rule exactly: the session's own
 // tags plus inherited tags, sorted, first match wins. A session with several
 // tags lands under exactly one of them — the other tags still show as chips
@@ -4778,6 +4821,26 @@ function _sessionsTagPlacement(sess, tagPrefix) {
   return tags.length ? tags[0] : SESSIONS_GROUP_UNGROUPED;
 }
 
+// _sessionsProjectName returns the project named by the session's `project:`
+// placement system tags (entries may be strings or {name} objects) — sorted,
+// first — or ''. It is the fallback for a row without a server-resolved
+// `project` field.
+function _sessionsProjectName(sess) {
+  const tags = (sess && Array.isArray(sess.system_tags)) ? sess.system_tags : [];
+  const names = [];
+  for (let i = 0; i < tags.length; i++) {
+    const t = tags[i];
+    const raw = (t && typeof t === 'object') ? t.name : t;
+    const n = _placementTagName(raw);
+    if (n && _placementAxisOf(n) === 'project') {
+      const name = n.slice('project:'.length).trim();
+      if (name) names.push(name);
+    }
+  }
+  names.sort();
+  return names.length ? names[0] : '';
+}
+
 function _sessionsGroupKeyFor(sess, by) {
   const s = sess || {};
   switch (by.axis) {
@@ -4787,7 +4850,15 @@ function _sessionsGroupKeyFor(sess, by) {
       return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
         : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
     case 'project':
-      return (typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED;
+      // The server resolves the project (owning Automaton's project, project
+      // tag, registered folder match, Automaton title, folder) and sends it
+      // as `project`, so the PWA agrees with group_by=project. A row without
+      // it (an older daemon) falls back to the project tag, then the
+      // Automaton id, and only without an Automaton the working folder.
+      if (typeof s.project === 'string' && s.project) return s.project;
+      return _sessionsProjectName(s)
+        || ((typeof s.prd_id === 'string' && s.prd_id) ? s.prd_id
+          : ((typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED));
     case 'tag':
       return _sessionsTagPlacement(s, by.tagPrefix);
     case 'automaton':
@@ -5104,7 +5175,9 @@ function _sessionsGroupPrefixOptions() {
 
 function renderSessionsGroupPicker(by) {
   const cur = (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null;
-  const curV = cur ? (cur.axis + '|' + (cur.tagPrefix || '')) : '';
+  // Option values are the bare axis, or 'tag|<prefix>' for a tag prefix; a
+  // 'state|' style value matched no option and the select showed the first one.
+  const curV = cur ? ((cur.axis === 'tag' && cur.tagPrefix) ? 'tag|' + cur.tagPrefix : cur.axis) : '';
   const opt = (v, label) => `<option value="${escHtml(v)}"${v === curV ? ' selected' : ''}>${escHtml(label)}</option>`;
   const axisLabel = (axis) => ({
     state: _stx('sessions_group_state', 'State'),
@@ -5115,6 +5188,12 @@ function renderSessionsGroupPicker(by) {
   }[axis] || axis);
   let prefixOpts = '';
   const prefixes = _sessionsGroupPrefixOptions();
+  // The tag registry may not be loaded (or may be empty mid-refresh); the
+  // chosen prefix must stay an option or the select snaps to "No grouping".
+  if (cur && cur.axis === 'tag' && cur.tagPrefix && prefixes.indexOf(cur.tagPrefix) < 0) {
+    prefixes.push(cur.tagPrefix);
+    prefixes.sort();
+  }
   if (prefixes.length) {
     prefixOpts = `<optgroup label="${escHtml(_stx('sessions_group_tag_prefixes', 'Tag prefix'))}">
       ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + '(' + p + ')')).join('')}
@@ -5145,6 +5224,7 @@ function setSessionGroupBy(value) {
   else by = { axis: axisRaw, tagPrefix: '' };
   state.sessionGroupBy = by;
   state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
+  _sessionsGroupSave();
   state._sessionsGroupPage = {};
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
@@ -5191,7 +5271,7 @@ function saveSessionsView(name) {
   let mode = 'list';
   try { mode = _sessionsViewMode() || 'list'; } catch (_) { mode = 'list'; }
   let by = null;
-  try { by = JSON.parse(JSON.stringify(state.sessionGroupBy || null)); } catch (_) { by = null; }
+  try { by = JSON.parse(JSON.stringify(_sessionsGroupCurrent() || null)); } catch (_) { by = null; }
   let filter = state.sessionFilter || '';
   if (typeof filter !== 'string') filter = '';
   const views = _savedViews();
@@ -5227,6 +5307,7 @@ function applySavedView(id) {
     state.sessionGroupBy = null;
     state._sessionsGroupByKey = '';
   }
+  _sessionsGroupSave();
   state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
@@ -5367,7 +5448,7 @@ function renderSessionsSummaryBar(sessions) {
 function _sessionsActiveFilterCount() {
   let n = 0;
   try {
-    if (_sessionsGroupValidate(state.sessionGroupBy)) n++;
+    if (_sessionsGroupCurrent()) n++;
     else if (!state.sessionTreeView && typeof _sessionsGroupAxis === 'function' && _sessionsGroupAxis()) n++;
     const chip = state.sessionStateChip;
     if (chip && chip !== 'all') n++;
@@ -53425,19 +53506,18 @@ function _placementTagsByAxis(sessionList) {
   return Object.fromEntries(_placementAxisOrder(Object.keys(map)).map(ax => [ax, [...map[ax]].sort((a, b) => a.localeCompare(b))]));
 }
 
-// _sessionsGroupAxis reads the persisted sessions-list grouping axis (''=off).
+// _sessionsGroupAxis is the placement axis of the active grouping (''=off);
+// it reads the shared state.sessionGroupBy, not a second field.
 function _sessionsGroupAxis() {
-  if (state.sessionsGroupAxis === undefined) {
-    try { state.sessionsGroupAxis = localStorage.getItem('dw_sessions_group_axis') || ''; } catch (_e) { state.sessionsGroupAxis = ''; }
-  }
-  return state.sessionsGroupAxis;
+  const by = _sessionsGroupCurrent();
+  if (by && by.axis === 'tag' && /.:$/.test(by.tagPrefix || '')) return by.tagPrefix.slice(0, -1);
+  return '';
 }
 
-// setSessionsGroupAxis switches the sessions list grouping and repaints.
+// setSessionsGroupAxis switches the grouping through the shared setter.
 window.setSessionsGroupAxis = function(axis) {
-  state.sessionsGroupAxis = String(axis || '');
-  try { localStorage.setItem('dw_sessions_group_axis', state.sessionsGroupAxis); } catch (_e) {}
-  if (state.activeView === 'sessions' && typeof renderSessionsView === 'function') renderSessionsView();
+  const a = String(axis || '');
+  setSessionGroupBy(a ? 'tag|' + a + ':' : '');
 };
 
 // _sessionGroupTagClick toggles one placement tag in the session tag
@@ -53498,8 +53578,9 @@ function _sessionsGroupCards(sessions, axis) {
 // while some placement tag is known.
 function _sessionsGroupControl() {
   const axes = _placementAxisOrder(Object.keys(_placementTagsByAxis(state.sessions)));
-  if (!axes.length) return '';
   const cur = _sessionsGroupAxis();
+  if (cur && axes.indexOf(cur) < 0) axes.push(cur);
+  if (!axes.length) return '';
   const opts = [''].concat(axes).map(a => `<option value="${escAttr(a)}" ${a === cur ? 'selected' : ''}>${a ? escHtml(a) : escHtml(_tagT('sessions_group_none', 'No grouping'))}</option>`).join('');
   return `<span class="backend-filter-badge group-axis-control${cur ? ' active' : ''}" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(_tagT('sessions_group_tip', 'Group the session list by a placement (system) tag'))}"><span>⚙️</span><select style="border:none;background:transparent;color:inherit;font:inherit;font-size:11px;padding:0;max-width:96px;" onchange="setSessionsGroupAxis(this.value)" aria-label="${escHtml(t('sessions_group_by_label') || 'Group by placement')}">${opts}</select></span>`;
 }

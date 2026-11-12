@@ -193,8 +193,11 @@ test('state / node / project axes: complete, sorted, correctly counted', (t) => 
   no.forEach(g => assert.equal(g.count, 100));
 
   const pr = sbx._sessionsGroupSessions(sessions, { axis: 'project' });
-  assert.deepEqual(plain(pr.map(g => g.key)), ['/p/alpha', '/p/beta']);
-  pr.forEach(g => assert.equal(g.count, 150));
+  // Automaton sub-task sessions without a server-resolved project group
+  // under their Automaton, never under their working folder.
+  assert.deepEqual(plain(pr.map(g => g.key)), ['/p/alpha', '/p/beta', 'prd-A', 'prd-B']);
+  assert.equal(pr.reduce((n, g) => n + g.count, 0), 300);
+  assert.equal(pr.filter(g => g.key.startsWith('prd-')).reduce((n, g) => n + g.count, 0), 20);
 
   // Unknown session pieces never crash: missing fields bucket to ungrouped.
   const odd = sbx._sessionsGroupSessions(
@@ -485,4 +488,152 @@ test('all i18n keys used by the grouping UI exist in en.json', (t) => {
     + 'sessions_auto_story_root sessions_view_title sessions_view_apply sessions_view_rename '
     + 'sessions_view_delete sessions_view_new sessions_view_ok sessions_view_name_ph').split(' ');
   used.forEach(k => assert.equal(typeof en[k], 'string', k + ' present'));
+});
+
+// ── project axis: placement tag, then working folder, then ungrouped ─────
+test('project axis: project: system tag, else project_dir, else ungrouped', () => {
+  const sbx = freshSandbox();
+  const by = { axis: 'project' };
+  // Automaton task session in a worktree, tagged with its project.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    prd_id: 'prd-A', project_dir: '/home/x/.datawatch/prd-worktrees/wt',
+    system_tags: ['project:datawatch'],
+  }, by), 'datawatch');
+  // Object-shaped system tag entries work too.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    project_dir: '/p/alpha', system_tags: [{ name: 'project:datawatch' }],
+  }, by), 'datawatch');
+  // Non-project placement tags are ignored; folder is used.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    project_dir: '/p/alpha', system_tags: ['compute:gpu-1'],
+  }, by), '/p/alpha');
+  // Plain session with only a working folder.
+  assert.equal(sbx._sessionsGroupKeyFor({ project_dir: '/p/beta' }, by), '/p/beta');
+  // Neither: ungrouped, and the header reads Ungrouped.
+  assert.equal(sbx._sessionsGroupKeyFor({}, by), 'ungrouped');
+  assert.equal(sbx._sessionsGroupKeyFor({ system_tags: [] }, by), 'ungrouped');
+  assert.equal(sbx._sessionsGroupLabel('datawatch', by), 'datawatch');
+});
+
+// ── project axis: the server-resolved project wins; fallbacks never use a worktree
+test('project axis: server project field first; Automaton row never groups by worktree', () => {
+  const sbx = freshSandbox();
+  const by = { axis: 'project' };
+  // Worktree-based Automaton session, no tag: the server-resolved field.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    prd_id: 'prd-A', project: 'datawatch',
+    project_dir: '/home/x/.datawatch/prd-worktrees/wt',
+  }, by), 'datawatch');
+  // Plain session in the repository folder: same group.
+  assert.equal(sbx._sessionsGroupKeyFor({ project: 'datawatch', project_dir: '/home/x/datawatch' }, by), 'datawatch');
+  // Two candidate tags resolve deterministically (sorted, first), any order.
+  assert.equal(sbx._sessionsGroupKeyFor({ system_tags: ['project:zeta', 'project:alpha'] }, by), 'alpha');
+  assert.equal(sbx._sessionsGroupKeyFor({ system_tags: ['project:alpha', 'project:zeta'] }, by), 'alpha');
+  // Older daemon, Automaton known, no project: the Automaton id, not the worktree folder.
+  assert.equal(sbx._sessionsGroupKeyFor({ prd_id: 'prd-A', project_dir: '/wt/x' }, by), 'prd-A');
+  // Folder only when neither a project nor an Automaton is known.
+  assert.equal(sbx._sessionsGroupKeyFor({ project_dir: '/p/beta' }, by), '/p/beta');
+});
+
+// ── 8. the group select keeps the choice (render, refresh, reload) ───────
+// Operator report (2026-11-12): the dropdown snapped back to "No grouping".
+// The tag-prefix option comes from the tag registry, which can be empty
+// during a refresh, so the chosen option vanished; the choice was also not
+// kept across a reload.
+function paintedSandbox(store) {
+  const cap = { html: '' };
+  const el = { querySelector: () => null, querySelectorAll: () => [] };
+  Object.defineProperty(el, 'innerHTML', { get() { return cap.html; }, set(v) { cap.html = v; } });
+  const sbx = buildSandbox({ byId: { view: el } });
+  if (store) sbx.localStorage = store.ls;
+  vm.createContext(sbx);
+  loadScript(APP_JS, sbx);
+  const en = JSON.parse(fs.readFileSync(path.join(WEB_DIR, 'locales', 'en.json'), 'utf8'));
+  sbx._i18n.bundle = en;
+  sbx._i18n.fallback = en;
+  run(sbx, `state.sessions = ${JSON.stringify(makeSessions())};
+    state.activeView = 'sessions'; state.showHistory = true; state.sessionStateChip = 'all';
+    state.sessionFilter = ''; state.sessionTreeView = false; state._filtersCollapsed = true;
+    state.sessionsViewMode = 'list'; state._sessionsSheetOpen = true;`);
+  return { sbx, cap };
+}
+
+function selectedGroupOption(html) {
+  const m = html.match(/<select id="sessions-group-select"[\s\S]*?<\/select>/);
+  assert.ok(m, 'group select is rendered');
+  const sel = m[0].match(/<option value="([^"]*)" selected>/g) || [];
+  assert.equal(sel.length, 1, 'exactly one option is selected');
+  return sel[0].match(/value="([^"]*)"/)[1];
+}
+
+test('group select keeps the choice after re-render and list refresh', () => {
+  const store = makeStore();
+  const { sbx, cap } = paintedSandbox(store);
+  run(sbx, "_tagsState.list = [{ name: 'ops:cron' }, { name: 'data:etl' }]; _tagsState.loaded = true;");
+  sbx.setSessionGroupBy('tag|ops:');
+  assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'right after selection');
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'after a re-render');
+
+  // A list refresh: new session objects, and the tag registry momentarily empty.
+  run(sbx, `state.sessions = ${JSON.stringify(makeSessions())}; _tagsState.list = []; _tagsState.loaded = false;`);
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'after a refresh with no registry');
+  run(sbx, "_tagsState.list = [{ name: 'data:etl' }]; _tagsState.loaded = true;");
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'after the registry no longer lists the prefix');
+
+  sbx.setSessionGroupBy('state');
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'state');
+});
+
+test('group select choice is restored after a reload and blocked storage is tolerated', () => {
+  const store = makeStore();
+  let { sbx, cap } = paintedSandbox(store);
+  sbx.setSessionGroupBy('tag|ops:');
+  assert.deepEqual(plain(JSON.parse(store.map['dw_sessions_group_by'])), { axis: 'tag', tagPrefix: 'ops:' });
+
+  // Reload: a new sandbox over the same storage.
+  ({ sbx, cap } = paintedSandbox(store));
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'restored after reload');
+  assert.equal(run(sbx, 'state.sessionGroupBy.tagPrefix'), 'ops:');
+
+  // Clearing the choice is remembered too.
+  sbx.setSessionGroupBy('');
+  ({ sbx, cap } = paintedSandbox(store));
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), '');
+
+  // A corrupt saved value falls back to no grouping.
+  store.map['dw_sessions_group_by'] = '{"axis":"bogus"}';
+  ({ sbx, cap } = paintedSandbox(store));
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), '');
+
+  // Blocked storage: choice still holds in memory, nothing throws.
+  // Only the group keys are blocked; the rest of the app reads other keys.
+  const blocked = {
+    getItem(k) { if (/^dw_sessions_group/.test(k)) throw new Error('blocked'); return null; },
+    setItem(k) { if (/^dw_sessions_group/.test(k)) throw new Error('blocked'); },
+  };
+  ({ sbx, cap } = paintedSandbox(makeStore()));
+  sbx.localStorage = blocked;
+  sbx.setSessionGroupBy('node');
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'node');
+});
+
+test('toolbar placement control and the group select share one source of truth', () => {
+  const store = makeStore();
+  store.map['dw_sessions_group_axis'] = 'ops';   // legacy saved axis
+  const { sbx, cap } = paintedSandbox(store);
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'legacy axis migrates into the shared choice');
+  sbx.setSessionsGroupAxis('data');
+  assert.equal(run(sbx, 'state.sessionGroupBy.tagPrefix'), 'data:');
+  assert.equal(selectedGroupOption(cap.html), 'tag|data:');
+  sbx.setSessionsGroupAxis('');
+  assert.equal(run(sbx, 'state.sessionGroupBy'), null);
 });

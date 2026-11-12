@@ -61,6 +61,10 @@ type sessionSummaryRow struct {
 	// (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
 	// project:<name>) that the Sessions tiles draw as chips.
 	SystemTags []string `json:"system_tags,omitempty"`
+	// Project is the resolved project the Sessions project grouping uses
+	// (owning Automaton's project, project tag, registered folder match,
+	// Automaton title, folder) — the same value group_by=project returns.
+	Project string `json:"project,omitempty"`
 
 	// Sub-task nesting link (grouping + saved views): the Automaton (prd) the
 	// session belongs to, the story inside it, and the task it runs. All
@@ -257,6 +261,15 @@ func sessionStatusLine(sess *session.Session, n int) string {
 }
 
 func (s *Server) sessionSummaryRow(sess *session.Session, textChars int) sessionSummaryRow {
+	return s.sessionSummaryRowWith(sess, textChars, nil)
+}
+
+// sessionSummaryRowWith builds a summary row with a shared project resolver
+// (nil builds one for the single row).
+func (s *Server) sessionSummaryRowWith(sess *session.Session, textChars int, res *groupProjectResolver) sessionSummaryRow {
+	if res == nil {
+		res = s.groupProjectResolver()
+	}
 	row := sessionSummaryRow{
 		ID: sess.ID, FullID: sess.FullID, Name: sess.Name, State: sess.State,
 		Backend: sess.BackendFamily, LLMRef: sess.LLMRef, ProjectDir: sess.ProjectDir,
@@ -267,6 +280,7 @@ func (s *Server) sessionSummaryRow(sess *session.Session, textChars int) session
 		PRDID:      sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
 		Tags: sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
 		SystemTags: sess.SystemTags,
+		Project:    res.sessionProjectKey(sess),
 	}
 	if sess.LastChannelEventAt.After(row.LastActivity) {
 		row.LastActivity = sess.LastChannelEventAt
@@ -318,8 +332,9 @@ func (s *Server) writeSessionSummaryList(w http.ResponseWriter, r *http.Request,
 		sort.SliceStable(sessions, func(i, j int) bool { return sessionLess(sessions[i], sessions[j]) })
 	}
 	rows := make([]sessionSummaryRow, 0, len(sessions))
+	resolver := s.groupProjectResolver()
 	for _, sess := range sessions {
-		rows = append(rows, s.sessionSummaryRow(sess, textChars))
+		rows = append(rows, s.sessionSummaryRowWith(sess, textChars, resolver))
 	}
 	w.Header().Set(sessionsTotalHeader, strconv.Itoa(total))
 	if p.paged {

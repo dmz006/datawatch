@@ -213,13 +213,22 @@ registry (your automation:/stage:/kind: tags plus the placement auto-tags),
 so the picker shows exactly the prefixes you can narrow to — e.g.
 `Tag(automation:)`, `Tag(compute:)`, `Tag(peer:)`.
 
+The PWA remembers the grouping you choose on this device. It restores it
+after a page reload and keeps it through list refreshes, so the picker never
+snaps back to its default.
+The toolbar placement control (the ⚙️ dropdown that groups by a `compute:`,
+`stage:` … tag) is the same choice, not a second one: picking a placement there
+updates this picker and vice versa. The choice is saved in this browser's local
+storage (not on the daemon). Applying a saved view replaces it, and an older
+placement choice saved before this change is picked up once and carried over.
+
 | Axis | What groups | Notes |
 |---|---|---|
 | `tag` | the first matching tag (own tags + inherited) | A session with several tags lands in exactly one group (the first in the sorted tag list). Sessions with no matching tag collect in the **ungrouped** group. |
 | `tag` + prefix | the first tag carrying that prefix | Only tags with the prefix (e.g. `automation:`) form groups; everything else goes to the ungrouped group. This is how you get the "just the automation cut" or "just the compute-node cut". |
 | `state` | the session's state | One group per state (running, waiting_input, complete, …) — handy for a quick "what is stuck" scan. |
 | `node` | the session's hostname / server / compute node | The ungrouped group catches sessions without a node ref. |
-| `project` | the session's project directory | The ungrouped group catches sessions without one. |
+| `project` | the datawatch project the session belongs to | Read in this order: the project of the session's Automaton (its worktree is mapped back to the repository it belongs to and matched against the registered projects); then a `project:` tag on the session (several tags: the first in sorted order); then the registered project of the session's own working folder, mapped the same way, so a session in a worktree lands with the repository's sessions. When an Automaton is known but no project resolves, the group is that Automaton's title, never the worktree folder. The working folder is used only when no project or Automaton is known; a session with none of these lands in the ungrouped group. The same rule applies on REST, MCP, CLI, the comm verb and the PWA. |
 | `automaton` | the Automaton the session belongs to | **Sub-task nesting**: sessions sit under the Automaton block, and inside it under their story block. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. |
 
 Group mechanics, in every mode:
@@ -481,7 +490,7 @@ in your tag registry.
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize |
-| Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is per-device in the PWA; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
+| Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
 | One-line status counts + state filter | PWA, above the list | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
@@ -512,6 +521,7 @@ in your tag registry.
   the full group, not the rendered page.
 - **`invalid group_by` from the API/CLI.** The axis must be exactly one of
   `tag`, `state`, `node`, `project`, `automaton`.
+- **Project groups show a folder path instead of a project name.** The session has no `project:` placement tag and no owning Automaton project, so it falls back to its working folder. Tag the session with a `project:` tag to group it by project.
 
 ## Related guides
 
