@@ -30,3 +30,5 @@ No second-ranked skill was added: the gap ranking report was not present in the 
 No third-ranked skill was added: the gap ranking report was not present in the repository, so no rank-3 gap could be read.
 
 No fourth-ranked skill was added: the gap ranking report was not present in the repository, so no rank-4 gap could be read.
+
+No fifth-ranked skill was added: the gap ranking report was not present in the repository, so no rank-5 gap could be read.
