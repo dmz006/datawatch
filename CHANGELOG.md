@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.154.2 — Sessions list grouping: Automaton-aware project source and a dropdown that keeps its value
+
+### Fixed
+
+- **Sessions grouped by project use the project of the session's Automaton.** The `project` grouping reads, in order, the project of the session's Automaton (its worktree is mapped back to the repository and matched against the registered projects), then a `project:` tag on the session, then falls back to the working folder, so sessions started by Automata no longer fall into folder-path groups.
+- **The Sessions group picker keeps its value.** The grouping you choose is remembered on this device, restored after a page reload and kept through list refreshes, so the picker no longer snaps back to its default. The toolbar placement control and the picker are one choice: picking in either updates the other, and a placement choice saved earlier is carried over once.
+- Docs: the Sessions tiles and grouping how-to and the definitions describe both changes.
+
 ## v9.154.1 — Stop a monitoring peer's first push from creating a compute node
 
 ### Fixed
