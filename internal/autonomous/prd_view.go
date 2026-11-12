@@ -14,6 +14,7 @@ type WriteView struct {
 	ChangedStoryID     string      `json:"changed_story_id,omitempty"`
 	ChangedStoryStatus StoryStatus `json:"changed_story_status,omitempty"`
 	KilledSessions     int         `json:"killed_sessions,omitempty"`
+	KilledLiveSessions int         `json:"killed_live_sessions,omitempty"`
 	Message            string      `json:"message"`
 	Override           any         `json:"override,omitempty"`
 	// Planning — the planning-requeue outcome for PRD-level set_llm calls

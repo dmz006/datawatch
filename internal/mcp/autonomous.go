@@ -283,6 +283,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
 		mcpsdk.WithBoolean("capacity_fallthrough", mcpsdk.Description("Pool fall-through: when a task's requested LLM pool is full, admit it on another idle allowed pool (default false)")),
 		mcpsdk.WithBoolean("capacity_strict_node_limit", mcpsdk.Description("Strict per-node limit: verifier and resumed workers never over-admit a compute node (default true; false restores the earlier behaviour)")),
 		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
@@ -798,6 +799,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			}
 		}
 	}
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["archive_grace_minutes"]; ok {
+			body["archive_grace_minutes"] = req.GetFloat("archive_grace_minutes", 0)
+		}
+	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)
 	}
@@ -1198,7 +1204,7 @@ func (s *Server) handleAutonomousPRDRun(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutonomousPRDCancel() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_cancel",
-		mcpsdk.WithDescription("BL24 — cancel + archive a PRD. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count) and killed_session_ids (array of the session IDs a kill was attempted on)."),
+		mcpsdk.WithDescription("Cancel and archive an Automaton. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }
@@ -1437,7 +1443,7 @@ func (s *Server) handleAutonomousPRDEditStory(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolAutonomousPRDAddStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_add_story",
-		mcpsdk.WithDescription("Add a new, empty story to a PRD without re-running decompose. Structural edits are accepted in needs_review, revisions_asked and cancelled. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in needs_review for exactly this purpose, so you can add work and run it again."),
+		mcpsdk.WithDescription("Add a new, empty story to a PRD without re-running decompose. Structural edits are accepted in needs_review, revisions_asked, cancelled and failed. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in needs_review for exactly this purpose, so you can add work and run it again."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Story title")),
 		mcpsdk.WithString("description", mcpsdk.Description("Story description")),
@@ -1459,7 +1465,7 @@ func (s *Server) handleAutonomousPRDAddStory(_ context.Context, req mcpsdk.CallT
 
 func (s *Server) toolAutonomousPRDRemoveStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_remove_story",
-		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Accepted in needs_review, revisions_asked and cancelled; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
+		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Accepted in needs_review, revisions_asked, cancelled and failed; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to remove")),
 	)
@@ -1479,7 +1485,7 @@ func (s *Server) handleAutonomousPRDRemoveStory(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_add_task",
-		mcpsdk.WithDescription("Add a new task to an existing story without re-running decompose. Structural edits are accepted in needs_review, revisions_asked and cancelled. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in needs_review for exactly this purpose, so you can add work and run it again."),
+		mcpsdk.WithDescription("Add a new task to an existing story without re-running decompose. Structural edits are accepted in needs_review, revisions_asked, cancelled and failed. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in needs_review for exactly this purpose, so you can add work and run it again."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to add the task to")),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Task title")),
@@ -1512,7 +1518,7 @@ func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallTo
 
 func (s *Server) toolAutonomousPRDRemoveTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_remove_task",
-		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Accepted in needs_review, revisions_asked and cancelled; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
+		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Accepted in needs_review, revisions_asked, cancelled and failed; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID the task belongs to")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to remove")),

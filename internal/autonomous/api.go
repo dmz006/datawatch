@@ -1099,17 +1099,18 @@ func (a *API) Cancel(id string) error {
 	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
 	a.M.killPRDSessions(prd) // kill any task sessions still running
 	var old PRDStatus
+	// The status change, the cancel stamp and the cancel decision go in one
+	// lock block so a concurrent loop pass never sees a cancelled record
+	// without its cancel time (which would start the archive grace from a
+	// stale update time and archive it at once). The decision also keeps a
+	// trace of when the whole-PRD cancel happened, as CancelStory/CancelTask do.
 	a.M.Store().WithLock(func() {
+		now := time.Now()
 		old = prd.Status
 		prd.Status = PRDCancelled
+		prd.UpdatedAt = now
 		clearPlannerFields(prd) // cancel ends any planning in flight
-	})
-	// Unlike CancelStory/CancelTask, this whole-PRD cancel previously left
-	// no trace in prd.Decisions — an operator (or a future session) had no
-	// way to tell whether/when/why a PRD was cancelled versus failing on
-	// its own. Log it the same way.
-	a.M.Store().WithLock(func() {
-		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "cancel", Actor: "operator"})
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel", Actor: "operator"})
 	})
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err

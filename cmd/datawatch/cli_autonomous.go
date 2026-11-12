@@ -755,6 +755,10 @@ earlier behaviour):
   capacity_adopt_before_admit     after a restart, resumed workers are admitted before new work
   capacity_adoption_wait_seconds  longest wait for that adoption (default 30; negative values are rejected)
 
+Archive grace, by JSON key:
+
+  archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
+
 Verifier routing, which chooses the backend that runs each verification, by
 flag or by the verifier_policy JSON object. Fields you do not give are left
 unchanged; the change takes effect on the next verification:

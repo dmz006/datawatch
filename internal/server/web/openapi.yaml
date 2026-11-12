@@ -5208,6 +5208,7 @@ paths:
                   id: {type: string}
                   status: {type: string, enum: [cancelled, deleted]}
                   killed_sessions: {type: integer, description: "Number of session slots recorded on the PRD's tasks (may include empty slots)"}
+                  killed_live_sessions: {type: integer, description: "How many of those sessions were still live (not already ended) when the cancel began, counted before any kill was issued"}
                   killed_session_ids: {type: array, items: {type: string}, description: "Session IDs a kill was attempted on; always an array, [] when none"}
                   kill_errors: {type: object, additionalProperties: {type: string}, description: "Present only when a kill failed; session ID -> error"}
                   memory_strategy: {type: string, description: "Hard delete only: keep | purge | archive"}

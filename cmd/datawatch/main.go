@@ -4634,6 +4634,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
+			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
 			CapacityFallthrough:              acfgIn.CapacityFallthrough,
 			// priority_by_kind (autonomous.priority_by_kind): the
 			// kind→capacity-priority table ResolvePriority resolves against.

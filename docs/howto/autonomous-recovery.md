@@ -124,6 +124,28 @@ autonomous_prd_cancel_story(id="<prd_id>", story_id="<story_id>", reason="...")
 autonomous_prd_cancel_task(id="<prd_id>", task_id="<task_id>", reason="...")
 ```
 
+## Repairing a failed Automaton in place
+
+Cancelling a failed Automaton to fix it is no longer needed, and it used to
+race with automatic archiving. A failed Automaton now accepts the same
+structural edits as one in `needs_review`: add or remove a task, add, remove
+or edit a story, repair dependencies, or request a revision. Completed task
+specs stay immutable.
+
+1. Read the Automaton (`autonomous_prd_get`) and note the failed task and the
+   gate's findings.
+2. Add a task that corrects exactly those findings (`autonomous_prd_add_task`).
+3. Reset the failed task (`autonomous_prd_reset_task`). This moves the
+   Automaton back to `running`. A task added while it was failed does not
+   start until a reset has reopened it.
+4. Run it (`autonomous_prd_run`).
+
+If you do cancel, the cancelled Automaton is kept for
+`autonomous.archive_grace_minutes` (default 60, `0` archives at once) before it
+is archived, so there is time to reuse it. The cancel reply reports
+`killed_sessions` and `killed_live_sessions`. Full detail:
+[Repairing a Failed Automaton in Place](../operations.md#repairing-a-failed-automaton-in-place).
+
 ## Re-judging a blocked Automaton whose guardrail verdict was lost (`rejudge`)
 
 A different stuck state from the ones above: every task completed fine, but
@@ -303,7 +325,7 @@ What happens next:
 - **Stale** (older than the limit, or directory missing): the Automaton is parked as `blocked` with a plain-English reason, an operator alert is raised, and an entry is added to the boot-resume report (`Status().BootResume`). Nothing runs on its own; review it and resume it with the resume action if you still want it.
 - **Live worker**: a worker session that is still alive on an `in_progress` task counts as activity, and so does its recent output. An Automaton with a live worker is never treated as stale just because its stored timestamps are old.
 - **Resuming a parked Automaton**: use the resume action, which is available everywhere. Approval is not the right action, because a parked Automaton is already approved. REST: `POST /api/autonomous/prds/{id}/resume` with an optional `note`. MCP: `autonomous_prd_resume`. CLI: `datawatch autonomous prd-resume <id> [--note "..."]`. Chat: `autonomous resume <id> [note]`. PWA: the Resume button on the parked Automaton, which shows the park reason. Only an Automaton parked by the boot-resume gate can be resumed this way; any other state is rejected with an error naming the allowed state. A live worker is re-adopted rather than respawned.
-- **Cancelled**: an Automaton you cancelled is never recovered.
+- **Cancelled**: an Automaton you cancelled is never recovered. It is also kept for the archive grace period (`autonomous.archive_grace_minutes`, default 60) before the supervisor loop archives it; see [Archive grace](../operations.md#archive-grace-for-cancelled-automata-autonomousarchive_grace_minutes).
 
 ### Reading the boot-resume report
 
@@ -732,6 +754,7 @@ processes that attempt had been waiting for.
 
 ## See also
 
+- [Repairing a failed Automaton in place](../operations.md#repairing-a-failed-automaton-in-place)
 - [howto/autonomous-planning](autonomous-planning.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
 - [howto/automata-orchestrator](automata-orchestrator.md)

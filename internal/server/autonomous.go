@@ -497,6 +497,19 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 			}
 		}
+		// archive_grace_minutes: a whole number of minutes >= 0; a bad value
+		// rejects the whole PUT.
+		if raw, ok := top["archive_grace_minutes"]; ok {
+			var v any
+			if json.Unmarshal(raw, &v) != nil {
+				http.Error(w, "autonomous.archive_grace_minutes: must be a whole number of minutes >= 0", http.StatusBadRequest)
+				return
+			}
+			if _, verr := config.ParseArchiveGraceMinutes(v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -938,6 +951,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// killed_sessions keeps its original len(sessionIDs) value
 			// for existing clients.
 			sessionIDs := s.autonomousMgr.SessionIDsForPRD(id)
+			// killed_live_sessions counts the recorded sessions that were
+			// not already ended; it is taken here, before any kill is
+			// issued, so it reflects the state the cancel found.
+			liveSessions := s.countLiveSessions(sessionIDs)
 			killedIDs := []string{}
 			killErrs := map[string]string{}
 			killWhy := session.EndReason{
@@ -1021,8 +1038,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				killSessions()
-				s.audit(r.Context(), "delete", "automaton", id, withKillDetail(map[string]any{"hard": true, "memory_strategy": memStrat, "killed_sessions": len(sessionIDs)})) // GH#201 Phase 4
-				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "memory_strategy": memStrat}))
+				s.audit(r.Context(), "delete", "automaton", id, withKillDetail(map[string]any{"hard": true, "memory_strategy": memStrat, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
+				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions, "memory_strategy": memStrat}))
 				return
 			}
 			if err := s.autonomousMgr.Cancel(id); err != nil {
@@ -1030,9 +1047,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			killSessions()
-			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs)})) // GH#201 Phase 4
+			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
 			got, _ := s.autonomousMgr.GetPRD(id)
-			s.writeAutonomousCancelResult(w, r, got, len(sessionIDs), withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)}))
+			s.writeAutonomousCancelResult(w, r, got, len(sessionIDs), liveSessions, withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
 		case http.MethodPatch:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
@@ -5379,4 +5396,24 @@ func rejudgeResultMessage(prd *autonomous.PRD) string {
 		return fmt.Sprintf("rejudge complete; a new review ran on commit %s; the verdict and outcome are in the decision log", d.JudgedCommitSHA)
 	}
 	return rejudgeDefaultMessage
+}
+
+// countLiveSessions returns how many of the recorded session IDs name a
+// session that is not already ended (any state other than complete, failed
+// or killed). Empty slots and IDs the session manager does not know count as
+// not live.
+func (s *Server) countLiveSessions(ids []string) int {
+	if s.manager == nil {
+		return 0
+	}
+	live := 0
+	for _, sid := range ids {
+		if sid == "" {
+			continue
+		}
+		if sess, ok := s.manager.GetSession(sid); ok && sess != nil && !sess.State.IsTerminal() {
+			live++
+		}
+	}
+	return live
 }

@@ -20052,6 +20052,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.capacity_fallthrough', label: 'Pool fall-through (admit on another idle allowed pool when the requested one is full)', labelKey: 'settings_capacity_fallthrough', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
+    { key: 'autonomous.archive_grace_minutes', label: 'Archive grace for cancelled Automata (min, 0=at once)', labelKey: 'settings_archive_grace_minutes', type: 'number', min: 0, step: 1, placeholder: '60' },
     { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
     { key: 'autonomous.inherited_tags_cache_seconds', label: 'Inherited tags cache (sec, 0=15, negative=off)', labelKey: 'settings_inherited_tags_cache', helpKey: 'settings_inherited_tags_cache_help', docsKey: 'autonomous.inherited_tags_cache_seconds', type: 'number', placeholder: '15' },
     { key: 'autonomous.capacity_strict_node_limit', label: 'Strict per-node limit (verifier and resumed workers never over-admit a node)', labelKey: 'settings_capacity_strict_node_limit', type: 'toggle' },

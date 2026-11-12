@@ -664,6 +664,10 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// ArchiveGraceMinutes is the minutes a cancelled Automaton is kept before
+	// the supervisor loop archives it (mirrors config.AutonomousConfig). Nil
+	// reads as 60; an explicit 0 archives at once.
+	ArchiveGraceMinutes *int `json:"archive_grace_minutes,omitempty"`
 	// CapacityFallthrough admits a task on another idle allowed pool when its
 	// requested pool is full (default off; mirrors config.AutonomousConfig).
 	CapacityFallthrough bool `json:"capacity_fallthrough,omitempty"`
@@ -3978,8 +3982,8 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDApproved && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q does not accept revisions", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDApproved && prd.Status != PRDRevisionsAsked && prd.Status != PRDFailed {
+		return nil, fmt.Errorf("prd %q status %q does not accept revisions; only needs_review / approved / revisions_asked / failed do", prdID, prd.Status)
 	}
 	now := time.Now()
 	var old PRDStatus
@@ -4911,6 +4915,18 @@ func (m *Manager) reopenBlockedPRD(prdID, taskID, actor string) {
 // EditTaskSpec — only allowed in needs_review or revisions_asked,
 // records a Decision so the timeline shows the edit. Operator-asked:
 // "i don't see a story review or approval or story edit option."
+// statusAcceptsStructuralEdits reports whether an Automaton in status st may
+// have its structure edited (stories, tasks, files, profiles). A failed
+// Automaton accepts the same edits as one awaiting review so it can be
+// repaired and run again.
+func statusAcceptsStructuralEdits(st PRDStatus) bool {
+	switch st {
+	case PRDNeedsReview, PRDRevisionsAsked, PRDCancelled, PRDFailed:
+		return true
+	}
+	return false
+}
+
 // AddStory (operator-requested: structural edits without re-decomposing
 // and handing the whole structure back to the LLM) appends a new, empty
 // story to a PRD. Same review-phase gate as EditStory — the story/task
@@ -4920,8 +4936,8 @@ func (m *Manager) AddStory(prdID, title, description, actor string) (*PRD, error
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits", prdID, prd.Status)
 	}
 	if strings.TrimSpace(title) == "" {
 		return nil, fmt.Errorf("title is required")
@@ -4950,8 +4966,8 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits", prdID, prd.Status)
 	}
 	if err := m.store.RemoveStory(prdID, storyID); err != nil {
 		return nil, err
@@ -5004,8 +5020,8 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits", prdID, prd.Status)
 	}
 	if strings.TrimSpace(title) == "" {
 		return nil, fmt.Errorf("title is required")
@@ -5062,8 +5078,8 @@ func (m *Manager) RemoveTask(prdID, storyID, taskID, actor string) (*PRD, error)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits", prdID, prd.Status)
 	}
 	if err := m.store.RemoveTask(prdID, storyID, taskID); err != nil {
 		return nil, err
@@ -5087,8 +5103,8 @@ func (m *Manager) EditStory(prdID, storyID, newTitle, newDescription, actor stri
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept story edits", prdID, prd.Status)
 	}
 	found := false
 	m.store.WithLock(func() {
@@ -5138,8 +5154,8 @@ func (m *Manager) SetStoryProfile(prdID, storyID, profile, actor string) (*PRD, 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story profile changes", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept story profile changes", prdID, prd.Status)
 	}
 	if profile != "" && m.profileResolver != nil {
 		if !m.profileResolver.HasProjectProfile(profile) {
@@ -5373,8 +5389,8 @@ func (m *Manager) SetStoryFiles(prdID, storyID string, files []string, actor str
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story file edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept story file edits", prdID, prd.Status)
 	}
 	if len(files) > 50 {
 		files = files[:50]
@@ -5414,8 +5430,8 @@ func (m *Manager) SetTaskFiles(prdID, taskID string, files []string, actor strin
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept task file edits", prdID, prd.Status)
+	if !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept task file edits", prdID, prd.Status)
 	}
 	if len(files) > 50 {
 		files = files[:50]

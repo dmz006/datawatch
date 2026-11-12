@@ -2065,6 +2065,7 @@
   "settings_resume_max_age": "Reanudar autómatas obsoletos al inicio solo si estuvieron activos dentro de (s; 0 = nunca, -1 = siempre)",
   "settings_resume_max_age_hint": "Se aplica cuando el daemon se reinicia: un autómata que quedó en ejecución se reanuda solo si su última actividad es anterior a este número de segundos. 0 = nunca reanudar automáticamente, -1 = sin límite de antigüedad (un directorio de proyecto ausente impide la reanudación de todas formas). Un autómata que no se reanuda queda aparcado como bloqueado con una razón y genera una alerta para el operador.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
+  "settings_archive_grace_minutes": "Margen antes de archivar autómatas cancelados (min, 0 = de inmediato)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_inherited_tags_cache": "Caché de tags heredados (seg, 0=15, negativo=desactivado)",
   "settings_inherited_tags_cache_help": "Cuánto tiempo se recuerda la caché compartida de tags heredados de un autómata antes de reconstruirla. 0 usa el valor predeterminado (15 segundos); un valor negativo desactiva la caché y reconstruye el índice en cada lectura. El enlace de documentación abre el howto de tags de autómatas.",

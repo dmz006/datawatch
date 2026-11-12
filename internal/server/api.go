@@ -6740,6 +6740,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"archive_grace_minutes":                s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
 			"capacity_fallthrough":                 s.cfg.Autonomous.CapacityFallthrough,
 			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
 			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
@@ -7563,6 +7564,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if verr := validateSupervisorLoopPatch(s.cfg.Autonomous.SupervisorLoop, patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
+	}
+	// Archive grace: a whole number of minutes >= 0; anything else rejects
+	// the whole PUT.
+	if v, ok := patch["autonomous.archive_grace_minutes"]; ok {
+		if _, verr := config.ParseArchiveGraceMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	// Progress engine parameters: every autonomous.progress.* value is checked
 	// before anything is applied, so one bad value rejects the whole PUT.
@@ -10505,6 +10514,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_fallthrough":
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.CapacityFallthrough = b
+			}
+		case "autonomous.archive_grace_minutes":
+			if n, err := config.ParseArchiveGraceMinutes(v); err == nil {
+				cfg.Autonomous.ArchiveGraceMinutes = &n
 			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
