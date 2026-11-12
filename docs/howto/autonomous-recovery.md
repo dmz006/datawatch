@@ -153,12 +153,38 @@ practice:
   the working tree does not change what the judge reads; see
   [Rules-review source](../datawatch-definitions.md#rules-review-source).
 - **Nothing changed** — the stored verdict comes back, on purpose, without a
-  new judge run. To force a fresh judgment, change the judge chain or turn the
-  cache off ([The per-commit verdict
+  new judge run, and it is not added to the verdict list a second time. To
+  force a fresh judgment, change the judge chain or turn the cache off
+  ([The per-commit verdict
   cache](judge-policy.md#the-per-commit-verdict-cache)).
 - **The stored verdict is from before the rules fingerprint existed**, or the
   project has no rules or context file to fingerprint — the first rejudge
   always judges again.
+
+Every rejudge says which of the two it was. The `guardrail_rejudge` entry in
+the decision log carries the commit it judged (`judged_commit_sha`) and
+`verdict_reused`:
+
+- **A new review ran** — `verdict_reused` is false (it is left out of the
+  JSON) and the note starts `new review ran on commit <sha>`. The new verdict
+  is added to the Automaton's verdicts, with its own `guardrail_verdict`
+  entry, under that commit and the rules fingerprint.
+- **The stored verdict was reused** — `verdict_reused` is `true`,
+  `judged_commit_sha` is the commit the stored verdict was judged on, and the
+  note reads `stored verdict reused: the head commit <sha> and the rules text
+  are unchanged since that verdict was made at <time>; no new review ran`. The
+  verdict keeps the time, commit and fingerprint it was made with, no
+  `guardrail_verdict` entry is added and the verdict list is not appended to, so
+  asking again and again leaves one verdict per review that actually ran.
+- **No verdict was produced** — the entry still names the head commit that
+  was to be judged, with `verdict_reused` false.
+
+The completion review the daemon runs on its own when the last task finishes
+behaves the same way: if the stored verdict still applies it records a
+`guardrail_reuse` entry (`verdict_reused` true, same note) instead of a second
+copy of the verdict, and does not classify it a second time. To read it, open
+the Automaton's decision log (`autonomous_prd_get`, or the Automaton's
+detail page) and look for the two kinds.
 
 Outcome, in every case written to the Automaton's decision log (attributed
 to the acting operator) **before** any status change:

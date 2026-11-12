@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - **A rejudge of a blocked Automaton reviews the real branch head and the rules text.** The completion review is anchored to the head of the Automaton's own working tree, and a hash of the rules and context text it reads is stored on the verdict as `rules_fingerprint`. The stored verdict is replayed only when both are unchanged; a verdict recorded before the fingerprint existed is judged again once. The recovery and judge-policy howtos, the operations guide and the glossary describe it.
+- **A reused completion verdict is recorded as a reuse, not as a second verdict.** Every rejudge now writes a `guardrail_rejudge` decision that names the commit it judged (`judged_commit_sha`) and says whether the stored verdict was reused (`verdict_reused`). When the stored verdict is reused it keeps its own time, commit and rules fingerprint, is not added to the Automaton's verdicts again and records no new `guardrail_verdict`; the completion review the daemon runs on its own records a `guardrail_reuse` decision the same way and does not classify the verdict a second time. When a new review runs the note starts `new review ran on commit`. Existing decision entries are unchanged; the two fields are omitted when empty or false.
 
 ## v9.139.0 — The Housekeeping tab as an action list
 

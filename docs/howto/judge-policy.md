@@ -484,6 +484,17 @@ rules)**:
   the verdict as `rules_fingerprint`; per-task and per-story keys carry none
   and are unchanged.
 
+A hit hands back the stored verdict as it was made — with its own time,
+commit and rules fingerprint — and nothing is judged. It is not added to the
+Automaton's verdict list a second time, and no second `guardrail_verdict`
+entry or classification is recorded. What is recorded is the reuse itself: a
+rejudge writes a `guardrail_rejudge` decision, and the completion review the
+daemon runs on its own writes a `guardrail_reuse` decision, each with
+`verdict_reused` true, the commit in `judged_commit_sha` and a note that says
+no new review ran. When a review did run the decision has `verdict_reused`
+false and a note that starts `new review ran on commit`. This is how to tell
+a replay from a fresh judgment in the Automaton's decision log.
+
 Only completed verdicts are stored — a pass, or a block whose category is a
 real finding (content, or the empty pre-category value). A judge that timed
 out, crashed, or returned unparseable output — the `infra`,
@@ -564,7 +575,9 @@ autonomous_config_set(judge_policy=["ollama-a","ollama-b","claude-code"], judge_
   rules include the rules text, so commit the fix or edit the rules text the
   judge reads and the next rejudge judges again. If you want a fresh judgment
   without either, change the judge chain, or turn the cache off with
-  `autonomous.judge_verdict_cache_enabled=false`.
+  `autonomous.judge_verdict_cache_enabled=false`. The decision log shows which
+  it was: `verdict_reused` true on the `guardrail_rejudge` entry means the
+  stored verdict came back, and a replay adds no new verdict to the list.
 - **A rejudge judged again although nothing changed.** The stored verdict has
   no rules fingerprint (it was recorded before the fingerprint existed), or
   the project has no rules or context file, so there is no fingerprint to
