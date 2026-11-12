@@ -18974,6 +18974,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
     { key: 'session.task_delivery_window_seconds', label: 'Task delivery wait per attempt (sec)', labelKey: 'settings_session_task_delivery_window', type: 'number', placeholder: '60' },
     { key: 'session.task_delivery_attempts', label: 'Task delivery attempts', labelKey: 'settings_session_task_delivery_attempts', type: 'number', placeholder: '3' },
+    { key: 'session.finalise_interval_minutes', label: 'Session finalise interval (min)', labelKey: 'settings_finalise_interval', helpKey: 'settings_finalise_interval_help', type: 'number', placeholder: '10' },
     { key: 'session.store_flush_interval', label: 'Session store write delay (ms; 0 = write through)', labelKey: 'settings_session_store_flush_interval', helpKey: 'settings_session_store_flush_interval_help', type: 'number', placeholder: '1000' },
     { key: 'session.store_archive_after_days', label: 'Archive finished sessions after (days; 0 = never)', labelKey: 'settings_session_store_archive_after_days', helpKey: 'settings_session_store_archive_after_days_help', type: 'number', placeholder: '14' },
     { key: 'session.store_field_cap_kb', label: 'Session store inline field cap (KB)', labelKey: 'settings_session_store_field_cap_kb', helpKey: 'settings_session_store_field_cap_kb_help', type: 'number', placeholder: '256' },
