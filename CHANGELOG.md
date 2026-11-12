@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Lane utilization howto.** A new how-to, `lane-utilization`, explains the view of how busy each lane was over a window: busy and idle share, queue wait, backend mix, the idle-while-eligible flag, the lane fill mode and decisions, and plan usage in points and tokens (never dollars, because plans are flat-rate). It covers the window choices and how to reach the view from REST, MCP, the CLI, the comm channel, the dashboard card and the Gantt view. It is linked from the how-to and docs indexes, with a parity row, a companion-app issue note and testing entries.
+
 ## v9.154.4 — Skills mapping of every datawatch feature
 
 ### Documentation
