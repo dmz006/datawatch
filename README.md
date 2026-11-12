@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.160.0 (2026-11-12).** The Projects Gantt is one expandable timeline (arcs, Automata, tasks) with an All time default, zoom presets and a Focus view per Automation, read through a paged project timeline (REST, MCP, CLI and chat). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.160.1 (2026-11-12).** The phone server selector is now one header dropdown, the Sessions page has a single Group by control, and the start-session button no longer covers open sheets or the last cards of long pages. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
