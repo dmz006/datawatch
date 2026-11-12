@@ -44,6 +44,14 @@ const UncommittedCauseAutomatonFinished = "files were still uncommitted when the
 // The daemon's own generated documents a person has not changed do not count
 // as uncommitted work, and the question lists only the files that count.
 func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD) (blocked bool, err error) {
+	if prd.Git.Branch != "" && prd.ClusterProfile == "" && prd.ProjectDir != "" {
+		if removed, rerr := removeCompletionMarker(prd.ProjectDir); rerr != nil {
+			log.Printf("[autonomous] %s uncommitted-work: could not remove the completion marker: %v", prd.ID, rerr)
+		} else if removed {
+			log.Printf("[autonomous] %s uncommitted-work: removed the completion marker from the Automaton worktree", prd.ID)
+		}
+	}
+
 	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy == config.UncommittedWorkPolicyOff {
 		return false, nil

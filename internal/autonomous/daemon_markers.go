@@ -1,6 +1,10 @@
 package autonomous
 
 import (
+	"errors"
+	"io/fs"
+	"log"
+	"os"
 	"path"
 	"path/filepath"
 )
@@ -34,4 +38,34 @@ func isDaemonMarkerPath(p string) bool {
 		}
 	}
 	return false
+}
+
+// removeCompletionMarker deletes the completion marker from the root of dir.
+// It removes only that one exact file name, only when it is a regular file: a
+// directory or symlink with that name is left alone (and logged), and a missing
+// file is not an error. It never recurses and never touches a process or
+// session.
+func removeCompletionMarker(dir string) (removed bool, err error) {
+	if dir == "" {
+		return false, nil
+	}
+	target := filepath.Join(dir, completionMarkerFile)
+	fi, err := os.Lstat(target)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !fi.Mode().IsRegular() {
+		log.Printf("[autonomous] completion marker at %s is not a regular file, left in place", target)
+		return false, nil
+	}
+	if err := os.Remove(target); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
