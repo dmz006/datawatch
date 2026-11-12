@@ -47,7 +47,10 @@ func ProgressGroupTotals(recs []progressRec) ProgressGrouped {
 	for _, r := range recs {
 		p := r.prd
 		accumulateRecord(total, r)
-		pk := ProjectKey(p)
+		pk := r.project
+		if pk == "" {
+			pk = ProjectKey(p)
+		}
 		if pk == ProjectKeyNone {
 			noProject.Count++
 			noProject.IDs = append(noProject.IDs, p.ID)

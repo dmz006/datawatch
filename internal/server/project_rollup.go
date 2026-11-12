@@ -9,9 +9,13 @@
 //
 // Grouping: an Automaton belongs to the arc whose Automation holds it, found by
 // PRD.AutomationID or, failing that, the Automation whose members include it.
-// An Automaton of this project (its ProjectDir matches the project's dir) that
-// no arc holds goes in the "unassigned" group. Automata of other projects that
-// no arc holds are left out.
+// An Automaton that no arc holds goes in the "unassigned" group when it
+// resolves to this project. Automata resolved to another project are left out,
+// even when their directory matches this project's directory. Automata that
+// resolve to no project and sit in no project's arc go in the separate
+// "without_project" group (Automata without a project), which is built from the
+// full Automaton list, is the same whichever project is asked for, and is not
+// counted in any Total.
 //
 // Cost: points only, never API dollars. Each Automaton's points are the
 // cost report's estimated_usage_points for its group_by=automaton row, which
@@ -20,9 +24,11 @@
 // plan has no point figure and reads as 0; points_priced says whether any
 // Automaton was priced.
 //
-// Membership: an Automaton belongs to the project by its explicit project link
-// first (rollupInput.Linked, which also maps a worktree to its repository),
-// then by the arc that holds it, and by directory only as a last fallback.
+// Membership: an Automaton is placed in a project by autonomous.ResolveAutomatonProject,
+// in this order: the Automaton's own project link, the project of the Automation
+// that holds it, the project of its parent Automaton, then its directory (a
+// worktree maps to its repository). The arc that holds an Automaton still
+// places it in that arc.
 //
 // Throughput: an Automaton counts as finished when it is completed, or when it
 // is cancelled or archived and its work branch is already on the project's
@@ -46,7 +52,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -108,7 +113,11 @@ type projectRollup struct {
 	PointsPriced bool          `json:"points_priced"`
 	Arcs         []rollupGroup `json:"arcs"`
 	Unassigned   rollupGroup   `json:"unassigned"`
-	Total        rollupGroup   `json:"total"`
+	// WithoutProject lists the Automata without a project: no link, no
+	// Automation or parent project, no directory match and no arc. It is
+	// not part of Total.
+	WithoutProject rollupGroup `json:"without_project"`
+	Total          rollupGroup `json:"total"`
 }
 
 // rollupInput is everything buildProjectRollup reads. It holds plain records
@@ -125,10 +134,12 @@ type rollupInput struct {
 	Points     map[string]float64
 	WindowDays int
 	Now        time.Time
-	// Linked reports whether the Automaton is explicitly linked to this
-	// project, including a worktree-based Automaton mapped to its repository.
-	// It is checked before the arc and the directory. Nil means no link.
-	Linked func(p *autonomous.PRD) bool
+	// Projects maps every configured project name to its directory, for the
+	// membership resolver. Nil means only this project (Project -> Dir).
+	Projects map[string]string
+	// ArcHeld is the set of Automation ids held by an arc of any configured
+	// project. An Automaton in it is never listed as without a project.
+	ArcHeld map[string]bool
 	// Merged is the read-only merge proof: whether the Automaton's work branch
 	// is already on the project's default branch and, when known, when it
 	// landed (zero time = unknown). It is asked only for a cancelled or
@@ -195,7 +206,12 @@ func buildProjectRollup(in rollupInput) projectRollup {
 	}
 	out.Unassigned = rollupGroup{Automata: []rollupAutomaton{}}
 
-	cleanDir := filepath.Clean(in.Dir)
+	projects := in.Projects
+	if projects == nil {
+		projects = map[string]string{in.Project: in.Dir}
+	}
+	idx := autonomous.NewAutomatonProjectIndex(in.PRDs, in.Automations, projects)
+	out.WithoutProject = rollupGroup{Automata: []rollupAutomaton{}}
 	seenPRD := map[string]bool{}
 	for _, p := range in.PRDs {
 		if p == nil || p.IsTemplate || seenPRD[p.ID] {
@@ -205,14 +221,14 @@ func buildProjectRollup(in rollupInput) projectRollup {
 		if auto == "" {
 			auto = memberOf[p.ID]
 		}
-		linked := in.Linked != nil && in.Linked(p)
+		resolved := idx.Of(p.ID).Project
 		var g *rollupGroup
 		if i, ok := arcIndex[auto]; ok && auto != "" {
 			g = &out.Arcs[i]
-		} else if linked {
+		} else if resolved == in.Project {
 			g = &out.Unassigned
-		} else if p.ProjectDir != "" && filepath.Clean(p.ProjectDir) == cleanDir {
-			g = &out.Unassigned
+		} else if resolved == "" && !(auto != "" && in.ArcHeld[auto]) {
+			g = &out.WithoutProject
 		} else {
 			continue
 		}
@@ -224,6 +240,7 @@ func buildProjectRollup(in rollupInput) projectRollup {
 		finishGroup(&out.Arcs[i], in.WindowDays)
 	}
 	finishGroup(&out.Unassigned, in.WindowDays)
+	finishGroup(&out.WithoutProject, in.WindowDays)
 
 	out.Total = rollupGroup{Automata: []rollupAutomaton{}}
 	for _, g := range append(append([]rollupGroup{}, out.Arcs...), out.Unassigned) {
@@ -344,22 +361,6 @@ func (s *Server) costRollupPoints(mgr *autonomous.Manager, now time.Time, window
 	return points
 }
 
-// rollupLinkedFn reports an Automaton as linked to the project when it works
-// in a git worktree of the project's repository: its directory sits under the
-// daemon's worktree base and the project's directory is the configured base
-// repository. This maps a worktree to its repository; the directory of a
-// worktree never equals the project's directory.
-func (s *Server) rollupLinkedFn(mgr *autonomous.Manager, projectDir string) func(*autonomous.PRD) bool {
-	cfg := mgr.Config()
-	repo := filepath.Clean(cfg.WorktreeBaseRepo)
-	if cfg.WorktreeBaseRepo == "" || filepath.Clean(projectDir) != repo {
-		return nil
-	}
-	return func(p *autonomous.PRD) bool {
-		return p.Git.Branch != "" && p.ProjectDir != "" && filepath.Clean(p.ProjectDir) != repo
-	}
-}
-
 // rollupMergedFn is the read-only merge proof the merged-member decision uses:
 // the Automaton's branch against the default branch of the base repository.
 // When it is merged, the time is the commit date of the proving commit.
@@ -429,9 +430,33 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		Points:      s.costRollupPoints(mgr, now, windowDays),
 		WindowDays:  windowDays,
 		Now:         now,
-		Linked:      s.rollupLinkedFn(mgr, entry.Dir),
+		Projects:    rollupProjectDirs(s.cfg.Projects),
+		ArcHeld:     rollupArcHeld(s.cfg.Projects),
 		Merged:      s.rollupMergedFn(mgr),
 	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// rollupProjectDirs is the configured project name to directory map the
+// membership resolver reads.
+func rollupProjectDirs(projects map[string]config.ProjectConfigEntry) map[string]string {
+	out := make(map[string]string, len(projects))
+	for name, e := range projects {
+		out[name] = e.Dir
+	}
+	return out
+}
+
+// rollupArcHeld is the set of Automation ids held by an arc of any project.
+func rollupArcHeld(projects map[string]config.ProjectConfigEntry) map[string]bool {
+	out := map[string]bool{}
+	for _, e := range projects {
+		for _, arc := range e.Arcs {
+			if arc.AutomationID != "" {
+				out[arc.AutomationID] = true
+			}
+		}
+	}
+	return out
 }

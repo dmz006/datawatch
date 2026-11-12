@@ -395,9 +395,33 @@ func TestBuildProjectRollup_WorktreeAutomatonWithLink(t *testing.T) {
 	if got := buildProjectRollup(in); got.Total.Throughput.AutomataFinished != 0 || len(got.Total.Automata) != 0 {
 		t.Fatalf("unlinked worktree Automaton must not count: %+v", got.Total)
 	}
-	in.Linked = func(p *autonomous.PRD) bool { return p.ID == "wt" }
+	wt.Project = "acme"
 	got := buildProjectRollup(in)
 	if got.Total.Throughput.AutomataFinished != 1 || got.Total.Throughput.TasksFinished != 1 {
 		t.Fatalf("linked worktree Automaton: %+v", got.Total.Throughput)
+	}
+}
+
+func TestBuildProjectRollup_ResolverOrderAndWithoutProject(t *testing.T) {
+	projects := map[string]string{"acme": "/srv/acme", "other": "/srv/other"}
+	linkedElsewhere := &autonomous.PRD{ID: "x1", ProjectDir: "/srv/acme", Project: "other", Status: autonomous.PRDDraft}
+	byDir := &autonomous.PRD{ID: "x2", ProjectDir: "/srv/acme", Status: autonomous.PRDDraft}
+	orphan := &autonomous.PRD{ID: "x3", ProjectDir: "/nowhere", Status: autonomous.PRDDraft}
+	in := rollupInput{Project: "acme", Dir: "/srv/acme", Projects: projects,
+		PRDs: []*autonomous.PRD{linkedElsewhere, byDir, orphan}, WindowDays: 7, Now: rollupNow}
+	got := buildProjectRollup(in)
+	if len(got.Unassigned.Automata) != 1 || got.Unassigned.Automata[0].ID != "x2" {
+		t.Fatalf("unassigned: %+v", got.Unassigned.Automata)
+	}
+	if len(got.WithoutProject.Automata) != 1 || got.WithoutProject.Automata[0].ID != "x3" {
+		t.Fatalf("without_project: %+v", got.WithoutProject.Automata)
+	}
+	if len(got.Total.Automata) != 1 {
+		t.Fatalf("without_project must not be in total: %+v", got.Total.Automata)
+	}
+	in.Project, in.Dir = "other", "/srv/other"
+	got = buildProjectRollup(in)
+	if len(got.WithoutProject.Automata) != 1 || len(got.Unassigned.Automata) != 1 || got.Unassigned.Automata[0].ID != "x1" {
+		t.Fatalf("other project: %+v %+v", got.Unassigned.Automata, got.WithoutProject.Automata)
 	}
 }
