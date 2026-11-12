@@ -475,3 +475,24 @@ func TestChildInheritFixPRDInheritsFromScanned(t *testing.T) {
 		t.Fatalf("fix child %+v", child)
 	}
 }
+
+// With child_inherit off, a child of an Automation member is not added to the
+// Automation and nothing is recorded.
+func TestChildInheritOffAddsNoAutomationMembership(t *testing.T) {
+	h, _ := newControlHarness(t, 3)
+	a := insertDraft(t, h)
+	setChildInherit(h.m, false)
+	before, _ := h.m.automations.Get(a.ID)
+	child := unlinkedChild(t, h.m)
+	h.m.inheritFromParent(child, h.prds[0], childExplicit{})
+	after, _ := h.m.automations.Get(a.ID)
+	if len(after.Members) != len(before.Members) {
+		t.Fatalf("members %d -> %d with child_inherit off", len(before.Members), len(after.Members))
+	}
+	if owner := h.m.automations.OwnerOf(child.ID); owner != "" {
+		t.Fatalf("child owned by Automation %q with child_inherit off", owner)
+	}
+	if countChildInherit(child) != 0 {
+		t.Fatalf("decision recorded with child_inherit off")
+	}
+}
