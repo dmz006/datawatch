@@ -310,6 +310,16 @@ wrong path can never reach another repository. Commit also refuses before
 staging anything when the message is empty, or the worktree has no uncommitted
 files. A file path that would leave the worktree is refused.
 
+**Path guard.** Every file path taken from `git status` output is checked by one
+shared relative-path guard before it is joined onto the worktree directory: the
+path must be non-empty, free of NUL bytes, relative, and still inside the
+directory after cleaning. An absolute path, a `..` escape (including `a/../../x`)
+and a path that cleans to `.` are skipped, never read or committed. The same
+guard covers the check that tells a daemon-only change (the daemon's own marked
+blocks, or the lines it appends to an ignore file) from a worker's edit, and the
+list of files a task commit may stage. Valid in-tree paths behave as before, so
+nothing changes for a normal run.
+
 **Where.** On the Housekeeping sub-tab each listed worktree has a **Commit**
 button. It opens a window showing the diff from
 `GET /api/autonomous/uncommitted-work/diff?worktree=<path>`, a message field, and

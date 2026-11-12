@@ -336,7 +336,12 @@ record, `permission_issue`, instead of a list of raw errors:
 owner read and search) on each affected path and everything under it. It
 touches only paths inside the worktree base, refuses a path outside it or one
 that resolves outside it through a link, never follows or changes a symbolic
-link, and skips a path that is already gone. It reports how many entries it
+link, and skips a path that is already gone. The containment check runs on the
+requested path **before any file-system call**, so a path outside the base (an
+absolute path elsewhere, a `..` escape, an empty path or one with a NUL byte) is
+refused with the same "outside the worktree base" text whether or not the target
+exists, and a missing outside path no longer reads as "already gone". A valid
+path inside the base behaves exactly as before. It reports how many entries it
 changed. It changes permissions only: it removes nothing, so the next cleanup
 pass still applies every check above before it deletes anything.
 

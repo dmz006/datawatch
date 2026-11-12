@@ -592,7 +592,10 @@ func ClassifyCleanupPermissionErrors(failed []WorktreeCleanupFailed) *CleanupPer
 // permission (and, on folders, owner read and search) on each given path
 // and everything under it. Only paths inside base are touched; a path
 // outside it, or one that resolves outside it through a link, is refused
-// and reported in the error. Symbolic links are never followed or changed.
+// and reported in the error. The containment check runs before any
+// filesystem call on the requested path, so the refusal text is the same
+// whether or not the target exists. Symbolic links are never followed or
+// changed.
 // It returns the number of entries changed.
 func FixCleanupPermissions(base string, paths []string) (int, error) {
 	realBase, err := filepath.EvalSymlinks(base)
@@ -600,9 +603,15 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 		return 0, fmt.Errorf("worktree base %q: %w", base, err)
 	}
 	realBase = filepath.Clean(realBase)
+	cleanBase := filepath.Clean(base)
 	changed := 0
 	var errs []string
-	for _, p := range paths {
+	for _, orig := range paths {
+		p, ok := lexicalInsideBase(orig, cleanBase, realBase)
+		if !ok {
+			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
+			continue
+		}
 		if _, err := os.Lstat(p); err != nil {
 			continue // already gone: nothing to fix
 		}
@@ -648,4 +657,30 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 		return changed, fmt.Errorf("fix permissions: %s", strings.Join(errs, "; "))
 	}
 	return changed, nil
+}
+
+// lexicalInsideBase decides, without touching the filesystem, whether p
+// names a path strictly inside the base. An absolute path must sit inside
+// either the cleaned base or its resolved form; a relative path is joined
+// to the base first. A path with a NUL byte is refused. It returns the
+// cleaned absolute path to act on.
+func lexicalInsideBase(p, cleanBase, realBase string) (string, bool) {
+	if p == "" || strings.ContainsRune(p, 0) {
+		return "", false
+	}
+	inside := func(path, root string) bool {
+		return path != root && strings.HasPrefix(path, root+string(filepath.Separator))
+	}
+	if filepath.IsAbs(p) {
+		c := filepath.Clean(p)
+		if inside(c, cleanBase) || inside(c, realBase) {
+			return c, true
+		}
+		return "", false
+	}
+	c := filepath.Join(cleanBase, p)
+	if inside(c, cleanBase) {
+		return c, true
+	}
+	return "", false
 }
