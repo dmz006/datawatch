@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.159.0 — Sessions tiles and cards show where they run and where the model runs
+
+### Added
+
+- **Two labelled placement facts on every session and on the session card.** The session tile and the companion card each show the real name of the host the session runs on (never the word “local”; a federated session names its peer) and where its model is served — the compute node for pi and Ollama, or “Anthropic cloud” for a Claude session — with the model line left out when it cannot be named. Each fact carries a hover title that says what it means. This is a display change on the PWA; no setting, endpoint, command or record field was added.
+- **A “Model” grouping axis.** Alongside State, Node, Project, Tag and Automaton, the Sessions page can now group by model: pi/Ollama sessions gather under the compute node that serves them (Claude sessions under “Anthropic cloud”), and sessions with no known model sit in the Ungrouped bucket.
+- Five new strings in English, German, Spanish, French and Japanese.
+
+### Documentation
+
+- **Sessions tiles and grouping how-to.** Covers the two labelled placement facts (runs-on and model-on), their hover-tip wording, and the new Model grouping axis.
+
 ## v9.158.0 — Lane utilization view
 
 ### Added

@@ -4229,7 +4229,7 @@ function _isPeerRow(s) {
 // read as well.
 function _sessionsNodeAxisNeedsPeers() {
   const by = _sessionsGroupValidate(state.sessionGroupBy);
-  return !!(by && (by.axis === 'node' || by.axis === 'automaton') && _sessionsLocalMode());
+  return !!(by && (by.axis === 'node' || by.axis === 'model' || by.axis === 'automaton') && _sessionsLocalMode());
 }
 // _loadPeerSessionsForNodes merges the peers' rows from the aggregated read
 // into state.sessions (this daemon's own rows are left as they are) and drops
@@ -5337,7 +5337,7 @@ window.sessionsShowMore = _sessionsShowMore;
 // under their Automaton and then their story. A saved view (device-local)
 // remembers mode + group axis + session filter together.
 const SESSIONS_GROUP_UNGROUPED = 'ungrouped';
-const SESSIONS_GROUP_AXES = ['state', 'node', 'project', 'tag', 'automaton'];
+const SESSIONS_GROUP_AXES = ['state', 'node', 'model', 'project', 'tag', 'automaton'];
 const SESSIONS_COLLAPSED_KEY = 'cs_sessions_collapsed_groups';
 const SESSIONS_SAVED_VIEWS_KEY = 'cs_sessions_saved_views';
 const SESSIONS_VIEW_NAME_MAX = 80;
@@ -5461,6 +5461,57 @@ function _sessionsNodeKey(s) {
 }
 window._sessionsNodeKey = _sessionsNodeKey;
 
+// _sessionRunsOn and _sessionModelOn are the two placement facts a session
+// tile and card print side by side, and the two fact-based groupings an
+// operator can choose:
+//   Runs on  -- where the session's terminal runs: its peer's name when the
+//               session is federated, otherwise the host's real name. It is
+//               never the word 'local'.
+//   Model on -- where the session's model is served: the compute node name
+//               for a pi or Ollama session, the words 'Anthropic cloud' for a
+//               Claude session, and empty when unknown.
+// Both read the same session fields the 'node' grouping reads, so the value a
+// surface prints is exactly the value the operator groups or filters by. The
+// 'model' grouping axis reuses _sessionModelOn as its key.
+function _sessionRunsOn(s) {
+  const server = (typeof s.server === 'string') ? s.server : '';
+  if (server && server !== 'local' && server !== 'all') return server;
+  if (typeof s.hostname === 'string' && s.hostname) return s.hostname;
+  let lh = '';
+  try { lh = (typeof _localHostname === 'string' && _localHostname) ? _localHostname : ''; } catch (_) { lh = ''; }
+  if (lh && (!server || server === 'local')) return lh;
+  return '';
+}
+window._sessionRunsOn = _sessionRunsOn;
+
+function _sessionModelOn(s) {
+  const bf = (s && typeof s.backend_family === 'string') ? s.backend_family.toLowerCase() : '';
+  const cnr = (s && typeof s.compute_node_ref === 'string') ? s.compute_node_ref : '';
+  if (bf === 'claude-code' || bf === 'claude') return 'Anthropic cloud';
+  if (bf === 'pi' || bf === 'pi-prompt' || bf === 'ollama') return cnr;
+  return '';
+}
+window._sessionModelOn = _sessionModelOn;
+
+// _sessionPlacementFactsHTML is the shared "Runs on / Model on" pair a
+// surface embeds: two labelled, hover-titled facts (each independently
+// omitted when empty). Kept out of sessionCard/renderSessionTile so both
+// print byte-identical labels and titles from one source.
+function _sessionPlacementFactsHTML(sess, labelClass) {
+  const runsLbl = _stx('sessions_runs_on', 'Runs on');
+  const modelLbl = _stx('sessions_model_on', 'Model on');
+  const runsTip = _stx('sessions_runs_on_tip', 'The host running the terminal of this session, or its peer name when the session is federated');
+  const modelTip = _stx('sessions_model_on_tip', 'The compute node serving the model of this session, or Anthropic cloud for a Claude session');
+  const runsOn = _sessionRunsOn(sess);
+  const modelOn = _sessionModelOn(sess);
+  const facts = [];
+  if (runsOn) facts.push(`<span class="${labelClass}" title="${escHtml(runsTip)}"><span class="${labelClass}-label">${escHtml(runsLbl)}</span> ${escHtml(runsOn)}</span>`);
+  if (modelOn) facts.push(`<span class="${labelClass}" title="${escHtml(modelTip)}"><span class="${labelClass}-label">${escHtml(modelLbl)}</span> ${escHtml(modelOn)}</span>`);
+  if (!facts.length) return '';
+  return facts.join(' ');
+}
+window._sessionPlacementFactsHTML = _sessionPlacementFactsHTML;
+
 // _sessionsProjectKey is the project group key: the session's project_dir
 // with trailing slashes dropped, so one folder never splits in two over a
 // trailing slash. The server reads the same key.
@@ -5487,6 +5538,11 @@ function _sessionsGroupKeyFor(sess, by) {
       return (typeof s.state === 'string' && s.state) ? s.state : 'unknown';
     case 'node':
       return _sessionsNodeKey(s);
+    case 'model':
+      // 'Model on' fact — where the session's model is served: the compute
+      // node for pi/Ollama, 'Anthropic cloud' for Claude, ungrouped when
+      // unknown (an empty key must not become a blank group).
+      return _sessionModelOn(s) || SESSIONS_GROUP_UNGROUPED;
     case 'project':
       // The server resolves the project (owning Automaton's project, project
       // tag, registered folder match, Automaton title, folder) and sends it
@@ -5550,6 +5606,10 @@ function _sessionsGroupTitleInfo(key, by, sessions) {
     title = maps.project[id.replace(/\/+$/, '')] || '';
   } else if (by.axis === 'node') {
     title = maps.node[id] || '';
+  } else if (by.axis === 'model') {
+    // Model fact: a compute-node ref may resolve to a node name; 'Anthropic
+    // cloud' (Claude) is already the display value and passes through as-is.
+    title = maps.node[id] || '';
   }
   title = (typeof title === 'string') ? title.trim() : '';
   if (title === id) title = '';
@@ -5559,7 +5619,7 @@ function _sessionsGroupTitleInfo(key, by, sessions) {
 // _sessionsGroupTitlesEnsure loads the title lists for the active record axis
 // once, then repaints. A failed load latches so it cannot loop.
 function _sessionsGroupTitlesEnsure(by) {
-  if (!by || ['automaton', 'project', 'node'].indexOf(by.axis) < 0) return;
+  if (!by || ['automaton', 'project', 'node', 'model'].indexOf(by.axis) < 0) return;
   const maps = _sessionsGroupTitleMaps();
   if (maps.loaded[by.axis]) return;
   maps.loaded[by.axis] = true;
@@ -5903,6 +5963,7 @@ function renderSessionsGroupPicker(by) {
   const axisLabel = (axis) => ({
     state: _stx('sessions_group_state', 'State'),
     node: _stx('sessions_group_node', 'Node'),
+    model: _stx('sessions_group_model', 'Model node'),
     project: _stx('sessions_group_project', 'Project'),
     tag: _stx('sessions_group_tag', 'Tag'),
     automaton: _stx('sessions_group_automaton', 'Automaton'),
@@ -5928,6 +5989,7 @@ function renderSessionsGroupPicker(by) {
       ${opt('', _stx('sessions_group_none', 'No grouping'))}
       ${opt('state', axisLabel('state'))}
       ${opt('node', axisLabel('node'))}
+      ${opt('model', axisLabel('model'))}
       ${opt('project', axisLabel('project'))}
       ${opt('tag', axisLabel('tag'))}
       ${prefixOpts}
@@ -6282,7 +6344,11 @@ function renderSessionTile(sess, nowMs) {
   }
   menu += _tileMenuItem('👁', _stx('session_action_watch', 'Watch for updates'), `toggleSessionWatch('${escHtml(fullId)}')`);
   menu += _tileMenuItem('🔕', _stx('session_action_mute', 'Mute notifications'), `toggleSessionMute('${escHtml(fullId)}')`);
-  const node = sess.hostname || sess.server || sess.compute_node_ref || '';
+  // Two placement facts, not one guessed node: where the session's terminal
+  // runs (never the word local, the peer's name when federated) and where
+  // its model is served (the compute node for pi/Ollama, 'Anthropic cloud'
+  // for Claude). Each is labelled and carries a hover title explaining it.
+  const tileFacts = _sessionPlacementFactsHTML(sess, 'session-tile-fact');
   return renderWorkTile({
     id: shortId,
     rootId: 'sess-tile-' + fullId,
@@ -6297,7 +6363,7 @@ function renderSessionTile(sess, nowMs) {
     progress: _sessionTileProgress(sess),
     updatedAt: sess.updated_at || sess.last_activity,
     nowMs: now,
-    bodyHtml: node ? `<div class="session-tile-node">${escHtml(node)}</div>` : '',
+    bodyHtml: tileFacts ? `<div class="session-tile-node session-tile-facts">${tileFacts}</div>` : '',
     menuHtml: menu,
   });
 }
@@ -6759,6 +6825,7 @@ function sessionCard(sess, idx, total) {
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
             <span class="id" style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);color:var(--text);padding:2px 7px;border-radius:4px;border:1px solid var(--border);font-weight:600;letter-spacing:0.3px;" title="Session ID">${escHtml(shortId)}</span>
+            ${_sessionPlacementFactsHTML(sess, 'card-fact')}
             ${isCouncil ? `<span class="council-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;color:#f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="${escHtml(t('session_council_badge_tip')||'Council debate persona session')}">🎭 ${escHtml(t('session_council_badge')||'Council')}</span>` : ''}
             ${llmDisplay ? `<span class="backend-badge" style="font-size:10px;border:1px solid var(--accent2,#60a5fa);padding:2px 7px;border-radius:8px;background:rgba(96,165,250,0.12);color:var(--accent2,#60a5fa);font-weight:600;" title="LLM/backend: ${escHtml(llmDisplay)}">${escHtml(llmDisplay)}</span>` : ''}
             ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}

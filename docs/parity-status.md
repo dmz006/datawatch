@@ -33,6 +33,7 @@ Legend:
 | Start / stop / kill session | ✅ | ✅ | ✅ |
 | Completion review outcome (`rules_review_outcome` on the attention list and Automaton view; `autonomous.auto_fix_retries`; REST, MCP, CLI, comm channel, YAML all covered) | ✅ | ❌ owed, datawatch-app issue filed at merge | ❌ owed, datawatch-app issue filed at merge |
 | Session output streaming | ✅ | ✅ | ✅ |
+| Sessions placement facts (tile/card “Runs on” + “Model on”) and the **Model** group-by axis (v9.159.0) | ✅ v9.159.0 | ❌ owed, [dmz006/datawatch-app#477](https://github.com/dmz006/datawatch-app/issues/477) (5 new i18n keys + Model axis) | ❌ owed, [dmz006/datawatch-app#477](https://github.com/dmz006/datawatch-app/issues/477) (same) |
 | Settings — General | ✅ | ✅ | ✅ |
 | Settings — LLM backends | ✅ | ✅ | ✅ |
 | Settings — Messaging backends | ✅ | ✅ | ✅ |

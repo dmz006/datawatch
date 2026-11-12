@@ -206,6 +206,25 @@ test('state / node / project axes: complete, sorted, correctly counted', (t) => 
   assert.equal(odd[0].key, 'unknown');
 });
 
+// ── model axis: where the session's model is served ────────────────────────
+test('the model axis groups by the model placement, ungrouped when unknown', (t) => {
+  const sbx = freshSandbox();
+  const sessions = [
+    { id: 'pi', full_id: 'local/pi', backend_family: 'pi-prompt', compute_node_ref: 'pi-node-a' },
+    { id: 'ol', full_id: 'local/ol', backend_family: 'ollama', compute_node_ref: 'pi-node-a' },
+    { id: 'cc', full_id: 'local/cc', backend_family: 'claude-code', llm_ref: 'claude-opus-4' },
+    { id: 'sh', full_id: 'local/sh', backend_family: 'shell' }, // no known model
+  ];
+  const g = sbx._sessionsGroupSessions(sessions, { axis: 'model' });
+  // pi + ollama share the same compute node; Claude is Anthropic cloud; the
+  // shell session has no model fact, so it lands in the ungrouped bucket.
+  assert.deepEqual(plain(g.map(x => x.key)), ['Anthropic cloud', 'pi-node-a', 'ungrouped']);
+  assert.equal(g.find(x => x.key === 'pi-node-a').count, 2);
+  assert.equal(g.find(x => x.key === 'Anthropic cloud').count, 1);
+  assert.equal(g.find(x => x.key === 'ungrouped').count, 1);
+  assert.equal(sbx._sessionsGroupLabel('ungrouped', { axis: 'model' }), 'Ungrouped');
+});
+
 // ── tag axis label + registry name ───────────────────────────────────────
 test('group labels: registry name when known, raw key otherwise, ungrouped', (t) => {
   const sbx = freshSandbox();
@@ -290,7 +309,7 @@ test('group picker: axes + registry prefixes + current selection', (t) => {
   const sbx = freshSandbox();
   run(sbx, "_tagsState.list = [{ name: 'ops:cron' }, { name: 'ops:watch' }, { name: 'data:etl' }, { name: 'infra:ci' }]");
   const html = sbx.renderSessionsGroupPicker(null);
-  for (const v of ['', 'state', 'node', 'project', 'tag', 'automaton', 'tag|ops:', 'tag|data:', 'tag|infra:']) {
+  for (const v of ['', 'state', 'node', 'model', 'project', 'tag', 'automaton', 'tag|ops:', 'tag|data:', 'tag|infra:']) {
     assert.ok(html.includes(`value="${v}"`) || v === '', 'option ' + v);
   }
   assert.ok(html.includes('Tag prefix'), 'prefix optgroup label');
