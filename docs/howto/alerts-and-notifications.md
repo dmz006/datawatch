@@ -163,7 +163,7 @@ datawatch alerts --mark-all-read
      is always rendered — a 128-character unbroken session id or a
      300-character message still fits — and the markup is
      width-agnostic: the same rows render at 360 px and 390 px with
-     no viewports-specific branching
+     no viewport-specific branching
    - Sessions sorted: `waiting_input` → `running` → `completed`
    - Prompt alerts include a **Quick reply** dropdown for saved commands
    - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
