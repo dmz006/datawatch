@@ -220,6 +220,27 @@ Two details worth knowing:
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
 
+### View mode with no grouping, and the Tree toggle
+
+With **Group by** set to none, **List**, **Tiles** and **Compact** always draw
+three different layouts: list rows, a tile grid, and a smaller tile grid.
+The **Tree** button (which groups sessions under their parent by lineage) is a
+variant of **List** only. Earlier builds kept a saved Tree choice (stored as
+`cs_session_tree_view` in this browser) over the mode toggle, and the Tree
+button is hidden while the toolbar is collapsed, so a stale Tree choice could
+make Tiles and Compact look identical to List with nothing visible to switch
+off. That is fixed in two ways:
+
+- A saved Tree choice no longer overrides Tiles or Compact; the tree shows
+  only while the mode is **List**.
+- Clicking any mode button (List, Tiles or Compact) switches the Tree choice
+  off, so the mode you click is the layout you get. To see the lineage tree
+  again, choose **List** and press **Tree**.
+
+This is a browser-side change only: no setting, endpoint, MCP tool, CLI
+command or chat verb changed, and the stored `cs_sessions_view_mode` value is
+read as before.
+
 ### The state filter
 
 The page has no count line above the list. The status chips in the Filters sheet
@@ -570,7 +591,7 @@ in your tag registry.
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
-| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize |
+| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
@@ -587,6 +608,12 @@ in your tag registry.
   Automaton carries that Automaton's tags as inherited, read-only tags, and
   those count for placement. (On the automaton axis the same group is
   labelled "Not part of an Automaton".)
+- **The mode buttons seem to do nothing with no grouping.** Fixed: a saved
+  Tree choice used to override Tiles and Compact. Reload the PWA on a current
+  build and click the mode you want; the click also clears the Tree choice
+  (see [View mode with no grouping, and the Tree toggle](#view-mode-with-no-grouping-and-the-tree-toggle)).
+  If you still see list rows in Tiles or Compact, confirm the PWA is the
+  current build (hard reload) before looking at storage.
 - **I see a tile, not a row, and I want rows back.** Switch the mode toggle
   to **List** — the choice sticks on that device. On phones the default is
   already List.
