@@ -657,7 +657,6 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// Placement tags (v5.28.x): sessions list/grouping, tag menu section,
 		// dashboard+Gantt filter, and the settings group the operator sees.
 		"sessions_group_none",
-		"sessions_group_by_label",
 		"session_group_filter_on",
 		"tags_menu_placement",
 		"placement_tag_tip",

@@ -31,8 +31,11 @@ same groups, counts and state mixes.
 ## What it is
 
 The Sessions page keeps all of its controls in **one toolbar row**: a search
-box, a **Filters** button (with a badge counting what is active), a chip per
-server, and the **List / Tiles / Compact** toggle. Behind the Filters button
+box, a **Filters** button (with a badge counting what is active), the
+**List / Tiles / Compact** toggle, and — only while a federated server is the
+active one — the clickable **🌐 <name>** indicator that returns you to this
+server when clicked (the full server picker is the header dropdown shared by
+every page; see [multi-servers](multi-servers.md#switch-between-servers-header-dropdown)). Behind the Filters button
 sit the grouping and saved-view controls. Three independent dials come out
 of that:
 
@@ -56,8 +59,11 @@ its controls packed into fewer rows. There is no new setting, and the
 daemon, REST, MCP, CLI and comm channel behave exactly as before.
 
 ```
-Sessions
-┌─[ Search…  ]  [ Filters (2) ]  [ server-a ] [ server-b ]   [ List │ Tiles │ Compact ]
+header (fixed, every page):   …  [ ▾ All servers │ This server │ server-a │ server-b ]
+
+Sessions (toolbar row):
+┌─[ Search…  ]  [ Filters (2) ]  [ 🌐 server-a ]   [ List │ Tiles │ Compact ]
+│  (the 🌐 indicator shows only while a federated server is active)
 │  ● running 4   ● waiting_input 2   ● complete 11   ● failed 1   ● killed 3
 │  ────────────────────────────────────────────────────────────
 │  ▾ automation:lane-fill        4  (running 2, waiting_input 1, complete 1)
@@ -91,7 +97,8 @@ per-device UI preference or a read-only API parameter.
 
 There is nothing to configure. Open the PWA, go to **Sessions**, and the
 toolbar row is already at the top of the list: the search box, the
-**Filters** button, the server chips and the mode toggle. **Group by** and
+**Filters** button, the mode toggle — and the 🌐 indicator, while a federated
+server is the active one. **Group by** and
 the saved **Views** are inside the Filters sheet.
 
 If you only need one of the three, jump to the matching section:
@@ -99,7 +106,7 @@ If you only need one of the three, jump to the matching section:
 - want the grid of tiles → [View modes](#view-modes)
 - want the tag / prefix / Automaton cut → [Grouping](#grouping)
 - want to keep a cut for later → [Saved views](#saved-views)
-- want to read the same cut from another channel → [All channels](#all-channels--the-shared-read)
+- want to read the same cut from another channel → [All channels](#all-channels-the-shared-read)
 
 ## The toolbar row
 
@@ -115,8 +122,14 @@ Everything you need to find sessions sits in one row at the top of the page:
 - **Filters button** — opens the Filters sheet (below). A badge on the
   button shows how many filters are active, so you can tell at a glance that
   the list is narrowed even with the sheet closed.
-- **Server chips** — one chip per server; tap a chip to include or leave out
-  that server's sessions.
+- **🌐 indicator & server dropdown** — while a federated server is the active
+  one, the row starts with a clickable **🌐 <name>** indicator; clicking it
+  returns you to this server. The full server picker is the header dropdown
+  shared by every page (an **All servers** entry, **This server**, and one
+  entry per enabled peer): picking an entry re-renders the page you're on
+  against that server (its sessions, its counts, its search text), and
+  picking the active one is a no-op. See [multi-servers: Switch between
+  servers](multi-servers.md#switch-between-servers-header-dropdown).
 - **List / Tiles / Compact** — the mode toggle, described next.
 
 ### The Filters sheet
@@ -131,6 +144,16 @@ often than search:
   rate_limited, complete, failed, killed). The same section
   also holds the **watched only** toggle, the **Backend** chips and, when
   you use tags, the **Tags** filter (described next).
+- **The floating "Start session" button clears out while the sheet is
+  open.** On a phone the sheet is a bottom sheet, and while it is open the
+  floating **Start session** button (bottom right) is hidden — it is one of
+  the overlays that button steps aside from — and the sheet carries extra
+  bottom padding, so its last rows (the **Status** chips and below) sit
+  above the button's old zone and are fully visible and tappable. The same
+  clearance applies to long pages: the Sessions list, Automata, Projects,
+  Alerts, Observer, Dashboard, Settings and the detail views all keep extra
+  padding under their last card, so nothing there hides behind the button,
+  which itself keeps its size and position while no sheet or modal is open.
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
@@ -277,16 +300,19 @@ Each option groups on exactly one thing, and a session with no match for the
 chosen option falls in the **ungrouped** group (it sorts last).
 
 The tag entries after `Tag` are built from the prefixes present in your tag
-registry (your automation:/stage:/kind: tags plus the placement auto-tags),
-so the picker shows exactly the prefixes you can narrow to — e.g.
-`Tag(automation:)`, `Tag(compute:)`, `Tag(peer:)`.
+registry (your automation:/stage:/kind: tags plus the placement auto-tags)
+plus the placement axes already visible on the loaded sessions (`compute:`,
+`peer:`, …), so the picker shows exactly the prefixes you can narrow to —
+e.g. `Tag(automation:)`, `Tag(compute:)`, `Tag(peer:)`.
 
 The PWA remembers the grouping you choose on this device. It restores it
 after a page reload and keeps it through list refreshes, so the picker never
-snaps back to its default.
-The toolbar placement control (the ⚙️ dropdown that groups by a `compute:`,
-`stage:` … tag) is the same choice, not a second one: picking a placement there
-updates this picker and vice versa. The choice is saved in this browser's local
+snaps back to its default. This dropdown is the **one** Group by control
+on the Sessions page: the Filters sheet has a single Group by dropdown —
+there is no second gear (⚙) dropdown, and the toolbar carries no second
+grouping control either (the former toolbar placement control is gone).
+Grouping by a placement axis is just one of the
+`Tag(<prefix>)` entries here. The choice is saved in this browser's local
 storage (not on the daemon). Applying a saved view replaces it, and an older
 placement choice saved before this change is picked up once and carried over.
 
@@ -414,7 +440,7 @@ same groups, the same counts and state mixes, wherever you read them:
 ### PWA (web UI)
 
 The Sessions page controls above: the one toolbar row (search, Filters with
-its badge, server chips, mode toggle), the Filters sheet (Group by with the
+its badge, the 🌐 indicator while a federated server is active, mode toggle), the Filters sheet (Group by with the
 tag-prefix entries, Views, status chips, and the grouped, searchable Tags
 filter with the Automaton picker and the selected-filter row), Show
 more paging, collapsible group headers with the fold-all control and the
@@ -608,6 +634,11 @@ in your tag registry.
 
 ## Troubleshooting
 
+- **The toolbar placement dropdown (⚙️) is gone.** There is one Group by
+  control, not two: the Filters sheet's **Group by** dropdown. Grouping by
+  a placement axis is one of its `Tag(<prefix>)` entries (`Tag(compute:)`,
+  `Tag(peer:)`, …); the sheet's and the (former) toolbar control shared one
+  saved choice, so nothing about your saved grouping is lost.
 - **A session is in the ungrouped group on the tag axis.** It has no tag
   matching the chosen prefix (or none at all). Check the tile's tag chip
   and the inherited tags of its Automaton — a session spawned by an

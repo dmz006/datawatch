@@ -126,17 +126,18 @@ test('About showing a peer: selecting local re-renders About with the local chip
   s.selectServer(null);
   assert.deepEqual(s.__renders, ['renderSettingsView'], 'About (the Settings render) must re-render');
 
-  // The local chip (data-server-name="") is the active one; the peer chip is not.
+  // The "local" option (value="") is the selected one; the peer option is not.
   const bar = s._serverPickerBar({});
-  const chipFor = (name) => {
-    const start = bar.indexOf(`data-server-name="${name}"`);
-    assert.ok(start >= 0, `chip for "${name}" must be rendered`);
-    return bar.slice(start, bar.indexOf('</button>', start));
+  const optFor = (name) => {
+    const marker = `value="${name == null ? '' : name}" data-base-label="`;
+    const start = bar.indexOf(marker);
+    assert.ok(start >= 0, `option for "${name}" must be rendered`);
+    return bar.slice(bar.lastIndexOf('<option ', start), bar.indexOf('</option>', start));
   };
-  const localChip = chipFor('');
-  assert.ok(localChip.includes('background:var(--accent2,#4f8)'), `local chip must be highlighted: ${localChip}`);
-  assert.ok(localChip.includes('font-weight:600'), 'active local chip must be bold');
-  assert.ok(!chipFor(PEER).includes('background:var(--accent2,#4f8)'), 'peer chip must not be highlighted');
+  const localOpt = optFor('');
+  assert.ok(localOpt.includes('selected'), `local option must be selected: ${localOpt}`);
+  assert.ok(localOpt.includes('aria-current="true"'), 'active local option must be aria-current');
+  assert.ok(!optFor(PEER).includes('selected'), 'peer option must not be selected');
 
   // About's version read goes to the local path, not /api/proxy/<peer>/.
   s.loadVersionInfo();

@@ -1,10 +1,10 @@
 'use strict';
-// Server picker chip lookup — PWA side.
+// Server dropdown option lookup — PWA side.
 //
-// _updatePickerChipReachability(name) finds the picker-bar buttons whose
-// data-server-name equals the server name. It matches on the dataset value,
+// _updatePickerOptionReachability(name) marks the #serverDropdown options
+// whose value equals the server name. It matches on the option's own value,
 // not through a CSS attribute selector, so a name holding quotes or
-// backslashes can neither break out of a selector nor miss its own chip.
+// backslashes can neither break out of a selector nor miss its own option.
 //
 //   env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-server-picker-selector.test.js
 
@@ -20,21 +20,26 @@ function loadApp() {
   return sandbox;
 }
 
-function chip(name) {
-  return { dataset: { serverName: name }, style: {}, title: '', textContent: name };
+function opt(name) {
+  return { value: name, dataset: { baseLabel: name, reachability: 'unknown' }, textContent: name };
 }
 
-// The document stub only answers the one selector the lookup may use: the
-// picker-bar buttons. Any selector that embeds the server name throws, which
-// is what keeps this test honest about "builds no CSS from the name".
-function run(sandbox, buttons, name) {
+// The document stub only answers getElementById('serverDropdown'), whose
+// querySelectorAll returns the options for the 'option' selector and
+// nothing else. The point of this test is "builds no CSS from the name":
+// we record every selector the lookup passes and assert at the end that
+// none of them embeds a hostile server name.
+function run(sandbox, options, name) {
   const selectors = [];
-  sandbox.document.querySelectorAll = (sel) => {
-    selectors.push(sel);
-    return sel === '.server-picker-bar button' ? buttons : [];
+  const select = {
+    querySelectorAll: (sel) => {
+      selectors.push(sel);
+      return sel === 'option' ? options : [];
+    },
   };
+  sandbox.document.getElementById = (id) => (id === 'serverDropdown' ? select : null);
   sandbox.__name = name;
-  vm.runInContext('_serverReachability[__name] = false; _updatePickerChipReachability(__name)', sandbox);
+  vm.runInContext('_serverReachability[__name] = false; _updatePickerOptionReachability(__name)', sandbox);
   delete sandbox.__name;
   return selectors;
 }
@@ -50,26 +55,27 @@ const NAMES = [
 ];
 
 for (const name of NAMES) {
-  test(`marks only the chip named ${JSON.stringify(name)}`, () => {
+  test(`marks only the option named ${JSON.stringify(name)}`, () => {
     const sandbox = loadApp();
-    const target = chip(name);
-    const other = chip('other');
-    const lookalike = chip(name + '\\');
+    const target = opt(name);
+    const other = opt('other');
+    const lookalike = opt(name + '\\');
     const selectors = run(sandbox, [other, target, lookalike], name);
 
-    assert.equal(target.style.opacity, '0.45');
-    assert.ok(target.textContent.endsWith('⚠'));
-    assert.equal(other.style.opacity, undefined);
-    assert.equal(lookalike.style.opacity, undefined);
+    assert.equal(target.dataset.reachability, 'down', 'the target option must be marked down');
+    assert.notEqual(target.textContent, name, 'the target option text must gain the unreachable marker');
+    assert.equal(other.dataset.reachability, 'unknown', 'an unrelated option must be untouched');
+    assert.equal(lookalike.dataset.reachability, 'unknown', 'a near-identical name must not be hit');
     for (const sel of selectors) assert.ok(!sel.includes(name), `selector embeds the name: ${sel}`);
   });
 }
 
-test('a reachable server leaves its chip alone', () => {
+test('a reachable server leaves its option alone', () => {
   const sandbox = loadApp();
-  const target = chip('ok"name');
-  sandbox.document.querySelectorAll = () => [target];
+  const target = opt('ok"name');
+  const select = { querySelectorAll: (sel) => (sel === 'option' ? [target] : []) };
+  sandbox.document.getElementById = (id) => (id === 'serverDropdown' ? select : null);
   sandbox.__name = 'ok"name';
-  vm.runInContext('_serverReachability[__name] = true; _updatePickerChipReachability(__name)', sandbox);
-  assert.equal(target.style.opacity, undefined);
+  vm.runInContext('_serverReachability[__name] = true; _updatePickerOptionReachability(__name)', sandbox);
+  assert.equal(target.dataset.reachability, 'unknown', 'a reachable option must be marked unknown, not down');
 });

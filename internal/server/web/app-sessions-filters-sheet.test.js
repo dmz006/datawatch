@@ -38,3 +38,22 @@ test('open and close flip the state and the Escape listener only lives while ope
   sb.sessionsFiltersClose();
   assert.equal(removed, 1, 'no listener left to remove');
 });
+
+test('the sheet carries exactly one Group by control, offering discovered placement axes', () => {
+  const sb = loadApp();
+  vm.runInContext(`
+    state.activeView = 'sessions';
+    state.sessions = [{ id: 'a', state: 'running', system_tags: ['compute:gpu-1'] }];
+    state._sessionsSheetOpen = true;
+  `, sb);
+  const html = sb._sessionsSheetHTML({ groupBy: null, stateBadges: '', llmBadges: '', tagPanel: '', tagHelp: '' });
+  assert.match(html, /<select id="sessions-group-select"/);
+  assert.equal((html.match(/<select/g) || []).length, 1, 'exactly one <select> in the sheet (the Group by control)');
+  assert.ok(!html.includes('group-axis-control'), 'the removed second placement control is gone');
+  const sel = html.match(/<select id="sessions-group-select"[\s\S]*?<\/select>/)[0];
+  assert.ok(sel.includes('value="tag|compute:"'), 'placement axis the sessions carry is offered in the one picker');
+  // The one picker is the shared control: it reads state.sessionGroupBy.
+  vm.runInContext(`state.sessionGroupBy = { axis: 'tag', tagPrefix: 'compute:' };`, sb);
+  const cur = sb.renderSessionsGroupPicker(vm.runInContext('state.sessionGroupBy', sb));
+  assert.ok(cur.includes('value="tag|compute:" selected'), 'current placement grouping selected inside the same dropdown');
+});

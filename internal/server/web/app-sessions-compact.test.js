@@ -26,7 +26,7 @@ function memStorage() {
 function viewElement(slot) {
   const box = { html: '' };
   const el = {
-    querySelector: (sel) => (sel === '.sessions-topbar-servers' ? (slot || null) : null),
+    querySelector: () => null,
     querySelectorAll: () => [],
     insertBefore() {},
   };
@@ -381,27 +381,23 @@ test('at wide width every tag chip stays and there is no +N chip', () => {
 });
 
 // ── (6) phone toolbar in one row ────────────────────────────────────────
-test('the toolbar markup puts servers, search, Filters and the three view buttons in one row', () => {
-  const slot = { id: 'slot', querySelector: () => null, insertBefore() {}, querySelectorAll: () => [] };
-  const sb = loadApp({ phone: true, view: viewElement(slot) });
+test('the phone toolbar puts search, Filters and the three view buttons in one row', () => {
+  const sb = loadApp({ phone: true });
   seed(sb);
   const html = render(sb);
   const start = html.indexOf('<div class="sessions-topbar">');
   assert.ok(start >= 0);
   const top = html.slice(start, html.indexOf('<div class="session-list">'));
-  const order = ['sessions-topbar-servers', 'sessions-search-row', 'id="sessionFilterInput"', 'id="sessionsFiltersSlot"',
+  const order = ['sessions-search-row', 'id="sessionFilterInput"', 'id="sessionsFiltersSlot"',
     'id="sessionsFiltersBtn"', 'sessions-mode-toggle'].map(k => top.indexOf(k));
   assert.ok(order.every(i => i >= 0), 'all toolbar parts are inside the top row');
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
   assert.equal(countOf(top, /class="sessions-mode-btn/g), 3);
   ['List', 'Tiles', 'Compact'].forEach(l => assert.ok(top.includes('aria-label="' + l + '"'), l));
   assert.equal(countOf(top, /class="sessions-search-row"/g), 1);
-  assert.equal(countOf(top, /class="sessions-topbar-servers"/g), 1);
-  // Server chips go into the shared row at phone width, into the page top otherwise.
-  assert.equal(sb._sessionsPickerHost(sb.document.getElementById('view')), slot);
-  const wide = loadApp({ phone: false, view: viewElement(slot) });
-  const v = wide.document.getElementById('view');
-  assert.equal(wide._sessionsPickerHost(v), v);
+  // The old server-chip slot is gone: server switching lives in the one
+  // header dropdown (#serverDropdown), on phone and wide alike.
+  assert.ok(!top.includes('sessions-topbar-servers'), 'no server-chip slot in the topbar');
 });
 
 test('the phone media query lays the toolbar out as a single non-wrapping row', () => {
@@ -419,8 +415,6 @@ test('the phone media query lays the toolbar out as a single non-wrapping row', 
   const top = rule('.sessions-topbar');
   assert.match(top, /display:\s*flex/);
   assert.match(top, /flex-wrap:\s*nowrap/);
-  assert.match(rule('.sessions-topbar-servers'), /overflow-x:\s*auto/);
-  assert.match(rule('.sessions-topbar-servers'), /max-width:\s*\d+%/);
   assert.match(rule('.sessions-search-row'), /flex:\s*1 1 auto/);
   assert.match(rule('.sessions-search-row'), /min-width:\s*0/);
   assert.match(rule('.sessions-topbar .sessions-mode-toggle'), /flex:\s*0 0 auto/);
