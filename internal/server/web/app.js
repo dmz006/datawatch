@@ -2844,6 +2844,7 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   state.activeView = view;
+  if (view !== 'sessions' && state._sessionsSheetOpen) sessionsFiltersClose(true);
   window._automationReturnId = null; // set again by openAutomationMemberPRD after it navigates
   // Persist view for refresh recovery
   localStorage.setItem('cs_active_view', view);
@@ -4167,7 +4168,9 @@ function renderSessionsView() {
   // survives page reloads. 'all' is the legacy behavior (gated by
   // state.showHistory).
   if (state.sessionStateChip === undefined) {
-    state.sessionStateChip = localStorage.getItem('cs_session_state_chip') || 'all';
+    let storedChip = null;
+    try { storedChip = localStorage.getItem('cs_session_state_chip'); } catch (_) { storedChip = null; }
+    state.sessionStateChip = storedChip || 'all';
   }
   const chip = state.sessionStateChip;
   // Show active + recently completed sessions by default; "Show history" shows all
@@ -4229,7 +4232,8 @@ function renderSessionsView() {
   if (state._filtersCollapsed === undefined) {
     // Mobile parity: default OFF means default-collapsed. Honor any
     // existing localStorage choice; new operators get the collapsed view.
-    const stored = localStorage.getItem('cs_filters_collapsed');
+    let stored = null;
+    try { stored = localStorage.getItem('cs_filters_collapsed'); } catch (_) { stored = null; }
     state._filtersCollapsed = stored === null ? true : stored === '1';
   }
   const collapsed = !!state._filtersCollapsed;
@@ -4285,24 +4289,14 @@ function renderSessionsView() {
   const tagInv = state._sessionTagInventory;
   const tagInvLoaded = !!(tagInv && tagInv.loaded);
   const tagInvEntries = tagInvLoaded ? (tagInv.entries || []) : [];
-  let tagFilterBtn = '', tagFilterPanel = '';
+  let tagHelpLink = '', tagFilterPanelHtml = '';
   if (tagInvLoaded && tagInvEntries.length > 0) {
-    const tagSel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
-    const tagBtnCount = tagSel.length || (tagInvLoaded ? tagInvEntries.length : state.sessions.length);
-    tagFilterBtn = `<button class="backend-filter-badge ${state._tagFilterOpen ? 'active' : ''}${tagSel.length ? ' active' : ''}" onclick="state._tagFilterOpen=!state._tagFilterOpen;renderSessionsView()" title="${escHtml(t('session_tag_filter_tip'))}">${escHtml(t('session_tag_filter_btn', [tagBtnCount]))} ${state._tagFilterOpen ? '▾' : '▸'}</button>
-    <a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
-    tagFilterPanel = `<div class="tag-filter-chips filter-chips-collapse${state._tagFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
+    tagHelpLink = `<a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+    tagFilterPanelHtml = `<div class="tag-filter-chips" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
   }
 
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
-    ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
-    <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
-    ${tagFilterBtn}
-    <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
-    ${_sessionsGroupControl()}
-    ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
-    <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
-    ${tagFilterPanel}    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
+    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
       ${t('session_tree_btn')||'Tree'}
@@ -4315,6 +4309,14 @@ function renderSessionsView() {
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
+  const sheetHtml = _sessionsSheetHTML({
+    groupBy: _sessionsGroupValidate(state.sessionGroupBy),
+    stateBadges,
+    llmBadges: backendTypes.length > 1 ? backendBadges : '',
+    tagPanel: tagFilterPanelHtml,
+    tagHelp: tagHelpLink,
+  });
+  _sessionsSheetSyncKey();
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
     // Operator-reported (2026-10-07): switched to a federated server and
@@ -4387,6 +4389,7 @@ function renderSessionsView() {
           <h3>${t('sessions_no_active')||'No active sessions'}</h3>
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
+        ${sheetHtml}
       </div>`;
     _injectServerPickerBar(view, renderSessionsView);
     return;
@@ -4422,11 +4425,9 @@ function renderSessionsView() {
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
     <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
-    ${renderSessionsGroupPicker(groupBy)}
-    ${renderSessionsViewsBar()}
     ${toggleBtn}
     ${renderSessionsSummaryBar(visible)}<div class="session-list">${cards}</div>
-    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}</div>`;
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
 
   // Restore filter input focus and cursor position
   if (state._sessionsSearchKeep) {
@@ -4634,7 +4635,7 @@ function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
         oninput="sessionsSearchInput(this)" />
       <button type="button" class="session-filter-clear" id="sessionsSearchClear" onclick="sessionsSearchClear()" title="${clrTip}" aria-label="${clrTip}"${filterVal ? '' : ' hidden'}>&#10005;</button>
     </div>
-    <span class="sessions-filters-slot" id="sessionsFiltersSlot"></span>
+    <span class="sessions-filters-slot" id="sessionsFiltersSlot">${_sessionsFiltersButtonHTML()}</span>
   </div>${count}`;
 }
 
@@ -5274,25 +5275,118 @@ function renderSessionsModeToggle(mode) {
   return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
 }
 
+function _sessionsSummaryLabel(st) {
+  const k = { waiting_input: 'waiting', rate_limited: 'rate_limited' }[st] || st;
+  const fb = String(k).replace(/_/g, ' ');
+  return _stx('session_chip_' + k, fb);
+}
+
 function renderSessionsSummaryBar(sessions) {
   const rows = _sessionsSummaryCounts(sessions);
   if (!rows.length) return '';
-  const dot = {
-    running: 'var(--success,#10b981)',
-    waiting_input: 'var(--warning,#f59e0b)',
-    rate_limited: 'var(--warning,#f59e0b)',
-    complete: 'var(--success,#10b981)',
-    failed: 'var(--error,#ef4444)',
-    killed: 'var(--text2,#9ca3af)',
-  };
   const items = rows.map(r => {
     const cur = r.state === state.sessionStateChip;
-    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(r.state)}')" title="${escHtml(r.state)}: ${r.count}${cur ? '' : ' — filter to this state'}">
-      <span class="sessions-summary-dot" style="color:${dot[r.state] || 'var(--text2,#9ca3af)'}">●</span>${escHtml(r.state)}
-      <span class="sessions-summary-count">${r.count}</span></button>`;
-  }).join('');
+    const next = cur ? 'all' : r.state;
+    const tip = r.state + ': ' + r.count + (cur ? ' — ' + _stx('sessions_summary_clear_tip', 'clear the state filter') : ' — ' + _stx('sessions_summary_filter_tip', 'filter to this state'));
+    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(next)}')" title="${escHtml(tip)}" aria-pressed="${cur ? 'true' : 'false'}" data-state="${escHtml(r.state)}">${escHtml(_sessionsSummaryLabel(r.state))} <span class="sessions-summary-count">${r.count}</span></button>`;
+  }).join('<span class="sessions-summary-sep" aria-hidden="true">·</span>');
   return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
 }
+
+// ── Filters sheet ───────────────────────────────────────────────────────
+// Open state lives in state._sessionsSheetOpen so every re-render redraws the
+// sheet in place. The Escape listener exists only while the sheet is open.
+function _sessionsActiveFilterCount() {
+  let n = 0;
+  try {
+    if (_sessionsGroupValidate(state.sessionGroupBy)) n++;
+    else if (!state.sessionTreeView && typeof _sessionsGroupAxis === 'function' && _sessionsGroupAxis()) n++;
+    const chip = state.sessionStateChip;
+    if (chip && chip !== 'all') n++;
+    const ft = String(state.sessionFilter || '').trim().toLowerCase();
+    if (ft && (state.sessions || []).some(s => s && s.backend_family && String(s.backend_family).toLowerCase() === ft)) n++;
+    const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session && _tagBrowse.session.sel) ? _tagBrowse.session.sel : [];
+    if (sel.length) n++;
+    if (state.sessionWatchFilter) n++;
+  } catch (_) { /* count what we have */ }
+  return n;
+}
+
+function _sessionsFiltersButtonHTML() {
+  const n = _sessionsActiveFilterCount();
+  const label = _stx('sessions_filters_btn', 'Filters');
+  const badge = n > 0 ? `<span class="sessions-filters-badge" id="sessionsFiltersBadge">${n}</span>` : '';
+  const tip = _stx('sessions_filters_tip', 'Group, saved views and status filters');
+  return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersOpen()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
+}
+
+function _sessionsSheetHTML(parts) {
+  if (!state._sessionsSheetOpen) return '';
+  const p = parts || {};
+  const title = _stx('sessions_filters_title', 'Filters');
+  const close = _stx('sessions_filters_close', 'Close');
+  const sec = (h, body) => body ? `<section class="sessions-sheet-sec"><h4>${escHtml(h)}</h4>${body}</section>` : '';
+  const watchOn = !!state.sessionWatchFilter;
+  const watchBtn = `<button type="button" class="backend-filter-badge ${watchOn ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(_stx('session_watch_filter_tip', 'Show watched only'))}" aria-pressed="${watchOn ? 'true' : 'false'}">&#128065; ${state.watchedSessions ? state.watchedSessions.size : 0}</button>`;
+  const statusBody = `<div class="state-filter-chips sessions-sheet-chips">${p.stateBadges || ''}${watchBtn}</div>`
+    + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips">${p.llmBadges}</div>` : '')
+    + (p.tagPanel ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_tags', 'Tags'))} ${p.tagHelp || ''}</div>${p.tagPanel}` : '');
+  const groupBody = renderSessionsGroupPicker(p.groupBy) + _sessionsGroupControl();
+  return `<div class="sessions-sheet-backdrop" id="sessionsSheetBackdrop" onclick="sessionsFiltersBackdrop(event)">
+    <div class="sessions-sheet" role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
+      <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
+      <div class="sessions-sheet-body">
+        ${sec(_stx('sessions_group_by', 'Group by'), groupBody)}
+        ${sec(_stx('sessions_view_title', 'Views'), renderSessionsViewsBar())}
+        ${sec(_stx('sessions_filters_status', 'Status'), statusBody)}
+      </div>
+    </div>
+  </div>`;
+}
+
+function _sessionsSheetKeydown(e) {
+  if (e && (e.key === 'Escape' || e.key === 'Esc')) sessionsFiltersClose();
+}
+
+function _sessionsSheetListen(on) {
+  try {
+    if (on && !state._sessionsSheetListening) {
+      document.addEventListener('keydown', _sessionsSheetKeydown);
+      state._sessionsSheetListening = true;
+    } else if (!on && state._sessionsSheetListening) {
+      document.removeEventListener('keydown', _sessionsSheetKeydown);
+      state._sessionsSheetListening = false;
+    }
+  } catch (_) { /* no DOM */ }
+}
+
+// Called on every render: the listener follows the open state.
+function _sessionsSheetSyncKey() {
+  _sessionsSheetListen(!!state._sessionsSheetOpen && state.activeView === 'sessions');
+}
+
+function sessionsFiltersOpen() {
+  state._sessionsSheetOpen = true;
+  if (state.activeView === 'sessions') renderSessionsView();
+  _sessionsSheetListen(true);
+}
+
+function sessionsFiltersClose(noRender) {
+  state._sessionsSheetOpen = false;
+  _sessionsSheetListen(false);
+  if (!noRender && state.activeView === 'sessions') renderSessionsView();
+}
+
+function sessionsFiltersBackdrop(e) {
+  if (e && e.target && e.currentTarget && e.target === e.currentTarget) sessionsFiltersClose();
+}
+
+window._sessionsActiveFilterCount = _sessionsActiveFilterCount;
+window.sessionsFiltersOpen = sessionsFiltersOpen;
+window.sessionsFiltersClose = sessionsFiltersClose;
+window.sessionsFiltersBackdrop = sessionsFiltersBackdrop;
+window.sessionsFiltersBadgeCount = _sessionsActiveFilterCount;
+window.renderSessionsSummaryBar = renderSessionsSummaryBar;
 
 // Sessions carry no task counts, so progress is lifecycle based: a finished
 // session fills the bar, a failed or stopped one shows how far it got (empty),
@@ -5430,7 +5524,7 @@ function setBackendFilter(backend) {
 // v7.0.0-alpha.22 — session-state filter chips. Persists in localStorage.
 function setSessionStateChip(chip) {
   state.sessionStateChip = chip;
-  localStorage.setItem('cs_session_state_chip', chip);
+  try { localStorage.setItem('cs_session_state_chip', chip); } catch (_) { /* storage blocked: choice lives in memory */ }
   state.selectedSessions.clear();
   // GATE finding (operator 2026-05-10): if filter selects a historical
   // state (complete/failed/killed/cancelled/archived), auto-activate the
