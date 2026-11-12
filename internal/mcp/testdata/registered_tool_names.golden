@@ -265,6 +265,7 @@ dashboard_cards_list
 dashboard_config_get
 dashboard_console_get
 delete_session
+dependency_update_status
 detection_config_get
 detection_config_set
 detection_status

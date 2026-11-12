@@ -2688,6 +2688,36 @@ attempts should raise an alert; today it is only a warning on the step.
 four; confirm that is the intended slack. (3) The guard needs Python 3 with
 PyYAML wherever `make lint` runs; it stops with an error if PyYAML is missing.
 
+### Dependency updates: security-only Dependabot and the weekly Automation
+
+Dependabot opens **security** pull requests only. Every ecosystem in
+`.github/dependabot.yml` (`gomod`, `docker`, `github-actions`) sets
+`open-pull-requests-limit: 0`, which switches off version-update pull requests
+but not security updates. Version updates come from one weekly Automation that
+moves all dependencies together, including Docker `FROM` lines built from build
+arguments that Dependabot cannot see.
+
+`make lint` runs `make check-dependabot-security-only`
+(`scripts/check-dependabot-security-only.sh`, plus its test script), which fails
+when a limit is missing or non-zero, an ecosystem is missing, or an `ignore:`
+key appears. Run it alone after editing the file.
+
+Operator review still needed: keep "Dependabot security updates" enabled in the
+hosting settings, confirm the weekly Automation is approved and active, and
+close any version-update pull requests that were open before the change.
+
+The Automation is tuned with `autonomous.automation.dependency_update.enabled`
+(default `true`), `.schedule` (default `monday 05:00`, `weekday HH:MM` in the
+daemon's local time) and `.max_majors` (default 5, range 0-20). Set them in the
+PWA Settings, with `datawatch config set`, the chat `configure` verb, or MCP
+`config_set`; read status (settings, next run, last run and outcome) with the
+MCP tool `dependency_update_status`. Each run is reported on the Automata Events
+tab as one `check` row (none when nothing was updated); an alert is raised only
+when a run needs the operator (a dropped or failed update, a major waiting on a
+protected paths decision, a run that could not start, or an updated Automaton
+waiting for review). See
+[howto/automation-dependency-update.md](howto/automation-dependency-update.md).
+
 ---
 
 ## 8. Web UI Features

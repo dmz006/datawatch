@@ -4758,6 +4758,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// supervisor watch block (autonomous.automation.supervisor_watch.*):
 				// without it the watch re-reads its defaults after every restart.
 				SupervisorWatch: supervisorWatchFromYAML(acfgIn.Automation.SupervisorWatch),
+				// weekly dependency update block (autonomous.automation.dependency_update.*)
+				DependencyUpdate: acfgIn.Automation.DependencyUpdate,
 				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
 				// without it the watch reads off after every restart.
 				RepoCIWatch: repoCIWatchFromYAML(acfgIn.Automation.RepoCIWatch),
@@ -9610,22 +9612,23 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:          alertStore,
-		SchedStore:          schedStore,
-		ExitHookStore:       exitHookStore,
-		QueueStore:          queueStore,          // BL357
-		SubStore:            discussionSubStore,  // BL358
-		ResultStore:         resultStore,         // BL360
-		ScheduleResultStore: scheduleResultStore, // result panel (GH#204)
-		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
-		CmdLib:              cmdLib,
-		AcmeManager:         acmeMgr, // BL397
-		Version:             Version,
-		LatestVersion:       fetchLatestVersion,
-		FallbackToken:       cfg.Server.Token, // SEC-002
-		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
-		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
-		ConfigAudit:         cfgAuditSink,     // BL110 — shared sink (same instance as REST + comm)
+		AlertStore:             alertStore,
+		SchedStore:             schedStore,
+		ExitHookStore:          exitHookStore,
+		QueueStore:             queueStore,          // BL357
+		SubStore:               discussionSubStore,  // BL358
+		ResultStore:            resultStore,         // BL360
+		ScheduleResultStore:    scheduleResultStore, // result panel (GH#204)
+		ResultHistoryLimit:     cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:                 cmdLib,
+		AcmeManager:            acmeMgr, // BL397
+		Version:                Version,
+		LatestVersion:          fetchLatestVersion,
+		FallbackToken:          cfg.Server.Token, // SEC-002
+		CostReportCfg:          cfg.CostReport,   // cost_report MCP tool (internal/costreport)
+		UsageCfg:               cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		DependencyUpdateConfig: func() config.DependencyUpdateConfig { return cfg.Autonomous.Automation.DependencyUpdate },
+		ConfigAudit:            cfgAuditSink, // BL110 — shared sink (same instance as REST + comm)
 		RestartForceFn: guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
@@ -12337,7 +12340,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		// A liveness, merge-pipeline release or attempt-cost value that is valid
 		// JSON and was refused keeps the daemon's message; quoting it again would
 		// replace it with a bad-JSON error.
-		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key)) && json.Valid([]byte(value)) {
+		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key) || isDependencyUpdateConfigKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
@@ -15400,20 +15403,21 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:          mcpAlertStore,
-		SchedStore:          mcpSchedStore,
-		QueueStore:          mcpQueueStore,  // BL357
-		SubStore:            mcpSubStore,    // BL358
-		ResultStore:         mcpResultStore, // BL360
-		ScheduleResultStore: mcpScheduleResultStore,
-		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
-		CmdLib:              mcpCmdLib,
-		Version:             Version,
-		LatestVersion:       fetchLatestVersion,
-		FallbackToken:       cfg.Server.Token,        // SEC-002
-		CostReportCfg:       cfg.CostReport,          // cost_report MCP tool (internal/costreport)
-		UsageCfg:            cfg.Usage,               // usage.billing profiles → cost_report rows' billing fields
-		ConfigAudit:         configAuditSinkFor(cfg), // BL110 — shared sink
+		AlertStore:             mcpAlertStore,
+		SchedStore:             mcpSchedStore,
+		QueueStore:             mcpQueueStore,  // BL357
+		SubStore:               mcpSubStore,    // BL358
+		ResultStore:            mcpResultStore, // BL360
+		ScheduleResultStore:    mcpScheduleResultStore,
+		ResultHistoryLimit:     cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:                 mcpCmdLib,
+		Version:                Version,
+		LatestVersion:          fetchLatestVersion,
+		FallbackToken:          cfg.Server.Token, // SEC-002
+		CostReportCfg:          cfg.CostReport,   // cost_report MCP tool (internal/costreport)
+		UsageCfg:               cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		DependencyUpdateConfig: func() config.DependencyUpdateConfig { return cfg.Autonomous.Automation.DependencyUpdate },
+		ConfigAudit:            configAuditSinkFor(cfg), // BL110 — shared sink
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

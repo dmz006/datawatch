@@ -64,11 +64,13 @@ import (
 
 // Server wraps the MCP server with session manager access.
 type Server struct {
-	hostname      string
-	manager       *session.Manager
-	cfg           *config.MCPConfig
-	costReportCfg config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
-	usageCfg      config.UsageConfig      // usage.billing profiles → the cost_report rows' billing_mode / label fields
+	dependencyUpdateCfg   func() config.DependencyUpdateConfig // live read of autonomous.automation.dependency_update.*
+	dependencyUpdateState DependencyUpdateStateReader          // weekly pass state accessor; nil until it lands
+	hostname              string
+	manager               *session.Manager
+	cfg                   *config.MCPConfig
+	costReportCfg         config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
+	usageCfg              config.UsageConfig      // usage.billing profiles → the cost_report rows' billing_mode / label fields
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
 	fallbackToken       string
 	dataDir             string
@@ -316,6 +318,9 @@ type Options struct {
 	// ConfigAudit — shared config-write audit sink (BL110 extension); nil
 	// = MCP config-write calls are not audited.
 	ConfigAudit *federation.ConfigAuditor
+	// DependencyUpdateConfig reads the live dependency update settings for
+	// the dependency_update_status tool; nil reads the defaults.
+	DependencyUpdateConfig func() config.DependencyUpdateConfig
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -343,6 +348,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		costReportCfg:       opts.CostReportCfg,
 		usageCfg:            opts.UsageCfg,
 		configAudit:         opts.ConfigAudit,
+		dependencyUpdateCfg: opts.DependencyUpdateConfig,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -793,6 +799,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetAuthorizedPaths(), tracked(s.handleAutonomousPRDSetAuthorizedPaths))
 	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))
 	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
+	mcpSrv.AddTool(s.toolDependencyUpdateStatus(), tracked(s.handleDependencyUpdateStatus))
 	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))
 	mcpSrv.AddTool(s.toolSupervisorWatchStats(), tracked(s.handleSupervisorWatchStats))
 	mcpSrv.AddTool(s.toolSupervisorLoopJobs(), tracked(s.handleSupervisorLoopJobs))

@@ -335,6 +335,17 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "circuit_breaker_reset", cfg.Proxy.CircuitBreakerReset, "Seconds before retrying downed server (default 30)")
 	b.WriteString("\n")
 
+	section(&b, "Autonomous Automations", "Settings for the Automations datawatch runs itself.")
+	b.WriteString("autonomous:\n  automation:\n")
+	b.WriteString("    # Weekly dependency update: one Automation that updates every dependency together.\n")
+	b.WriteString("    # How-to: docs/howto/automation-dependency-update.md\n")
+	b.WriteString("    dependency_update:\n")
+	du := cfg.Autonomous.Automation.DependencyUpdate
+	fmt.Fprintf(&b, "      # Run the weekly update Automation. Default true; allowed: true or false. See docs/howto/automation-dependency-update.md\n      enabled: %s\n", yamlVal(du.EffectiveEnabled()))
+	fmt.Fprintf(&b, "      # When the run starts, in the daemon's local time. Default 'monday 05:00'; allowed form: 'weekday HH:MM' (monday..sunday, 24-hour). See docs/howto/automation-dependency-update.md\n      schedule: %q\n", du.EffectiveSchedule())
+	fmt.Fprintf(&b, "      # How many major updates go into one run. Default 5; allowed: whole number 0..20 (0 = no majors in a run). See docs/howto/automation-dependency-update.md\n      max_majors: %d\n", du.EffectiveMaxMajors())
+	b.WriteString("\n")
+
 	section(&b, "Auto-Update", "Automatic self-update configuration.")
 	b.WriteString("update:\n")
 	fieldi(&b, "enabled", cfg.Update.Enabled, "Enable automatic background updates")
