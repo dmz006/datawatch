@@ -7109,7 +7109,8 @@ in the registry store: `first_party` (set on the community registry by default) 
 adds no tool, script or file scope; a widening version waits for an operator acceptance.
 
 **Working now:** list, install, accept and remove, the setting (with its checks) and
-inputs, on REST, MCP, CLI and chat; the web has the setting and inputs fields only. Every
+inputs, on REST, MCP, CLI and chat; the web has the setting and inputs fields, plus the
+Packs sub-tab shell (enabled state, Enable link, registry link). Every
 write needs the config-write permission (also over federation).
 
 **Not wired yet (flag before relying on packs):**
@@ -7119,8 +7120,10 @@ write needs the config-write permission (also over federation).
    nothing reads it when tasks are resolved.
 2. The first-party acceptance, version-diff and auto-accept functions have no daemon
    caller. A first-party source is never accepted in practice until a caller registers it.
-3. The web has no installed-pack list, install, accept or remove, and its inputs form has
-   no Automaton level.
+3. The web shows no installed-pack list, install, accept or remove, and its inputs form has
+   no Automaton level. The Packs sub-tab has install/accept, change-summary, auto-accept
+   switch and usage-table scripts, but its shell renders none of them, and the usage script
+   is not loaded by the page.
 4. Remove does not drop the pack from `packs.active`; the next write of the list is
    refused until the name is taken out.
 5. The datawatch app (Android and iPhone) does not show packs.
@@ -7128,7 +7131,8 @@ write needs the config-write permission (also over federation).
    roll-ups group by `pack_name` and `pack_version`, and the audit query accepts a
    `pack_name` filter. The trace `pack` parameter that the MCP tools send is ignored by
    the REST routes. The per-pack usage summary (`packs.UsageByPack`) and the cost
-   report's pack breakdown are not called by any surface.
+   report's pack breakdown are not called by any surface. `GET /api/packs/usage`, which
+   the Packs sub-tab's usage script reads, is not a registered route.
 
 **Pack inputs.** `packs.ResolveInputs` resolves each declared input in the order
 Automaton, project, global, then the declared default; a required input with no value is

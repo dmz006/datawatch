@@ -233,13 +233,30 @@ config-read permission and writes the config-write permission, including over fe
 
 | Action | REST | MCP tool | CLI (`datawatch packs ...`) | Chat command | Web |
 |---|---|---|---|---|---|
-| List installed packs and trust state | `GET /api/packs` | `packs_list` | `list` | `packs` | not in Settings |
+| List installed packs and trust state | `GET /api/packs` | `packs_list` | `list` | `packs` | not in Settings; Packs sub-tab list not rendered yet |
 | Read the setting | `GET /api/packs/config` | `packs_setting_get` | not a verb; use `list` | `packs setting` | Settings > General > Standard task packs |
 | Set `enabled` / `active` | `PUT /api/packs/config` | `packs_setting_set` | `enable`, `disable` | `packs setting enabled=true active=a,b` | the two fields in that card |
-| Install a folder | `POST /api/packs/install` | `packs_install` | `install <source-dir>` | `packs install <source_dir>` | none |
-| Accept a pack | `POST /api/packs/accept` | `packs_accept` | `accept <name> <version>` | `packs accept <name> <version>` | none |
+| Install a folder | `POST /api/packs/install` | `packs_install` | `install <source-dir>` | `packs install <source_dir>` | Packs sub-tab install button (built, not shown yet) |
+| Accept a pack | `POST /api/packs/accept` | `packs_accept` | `accept <name> <version>` | `packs accept <name> <version>` | Packs sub-tab accept button (built, not shown yet) |
 | Remove a pack | `DELETE /api/packs/{name}/{version}` | `packs_remove` | `remove <name> <version>` | `packs remove <name> <version>` | none |
 | Read / replace inputs | `GET` / `PUT /api/packs/inputs` | `packs_inputs_get`, `packs_inputs_set` | `inputs get`, `inputs set` | `packs inputs get` / `set` | the four input fields |
+
+#### The Packs sub-tab (Automata > Templates > Packs)
+
+The Packs sub-tab is built from three web scripts. What each does, and whether the page
+shows it today:
+
+| Script | What it provides | Shown today? |
+|---|---|---|
+| `app-packs-subtab.js` | The shell. Reads `GET /api/packs/config`. With packs off it explains that packs add installable standard tasks and Automaton templates from a connected skills registry and shows an **Enable** button (opens Settings > General > Standard task packs). In both states it links to the skills registry settings. | Yes |
+| `app-packs-subtab-install.js` | An **Install** button (`POST /api/packs/install`), a "This pack adds" summary (tasks, verification scripts, tools, file scopes), a "Changes in this version" list (new tools, scripts and file scopes are highlighted as widening access), and an **Accept** button (`POST /api/packs/accept`, hidden once accepted). | Loaded by the page, but the shell does not call it, so no button or panel appears |
+| `app-packs-subtab-usage.js` | A per-source **auto-accept** switch (off by default; `PUT /api/skills/registries/{name}` with `auto_accept_packs`, with the note that a version adding tools, scripts or file scopes still waits for you) and a per-pack usage table (pack, version, runs, cost, last used; `GET /api/packs/usage`). | No: the script is not loaded by the page |
+
+Until the shell calls these pieces, use the REST, MCP, CLI or chat rows in the table above to
+install and accept. The usage table has **no server route behind it**: `GET /api/packs/usage`
+is not registered, so the table would show an error line, and `packs.UsageByPack` is still
+called by nothing. The auto-accept switch writes the registry field, but nothing in the
+daemon reads it yet (see [Version diff and auto-accept](#version-diff-and-auto-accept)).
 
 - **Install root.** Packs install to `<data dir>/packs/<name>/<version>/`, beside
   `trust.json` and `inputs.json`.
@@ -424,7 +441,8 @@ wired.
 
 A per-pack usage summary (runs, cost and last use per pack name and version, counted per
 session, task or Automaton) is computed by `packs.UsageByPack`. **No daemon surface calls
-it yet**, so the Packs sub-tab does not show it.
+it yet**, and there is no `/api/packs/usage` route, so the usage table in the Packs
+sub-tab's script has nothing to read (see [The Packs sub-tab](#the-packs-sub-tab-automata--templates--packs)).
 
 ## Open items to check
 
@@ -456,9 +474,18 @@ yet:
   auto-accept or first-party acceptance rules from the daemon. See the
   [Installable packs](#installable-packs-manage-them-on-every-surface-not-yet-applied-to-tasks)
   section and [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
-- **The web has no list, install, accept or remove.** Only the setting and the inputs are
-  in Settings. Operator review needed: decide where the installed-pack list and actions
-  live in the web UI, and whether the web inputs form needs an Automaton level.
+- **The Packs sub-tab shows only its shell.** The install, accept, change-summary,
+  auto-accept and usage pieces exist as scripts, but the shell does not render them, and
+  `app-packs-subtab-usage.js` is not loaded by `index.html` or listed in the service
+  worker's no-cache list (only `app-packs-subtab.js` is). Operator review needed: decide
+  where the installed-pack list lives in the sub-tab, wire the pieces in, and whether the
+  web inputs form needs an Automaton level.
+- **The usage table has no route.** `GET /api/packs/usage` is not registered in
+  `internal/server/api_packs.go`. Operator review needed: add the route over
+  `packs.UsageByPack`, or drop the table.
+- **Confirm the auto-accept switch saves.** The switch sends `auto_accept_packs` to
+  `PUT /api/skills/registries/{name}`; the registry store has the field, but this change
+  did not check that the registry update route keeps it. Operator review needed.
 - **Removing a pack does not update `packs.active`.** A removed name stays in the list
   until edited. Operator review needed: decide whether remove should refuse while the
   pack is active, or drop it from the list.
@@ -472,8 +499,9 @@ yet:
   task read.
 - **The per-pack usage summary and the pack cost breakdown have no surface.**
   `packs.UsageByPack` and the cost report's pack breakdown are library functions only.
-  The Packs sub-tab named in the change does not call them yet. Decide where they show
-  (the Packs sub-tab, the cost report or both) before they are documented as user-facing.
+  The Packs sub-tab has a usage table script, but it is not loaded and its route does not
+  exist. The cost breakdown has no surface at all. Decide where they show (the Packs
+  sub-tab, the cost report or both) before they are documented as user-facing.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
