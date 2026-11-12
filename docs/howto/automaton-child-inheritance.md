@@ -48,6 +48,7 @@ Every creation surface takes an optional parent Automaton id and the same inheri
 | MCP | `autonomous_prd_create` with the optional `parent_prd_id` argument |
 | CLI | `datawatch autonomous prd-create --parent <id> "<spec>"` |
 | Comm channel | `autonomous create <spec> --parent <id>` |
+| PWA | The *Parent Automaton (optional)* field on the new Automaton form |
 
 ## 4. The setting
 
@@ -63,4 +64,4 @@ datawatch config set autonomous.automation.child_inherit false
 
 Read the child Automaton and look for the `child_inherit` decision. `GET /api/config` shows the value in effect under `autonomous.automation.child_inherit`.
 
-See also [automation-chains.md](automation-chains.md), [automaton-pending-items.md](automaton-pending-items.md) and, for the held-insert policy, [automation-queue-advance.md](automation-queue-advance.md).
+See also [child-automaton-inheritance.md](child-automaton-inheritance.md), [automation-chains.md](automation-chains.md), [automaton-pending-items.md](automaton-pending-items.md) and, for the held-insert policy, [automation-queue-advance.md](automation-queue-advance.md).

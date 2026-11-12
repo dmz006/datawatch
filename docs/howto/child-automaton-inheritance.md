@@ -58,4 +58,10 @@ Every create surface takes an optional parent Automaton id. A parent id stands i
 | Comm channel | `autonomous create <spec> --parent <id>` |
 | PWA | The *Parent Automaton (optional)* field on the new Automaton form |
 
+## 7. Operator review
+
+- The PWA help text under the *Child Automata inherit from their parent* setting names only the project, priority, tags and Automation membership. The daemon also copies backend, model and verification LLM, so the help text is shorter than the behavior described here.
+- A defect filed with a parent is not offered to the `defect_intake_automation` Automation when it already joined its parent's Automation.
+- This page and [automaton-child-inheritance.md](automaton-child-inheritance.md) overlap on purpose: this one is the task-oriented reference, the other the background. Decide whether to merge them.
+
 See also [automaton-child-inheritance.md](automaton-child-inheritance.md), [automation-chains.md](automation-chains.md) and the *Child inheritance* section of [../operations.md](../operations.md).
