@@ -54,6 +54,15 @@ func (c *Coordinator) reconcileOne(a *Automation) {
 
 // reconcileCursor brings one live cursor in line with its member.
 func (c *Coordinator) reconcileCursor(a *Automation, mem *AutomationMember) {
+	if mem.kind() == MemberKindPending {
+		// A pending item has no Automaton to start or observe, so it is never
+		// started. An active Automation re-checks the hold; a paused one
+		// starts nothing.
+		if a.Status == AutomationActive {
+			c.checkPendingCursor(a, mem)
+		}
+		return
+	}
 	if k := mem.kind(); (k == MemberKindAutomation || k == MemberKindFork) && memberUnstarted(mem) {
 		// A deferred member (the budget gate, or a pause, held it back).
 		c.startPending(a, mem)

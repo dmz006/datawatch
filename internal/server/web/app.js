@@ -11423,6 +11423,16 @@ const DOCS_LINKS_BY_KEY = {
   settings_protected_paths_action: DOCS_DEFINITIONS + '#protected-paths-action',
   settings_rules_review_source: DOCS_DEFINITIONS + '#rules-review-source',
   automaton_authorised_paths: DOCS_DEFINITIONS + '#authorised-paths',
+  settings_pending_items: DOCS_DEFINITIONS + '#pending-items',
+  settings_pending_item_policy: DOCS_DEFINITIONS + '#pending-item-policy',
+  settings_pending_item_auto_resume: DOCS_DEFINITIONS + '#pending-item-auto-resume',
+  settings_pending_item_source_path: DOCS_DEFINITIONS + '#pending-item-file-registry-path',
+  settings_pending_item_source_id_pattern: DOCS_DEFINITIONS + '#pending-item-file-registry-id-pattern',
+  settings_pending_item_source_id_column: DOCS_DEFINITIONS + '#pending-item-file-registry-id-column',
+  settings_pending_item_source_title_column: DOCS_DEFINITIONS + '#pending-item-file-registry-title-column',
+  settings_pending_item_source_state_column: DOCS_DEFINITIONS + '#pending-item-file-registry-state-column',
+  settings_pending_item_source_done_values: DOCS_DEFINITIONS + '#pending-item-file-registry-done-values',
+  settings_pending_item_source_on_missing_row: DOCS_DEFINITIONS + '#pending-item-file-registry-missing-rows',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> General -> Self-config (mcp.allow_self_config alias + audit)
@@ -20837,6 +20847,20 @@ const GENERAL_CONFIG_FIELDS = [
       optionLabelKeys: { hold: 'protected_paths_action_hold', warn: 'protected_paths_action_warn', block: 'protected_paths_action_block', off: 'protected_paths_action_off' } },
     { key: 'autonomous.automation.rules_review_source', label: 'Automaton rules review source (base_commit or worktree; default base_commit)', labelKey: 'settings_automation_rules_review_source', docsKey: 'settings_rules_review_source', type: 'select', options: ['base_commit', 'worktree'], default: 'base_commit',
       optionLabelKeys: { base_commit: 'rules_review_source_base_commit', worktree: 'rules_review_source_worktree' } },
+    // Pending items — an Automation member that is a named piece of work with no Automaton yet. The
+    // daemon keeps the registry; the optional file registry below only feeds it new names.
+    { label: 'Pending items', labelKey: 'settings_pending_items_group', docsKey: 'settings_pending_items', type: 'group' },
+    { key: 'autonomous.automation.pending_item_policy', label: 'Pending item policy (hold or skip; default hold)', labelKey: 'settings_automation_pending_item_policy', docsKey: 'settings_pending_item_policy', type: 'select', options: ['hold', 'skip'], default: 'hold',
+      optionLabelKeys: { hold: 'pending_item_policy_hold', skip: 'pending_item_policy_skip' } },
+    { key: 'autonomous.automation.pending_item_auto_resume', label: 'Pending item auto-resume (an Automation held on a pending item continues when an Automaton is attached; default on)', labelKey: 'settings_automation_pending_item_auto_resume', docsKey: 'settings_pending_item_auto_resume', type: 'toggle' },
+    { key: 'autonomous.automation.pending_item_source.path', label: 'Pending item file registry path (empty = no file registry)', labelKey: 'settings_automation_pending_item_source_path', docsKey: 'settings_pending_item_source_path', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.pending_item_source.id_pattern', label: 'Pending item file registry id pattern (regular expression, default ^\\S+$)', labelKey: 'settings_automation_pending_item_source_id_pattern', docsKey: 'settings_pending_item_source_id_pattern', type: 'text', placeholder: '^\\S+$', default: '^\\S+$' },
+    { key: 'autonomous.automation.pending_item_source.id_column', label: 'Pending item file registry id column (header name or column number from 1, default 1)', labelKey: 'settings_automation_pending_item_source_id_column', docsKey: 'settings_pending_item_source_id_column', type: 'text', placeholder: '1', default: '1' },
+    { key: 'autonomous.automation.pending_item_source.title_column', label: 'Pending item file registry title column (header name or column number from 1, default 2)', labelKey: 'settings_automation_pending_item_source_title_column', docsKey: 'settings_pending_item_source_title_column', type: 'text', placeholder: '2', default: '2' },
+    { key: 'autonomous.automation.pending_item_source.state_column', label: 'Pending item file registry state column (header name or column number from 1, empty = none)', labelKey: 'settings_automation_pending_item_source_state_column', docsKey: 'settings_pending_item_source_state_column', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.pending_item_source.done_values', label: 'Pending item file registry done values (comma separated, default done, closed, shipped)', labelKey: 'settings_automation_pending_item_source_done_values', docsKey: 'settings_pending_item_source_done_values', type: 'text', placeholder: 'done, closed, shipped', csv: true },
+    { key: 'autonomous.automation.pending_item_source.on_missing_row', label: 'Pending item file registry when a row goes missing (keep or drop; default keep)', labelKey: 'settings_automation_pending_item_source_on_missing_row', docsKey: 'settings_pending_item_source_on_missing_row', type: 'select', options: ['keep', 'drop'], default: 'keep',
+      optionLabelKeys: { keep: 'pending_item_on_missing_row_keep', drop: 'pending_item_on_missing_row_drop' } },
     { key: 'autonomous.automation.disk_alert_percent', label: 'Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)', labelKey: 'settings_automation_disk_alert_percent', type: 'number', placeholder: '85', min: 1, max: 100, step: 1, default: '85' },
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
     // read-only status line in the Automaton view reads
@@ -35463,6 +35487,298 @@ window.renderSelfConfigAuditRecent = function(card) {
   });
 };
 
+// ── Automata pending item card ───────────────────────────────────────────────
+// A pending item is a named piece of work that has no Automaton yet; an
+// Automation member can wait on it. pendingItemsCardHtml(status) draws the body
+// of GET /api/autonomous/pending-items: { policy, auto_resume, source:
+// {configured, path, ...}, last_refresh: {configured, at, rows, added, updated,
+// done, dropped, kept, skipped, error}, items: [{id, ref, title, state, source,
+// automaton_id, automations: [{automation_id, name, member_id, held}]}], held:
+// [{automation_id, name, member_id, item_id, title, ref, since, reason}] }.
+// Every waiting item and every held member carries an attach control; the card
+// also has the add form and, when a file registry is configured, a refresh
+// button. A missing or malformed body reads as an empty registry. Every value is
+// escaped and every id travels in a data attribute, never in script text; the
+// loader owns the loading and failed states.
+const PENDING_ITEM_HELP_HREF = '/diagrams.html#docs/' + DOCS_DEFINITIONS + '#pending-items';
+// The locale key of each state, source and policy word, spelled out so every one
+// is a literal the key-coverage guard can see.
+const PENDING_ITEM_VALUE_KEYS = {
+  state: { waiting: 'pending_item_state_waiting', attached: 'pending_item_state_attached', done: 'pending_item_state_done' },
+  source: { internal: 'pending_item_source_internal', file: 'pending_item_source_file' },
+  policy: { hold: 'pending_item_policy_hold', skip: 'pending_item_policy_skip' },
+};
+const PENDING_ITEM_STATES = Object.keys(PENDING_ITEM_VALUE_KEYS.state);
+const PENDING_ITEM_SOURCES = Object.keys(PENDING_ITEM_VALUE_KEYS.source);
+const PENDING_ITEM_POLICIES = Object.keys(PENDING_ITEM_VALUE_KEYS.policy);
+
+function _pendingItemObj(v) {
+  return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+}
+function _pendingItemList(v) {
+  return (Array.isArray(v) ? v : []).filter(x => x && typeof x === 'object' && !Array.isArray(x));
+}
+
+// _pendingItemHelpLink is the small help link beside the card title. It follows
+// the Settings "show inline doc links" preference like the other links.
+function _pendingItemHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('pending_item_help_link');
+  return ` <a href="${PENDING_ITEM_HELP_HREF}" target="_blank" rel="noopener noreferrer" class="docs-link pending-item-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+
+// _pendingItemValueText words a state, source or policy value; a value this
+// version does not know shows as it came.
+function _pendingItemValueText(group, list, v) {
+  const s = String(v == null ? '' : v);
+  if (!list.includes(s)) return s;
+  const key = PENDING_ITEM_VALUE_KEYS[group][s];
+  const text = t(key);
+  return (text && text !== key) ? text : s;
+}
+
+function _pendingItemTime(at) {
+  return at ? _triageTime(at) : '';
+}
+
+// pendingItemAttachControlHtml is the attach control: a field for the Automaton
+// id and the button that attaches it. ctx keeps the field id unique when one
+// item shows more than once on a page.
+window.pendingItemAttachControlHtml = function(itemId, ctx) {
+  const id = String(itemId == null ? '' : itemId);
+  if (!id) return '';
+  const inputId = 'pendingItemAttachInput-' + String(ctx || 'item') + '-' + id;
+  return `<span class="pending-item-attach" data-item-id="${escHtml(id)}" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0;">` +
+    `<input type="text" id="${escHtml(inputId)}" class="form-input pending-item-attach-input pending-item-field" data-item-id="${escHtml(id)}" placeholder="${escHtml(t('pending_item_attach_placeholder'))}" aria-label="${escHtml(t('pending_item_attach_label'))}" onclick="event.stopPropagation()" style="font-size:11px;width:130px;min-width:0;">` +
+    `<button type="button" class="btn-secondary pending-item-attach-btn" data-item-id="${escHtml(id)}" data-input="${escHtml(inputId)}" onclick="event.stopPropagation(); window.pendingItemAttach(this)" style="font-size:11px;padding:3px 10px;">${escHtml(t('pending_item_attach_button'))}</button></span>`;
+};
+
+function _pendingItemErrText(err) {
+  return String((err && err.message) || err || '');
+}
+
+// pendingItemsReload redraws what shows pending items: the overview card, and
+// the open Automation page when one is showing. It never rejects.
+window.pendingItemsReload = function() {
+  const jobs = [];
+  try {
+    const ctl = window._listLoaders && window._listLoaders.automation_pending_items;
+    if (ctl) jobs.push(ctl.load());
+    const id = _automationState.detailId;
+    if (id && document.getElementById('automationStrip')) jobs.push(renderAutomationDetail(id, { quiet: true }));
+  } catch (e) { /* a failed redraw leaves the page as it was */ }
+  return Promise.all(jobs.map(j => Promise.resolve(j).catch(() => null))).then(() => null);
+};
+
+// pendingItemAttach reads the Automaton id next to the clicked button and
+// attaches it to the item the button names, then reloads.
+window.pendingItemAttach = function(btn) {
+  const get = k => (btn && btn.getAttribute ? btn.getAttribute(k) : '') || '';
+  const itemId = get('data-item-id');
+  if (!itemId) return Promise.resolve(null);
+  const input = document.getElementById(get('data-input'));
+  const automatonId = String((input && input.value) || '').trim();
+  if (!automatonId) {
+    showToast(t('pending_item_attach_required'), 'error');
+    return Promise.resolve(null);
+  }
+  return automationRequest('POST', '/api/autonomous/pending-items/' + encodeURIComponent(itemId) + '/attach', { automaton_id: automatonId })
+    .then(res => {
+      showToast(t('pending_item_attached_toast', [automatonId]));
+      if (typeof closeAutomationMemberDrawer === 'function') closeAutomationMemberDrawer();
+      return window.pendingItemsReload().then(() => res);
+    }, err => {
+      showToast(t('pending_item_attach_failed', [_pendingItemErrText(err)]), 'error');
+      return null;
+    });
+};
+
+// pendingItemAdd records a waiting item from the add form, then reloads.
+window.pendingItemAdd = function() {
+  const val = id => String((document.getElementById(id) || {}).value || '').trim();
+  const title = val('pendingItemAddTitle');
+  if (!title) {
+    showToast(t('pending_item_add_title_required'), 'error');
+    return Promise.resolve(null);
+  }
+  const body = { title };
+  const ref = val('pendingItemAddRef');
+  if (ref) body.ref = ref;
+  return automationRequest('POST', '/api/autonomous/pending-items', body).then(res => {
+    showToast(t('pending_item_added_toast', [title]));
+    ['pendingItemAddTitle', 'pendingItemAddRef'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    return window.pendingItemsReload().then(() => res);
+  }, err => {
+    showToast(t('pending_item_add_failed', [_pendingItemErrText(err)]), 'error');
+    return null;
+  });
+};
+
+// pendingItemRefresh reads the file registry now, then reloads.
+window.pendingItemRefresh = function() {
+  return automationRequest('POST', '/api/autonomous/pending-items/refresh').then(res => {
+    const r = _pendingItemObj(res);
+    if (r.error) showToast(t('pending_item_refresh_failed', [String(r.error)]), 'error');
+    else showToast(t('pending_item_refreshed_toast', [Number(r.added) || 0, Number(r.updated) || 0]));
+    return window.pendingItemsReload().then(() => res);
+  }, err => {
+    showToast(t('pending_item_refresh_failed', [_pendingItemErrText(err)]), 'error');
+    return null;
+  });
+};
+
+function _pendingItemFieldHtml(id, labelKey, required) {
+  const label = t(labelKey);
+  return `<input type="text" id="${id}" class="form-input pending-item-field" placeholder="${escHtml(label)}" aria-label="${escHtml(label)}"${required ? ' required' : ''} style="font-size:12px;flex:1 1 140px;min-width:0;">`;
+}
+
+// pendingItemAddFormHtml is the form that records a waiting item: a title and
+// an optional reference.
+window.pendingItemAddFormHtml = function() {
+  return `<form class="pending-item-add" onsubmit="event.preventDefault(); window.pendingItemAdd()" style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;color:var(--text2);">${escHtml(t('pending_item_add_heading'))}</div>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;min-width:0;">` +
+    _pendingItemFieldHtml('pendingItemAddTitle', 'pending_item_add_title_label', true) +
+    _pendingItemFieldHtml('pendingItemAddRef', 'pending_item_add_ref_label', false) +
+    `<button type="submit" class="btn-secondary pending-item-add-btn" style="font-size:11px;padding:3px 10px;">${escHtml(t('pending_item_add_button'))}</button></div></form>`;
+};
+
+function _pendingItemStateChip(state) {
+  const s = String(state || '');
+  const color = s === 'waiting' ? 'var(--warning,#d90)' : (s === 'done' ? 'var(--success,#2a7a2a)' : 'var(--text2)');
+  return `<span class="pending-item-state pending-item-state-${escHtml(s.replace(/[^a-z_]/g, ''))}" style="display:inline-block;padding:1px 8px;border:1px solid ${color};border-radius:10px;font-size:11px;font-weight:700;color:${color};">${escHtml(_pendingItemValueText('state', PENDING_ITEM_STATES, s))}</span>`;
+}
+
+function _pendingItemChip(text) {
+  return `<span class="automation-chip pending-item-chip" style="overflow-wrap:anywhere;">${escHtml(text)}</span>`;
+}
+
+function _pendingItemRowHtml(it) {
+  const state = String(it.state || '');
+  const id = String(it.id || '');
+  const chips = [_pendingItemStateChip(state)];
+  if (it.ref) chips.push(`<span class="pending-item-ref">${_pendingItemChip(t('pending_item_ref', [String(it.ref)]))}</span>`);
+  if (it.source) chips.push(_pendingItemChip(_pendingItemValueText('source', PENDING_ITEM_SOURCES, it.source)));
+  const lines = [];
+  if (it.automaton_id) lines.push(_cleanupLine(t('pending_item_attached_to', [String(it.automaton_id)])));
+  const autos = _pendingItemList(it.automations);
+  if (autos.length) {
+    const names = autos.map(a => String(a.name || a.automation_id || '')).filter(Boolean).join(', ');
+    lines.push(_cleanupLine(t('pending_item_in_automations', [names])));
+  }
+  const attach = state === 'waiting' ? `<div style="margin-top:4px;">${window.pendingItemAttachControlHtml(id, 'item')}</div>` : '';
+  return `<div class="pending-item-row" data-item-id="${escHtml(id)}" data-state="${escHtml(state)}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;"><span class="pending-item-title" style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(it.title || id))}</span>${chips.join('')}</div>` +
+    lines.join('') + attach + `</div>`;
+}
+
+function _pendingItemHeldRowHtml(h) {
+  const autoName = String(h.name || h.automation_id || '');
+  const itemName = String(h.title || h.item_id || '');
+  const lines = [];
+  const since = _pendingItemTime(h.since);
+  if (since) lines.push(_cleanupLine(t('pending_item_since', [since])));
+  if (h.reason) lines.push(_cleanupLine(t('pending_item_reason', [String(h.reason)])));
+  const attach = h.item_id ? `<div style="margin-top:4px;">${window.pendingItemAttachControlHtml(h.item_id, 'held-' + String(h.member_id || h.automation_id || ''))}</div>` : '';
+  return `<div class="pending-item-held-row" data-item-id="${escHtml(String(h.item_id || ''))}" data-automation-id="${escHtml(String(h.automation_id || ''))}" data-member-id="${escHtml(String(h.member_id || ''))}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">&#9873; ${escHtml(t('pending_item_held_row', [autoName, itemName]))}</div>` +
+    lines.join('') + attach + `</div>`;
+}
+
+function _pendingItemSourceLines(s) {
+  const src = _pendingItemObj(s.source);
+  if (!src.configured) return _cleanupLine(t('pending_item_registry_none'));
+  let out = _cleanupLine(t('pending_item_registry_line', [String(src.path || '')]));
+  const last = _pendingItemObj(s.last_refresh);
+  const at = _pendingItemTime(last.at);
+  if (!at) out += _cleanupLine(t('pending_item_refresh_never'));
+  else out += _cleanupLine(t('pending_item_refresh_line', [at, Number(last.rows) || 0, Number(last.added) || 0, Number(last.updated) || 0, Number(last.done) || 0, Number(last.dropped) || 0, Number(last.skipped) || 0]));
+  if (last.error) out += _cleanupLine(t('pending_item_refresh_error', [String(last.error)]), 'color:var(--error,#c00);');
+  return out;
+}
+
+window.pendingItemsCardHtml = function(status) {
+  const s = _pendingItemObj(status);
+  const items = _pendingItemList(s.items);
+  const held = _pendingItemList(s.held);
+  const configured = !!_pendingItemObj(s.source).configured;
+  const head = `<div class="cap-title">${escHtml(t('pending_item_card_title'))}${_pendingItemHelpLink()}</div>`;
+  const resume = s.auto_resume === false ? t('pending_item_off') : t('pending_item_on');
+  const settings = _cleanupLine(t('pending_item_policy_line', [_pendingItemValueText('policy', PENDING_ITEM_POLICIES, s.policy)])) +
+    _cleanupLine(t('pending_item_auto_resume_line', [resume])) + _pendingItemSourceLines(s);
+  const refresh = configured
+    ? `<div style="margin-top:6px;"><button type="button" class="btn-secondary pending-item-refresh-btn" onclick="window.pendingItemRefresh()" style="font-size:11px;padding:3px 10px;">${escHtml(t('pending_item_refresh_button'))}</button></div>` : '';
+  const heldBody = held.length
+    ? `<div class="pending-item-held" style="margin-top:8px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('pending_item_held_heading', [held.length]))}</div>${held.map(_pendingItemHeldRowHtml).join('')}</div>`
+    : '';
+  const itemsBody = `<div class="pending-item-items" style="margin-top:8px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('pending_item_items_heading', [items.length]))}</div>` +
+    (items.length
+      ? items.map(_pendingItemRowHtml).join('')
+      : `<div class="pending-item-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('pending_item_empty'))}</div>`) + `</div>`;
+  return `<div class="prd-capacity-card pending-item-card" style="min-width:0;">${head}${settings}${refresh}${heldBody}${itemsBody}${window.pendingItemAddFormHtml()}</div>`;
+};
+
+// _pendingItemsRemember keeps the item and hold lookups the strip and the insert
+// dialog read: the items by id and the held entries by member id. A body that is
+// not a registry leaves the lookups empty.
+function _pendingItemsRemember(body) {
+  const b = _pendingItemObj(body);
+  const items = {}, held = {};
+  _pendingItemList(b.items).forEach(it => { if (it.id) items[String(it.id)] = it; });
+  _pendingItemList(b.held).forEach(h => { if (h.member_id) held[String(h.member_id)] = h; });
+  window._pendingItemsData = { items, held };
+  return window._pendingItemsData;
+}
+
+// loadPendingItemsInfo reads the registry once for the strip and the insert
+// dialog and resolves { items, held }. It never rejects: a failed read keeps
+// the lookups from the last good read (empty before any).
+window.loadPendingItemsInfo = function() {
+  return automationRequest('GET', '/api/autonomous/pending-items')
+    .then(body => _pendingItemsRemember(body), () => window._pendingItemsData || _pendingItemsRemember(null));
+};
+
+// _pendingItemFieldKeep and _pendingItemFieldRestore carry what the operator has
+// typed (and which field has focus) across a repaint of the card, so a poll
+// does not wipe a half-written item.
+function _pendingItemFieldKeep(el) {
+  const keep = { values: {}, focus: '' };
+  try {
+    if (el && el.querySelectorAll) {
+      el.querySelectorAll('input.pending-item-field').forEach(i => { if (i.id && i.value) keep.values[i.id] = i.value; });
+    }
+    const a = document.activeElement;
+    if (a && a.id && a.classList && a.classList.contains('pending-item-field')) keep.focus = a.id;
+  } catch (e) { /* nothing to keep */ }
+  return keep;
+}
+function _pendingItemFieldRestore(el, keep) {
+  if (!keep) return;
+  try {
+    Object.keys(keep.values).forEach(id => { const i = document.getElementById(id); if (i) i.value = keep.values[id]; });
+    if (keep.focus) { const f = document.getElementById(keep.focus); if (f && f.focus) f.focus(); }
+  } catch (e) { /* the fields stay empty */ }
+}
+
+// pendingItemMemberHtml is what a pending item member adds to its card: the
+// hold badge and the attach control. m is the member, c the strip context
+// ({pendingItems, pendingHeld}). Any other member, and a pending item member
+// that is finished or already has its Automaton, adds nothing.
+window.pendingItemMemberHtml = function(m, c) {
+  if (!m || m.kind !== 'pending_item') return '';
+  if (_AUTOMATION_FINISHED_STATUSES.includes(String(m.status || ''))) return '';
+  const itemId = String(m.pending_item_id || '');
+  const items = (c && c.pendingItems) || {};
+  const heldMap = (c && c.pendingHeld) || {};
+  const item = Object.prototype.hasOwnProperty.call(items, itemId) ? items[itemId] : null;
+  const state = item ? String(item.state || '') : '';
+  if (state === 'done' || state === 'attached') return '';
+  const held = Object.prototype.hasOwnProperty.call(heldMap, String(m.id)) ? heldMap[String(m.id)] : null;
+  const tip = (held && held.reason) ? String(held.reason) : t('pending_item_badge_tip');
+  const badge = `<span class="pending-item-badge" data-held="${!!held}" role="status" title="${escHtml(tip)}" style="display:inline-block;padding:1px 8px;border:1px solid var(--warning,#d90);border-radius:10px;font-size:11px;font-weight:700;color:var(--warning,#d90);">&#9873; ${escHtml(t('pending_item_badge'))}</span>`;
+  return badge + window.pendingItemAttachControlHtml(itemId, 'member-' + String(m.id || ''));
+};
+
 // ── Automata progress card ───────────────────────────────────────────────────
 // progressCardHtml(state, opts) is a pure function from the loader state to
 // markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
@@ -38831,13 +39147,14 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_housekeeping',
     bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationProtectedPathsCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationPendingItemsCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       ${_automationSlotsHTML('housekeeping')}`,
     mount() {
-      listLoaderAll([_automationUncommittedWorkLoader(), _automationProtectedPathsLoader()]);
+      listLoaderAll([_automationUncommittedWorkLoader(), _automationProtectedPathsLoader(), _automationPendingItemsLoader()]);
       _automationSlotsMount('housekeeping');
     },
     stop() {
-      _automationStopLoaders(['automation_uncommitted_work', 'automation_protected_paths']);
+      _automationStopLoaders(['automation_uncommitted_work', 'automation_protected_paths', 'automation_pending_items']);
       _automationSlotsStop('housekeeping');
     },
   },
@@ -38902,7 +39219,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -39655,6 +39972,21 @@ function _automationProtectedPathsLoader() {
     failedText: msg => t('protected_paths_failed', [msg]),
     active: () => !!document.getElementById('automationProtectedPathsCard'),
     render: status => window.protectedPathsCardHtml(status),
+  });
+}
+
+// _automationPendingItemsLoader reads the pending item registry on the Housekeeping
+// sub-tab, beside the uncommitted-work card. The registry is a small file the
+// daemon owns, so it polls at the cleanup rate; its failed state is the list
+// loader's banner. What the operator typed in the card survives a repaint.
+function _automationPendingItemsLoader() {
+  return window._listLoaders.automation_pending_items || listLoader({
+    key: 'automation_pending_items', el: 'automationPendingItemsCard', url: '/api/autonomous/pending-items', pollMs: 30000,
+    failedText: msg => t('pending_item_failed', [msg]),
+    active: () => !!document.getElementById('automationPendingItemsCard'),
+    beforePaint: el => _pendingItemFieldKeep(el),
+    afterPaint: (el, keep) => _pendingItemFieldRestore(el, keep),
+    render: status => { _pendingItemsRemember(status); return window.pendingItemsCardHtml(status); },
   });
 }
 
@@ -40792,7 +41124,7 @@ const _AUTOMATION_STATUS_ORDER = ['active', 'blocked', 'paused', 'draft', 'compl
 // A member counts toward progress when it runs an Automaton or a nested
 // Automation; fork and join members only steer the chain.
 function _automationCountsAsMember(m) {
-  return !!m && (!m.kind || m.kind === 'prd' || m.kind === 'automation');
+  return !!m && (!m.kind || m.kind === 'prd' || m.kind === 'automation' || m.kind === 'pending_item');
 }
 
 // automationMemberProgress returns {done, total}: total counts the work
@@ -41138,6 +41470,7 @@ function _automationMemberRef(m) {
   const kind = m.kind || 'prd';
   if (kind === 'prd' && m.prd_id) return String(m.prd_id);
   if (kind === 'automation' && m.automation_id) return String(m.automation_id);
+  if (kind === 'pending_item' && m.pending_item_id) return String(m.pending_item_id);
   return String(m.id);
 }
 
@@ -41165,7 +41498,20 @@ function _automationMemberTitle(m, c, chip) {
     const child = _automationChild(m, c);
     return (child && child.name ? String(child.name) : '') || chip;
   }
+  if (kind === 'pending_item') {
+    const item = _automationLookupItem(c.pendingItems, m.pending_item_id);
+    return (item && item.title ? String(item.title) : '') || t('pending_item_member_fallback', [String(m.pending_item_id || chip)]);
+  }
   return chip;
+}
+
+// _automationLookupItem reads one pending item from the strip context's
+// {id: item} map, ignoring inherited keys such as 'constructor'.
+function _automationLookupItem(map, id) {
+  if (!map || id === undefined || id === null) return null;
+  const k = String(id);
+  const v = Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null;
+  return v && typeof v === 'object' ? v : null;
 }
 
 // _automationActionContext decides whether the strip of Automation a carries
@@ -41206,7 +41552,7 @@ function _automationInsertPlacement(a, anchorId, position) {
 function _automationMemberActionsHTML(m, status, actions) {
   if (!actions) return '';
   const kind = String(m.kind || 'prd');
-  if (kind !== 'prd' && kind !== 'automation') return '';
+  if (kind !== 'prd' && kind !== 'automation' && kind !== 'pending_item') return '';
   const pending = status === 'pending' || status === 'approved';
   if (!pending && status !== 'running') return '';
   const idArg = escJsAttr(m.id);
@@ -41267,6 +41613,9 @@ function _automationMemberCardHTML(m, c, active, actions) {
     const rule = _automationJoinRule(m);
     attrs = ` data-rule="${rule}"`;
     extra = `<span class="automation-join-rule">${escHtml(t('automation_join_rule_' + rule))}</span>`;
+  } else if (kind === 'pending_item') {
+    cls += ' automation-member-pending-item';
+    extra = window.pendingItemMemberHtml(m, c);
   } else if (kind === 'automation') {
     const expanded = _automationIsExpanded(c, m.id);
     attrs = ` data-expanded="${expanded}"`;
@@ -41431,7 +41780,10 @@ let _automationDetailSeq = 0;
 // failed or oddly shaped response leaves the maps empty.
 function loadAutomationPrdInfo() {
   const loop = automationRequest('GET', '/api/autonomous/status').catch(() => null);
-  return Promise.all([automationRequest('GET', '/api/autonomous/prds'), loop])
+  // The pending item lookups feed the strip's titles and hold badges; a failed
+  // read leaves them empty and never fails the rest.
+  const pending = window.loadPendingItemsInfo().catch(() => null);
+  return Promise.all([automationRequest('GET', '/api/autonomous/prds'), loop, pending])
     .then(([data, status]) => {
       const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
       const titles = {}, statuses = {}, flags = {}, review = {};
@@ -41457,7 +41809,9 @@ function _automationStripContext() {
   const st = _automationState;
   const automationsById = {};
   (Array.isArray(st.list) ? st.list : []).forEach(a => { if (a && a.id) automationsById[a.id] = a; });
-  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, reviewByPrd: st.reviewByPrd, expanded: st.expanded, automationsById };
+  const pending = window._pendingItemsData || {};
+  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, reviewByPrd: st.reviewByPrd, expanded: st.expanded, automationsById,
+    pendingItems: pending.items || {}, pendingHeld: pending.held || {} };
 }
 
 // _automationJoinWait describes the join the chain is waiting on: the first
@@ -42257,7 +42611,7 @@ window.automationApproveInsert = automationApproveInsert;
 // ── Insert picker ────────────────────────────────────────────────────────────
 // The insert dialog keeps its choice here: the picked Automaton and the rows
 // the picker can show, each with the reason it is unavailable ('' = pickable).
-const _automationInsert = { picked: '', rows: [] };
+const _automationInsert = { picked: '', pickedItem: '', rows: [] };
 
 // _automationOwners maps an Automaton id to the other non-finished Automation
 // that holds it (as a member or a held insert), from the loaded Automations.
@@ -42307,17 +42661,60 @@ function _automationPickerHTML(query) {
 }
 
 // automationPickInsertAutomaton records the Automaton chosen in the picker; an
-// unavailable one is ignored.
+// unavailable one is ignored. Choosing an Automaton drops a chosen pending item:
+// an insert takes one or the other.
 function automationPickInsertAutomaton(prdId) {
   const row = _automationInsert.rows.find(r => r.id === prdId);
-  if (row && !row.reason) _automationInsert.picked = prdId;
+  if (row && !row.reason) { _automationInsert.picked = prdId; _automationInsert.pickedItem = ''; }
 }
 window.automationPickInsertAutomaton = automationPickInsertAutomaton;
+
+// _automationPendingItemRows lists the pending items the insert dialog offers:
+// the waiting ones, each with the reason it cannot be inserted ('' = pickable).
+// An item that already belongs to an Automation is not pickable.
+function _automationPendingItemRows() {
+  const items = ((window._pendingItemsData || {}).items) || {};
+  return Object.keys(items).map(id => items[id]).filter(it => it && it.state === 'waiting').map(it => {
+    const autos = Array.isArray(it.automations) ? it.automations.filter(Boolean) : [];
+    const names = autos.map(a => String(a.name || a.automation_id || '')).filter(Boolean).join(', ');
+    return { id: String(it.id), title: String(it.title || it.id), ref: String(it.ref || ''), reason: autos.length ? t('pending_item_insert_reason_in_use', [names]) : '' };
+  }).sort((x, y) => (x.reason ? 1 : 0) - (y.reason ? 1 : 0) || x.title.localeCompare(y.title));
+}
+
+// _automationPendingPickerHTML is the pending item part of the insert picker:
+// one radio per waiting item, in the same group as the Automaton radios so
+// choosing one clears the other.
+function _automationPendingPickerHTML(query) {
+  const q = String(query || '').trim().toLowerCase();
+  const rows = _automationPendingItemRows().filter(r => !q || r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.ref.toLowerCase().includes(q));
+  const head = `<div class="pending-item-picker-head" style="font-weight:600;color:var(--text2);margin-top:8px;">${escHtml(t('pending_item_insert_heading'))}</div>`;
+  if (!rows.length) return `${head}<div class="pending-item-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('pending_item_insert_none'))}</div>`;
+  return head + rows.map(r => {
+    const off = !!r.reason;
+    const note = off ? `<span class="automation-picker-reason" style="font-size:11px;">${escHtml(t('automation_picker_unavailable', [r.reason]))}</span>` : '';
+    const ref = r.ref ? `<span class="automation-chip">${escHtml(r.ref)}</span>` : '';
+    return `<label class="automation-picker-item pending-item-picker-item" data-pending-item-id="${escHtml(r.id)}" data-unavailable="${off}" style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;padding:3px 0;${off ? 'opacity:0.5;' : ''}">`
+      + `<input type="radio" name="automationInsertPick" value="${escHtml('item:' + r.id)}"${off ? ' disabled' : ''}${r.id === _automationInsert.pickedItem ? ' checked' : ''} onchange="automationPickInsertItem('${escJsAttr(r.id)}')">`
+      + `<span class="automation-picker-title">${escHtml(r.title)}</span>${ref}${note}</label>`;
+  }).join('');
+}
+
+// automationPickInsertItem records the pending item chosen in the picker; an
+// unavailable one is ignored. Choosing an item drops a chosen Automaton.
+function automationPickInsertItem(itemId) {
+  const row = _automationPendingItemRows().find(r => r.id === itemId);
+  if (row && !row.reason) { _automationInsert.pickedItem = itemId; _automationInsert.picked = ''; }
+}
+window.automationPickInsertItem = automationPickInsertItem;
+
+function _automationInsertPickerHTML(query) {
+  return _automationPickerHTML(query) + _automationPendingPickerHTML(query);
+}
 
 // automationFilterInsertPicker redraws the picker list for the search text.
 function automationFilterInsertPicker() {
   const el = document.getElementById('automationInsertPicker');
-  if (el) el.innerHTML = _automationPickerHTML(_automationFieldValue('automationInsertSearch'));
+  if (el) el.innerHTML = _automationInsertPickerHTML(_automationFieldValue('automationInsertSearch'));
 }
 window.automationFilterInsertPicker = automationFilterInsertPicker;
 
@@ -42341,13 +42738,14 @@ function openAutomationInsertDialog(anchorMemberId, position) {
     st.prdFlags = info.flags;
     st.reviewByPrd = info.review;
     _automationInsert.picked = '';
+    _automationInsert.pickedItem = '';
     _automationInsert.rows = _automationPickerRows(list);
     const field = (labelKey, input) =>
       `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}</span>${input}</label>`;
     showModal({
       title: _automationActingTitle(pos === 'before' ? 'automation_insert_before' : 'automation_insert_after', anchorMemberId),
       body: `<input type="search" id="automationInsertSearch" class="automation-dialog-input" style="width:100%;" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" oninput="automationFilterInsertPicker()">`
-        + `<div id="automationInsertPicker" class="automation-picker" style="max-height:180px;overflow:auto;margin:6px 0;">${_automationPickerHTML('')}</div>`
+        + `<div id="automationInsertPicker" class="automation-picker" style="max-height:180px;overflow:auto;margin:6px 0;">${_automationInsertPickerHTML('')}</div>`
         + `<label class="automation-dialog-field" style="display:flex;gap:6px;align-items:center;margin:8px 0;"><input type="checkbox" id="automationInsertUrgent"${placement.urgent ? ' checked disabled' : ''}> ${escHtml(t('automation_insert_urgent'))}</label>`
         + field('automation_insert_reason_label', '<textarea id="automationInsertReason" class="automation-dialog-input" rows="3" style="width:100%;" required></textarea>')
         + '<div id="automationInsertError" class="automation-insert-error" role="alert" style="color:var(--error);font-size:12px;margin-top:6px;"></div>',
@@ -42360,12 +42758,12 @@ function openAutomationInsertDialog(anchorMemberId, position) {
         };
         const reason = _automationFieldValue('automationInsertReason').trim();
         if (!reason) return fail('automation_insert_reason_required');
-        if (!_automationInsert.picked) return fail('automation_picker_required');
+        if (!_automationInsert.picked && !_automationInsert.pickedItem) return fail('automation_picker_required');
         const box = document.getElementById('automationInsertUrgent');
         // An urgent insert takes the next slot, so the server needs `after` empty.
         const urgent = placement.urgent || !!(box && box.checked);
         automationControl(id, 'insert_member', {
-          member: { prd_id: _automationInsert.picked },
+          member: _automationInsert.pickedItem ? { pending_item_id: _automationInsert.pickedItem } : { prd_id: _automationInsert.picked },
           after: urgent ? '' : placement.after,
           urgent,
           reason,
@@ -42403,6 +42801,7 @@ function _automationFindMember(memberId) {
 function _automationKindLabel(kind) {
   if (kind === 'fork') return t('automation_fork_label');
   if (kind === 'join') return t('automation_join_label');
+  if (kind === 'pending_item') return t('pending_item_kind_label');
   const key = 'automation_kind_' + kind;
   return t(key) !== key ? t(key) : kind;
 }
@@ -42429,10 +42828,20 @@ function buildAutomationMemberDrawerHTML(member, ctx) {
     rows.push(['automation_field_added_by', m.added_by], ['automation_field_added_reason', m.added_reason],
       ['automation_field_added_at', _automationTimeText(m.added_at)]);
   }
+  // A pending item member (or one that came from a pending item) shows the
+  // item; a waiting one also shows the hold badge and the attach control.
+  let pendingBlock = '';
+  if (m.pending_item_id) {
+    const item = _automationLookupItem((ctx || {}).pendingItems, m.pending_item_id);
+    rows.push(['pending_item_field_title', item ? item.title : ''], ['pending_item_field_ref', item ? item.ref : ''],
+      ['pending_item_field_state', item ? _pendingItemValueText('state', PENDING_ITEM_STATES, item.state) : '']);
+    const control = window.pendingItemMemberHtml(m, ctx || {});
+    if (control) pendingBlock = `<div class="automation-drawer-pending" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${control}</div>`;
+  }
   const fields = rows.map(([key, v]) => `<dt>${escHtml(t(key))}</dt><dd>${escHtml(v == null || v === '' ? '—' : v)}</dd>`).join('');
   return `<div class="automation-drawer-panel" data-member-id="${escHtml(m.id)}">
     <div class="automation-drawer-head"><span class="automation-drawer-title">${escHtml(t('automation_member_drawer_title'))}</span><button type="button" class="automation-drawer-close" onclick="closeAutomationMemberDrawer()" aria-label="${escHtml(t('automation_drawer_close'))}" title="${escHtml(t('automation_drawer_close'))}">✕</button></div>
-    <dl class="automation-drawer-fields">${fields}</dl>
+    <dl class="automation-drawer-fields">${fields}</dl>${pendingBlock}
   </div>`;
 }
 window.buildAutomationMemberDrawerHTML = buildAutomationMemberDrawerHTML;
@@ -42453,7 +42862,8 @@ function openAutomationMemberDrawer(memberId) {
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-label', t('automation_member_drawer_title'));
-  el.innerHTML = buildAutomationMemberDrawerHTML(m, { prdStatuses: _automationState.prdStatuses });
+  const pending = window._pendingItemsData || {};
+  el.innerHTML = buildAutomationMemberDrawerHTML(m, { prdStatuses: _automationState.prdStatuses, pendingItems: pending.items || {}, pendingHeld: pending.held || {} });
   el.addEventListener('click', e => { if (e.target === el) closeAutomationMemberDrawer(); });
   document.body.appendChild(el);
 }

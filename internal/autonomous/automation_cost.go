@@ -135,6 +135,8 @@ func (m *Manager) automationSpend(a *Automation, since time.Time, llm string, se
 			if child, ok := m.GetAutomation(mem.AutomationID); ok {
 				sum += m.automationSpend(child, since, llm, seenAuto, seenPRD)
 			}
+		case MemberKindPending:
+			// A pending item has no Automaton yet, so it has spent nothing.
 		}
 	}
 	return sum

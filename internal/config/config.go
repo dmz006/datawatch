@@ -4485,6 +4485,231 @@ type AutonomousAutomationConfig struct {
 	// unset key or an unknown word reads as base_commit through
 	// EffectiveRulesReviewSource.
 	RulesReviewSource string `yaml:"rules_review_source,omitempty" json:"rules_review_source,omitempty"`
+	// PendingItemPolicy decides what an Automation does when its cursor
+	// reaches a pending item (a named piece of work with no Automaton yet)
+	// that is still waiting (hold|skip): hold = the Automation stays at the
+	// item until an Automaton is attached; skip = the item is passed over
+	// and the Automation moves on. An unset key or an unknown word reads as
+	// hold (the safe default) through EffectivePendingItemPolicy.
+	PendingItemPolicy string `yaml:"pending_item_policy,omitempty" json:"pending_item_policy,omitempty"`
+	// PendingItemAutoResume controls whether an Automation that is holding
+	// at a pending item resumes by itself once an Automaton is attached to
+	// that item. A pointer so that unset (nil) reads true; an explicit false
+	// keeps the Automation held until an operator resumes it. See
+	// EffectivePendingItemAutoResume.
+	PendingItemAutoResume *bool `yaml:"pending_item_auto_resume,omitempty" json:"pending_item_auto_resume,omitempty"`
+	// PendingItemSource — the optional file registry the daemon reads
+	// pending items from (autonomous.automation.pending_item_source.*). See
+	// PendingItemSourceConfig: the defaults apply only in its Effective*
+	// accessors, and the bad values are refused on every write path through
+	// ValidatePendingItemKey.
+	PendingItemSource PendingItemSourceConfig `yaml:"pending_item_source" json:"pending_item_source"`
+}
+
+// PendingItemSourceConfig is the autonomous.automation.pending_item_source
+// block: where an optional file registry of pending items lives and how its
+// rows map to pending items. Nothing in it assumes a numbering sequence, a
+// file name or a repository convention. A column setting is a header name
+// (matched case-insensitively) or a 1-based column number. Every default is
+// applied only in the Effective* accessors, so an unset key stays unset in
+// the file and in a config round trip.
+type PendingItemSourceConfig struct {
+	// Path is the registry file. Empty (the default) means no file registry.
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+	// IDPattern is a Go regular expression a row's id must match to count as
+	// a pending item. Unset reads PendingItemSourceDefaultIDPattern.
+	IDPattern string `yaml:"id_pattern,omitempty" json:"id_pattern,omitempty"`
+	// IDColumn names the column holding the item id: a header name or a
+	// 1-based column number. Unset reads "1".
+	IDColumn string `yaml:"id_column,omitempty" json:"id_column,omitempty"`
+	// TitleColumn names the column holding the item title: a header name or
+	// a 1-based column number. Unset reads "2".
+	TitleColumn string `yaml:"title_column,omitempty" json:"title_column,omitempty"`
+	// StateColumn names the column holding the item state: a header name or
+	// a 1-based column number. Empty (the default) means the registry has no
+	// state column.
+	StateColumn string `yaml:"state_column,omitempty" json:"state_column,omitempty"`
+	// DoneValues are the state-column values (compared case-insensitively)
+	// that mark an item done. Unset or empty reads done, closed, shipped.
+	DoneValues []string `yaml:"done_values,omitempty" json:"done_values,omitempty"`
+	// OnMissingRow decides what happens to an item whose row has vanished
+	// from the registry file (keep|drop). Unset or an unknown word reads
+	// keep (the safe default).
+	OnMissingRow string `yaml:"on_missing_row,omitempty" json:"on_missing_row,omitempty"`
+}
+
+// autonomous.automation pending-item values and defaults.
+// PendingItemPolicy: hold (the default) keeps an Automation at a waiting
+// pending item; skip passes over it. PendingItemSource.OnMissingRow: keep
+// (the default) leaves an item in place when its registry row vanishes; drop
+// removes it.
+const (
+	PendingItemPolicyHold = "hold"
+	PendingItemPolicySkip = "skip"
+
+	PendingItemOnMissingRowKeep = "keep"
+	PendingItemOnMissingRowDrop = "drop"
+
+	// DefaultPendingItemAutoResume is the auto-resume default (on).
+	DefaultPendingItemAutoResume = true
+	// PendingItemSourceDefaultIDPattern matches any non-blank token.
+	PendingItemSourceDefaultIDPattern = `^\S+$`
+	// PendingItemSourceDefaultIDColumn and ...TitleColumn are 1-based column
+	// numbers.
+	PendingItemSourceDefaultIDColumn    = "1"
+	PendingItemSourceDefaultTitleColumn = "2"
+
+	// PendingItemIDPatternMaxLen caps the id_pattern length.
+	PendingItemIDPatternMaxLen = 512
+)
+
+// The full dotted names ValidatePendingItemKey accepts.
+const (
+	PendingItemKeyPolicy       = "autonomous.automation.pending_item_policy"
+	PendingItemKeyAutoResume   = "autonomous.automation.pending_item_auto_resume"
+	PendingItemKeyPath         = "autonomous.automation.pending_item_source.path"
+	PendingItemKeyIDPattern    = "autonomous.automation.pending_item_source.id_pattern"
+	PendingItemKeyIDColumn     = "autonomous.automation.pending_item_source.id_column"
+	PendingItemKeyTitleColumn  = "autonomous.automation.pending_item_source.title_column"
+	PendingItemKeyStateColumn  = "autonomous.automation.pending_item_source.state_column"
+	PendingItemKeyDoneValues   = "autonomous.automation.pending_item_source.done_values"
+	PendingItemKeyOnMissingRow = "autonomous.automation.pending_item_source.on_missing_row"
+)
+
+// DefaultPendingItemDoneValues returns a fresh copy of the default done
+// values (done, closed, shipped).
+func DefaultPendingItemDoneValues() []string {
+	return []string{"done", "closed", "shipped"}
+}
+
+// EffectivePendingItemPolicy returns the pending-item policy in effect: skip
+// is an explicit operator choice; an unset key (empty) and any unknown value
+// read as PendingItemPolicyHold, the safe default.
+func (c AutonomousAutomationConfig) EffectivePendingItemPolicy() string {
+	if c.PendingItemPolicy == PendingItemPolicySkip {
+		return PendingItemPolicySkip
+	}
+	return PendingItemPolicyHold
+}
+
+// EffectivePendingItemAutoResume returns whether a held Automation resumes
+// by itself once an Automaton is attached: unset (nil) reads true.
+func (c AutonomousAutomationConfig) EffectivePendingItemAutoResume() bool {
+	if c.PendingItemAutoResume == nil {
+		return DefaultPendingItemAutoResume
+	}
+	return *c.PendingItemAutoResume
+}
+
+// EffectivePath returns the registry file path; empty means no file registry.
+func (s PendingItemSourceConfig) EffectivePath() string { return s.Path }
+
+// EffectiveIDPattern returns the id pattern in effect: unset (blank) reads
+// PendingItemSourceDefaultIDPattern.
+func (s PendingItemSourceConfig) EffectiveIDPattern() string {
+	if strings.TrimSpace(s.IDPattern) == "" {
+		return PendingItemSourceDefaultIDPattern
+	}
+	return s.IDPattern
+}
+
+// EffectiveIDColumn returns the id column in effect: unset reads "1".
+func (s PendingItemSourceConfig) EffectiveIDColumn() string {
+	if strings.TrimSpace(s.IDColumn) == "" {
+		return PendingItemSourceDefaultIDColumn
+	}
+	return strings.TrimSpace(s.IDColumn)
+}
+
+// EffectiveTitleColumn returns the title column in effect: unset reads "2".
+func (s PendingItemSourceConfig) EffectiveTitleColumn() string {
+	if strings.TrimSpace(s.TitleColumn) == "" {
+		return PendingItemSourceDefaultTitleColumn
+	}
+	return strings.TrimSpace(s.TitleColumn)
+}
+
+// EffectiveStateColumn returns the state column in effect; empty means the
+// registry has no state column.
+func (s PendingItemSourceConfig) EffectiveStateColumn() string {
+	return strings.TrimSpace(s.StateColumn)
+}
+
+// EffectiveDoneValues returns the done values in effect: unset or empty
+// reads done, closed, shipped. The result is always a fresh slice.
+func (s PendingItemSourceConfig) EffectiveDoneValues() []string {
+	if len(s.DoneValues) == 0 {
+		return DefaultPendingItemDoneValues()
+	}
+	return append([]string(nil), s.DoneValues...)
+}
+
+// EffectiveOnMissingRow returns the missing-row behavior in effect: drop is
+// an explicit operator choice; an unset key and any unknown word read keep.
+func (s PendingItemSourceConfig) EffectiveOnMissingRow() string {
+	if s.OnMissingRow == PendingItemOnMissingRowDrop {
+		return PendingItemOnMissingRowDrop
+	}
+	return PendingItemOnMissingRowKeep
+}
+
+// ValidatePendingItemKey checks one pending-item setting before it is
+// written. key is the full dotted name (for example
+// "autonomous.automation.pending_item_policy"); value is the new value as
+// text (done_values is a comma-separated list). REST, MCP and the comm
+// channel all call this one function. An empty value is accepted for every
+// key except pending_item_auto_resume and means unset (the default).
+func ValidatePendingItemKey(key, value string) error {
+	switch key {
+	case PendingItemKeyPolicy:
+		switch value {
+		case "", PendingItemPolicyHold, PendingItemPolicySkip:
+			return nil
+		}
+		return fmt.Errorf("%s must be \"hold\" or \"skip\", got %q", key, value)
+	case PendingItemKeyAutoResume:
+		switch value {
+		case "true", "false":
+			return nil
+		}
+		return fmt.Errorf("%s must be \"true\" or \"false\", got %q", key, value)
+	case PendingItemKeyOnMissingRow:
+		switch value {
+		case "", PendingItemOnMissingRowKeep, PendingItemOnMissingRowDrop:
+			return nil
+		}
+		return fmt.Errorf("%s must be \"keep\" or \"drop\", got %q", key, value)
+	case PendingItemKeyIDPattern:
+		if len(value) > PendingItemIDPatternMaxLen {
+			return fmt.Errorf("%s must be at most %d characters, got %d", key, PendingItemIDPatternMaxLen, len(value))
+		}
+		if value == "" {
+			return nil
+		}
+		if _, err := regexp.Compile(value); err != nil {
+			return fmt.Errorf("%s must be a valid regular expression: %v", key, err)
+		}
+		return nil
+	case PendingItemKeyIDColumn, PendingItemKeyTitleColumn, PendingItemKeyStateColumn:
+		if value != "" && strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s must be a header name or a 1-based column number, not blank", key)
+		}
+		return nil
+	case PendingItemKeyDoneValues:
+		for _, v := range strings.Split(value, ",") {
+			if value != "" && strings.TrimSpace(v) == "" {
+				return fmt.Errorf("%s must be a comma-separated list of non-blank words", key)
+			}
+		}
+		return nil
+	case PendingItemKeyPath:
+		if strings.ContainsRune(value, 0) {
+			return fmt.Errorf("%s must not contain a NUL byte", key)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown pending item setting %q", key)
+	}
 }
 
 // autonomous.automation.create_search_mode values and defaults.

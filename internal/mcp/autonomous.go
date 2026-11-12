@@ -304,7 +304,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 		mcpsdk.WithString("planning_restart_policy", mcpsdk.Enum("reattach", "restart", "draft"), mcpsdk.Description("autonomous.planning_restart_policy — what a daemon restart does to an Automaton that is still in planning (decompose running): reattach (the default) keeps planning running and re-attaches it to the restarted daemon; restart restarts planning once after the restart and records a decision saying so; draft resets the Automaton to draft, as the daemon did before this setting existed. Any other value is refused. It is sent on PUT /api/config. See docs/howto/restart-with-work-running.md.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
-	}, append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
+	}, append(append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...), pendingItemConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -544,6 +544,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {
 		auto["agent_insert_policy"] = v
+	}
+	// Pending item keys (autonomous.automation.pending_item_policy,
+	// pending_item_auto_resume and the pending_item_source fields). Each value
+	// is checked with config.ValidatePendingItemKey before anything is sent.
+	pendingItem, err := pendingItemConfigArgs(req)
+	if err != nil {
+		return toolError("autonomous_config_set", err), nil
+	}
+	for k, v := range pendingItem {
+		auto[k] = v
 	}
 	if len(auto) > 0 {
 		body["automation"] = auto

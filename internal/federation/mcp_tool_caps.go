@@ -39,6 +39,9 @@ var MCPToolCap = map[string]string{
 	"assist":                                       CapHealthRead,
 	"audit_query":                                  CapAuditRead,
 	"audit_access_query":                           CapAuditRead,
+	"autonomous_pending_item_add":                  CapAutonomousWrite,
+	"autonomous_pending_item_attach":               CapAutonomousWrite,
+	"autonomous_pending_items_refresh":             CapAutonomousWrite,
 	"automation_activate":                          CapAutonomousWrite,
 	"automation_return_to_draft":                   CapAutonomousWrite,
 	"automation_pause":                             CapAutonomousWrite,
@@ -264,6 +267,7 @@ var MCPToolCap = map[string]string{
 	"usage_backoff_status":                 CapConfigRead,
 	"autonomous_protected_paths":           CapAutonomousRead,
 	"autonomous_standard_tasks":            CapAutonomousRead,
+	"autonomous_pending_items":             CapAutonomousRead,
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.
@@ -764,7 +768,7 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_cleanup_status": true, "autonomous_config_get": true, "autonomous_decisions": true, "autonomous_events_pending": true,
 	"autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_learnings": true,
 	"autonomous_merge": true, "autonomous_merge_pipeline_get": true, "autonomous_merge_pipeline_set_record": true, "autonomous_merge_pipeline_validate": true,
-	"autonomous_overlap_search": true, "autonomous_prd_add_story": true, "autonomous_prd_add_task": true, "autonomous_prd_approve": true,
+	"autonomous_overlap_search": true, "autonomous_pending_item_add": true, "autonomous_pending_item_attach": true, "autonomous_pending_items": true, "autonomous_pending_items_refresh": true, "autonomous_prd_add_story": true, "autonomous_prd_add_task": true, "autonomous_prd_approve": true,
 	"autonomous_prd_approve_task": true, "autonomous_prd_cancel": true, "autonomous_prd_cancel_story": true, "autonomous_prd_cancel_task": true,
 	"autonomous_prd_children": true, "autonomous_prd_clone_to_template": true, "autonomous_prd_create": true, "autonomous_prd_decompose": true,
 	"autonomous_prd_edit_story": true, "autonomous_prd_edit_task": true, "autonomous_prd_get": true, "autonomous_prd_instantiate": true,

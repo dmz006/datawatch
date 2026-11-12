@@ -267,6 +267,22 @@ var pendingTranslationKeys = map[string]bool{
 	"settings_host_load_alert_minutes":  true,
 	// Automata Events tab: the Automaton label stays English in de/es/fr until the app translation lands.
 	"automata_events_label_automaton": true,
+	// Pending item settings: the labels and option labels that name an Automaton ship as English until the app translation lands.
+	"settings_automation_pending_item_auto_resume": true,
+	"pending_item_policy_hold":                     true,
+	// Pending item card, hold badge, attach control and insert picker: the strings that name an Automaton ship as English until the app translation lands.
+	"pending_item_auto_resume_line":   true,
+	"pending_item_held_row":           true,
+	"pending_item_attached_to":        true,
+	"pending_item_attach_label":       true,
+	"pending_item_attach_placeholder": true,
+	"pending_item_attach_button":      true,
+	"pending_item_attach_required":    true,
+	"pending_item_attached_toast":     true,
+	"pending_item_attach_failed":      true,
+	"pending_item_badge":              true,
+	"pending_item_badge_tip":          true,
+	"pending_item_insert_heading":     true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

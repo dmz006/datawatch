@@ -357,6 +357,10 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 	if mem == nil {
 		return
 	}
+	if mem.PendingItemID != "" && end.edge == edgeOnComplete && end.success {
+		// The Automaton attached to a pending item completed: the item's work is done.
+		c.m.completeAttachedPendingItem(mem.PendingItemID, ev.PRDID)
+	}
 	c.advance(autoID, stepInput{memberID: mem.ID, end: end})
 }
 
@@ -479,6 +483,7 @@ func (c *Coordinator) assistEmptyEdge(autoID string, in *stepInput) (paused bool
 // snapshotMembers reads every member's live facts once, for a step.
 func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 	snap := make(map[string]memberInfo, len(a.Members))
+	policy := "" // the pending item policy, read once when a pending member needs it
 	for i, m := range a.Members {
 		switch m.kind() {
 		case MemberKindPRD:
@@ -498,6 +503,11 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 			snap[m.ID] = memberInfo{name: name, verdict: c.startVerdict(a, &a.Members[i])}
 		case MemberKindJoin:
 			snap[m.ID] = memberInfo{name: "join " + m.ID}
+		case MemberKindPending:
+			if policy == "" {
+				policy = c.m.Config().Automation.EffectivePendingItemPolicy()
+			}
+			snap[m.ID] = c.pendingMemberInfo(m, policy) // no Automaton and no budget gate
 		default:
 			snap[m.ID] = memberInfo{name: "fork " + m.ID, verdict: c.startVerdict(a, &a.Members[i])}
 		}

@@ -2065,12 +2065,18 @@ type AutomationStatusSummary struct {
 }
 
 // ActiveCursorSummary is one live cursor of an Automation in LoopStatus. PRDID
-// is set for a PRD member and AutomationID for a nested child Automation.
+// is set for a PRD member and AutomationID for a nested child Automation. A
+// pending item member sets Kind, PendingItemID and PendingItemTitle, and Waiting
+// while the item still has no Automaton attached.
 type ActiveCursorSummary struct {
-	MemberID     string `json:"member_id"`
-	PRDID        string `json:"prd_id,omitempty"`
-	AutomationID string `json:"automation_id,omitempty"`
-	Status       string `json:"status"`
+	MemberID         string `json:"member_id"`
+	PRDID            string `json:"prd_id,omitempty"`
+	AutomationID     string `json:"automation_id,omitempty"`
+	Kind             string `json:"kind,omitempty"`
+	PendingItemID    string `json:"pending_item_id,omitempty"`
+	PendingItemTitle string `json:"pending_item_title,omitempty"`
+	Waiting          bool   `json:"waiting,omitempty"`
+	Status           string `json:"status"`
 }
 
 // JoinWaitSummary describes the join an Automation waits on: the rule it applies,

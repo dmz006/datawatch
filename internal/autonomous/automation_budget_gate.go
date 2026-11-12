@@ -62,6 +62,9 @@ func (m *Manager) budgetVerdictFor(a *Automation, mem *AutomationMember) BudgetV
 	if b == nil || a == nil {
 		return BudgetVerdict{}
 	}
+	if mem != nil && mem.kind() == MemberKindPending {
+		return BudgetVerdict{} // nothing runs for a pending item, so nothing is gated
+	}
 	if mem == nil || mem.kind() == MemberKindFork {
 		return b.Evaluate(a, nil, false)
 	}

@@ -814,6 +814,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousStandardTasks(), tracked(s.handleAutonomousStandardTasks))
 	// autonomous_prd_set_authorized_paths: replace one Automaton's authorised protected paths
 	mcpSrv.AddTool(s.toolAutonomousPRDSetAuthorizedPaths(), tracked(s.handleAutonomousPRDSetAuthorizedPaths))
+	mcpSrv.AddTool(s.toolAutonomousPendingItems(), tracked(s.handleAutonomousPendingItems))               // autonomous_pending_items: pending items, policy, file registry, held Automations
+	mcpSrv.AddTool(s.toolAutonomousPendingItemAdd(), tracked(s.handleAutonomousPendingItemAdd))           // autonomous_pending_item_add: record a waiting item
+	mcpSrv.AddTool(s.toolAutonomousPendingItemAttach(), tracked(s.handleAutonomousPendingItemAttach))     // autonomous_pending_item_attach: attach an Automaton to a waiting item
+	mcpSrv.AddTool(s.toolAutonomousPendingItemsRefresh(), tracked(s.handleAutonomousPendingItemsRefresh)) // autonomous_pending_items_refresh: read the file registry now
 	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))
 	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
 	mcpSrv.AddTool(s.toolDependencyUpdateStatus(), tracked(s.handleDependencyUpdateStatus))

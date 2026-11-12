@@ -29,7 +29,7 @@ import (
 
 const (
 	automationUsage = "usage: automation activate <id> | return-to-draft <id> | list | get <id> | status <id> | shipped <id> commit=<c> [release=<r>] [source=merge_step|backfill] [merged_at=<RFC3339>] | pause <id> [reason] | resume <id> [reason] | " +
-		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] [stage=<stage>] <reason> | " +
+		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <automaton-id|pending_item=<item-id>> [urgent] [stage=<stage>] <reason> | " +
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"rename-stage <id> <from-stage> <to-stage> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
@@ -44,7 +44,7 @@ const (
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
 	automationSkipUsage        = "usage: automation skip <id> <member-id> [on_complete|on_blocked|on_failed]"
 	automationRenameStageUsage = "usage: automation rename-stage <id> <from-stage> <to-stage>"
-	automationInsertUsage      = "usage: automation insert <id> <prd-id> [urgent] [stage=<stage>] <reason...>. A reason is required."
+	automationInsertUsage      = "usage: automation insert <id> <automaton-id|pending_item=<item-id>> [urgent] [stage=<stage>] <reason...>. A reason is required. pending_item=<id> inserts a pending item (work with no Automaton yet) that holds the Automation until one is attached."
 	automationRemoveUsage      = "usage: automation remove <id> <member-id>"
 	automationApproveUsage     = "usage: automation approve <id> <member-id>"
 	automationSetLLMUsage      = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
@@ -200,6 +200,13 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			return
 		}
 		member := map[string]any{"prd_id": args[2]}
+		if item, ok := strings.CutPrefix(args[2], "pending_item="); ok {
+			if strings.TrimSpace(item) == "" {
+				r.send(automationInsertUsage)
+				return
+			}
+			member = map[string]any{"pending_item_id": item}
+		}
 		if stage != "" {
 			member["stage"] = stage
 		}

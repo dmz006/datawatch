@@ -48,7 +48,8 @@ Subcommands:
   resume <id>         Resume a paused Automation
   cancel <id>         Cancel an Automation (--cancel-in-flight true|false is required)
   skip <id> <member>  Skip a member that has not started, following one edge
-  insert <id> <prd>   Insert a member (--reason is required; --urgent, --after)
+  insert <id> <prd>   Insert a member (--reason is required; --urgent, --after;
+                      --pending-item ID inserts a pending item instead of an Automaton)
   remove <id> <member>  Remove a member that has not started
   edges <id> <member> Rewire a member's on_complete, on_blocked and on_failed edges
   rename-stage <id> <from> <to>  Rename a member stage to a new name (auto-tag record migrates)
@@ -710,21 +711,35 @@ func newAutomationSkipCmd() *cobra.Command {
 func newAutomationInsertCmd() *cobra.Command {
 	var f automationControlFlags
 	var urgent bool
-	var after, stage string
+	var after, stage, pendingItem string
 	cmd := &cobra.Command{
-		Use:   "insert <id> <prd-id>",
+		Use:   "insert <id> [<prd-id> | --pending-item <item-id>]",
 		Short: "Insert a member into a running Automation",
-		Long: `Insert a member that runs the given Automaton (prd-id). --reason is required and
-becomes the member's added reason. --urgent takes the urgent lane (one urgent member
-at a time); --after places the member after the named member; --stage records a
-stage label on the member.`,
-		Args: cobra.ExactArgs(2),
+		Long: `Insert a member that runs the given Automaton (prd-id), or, with --pending-item,
+a member that waits on a pending item until an Automaton is attached to it
+(datawatch autonomous pending-item-attach). Give the Automaton or the pending
+item, not both. --reason is required and becomes the member's added reason.
+--urgent takes the urgent lane (one urgent member at a time); --after places the
+member after the named member; --stage records a stage label on the member.`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(f.reason) == "" {
 				return fmt.Errorf("--reason is required to insert a member")
 			}
+			item := strings.TrimSpace(pendingItem)
+			switch {
+			case len(args) == 2 && item != "":
+				return fmt.Errorf("give an Automaton ID or --pending-item, not both")
+			case len(args) == 1 && item == "":
+				return fmt.Errorf("give the Automaton ID to insert, or --pending-item <item-id>")
+			}
 			body := f.body(cmd)
-			member := map[string]any{"prd_id": args[1]}
+			member := map[string]any{}
+			if item != "" {
+				member["pending_item_id"] = item
+			} else {
+				member["prd_id"] = args[1]
+			}
 			if stage = strings.TrimSpace(stage); stage != "" {
 				member["stage"] = stage
 			}
@@ -740,6 +755,7 @@ stage label on the member.`,
 	cmd.Flags().BoolVar(&urgent, "urgent", false, "Use the urgent lane")
 	cmd.Flags().StringVar(&after, "after", "", "Member ID to insert after")
 	cmd.Flags().StringVar(&stage, "stage", "", "Stage label to record on the inserted member")
+	cmd.Flags().StringVar(&pendingItem, "pending-item", "", "Pending item ID to insert instead of an Automaton (sends pending_item_id)")
 	return cmd
 }
 

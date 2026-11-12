@@ -871,6 +871,19 @@ type AutomationConfig struct {
 	// RulesReviewSource: base_commit | worktree. Empty or an unrecognized
 	// value reads as base_commit via EffectiveRulesReviewSource.
 	RulesReviewSource string `json:"rules_review_source,omitempty"`
+
+	// PendingItemPolicy: hold | skip. Empty or an unrecognized value reads
+	// as hold via EffectivePendingItemPolicy.
+	PendingItemPolicy string `json:"pending_item_policy,omitempty"`
+
+	// PendingItemAutoResume: pointer on purpose, so unset (nil) reads true
+	// via EffectivePendingItemAutoResume and an explicit false survives.
+	PendingItemAutoResume *bool `json:"pending_item_auto_resume,omitempty"`
+
+	// PendingItemSource: the optional file registry block. The raw values
+	// are mirrored as written; the Effective* accessors on the type resolve
+	// the defaults.
+	PendingItemSource config.PendingItemSourceConfig `json:"pending_item_source"`
 }
 
 // DefaultAutomationTriageAlertMinutes — the autonomous.automation.
@@ -995,6 +1008,41 @@ func (c AutomationConfig) EffectiveProtectedPathsAction() string {
 // config.RulesReviewSourceBaseCommit.
 func (c AutomationConfig) EffectiveRulesReviewSource() string {
 	return config.AutonomousAutomationConfig{RulesReviewSource: c.RulesReviewSource}.EffectiveRulesReviewSource()
+}
+
+// EffectivePendingItemPolicy returns the pending-item policy in effect: skip
+// is the explicit choice, an empty or unknown value reads
+// config.PendingItemPolicyHold, the safe default.
+func (c AutomationConfig) EffectivePendingItemPolicy() string {
+	if c.PendingItemPolicy == config.PendingItemPolicySkip {
+		return config.PendingItemPolicySkip
+	}
+	return config.PendingItemPolicyHold
+}
+
+// EffectivePendingItemAutoResume returns whether a held Automation resumes
+// by itself once an Automaton is attached: unset (nil) reads true.
+func (c AutomationConfig) EffectivePendingItemAutoResume() bool {
+	if c.PendingItemAutoResume == nil {
+		return config.DefaultPendingItemAutoResume
+	}
+	return *c.PendingItemAutoResume
+}
+
+// EffectivePendingItemSource returns the pending-item file registry settings
+// with every default resolved: the returned block carries the id pattern,
+// columns, done values and missing-row behavior in effect.
+func (c AutomationConfig) EffectivePendingItemSource() config.PendingItemSourceConfig {
+	s := c.PendingItemSource
+	return config.PendingItemSourceConfig{
+		Path:         s.EffectivePath(),
+		IDPattern:    s.EffectiveIDPattern(),
+		IDColumn:     s.EffectiveIDColumn(),
+		TitleColumn:  s.EffectiveTitleColumn(),
+		StateColumn:  s.EffectiveStateColumn(),
+		DoneValues:   s.EffectiveDoneValues(),
+		OnMissingRow: s.EffectiveOnMissingRow(),
+	}
 }
 
 // EffectiveCleanupRetentionHours returns the cleanup retention window in
@@ -1332,6 +1380,10 @@ type Manager struct {
 	// nil until EnableCapability/RecheckCapability first touch it.
 	capabilityState map[string]map[string]capabilityNodeState
 	repoCIWatch     *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	pendingItems    *PendingItemStore // pending items (pending_item_store.go): registry of named work with no Automaton yet
+
+	// pendingRefresh: file registry refresh state and last result (pending_item_refresh.go).
+	pendingRefresh pendingRefreshState
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
@@ -3029,6 +3081,11 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	pending, err := NewPendingItemStore(st.dir)
+	if err != nil {
+		return nil, err
+	}
+	automs.SetPendingItemLookup(pending.Get)
 	repoWatch, err := NewRepoCIWatchStore(st.dir)
 	if err != nil {
 		return nil, err
@@ -3048,6 +3105,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		cfg:                    cfg,
 		store:                  st,
 		automations:            automs,
+		pendingItems:           pending,
 		repoCIWatch:            repoWatch,
 		supervisorWatch:        supWatch,
 		judgeVerdictCache:      judgeCache,

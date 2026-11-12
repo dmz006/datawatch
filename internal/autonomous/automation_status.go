@@ -42,7 +42,7 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 			Name:          a.Name,
 			Status:        string(a.Status),
 			IdleSince:     a.IdleSince,
-			ActiveCursors: activeCursorSummaries(a),
+			ActiveCursors: activeCursorSummaries(a, m.pendingItemByID),
 			JoinWait:      joinWaitSummary(a),
 		}
 		if a.DecisionAssistant.enabled() {
@@ -90,9 +90,19 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 	return out
 }
 
+// pendingItemByID looks a pending item up without an error; false when the
+// registry is missing or the item does not exist.
+func (m *Manager) pendingItemByID(id string) (*PendingItem, bool) {
+	if m == nil || m.pendingItems == nil {
+		return nil, false
+	}
+	return m.pendingItems.Get(id)
+}
+
 // activeCursorSummaries lists the Automation's live cursors in member-ID order.
-// It returns an empty slice, not nil, when no cursor is live.
-func activeCursorSummaries(a *Automation) []ActiveCursorSummary {
+// It returns an empty slice, not nil, when no cursor is live. itemOf resolves
+// a pending item member's item and may be nil.
+func activeCursorSummaries(a *Automation, itemOf func(id string) (*PendingItem, bool)) []ActiveCursorSummary {
 	out := []ActiveCursorSummary{}
 	for _, id := range liveCursorIDs(a) {
 		mem := automationMember(a, id)
@@ -105,6 +115,15 @@ func activeCursorSummaries(a *Automation) []ActiveCursorSummary {
 			c.AutomationID = mem.AutomationID
 		case MemberKindPRD:
 			c.PRDID = mem.PRDID
+		case MemberKindPending:
+			c.Kind = MemberKindPending
+			c.PendingItemID = mem.PendingItemID
+			if itemOf != nil {
+				if item, ok := itemOf(mem.PendingItemID); ok {
+					c.PendingItemTitle = item.Title
+					c.Waiting = item.State == PendingItemWaiting
+				}
+			}
 		}
 		out = append(out, c)
 	}

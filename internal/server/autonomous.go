@@ -331,6 +331,11 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 						return
 					}
 				}
+				// Pending item keys: the same strict checks as PUT /api/config.
+				if verr := validatePendingItemAutomationBlock(rawAuto); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 			// request_watch: every field is checked, so one bad value (or an
 			// unknown key) rejects the PUT with a message naming the key.
@@ -4692,12 +4697,15 @@ type automationControlReq struct {
 	OnBlocked  string `json:"on_blocked"`
 	OnFailed   string `json:"on_failed"`
 	Member     struct {
-		PRDID string `json:"prd_id"`
-		Name  string `json:"name"`
-		Stage string `json:"stage"` // optional stage label recorded on the inserted member
+		PRDID         string `json:"prd_id"`
+		PendingItemID string `json:"pending_item_id"`
+		Name          string `json:"name"`
+		Stage         string `json:"stage"` // optional stage label recorded on the inserted member
 	} `json:"member"`
-	Urgent bool   `json:"urgent"`
-	After  string `json:"after"`
+	// PendingItemID is the top-level form of member.pending_item_id (insert_member).
+	PendingItemID string `json:"pending_item_id"`
+	Urgent        bool   `json:"urgent"`
+	After         string `json:"after"`
 	// set_llm / set_verification_llm: presence-aware, absent = leave the
 	// field unchanged, "" = clear it.
 	Backend         *string `json:"backend"`
@@ -4874,10 +4882,16 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "reason is required to insert a member", http.StatusBadRequest)
 			return
 		}
-		details["prd_id"], details["name"], details["stage"] = req.Member.PRDID, req.Member.Name, req.Member.Stage
+		prdID, itemID := insertMemberTarget(req.Member.PRDID, req.Member.PendingItemID, req.PendingItemID)
+		if prdID != "" && itemID != "" {
+			http.Error(w, "400: an insert takes either prd_id or pending_item_id, not both", http.StatusBadRequest)
+			return
+		}
+		details["prd_id"], details["pending_item_id"], details["name"] = prdID, itemID, req.Member.Name
+		details["prd_id"], details["pending_item_id"], details["name"], details["stage"] = prdID, itemID, req.Member.Name, req.Member.Stage
 		details["urgent"], details["after"] = req.Urgent, req.After
 		a, err = ctl.InsertMember(id, autonomous.InsertMemberInput{
-			PRDID: req.Member.PRDID, Name: req.Member.Name, AfterMemberID: req.After,
+			PRDID: prdID, PendingItemID: itemID, Name: req.Member.Name, AfterMemberID: req.After,
 			Stage: strings.TrimSpace(req.Member.Stage), Urgent: req.Urgent, Actor: req.Actor,
 			Reason: req.Reason, ExpectedVersion: req.ExpectedVersion,
 		})

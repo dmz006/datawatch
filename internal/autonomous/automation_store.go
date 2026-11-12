@@ -35,6 +35,13 @@ type AutomationStore struct {
 	// it (same rules as validateAutomationOwnership's ownerOf); guarded
 	// by s.mu and kept in sync via rebuildIndexLocked.
 	owner map[string]string
+	// lookupPendingItem resolves a pending item member's item. It is set after
+	// construction (SetPendingItemLookup) so NewAutomationStore keeps its
+	// signature; guarded by s.mu.
+	lookupPendingItem func(id string) (*PendingItem, bool)
+	// itemOwner maps a pending item ID to the non-terminal Automation that
+	// holds it as a member; guarded by s.mu, rebuilt with owner.
+	itemOwner map[string]string
 	// locks is the per-Automation serialization for the coordinator's
 	// advance against concurrent edits (design doc "Edits racing an
 	// advance"): each Automation gets its own mutex, keyed by ID, so two
@@ -55,6 +62,7 @@ func NewAutomationStore(dir string, lookupPRD func(string) (*PRD, bool)) (*Autom
 		automations: map[string]*Automation{},
 		lookupPRD:   lookupPRD,
 		owner:       map[string]string{},
+		itemOwner:   map[string]string{},
 		locks:       map[string]*sync.Mutex{},
 	}
 	s.mu.Lock()
@@ -92,17 +100,44 @@ func (s *AutomationStore) load() error {
 // PRDs. The caller must hold s.mu.
 func (s *AutomationStore) rebuildIndexLocked() {
 	s.owner = map[string]string{}
+	s.itemOwner = map[string]string{}
 	for _, a := range s.automations {
 		if a.Status == AutomationCompleted || a.Status == AutomationCancelled {
 			continue
 		}
 		for _, m := range a.Members {
-			if m.PRDID == "" {
-				continue
+			if m.PRDID != "" {
+				s.owner[m.PRDID] = a.ID
 			}
-			s.owner[m.PRDID] = a.ID
+			if m.PendingItemID != "" {
+				s.itemOwner[m.PendingItemID] = a.ID
+			}
 		}
 	}
+}
+
+// SetPendingItemLookup sets how a pending item member's item is resolved. It
+// is set once, at start-up, by the Manager; NewAutomationStore keeps its
+// signature.
+func (s *AutomationStore) SetPendingItemLookup(lookup func(id string) (*PendingItem, bool)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lookupPendingItem = lookup
+}
+
+// pendingItemLookup returns the configured lookup (nil when none is set).
+func (s *AutomationStore) pendingItemLookup() func(id string) (*PendingItem, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lookupPendingItem
+}
+
+// PendingItemOwnerOf returns the ID of the non-terminal Automation that holds
+// the pending item as a member, or "" if none does.
+func (s *AutomationStore) PendingItemOwnerOf(itemID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.itemOwner[itemID]
 }
 
 // lockFor returns the per-Automation mutex for id, creating it on first
@@ -266,17 +301,6 @@ func newAutomationID() string {
 	return newProfileID()
 }
 
-// notOwned returns a copy of s.owner for rollback on a failed persist; the
-// caller must hold s.mu. A fresh copy is required because the map itself is
-// mutated in place, so a bare alias would roll back to itself.
-func (s *AutomationStore) ownerSnapshot() map[string]string {
-	out := make(map[string]string, len(s.owner))
-	for k, v := range s.owner {
-		out[k] = v
-	}
-	return out
-}
-
 // Create inserts a new Automation in the draft state. Empty fields are
 // defaulted (ID, member IDs, AddedAt/AddedBy, entry member) before
 // validateAutomation and validateAutomationOwnership run; on success a deep
@@ -335,18 +359,23 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	if err := validateAutomationOwnership(a, s.lookupPRD, s.OwnerOf); err != nil {
 		return nil, err
 	}
+	if err := validatePendingItemOwnership(a, s.pendingItemLookup(), s.PendingItemOwnerOf); err != nil {
+		return nil, err
+	}
 	if err := validateAutomationNesting(a, s.Get, s.nestingOwnerOf); err != nil {
 		return nil, err
 	}
 	err := s.WithLock(a.ID, func() error {
 		clone := cloneAutomation(a)
 		s.mu.Lock()
-		snapshot := s.ownerSnapshot()
 		s.automations[a.ID] = clone
 		if a.Status != AutomationCompleted && a.Status != AutomationCancelled {
 			for _, m := range a.Members {
 				if m.PRDID != "" {
 					s.owner[m.PRDID] = a.ID
+				}
+				if m.PendingItemID != "" {
+					s.itemOwner[m.PendingItemID] = a.ID
 				}
 			}
 		}
@@ -354,7 +383,7 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 		if err := s.persist(); err != nil {
 			s.mu.Lock()
 			delete(s.automations, a.ID)
-			s.owner = snapshot
+			s.rebuildIndexLocked()
 			s.mu.Unlock()
 			return err
 		}
@@ -411,6 +440,9 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 		if err := validateAutomationOwnership(clone, s.lookupPRD, s.OwnerOf); err != nil {
 			return err
 		}
+		if err := validatePendingItemOwnership(clone, s.pendingItemLookup(), s.PendingItemOwnerOf); err != nil {
+			return err
+		}
 		if err := validateAutomationNesting(clone, s.Get, s.nestingOwnerOf); err != nil {
 			return err
 		}
@@ -418,14 +450,13 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 		clone.UpdatedAt = time.Now()
 
 		s.mu.Lock()
-		snapshot := s.ownerSnapshot()
 		s.automations[id] = clone
 		s.rebuildIndexLocked()
 		s.mu.Unlock()
 		if err := s.persist(); err != nil {
 			s.mu.Lock()
 			s.automations[id] = existing
-			s.owner = snapshot
+			s.rebuildIndexLocked()
 			s.mu.Unlock()
 			return err
 		}
@@ -463,7 +494,6 @@ func (s *AutomationStore) Delete(id string) error {
 			s.mu.Unlock()
 			return fmt.Errorf("409: automation is %s; only draft, completed or cancelled automations can be deleted", a.Status)
 		}
-		snapshot := s.ownerSnapshot()
 		delete(s.automations, id)
 		s.rebuildIndexLocked()
 		s.mu.Unlock()
@@ -471,7 +501,7 @@ func (s *AutomationStore) Delete(id string) error {
 		if err := s.persist(); err != nil {
 			s.mu.Lock()
 			s.automations[id] = a
-			s.owner = snapshot
+			s.rebuildIndexLocked()
 			s.mu.Unlock()
 			return err
 		}

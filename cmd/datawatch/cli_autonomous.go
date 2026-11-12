@@ -111,6 +111,15 @@ Subcommands:
   authorize-paths <automaton-id> [--path P ...] [--clear]
                                    Replace the protected paths an Automaton may change without an operator
                                    decision (--clear empties the list; give --path or --clear)
+  pending-items [--state S] [--automation ID] [--json]
+                                  Pending items: named pieces of work that have no Automaton yet, each with
+                                  its state (waiting, attached, done) and, for a held Automation, the hold line
+                                  (read only)
+  pending-item-add --title T [--ref R] [--json]
+                                  Record a waiting pending item (the daemon generates its ID)
+  pending-item-attach <item-id> --automaton <id> [--json]
+                                  Attach an Automaton to a waiting pending item; the held Automations continue
+  pending-items-refresh [--json]  Read the pending item file registry now
   overlap [--title T] [--spec S | <spec>] [--json]
                                   Search before you create: the Automata, registry rows and branches
                                   that already cover a plan's title and spec, best match first
@@ -339,6 +348,11 @@ Subcommands:
 		newAutonomousProtectedPathsCmd(),
 		newAutonomousAuthorizePathsCmd(),
 		newAutonomousMergedMembersCmd(),
+		// Pending items: work that has no Automaton yet.
+		newAutonomousPendingItemsCmd(),
+		newAutonomousPendingItemAddCmd(),
+		newAutonomousPendingItemAttachCmd(),
+		newAutonomousPendingItemsRefreshCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),
 	)

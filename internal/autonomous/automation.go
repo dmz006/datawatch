@@ -43,6 +43,10 @@ const (
 	MemberKindAutomation = "automation"
 	MemberKindFork       = "fork"
 	MemberKindJoin       = "join"
+	// MemberKindPending is a named piece of work with no Automaton yet. It
+	// carries pending_item_id; attaching an Automaton converts it in place into
+	// an ordinary Automaton member.
+	MemberKindPending = "pending_item"
 )
 
 // Branch failure rules for a join (AutomationMember.OnBranchFailure). The
@@ -140,6 +144,10 @@ type Automation struct {
 type AutomationMember struct {
 	ID    string `json:"id"`     // 8-hex, stable across edits
 	PRDID string `json:"prd_id"` // the member Automaton
+	// PendingItemID names a pending item. On kind pending_item it is the work
+	// the member waits for; on kind prd it is provenance, kept after an
+	// Automaton was attached to the item.
+	PendingItemID string `json:"pending_item_id,omitempty"`
 
 	// Per-outcome edges: another member ID, or "" = stop (see edge semantics).
 	OnComplete string `json:"on_complete,omitempty"`
@@ -362,6 +370,7 @@ func validateAutomation(a *Automation) error {
 	}
 	memberIDs := make(map[string]struct{}, len(a.Members))
 	prdIDs := make(map[string]struct{}, len(a.Members))
+	pendingIDs := make(map[string]struct{})
 	byID := make(map[string]AutomationMember, len(a.Members))
 	for _, m := range a.Members {
 		if strings.TrimSpace(m.ID) == "" {
@@ -383,6 +392,12 @@ func validateAutomation(a *Automation) error {
 				return fmt.Errorf("automation invalid: PRD %s is a member more than once", m.PRDID)
 			}
 			prdIDs[m.PRDID] = struct{}{}
+		}
+		if m.PendingItemID != "" {
+			if _, dup := pendingIDs[m.PendingItemID]; dup {
+				return fmt.Errorf("automation invalid: pending item %s is a member more than once", m.PendingItemID)
+			}
+			pendingIDs[m.PendingItemID] = struct{}{}
 		}
 	}
 	if len(a.Members) > 0 && a.EntryMemberID == "" {
@@ -465,7 +480,7 @@ func validateAutomation(a *Automation) error {
 // not check PRD existence or edges; those belong to validateAutomation.
 func validateMemberKind(a *Automation, m AutomationMember) error {
 	switch m.Kind {
-	case "", MemberKindPRD, MemberKindAutomation, MemberKindFork, MemberKindJoin:
+	case "", MemberKindPRD, MemberKindAutomation, MemberKindFork, MemberKindJoin, MemberKindPending:
 	default:
 		return fmt.Errorf("automation invalid: member %s has unknown kind %q", m.ID, m.Kind)
 	}
@@ -487,6 +502,12 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	}
 	if k != MemberKindPRD && m.PRDID != "" {
 		return fmt.Errorf("automation invalid: member %s: kind %s must not carry prd_id", m.ID, k)
+	}
+	if k == MemberKindPending && strings.TrimSpace(m.PendingItemID) == "" {
+		return fmt.Errorf("automation invalid: member %s: kind pending_item needs pending_item_id", m.ID)
+	}
+	if k != MemberKindPending && k != MemberKindPRD && m.PendingItemID != "" {
+		return fmt.Errorf("automation invalid: member %s: pending_item_id is only valid on kind pending_item or on a member that had an Automaton attached", m.ID)
 	}
 	if k == MemberKindAutomation {
 		if strings.TrimSpace(m.AutomationID) == "" {
@@ -646,6 +667,36 @@ func validateAutomationOwnership(a *Automation, lookupPRD func(id string) (*PRD,
 		}
 		if owner := ownerOf(m.PRDID); owner != "" && owner != a.ID {
 			return fmt.Errorf("automation invalid: prd %s already belongs to automation %s", m.PRDID, owner)
+		}
+	}
+	return nil
+}
+
+// validatePendingItemOwnership enforces the pending item rules for members: a
+// pending_item member must name an item that exists, and no item may already
+// belong to another non-terminal Automation. A member that carries an item as
+// provenance (an Automaton was attached) is checked for ownership only; the
+// item is already past waiting. Terminal and nil Automations are not checked.
+// lookupItem reports whether the item exists; ownerOf returns the ID of the
+// non-terminal Automation that currently owns the item, or "".
+func validatePendingItemOwnership(a *Automation, lookupItem func(id string) (*PendingItem, bool), ownerOf func(itemID string) string) error {
+	if a == nil || a.Status == AutomationCompleted || a.Status == AutomationCancelled {
+		return nil
+	}
+	for _, m := range a.Members {
+		if m.PendingItemID == "" {
+			continue
+		}
+		if m.kind() == MemberKindPending {
+			if lookupItem == nil {
+				return fmt.Errorf("automation invalid: member %s: the pending item registry is not available", m.ID)
+			}
+			if _, ok := lookupItem(m.PendingItemID); !ok {
+				return fmt.Errorf("automation invalid: member %s: pending item %s not found", m.ID, m.PendingItemID)
+			}
+		}
+		if owner := ownerOf(m.PendingItemID); owner != "" && owner != a.ID {
+			return fmt.Errorf("automation invalid: pending item %s already belongs to automation %s", m.PendingItemID, owner)
 		}
 	}
 	return nil

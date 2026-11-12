@@ -1,6 +1,9 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 // AutomationRESTOperation is one operation on the Automation REST surface:
 // its name and the HTTP method it answers to.
@@ -62,4 +65,18 @@ func automationControlOps() []string {
 		}
 	}
 	return ops
+}
+
+// insertMemberTarget picks what an insert_member body names: an Automaton
+// (member.prd_id) or a pending item (pending_item_id, either inside member or
+// at the top of the body). The two are exclusive; the caller refuses a body
+// that carries both, and the manager refuses one that carries neither. Values
+// are trimmed.
+func insertMemberTarget(prdID, memberItemID, bodyItemID string) (prd, item string) {
+	prd = strings.TrimSpace(prdID)
+	item = strings.TrimSpace(memberItemID)
+	if item == "" {
+		item = strings.TrimSpace(bodyItemID)
+	}
+	return prd, item
 }
