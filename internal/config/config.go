@@ -4037,6 +4037,11 @@ type AutonomousConfig struct {
 	// ValidateAutoTagsSetting in auto_tags_settings.go.
 	AutoTags AutoTagsConfig `yaml:"auto_tags" json:"auto_tags"`
 
+	// HousekeepingRepairs — one off|report|on mode per repair group
+	// (task_chain, advance_judge, lane_fill, leftovers; default report) and
+	// the grace seconds. See housekeeping_repairs.go.
+	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
+
 	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
 	// master switch, chip display, default browser filter, separate shipped
 	// counting and release backfill at startup. See ShippedConfig and
@@ -8955,6 +8960,9 @@ func Load(path string) (*Config, error) {
 	if err := loadAutoTags(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadHousekeepingRepairs(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -9014,6 +9022,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadAutoTags(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadHousekeepingRepairs(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)
