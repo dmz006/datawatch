@@ -1489,6 +1489,7 @@ function handleMessage(msg) {
       if (state.activeServer === 'all') {
         _loadAllServersSessions();
       } else {
+        if (_sessionsNodeAxisNeedsPeers()) _loadPeerSessionsForNodes();
         // Rows, not the whole list: the frame covers only the default view
         // (finished sessions older than the window are never sent), so
         // _applySessionsFrame keeps what REST fetched for history.
@@ -3925,9 +3926,46 @@ function _restSessionIds() {
 function _applySessionsFrame(rows) {
   const framed = new Set(rows.map(r => r && r.full_id).filter(Boolean));
   const rest = _restSessionIds();
-  state.sessions = state.sessions.filter(s => framed.has(s.full_id) || rest.has(s.full_id));
+  // Peer rows (tagged with their server by the aggregated read) are not part
+  // of this daemon's frame; they are refreshed by _loadPeerSessionsForNodes.
+  state.sessions = state.sessions.filter(s => framed.has(s.full_id) || rest.has(s.full_id) || _isPeerRow(s));
   rows.forEach(_mergeSessionRow);
 }
+// _isPeerRow is true for a row read from a federated peer.
+function _isPeerRow(s) {
+  return !!(s && typeof s.server === 'string' && s.server && s.server !== 'local' && s.server !== 'all');
+}
+// _sessionsNodeAxisNeedsPeers: in local mode the list read covers only this
+// daemon, so while sessions are grouped by node the peers' sessions come from
+// the aggregated read as well.
+function _sessionsNodeAxisNeedsPeers() {
+  const by = _sessionsGroupValidate(state.sessionGroupBy);
+  return !!(by && by.axis === 'node' && _sessionsLocalMode());
+}
+// _loadPeerSessionsForNodes merges the peers' rows from the aggregated read
+// into state.sessions (this daemon's own rows are left as they are) and drops
+// peer rows that are gone. Read-only; a failed read keeps what is held.
+function _loadPeerSessionsForNodes() {
+  if (!_sessionsNodeAxisNeedsPeers()) return Promise.resolve();
+  return fetch(_apiPath('/api/sessions/aggregated'), { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!Array.isArray(data) || !_sessionsNodeAxisNeedsPeers()) return;
+      const peers = data.filter(_isPeerRow);
+      state.sessions = state.sessions.filter(x => !_isPeerRow(x)).concat(peers);
+      if (state.activeView === 'sessions') renderSessionsView();
+    })
+    .catch(() => {});
+}
+// _sessionsSyncPeerRows follows the group axis: node axis loads peers, any
+// other axis drops them again so the plain local list is unchanged.
+function _sessionsSyncPeerRows() {
+  if (!_sessionsLocalMode()) return;
+  if (_sessionsNodeAxisNeedsPeers()) { _loadPeerSessionsForNodes(); return; }
+  if (state.sessions.some(_isPeerRow)) state.sessions = state.sessions.filter(x => !_isPeerRow(x));
+}
+window._sessionsSyncPeerRows = _sessionsSyncPeerRows;
+window._loadPeerSessionsForNodes = _loadPeerSessionsForNodes;
 function _mergeSessionRow(row) {
   if (!row) return;
   applySessionUpdate(row);
@@ -3977,6 +4015,7 @@ function loadSessionsList() {
     clearTimeout(l.timer);
     if (l.error || !state.connected) l.timer = setTimeout(() => { if (state.activeView === 'sessions') loadSessionsList(); }, SESSIONS_POLL_MS);
     if (rows.length) onSessionsUpdated();
+    if (_sessionsNodeAxisNeedsPeers()) _loadPeerSessionsForNodes();
     if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
     if (state.activeView === 'sessions') {
       renderSessionsView();
@@ -4648,14 +4687,30 @@ function _sessionsTagPlacement(sess, tagPrefix) {
   return tags.length ? tags[0] : SESSIONS_GROUP_UNGROUPED;
 }
 
+// _sessionsNodeKey names the node that runs a session: a peer's row (the
+// aggregated read tags it with the peer's name in `server`) lands under that
+// peer name; every other row is this daemon's own and lands under its real
+// hostname (the row's own, else the one the page learnt from /api/health).
+// 'local' is only the aggregated read's tag, never a label, so it can neither
+// split the local node in two nor stand in for its hostname.
+function _sessionsNodeKey(s) {
+  const server = (typeof s.server === 'string') ? s.server : '';
+  if (server && server !== 'local' && server !== 'all') return server;
+  if (typeof s.hostname === 'string' && s.hostname) return s.hostname;
+  let lh = '';
+  try { lh = (typeof _localHostname === 'string' && _localHostname) ? _localHostname : ''; } catch (_) { lh = ''; }
+  if (lh && (!server || server === 'local')) return lh;
+  return SESSIONS_GROUP_UNGROUPED;
+}
+window._sessionsNodeKey = _sessionsNodeKey;
+
 function _sessionsGroupKeyFor(sess, by) {
   const s = sess || {};
   switch (by.axis) {
     case 'state':
       return (typeof s.state === 'string' && s.state) ? s.state : 'unknown';
     case 'node':
-      return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
-        : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
+      return _sessionsNodeKey(s);
     case 'project':
       return (typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED;
     case 'tag':
@@ -5044,6 +5099,7 @@ function setSessionGroupBy(value) {
   state._sessionsGroupPage = {};
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
+  _sessionsSyncPeerRows();
   if (state.activeView === 'sessions') renderSessionsView();
 }
 window.setSessionGroupBy = setSessionGroupBy;
@@ -5126,6 +5182,7 @@ function applySavedView(id) {
   state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
+  _sessionsSyncPeerRows();
   if (state.activeView === 'sessions') renderSessionsView();
   return true;
 }
