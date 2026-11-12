@@ -4440,7 +4440,7 @@
   "packs_subtab_load_failed": "Error al cargar:",
   "packs_subtab_registry_link": "Ajustes del registro de skills",
   "packs_subtab_enable": "Activar",
-  "packs_subtab_disabled": "Los paquetes de tareas estándar están desactivados. Los paquetes añaden tareas estándar instalables y plantillas de Automaton desde un registro de skills conectado. Actívelos en Ajustes; antes debe haber conectada al menos una fuente de registro de skills.",
+  "packs_subtab_disabled": "Los paquetes de tareas estándar están desactivados. Los paquetes añaden tareas estándar instalables y plantillas de autómata desde un registro de skills conectado. Actívelos en Ajustes; antes debe haber conectada al menos una fuente de registro de skills.",
   "packs_subtab_enabled": "Los paquetes de tareas estándar están activados. El contenido de los paquetes proviene del registro de skills conectado.",
   "automata_templates_subtab_standard": "Tareas estándar",
   "settings_decompose_lint_task_templates_help": "Configura las tareas estándar que el descompositor añade a cada historia.",

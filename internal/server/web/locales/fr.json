@@ -4440,7 +4440,7 @@
   "packs_subtab_load_failed": "Échec du chargement :",
   "packs_subtab_registry_link": "Paramètres du registre de skills",
   "packs_subtab_enable": "Activer",
-  "packs_subtab_disabled": "Les packs de tâches standard sont désactivés. Les packs ajoutent des tâches standard installables et des modèles d'Automaton depuis un registre de skills connecté. Activez-les dans les Paramètres ; au moins une source de registre de skills doit d'abord être connectée.",
+  "packs_subtab_disabled": "Les packs de tâches standard sont désactivés. Les packs ajoutent des tâches standard installables et des modèles d'automate depuis un registre de skills connecté. Activez-les dans les Paramètres ; au moins une source de registre de skills doit d'abord être connectée.",
   "packs_subtab_enabled": "Les packs de tâches standard sont activés. Le contenu des packs provient du registre de skills connecté.",
   "automata_templates_subtab_standard": "Tâches standard",
   "settings_decompose_lint_task_templates_help": "Configure les tâches standard que le décomposeur ajoute à chaque story.",

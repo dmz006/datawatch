@@ -4440,7 +4440,7 @@
   "packs_subtab_load_failed": "Laden fehlgeschlagen:",
   "packs_subtab_registry_link": "Einstellungen der Skills-Registry",
   "packs_subtab_enable": "Aktivieren",
-  "packs_subtab_disabled": "Standardaufgaben-Pakete sind ausgeschaltet. Pakete fügen installierbare Standardaufgaben und Automaton-Vorlagen aus einer verbundenen Skills-Registry hinzu. Schalten Sie sie in den Einstellungen ein; zuvor muss mindestens eine Skills-Registry-Quelle verbunden sein.",
+  "packs_subtab_disabled": "Standardaufgaben-Pakete sind ausgeschaltet. Pakete fügen installierbare Standardaufgaben und Automat-Vorlagen aus einer verbundenen Skills-Registry hinzu. Schalten Sie sie in den Einstellungen ein; zuvor muss mindestens eine Skills-Registry-Quelle verbunden sein.",
   "packs_subtab_enabled": "Standardaufgaben-Pakete sind eingeschaltet. Der Paketinhalt stammt aus der verbundenen Skills-Registry.",
   "automata_templates_subtab_standard": "Standardaufgaben",
   "settings_decompose_lint_task_templates_help": "Konfiguriert die Standardaufgaben, die der Decomposer jeder Story hinzufügt.",

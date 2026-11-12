@@ -4440,7 +4440,7 @@
   "packs_subtab_load_failed": "読み込みに失敗しました:",
   "packs_subtab_registry_link": "スキルレジストリの設定",
   "packs_subtab_enable": "有効にする",
-  "packs_subtab_disabled": "標準タスクパックは無効です。パックは、接続済みのスキルレジストリから、インストール可能な標準タスクと Automaton テンプレートを追加します。設定で有効にしてください。先に少なくとも 1 つのスキルレジストリソースを接続する必要があります。",
+  "packs_subtab_disabled": "標準タスクパックは無効です。パックは、接続済みのスキルレジストリから、インストール可能な標準タスクと オートマトンテンプレートを追加します。設定で有効にしてください。先に少なくとも 1 つのスキルレジストリソースを接続する必要があります。",
   "packs_subtab_enabled": "標準タスクパックは有効です。パックの内容は接続済みのスキルレジストリから取得されます。",
   "automata_templates_subtab_standard": "標準タスク",
   "settings_decompose_lint_task_templates_help": "デコンポーザーが各ストーリーに追加する標準タスクを設定します。",
