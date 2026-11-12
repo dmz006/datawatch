@@ -30,7 +30,7 @@ func timelineTestPRDs() []*autonomous.PRD {
 	return []*autonomous.PRD{
 		{
 			ID: "aaaa0001", Title: "Fix the crash", Status: autonomous.PRDRunning,
-			ProjectDir: "/home/dmz/projA", Kind: autonomous.PRDKindBug, TagIDs: []string{"tag1"},
+			ProjectDir: "/home/<user>/projA", Kind: autonomous.PRDKindBug, TagIDs: []string{"tag1"},
 			Story: []autonomous.Story{
 				{
 					ID: "aaaa0001-s1", Title: "Find and fix it", Status: autonomous.StoryInProgress,
@@ -45,7 +45,7 @@ func timelineTestPRDs() []*autonomous.PRD {
 		},
 		{
 			ID: "bbbb0002", Title: "Add the widget", Status: autonomous.PRDRunning,
-			ProjectDir: "/home/dmz/projB", Kind: autonomous.PRDKindFeature,
+			ProjectDir: "/home/<user>/projB", Kind: autonomous.PRDKindFeature,
 			Story: []autonomous.Story{
 				{
 					ID: "bbbb0002-s1", Title: "Wire it up", Status: autonomous.StoryInProgress,
@@ -108,8 +108,8 @@ func TestTimelineRESTReturnsBuildTimelineObject(t *testing.T) {
 func TestTimelineRESTFilters(t *testing.T) {
 	s := timelineServer(t, &timelineFake{prds: timelineTestPRDs()})
 
-	res := decodeTimeline(t, timelineGet(s.handleAutonomousTimeline, "/api/autonomous/timeline?project=/home/dmz/projA"))
-	if len(res.Projects) != 1 || res.Projects[0].Project != "/home/dmz/projA" || res.Counts.Automata != 1 {
+	res := decodeTimeline(t, timelineGet(s.handleAutonomousTimeline, "/api/autonomous/timeline?project=/home/<user>/projA"))
+	if len(res.Projects) != 1 || res.Projects[0].Project != "/home/<user>/projA" || res.Counts.Automata != 1 {
 		t.Fatalf("project filter: %+v", res)
 	}
 

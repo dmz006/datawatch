@@ -75,7 +75,7 @@ func TestTimelineToolProxiesRESTBody(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	})
 	res, err := s.handleAutonomousTimeline(context.Background(), callReq(map[string]any{
-		"project": "/home/dmz/projA", "automaton": "Fix the crash", "stage": "Wire it up", "kind": "bug", "tag": "tag1",
+		"project": "/home/<user>/projA", "automaton": "Fix the crash", "stage": "Wire it up", "kind": "bug", "tag": "tag1",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestTimelineToolsSurfaceRESTRefusal(t *testing.T) {
 	t.Cleanup(srv.Close)
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{webPort: port}
-	res, err := s.handleAutonomousTimeline(context.Background(), callReq(map[string]any{"project": "/home/dmz/projA"}))
+	res, err := s.handleAutonomousTimeline(context.Background(), callReq(map[string]any{"project": "/home/<user>/projA"}))
 	if err == nil && (res == nil || !res.IsError) {
 		t.Fatalf("a 403 from the daemon must not come back as success: res=%+v", res)
 	}

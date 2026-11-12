@@ -25,10 +25,10 @@ func timelineTestResult() autonomous.TimelineResult {
 		Today: today,
 		Projects: []autonomous.TimelineProject{
 			{
-				Project: "/home/dmz/repos/datawatch",
+				Project: "/home/<user>/repos/datawatch",
 				Automata: []autonomous.TimelineAutomaton{
 					{
-						ID: "a1", Title: "Draw the timeline", Project: "/home/dmz/repos/datawatch",
+						ID: "a1", Title: "Draw the timeline", Project: "/home/<user>/repos/datawatch",
 						Kind: "feature", Status: "in_progress",
 						ProjectedFinish: &projected,
 						Stages: []autonomous.TimelineStage{

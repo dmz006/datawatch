@@ -13,7 +13,7 @@ func timelineTextPRDs() []*PRD {
 	return []*PRD{
 		{
 			ID: "aaaa0001", Title: "Fix the crash", Status: PRDRunning,
-			ProjectDir: "/home/dmz/projA", Kind: PRDKindBug,
+			ProjectDir: "/home/<user>/projA", Kind: PRDKindBug,
 			Story: []Story{{
 				ID: "aaaa0001-s1", Title: "Find and fix it", Status: StoryInProgress,
 				Tasks: []Task{
@@ -28,7 +28,7 @@ func timelineTextPRDs() []*PRD {
 		},
 		{
 			ID: "bbbb0002", Title: "Add the widget", Status: PRDRunning,
-			ProjectDir: "/home/dmz/projB", Kind: PRDKindFeature,
+			ProjectDir: "/home/<user>/projB", Kind: PRDKindFeature,
 			Story: []Story{{
 				ID: "bbbb0002-s1", Title: "Wire it up", Status: StoryInProgress,
 				Tasks: []Task{
@@ -54,12 +54,12 @@ func TestRenderTimelineBarsGolden(t *testing.T) {
 	want := `Timeline as of 2026-10-23: 2 projects, 2 Automata, 2 stages, 6 members, 1 blocked
 span 2026-10-20 -> 2026-10-25   # work  X blocked  ~ waiting  T today  P projected finish
 
-/home/dmz/projA
+/home/<user>/projA
   Fix the crash (bug, running) — finished 2026-10-21
     Find and fix it (in_progress)
       Reproduce the crash              #                      T                
       Land the fix                            ##              T                
-/home/dmz/projB
+/home/<user>/projB
   Add the widget (feature, running) — projected 2026-10-25
     Wire it up (in_progress)
       Build the shell                         ##              T               P

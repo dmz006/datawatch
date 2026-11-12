@@ -26,10 +26,10 @@ func timelineCLIFixture() autonomous.TimelineResult {
 		Today: today,
 		Projects: []autonomous.TimelineProject{
 			{
-				Project: "/home/dmz/repos/datawatch",
+				Project: "/home/<user>/repos/datawatch",
 				Automata: []autonomous.TimelineAutomaton{
 					{
-						ID: "a1", Title: "Draw the timeline", Project: "/home/dmz/repos/datawatch",
+						ID: "a1", Title: "Draw the timeline", Project: "/home/<user>/repos/datawatch",
 						Kind: "feature", Status: "in_progress",
 						ProjectedFinish: &projected,
 						Stages: []autonomous.TimelineStage{
@@ -165,10 +165,10 @@ func TestTimelineCLIFlagsBecomeQuery(t *testing.T) {
 	var uri string
 	timelineCLIServer(t, body, &uri)
 
-	if _, err := runTimelineCmd(t, "--project", "/home/dmz/repos/datawatch", "--automaton", "a1", "--stage", "s1", "--kind", "feature", "--tag", "t1"); err != nil {
+	if _, err := runTimelineCmd(t, "--project", "/home/<user>/repos/datawatch", "--automaton", "a1", "--stage", "s1", "--kind", "feature", "--tag", "t1"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"project=%2Fhome%2Fdmz%2Frepos%2Fdatawatch", "automaton=a1", "stage=s1", "kind=feature", "tag=t1"} {
+	for _, want := range []string{"project=%2Fhome%2F%3Cuser%3E%2Frepos%2Fdatawatch", "automaton=a1", "stage=s1", "kind=feature", "tag=t1"} {
 		if !strings.Contains(uri, want) {
 			t.Errorf("request %q lacks %s", uri, want)
 		}

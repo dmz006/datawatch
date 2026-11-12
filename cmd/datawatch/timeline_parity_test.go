@@ -94,7 +94,7 @@ func timelineTextFixturePRDs() []*autonomous.PRD {
 	}
 	return []*autonomous.PRD{
 		{ID: "aaaa0001", Title: "Fix the crash", Status: autonomous.PRDRunning,
-			ProjectDir: "/home/dmz/projA", Kind: autonomous.PRDKindBug,
+			ProjectDir: "/home/<user>/projA", Kind: autonomous.PRDKindBug,
 			Story: []autonomous.Story{{
 				ID: "aaaa0001-s1", Title: "Find and fix it", Status: autonomous.StoryInProgress,
 				Tasks: []autonomous.Task{
@@ -106,7 +106,7 @@ func timelineTextFixturePRDs() []*autonomous.PRD {
 			}},
 		},
 		{ID: "bbbb0002", Title: "Add the widget", Status: autonomous.PRDRunning,
-			ProjectDir: "/home/dmz/projB", Kind: autonomous.PRDKindFeature,
+			ProjectDir: "/home/<user>/projB", Kind: autonomous.PRDKindFeature,
 			Story: []autonomous.Story{{
 				ID: "bbbb0002-s1", Title: "Wire it up", Status: autonomous.StoryInProgress,
 				Tasks: []autonomous.Task{
@@ -164,12 +164,12 @@ func TestTimelineSameObjectOnEverySurface(t *testing.T) {
 		wantBars := `Timeline as of 2026-10-23: 2 projects, 2 Automata, 2 stages, 6 members, 1 blocked
 span 2026-10-20 -> 2026-10-25   # work  X blocked  ~ waiting  T today  P projected finish
 
-/home/dmz/projA
+/home/<user>/projA
   Fix the crash (bug, running) — finished 2026-10-21
     Find and fix it (in_progress)
       Reproduce the crash              #                      T                
       Land the fix                            ##              T                
-/home/dmz/projB
+/home/<user>/projB
   Add the widget (feature, running) — projected 2026-10-25
     Wire it up (in_progress)
       Build the shell                         ##              T               P

@@ -620,7 +620,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/protected-paths", api.handleProtectedPaths)         // protected-paths holds: action, rules source, effective list, held tasks, authorised Automata
 	apiMux.HandleFunc("/api/autonomous/pending-items", api.handlePendingItems)             // pending items: list, create; policy, file registry and held Automations
 	apiMux.HandleFunc("/api/autonomous/pending-items/", api.handlePendingItemsSub)         // pending items: refresh, and attach an Automaton
-	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)           // lane fill status: lanes, decisions, alerts
+	apiMux.HandleFunc("/api/autonomous/timeline", api.handleAutonomousTimeline)            // Automata interval chart (read only)
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
