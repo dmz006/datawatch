@@ -153,6 +153,34 @@ test('reviewReroute POSTs the rejudge endpoint pinned to the strong backend', as
   assert.equal(body.actor, 'operator');
 });
 
+test('rejudge reply message is shown in the success toast; no message keeps the existing toast', async () => {
+  const msg = 'rejudge complete; the stored verdict reused because the head commit and the rules text are unchanged; no new review ran';
+  const withMsg = await loadApp({
+    '/locales/en.json': { status: 200, body: { review_timed_out_retry: 'Retry done' } },
+    '/api/autonomous/prds/id1/rejudge': { status: 200, body: { id: 'id1', status: 'blocked', message: msg } },
+  });
+  const toasts = [];
+  withMsg.showToast = (m, type, ms) => { toasts.push({ m, type, ms }); };
+  await withMsg.reviewRetry('id1');
+  assert.equal(toasts.length, 1, 'one toast, got: ' + JSON.stringify(toasts));
+  assert.ok(toasts[0].m.includes('stored verdict reused'), 'toast shows the reply message, got: ' + toasts[0].m);
+  assert.equal(toasts[0].type, 'success');
+  assert.equal(toasts[0].ms, 6000, 'message toast stays about six seconds');
+  const post = withMsg.calls.find(c => c.method === 'POST' && c.url === '/api/autonomous/prds/id1/rejudge');
+  assert.ok(post, 'POST /rejudge seen');
+
+  const noMsg = await loadApp({
+    '/locales/en.json': { status: 200, body: { review_timed_out_retry: 'Retry done' } },
+    '/api/autonomous/prds/id1/rejudge': { status: 200, body: { id: 'id1', status: 'blocked' } },
+  });
+  const plain = [];
+  noMsg.showToast = (m, type, ms) => { plain.push({ m, type, ms }); };
+  await noMsg.reviewReroute('id1', 'claude-opus');
+  assert.equal(plain.length, 1);
+  assert.equal(plain[0].m, 'Retry done', 'no message keeps the existing toast text');
+  assert.equal(plain[0].ms, 2500, 'existing toast duration kept');
+});
+
 test('failed re-judgment rejects and surfaces an error toast', async () => {
   const sb = await loadApp({
     '/locales/en.json': { status: 200, body: {} },
