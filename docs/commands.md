@@ -1447,6 +1447,8 @@ refused an Automaton shows its reason code in brackets in front of the reason te
 `proposal_missing`, `main_carries_work` and `worktree_invalid`. And
 `autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
 
+Comm channel for lane utilization: `autonomous lane-utilization [window]` replies with a short summary of at most 15 lines: one line per lane with its busy percent and an `[IDLE with eligible work ...]` flag, the lane fill mode, the newest decision, and plan usage in points and tokens (never dollars). `window` is a duration such as `6h`, `24h` or `7d` from 1h to 30d (default 24h); a bad window is refused before anything is sent.
+
 Comm channel for triage records: `autonomous triage [automation-id]` (one optional positional argument, the automation id) replies with one line per record (newest first) and the alert threshold; extra arguments are refused, the daemon's refusal (no manager) is passed through. The records are read: the daemon neither starts nor retries from one of them.
 
 Comm channel for operator decisions: `autonomous decisions [automaton-id]` (one optional positional argument, the Automaton id) replies with the newest ten decisions, one line each, in the same text as the CLI; extra arguments get a usage reply. The decisions are read: nothing is answered or changed from this verb.
