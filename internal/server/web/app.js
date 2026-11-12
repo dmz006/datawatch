@@ -55734,7 +55734,11 @@ function _tagErrorText(err) {
 
 function _tagChipHTML(tg) {
   const c = tg.color || 'var(--accent2,#60a5fa)';
-  return `<span class="tag-chip" data-tag-id="${escHtml(tg.id)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:${escHtml(c)}22;color:${escHtml(c)};border:1px solid ${escHtml(c)};font-weight:600;">${escHtml(tg.name)}</span>`;
+  // A bare-id system tag ("automaton:1d440001") shows the axis word only;
+  // the full tag stays in the tooltip. Readable names are unchanged.
+  const parts = _placementChipParts(tg.name);
+  const title = parts.idLike ? ` title="${escHtml(tg.name)}"` : '';
+  return `<span class="tag-chip" data-tag-id="${escHtml(tg.id)}"${title} style="font-size:10px;padding:1px 7px;border-radius:8px;background:${escHtml(c)}22;color:${escHtml(c)};border:1px solid ${escHtml(c)};font-weight:600;">${escHtml(parts.label)}</span>`;
 }
 
 function _tagChipsHTML(prd) {
@@ -55872,6 +55876,26 @@ function _placementTagName(name) {
   return (ax && n.length > ax.length + 1) ? n : null;
 }
 
+// _placementChipParts splits an "axis:value" tag name into its chip label and
+// the full tag. Per-record system axes (automaton, stage, task, story) carry
+// a bare id as their value, and a raw id like "1d440001" means nothing next to
+// a card, so those chips show only the axis word ("Automaton") and keep the
+// full tag in the tooltip. Values that are already readable words
+// (lane:gpu, kind:research, role:reviewer, compute:dev box, ...) render
+// unchanged, chip text and tooltip alike.
+function _placementChipParts(name) {
+  const n = String(name || '');
+  const i = n.indexOf(':');
+  if (i <= 0) return { label: n, idLike: false };
+  const axis = n.slice(0, i);
+  const value = n.slice(i + 1);
+  if (_SESSION_TAG_SYSTEM_AXES.indexOf(axis) < 0) return { label: n, idLike: false };
+  // A bare identifier (letters, digits, dots, dashes, underscores), nothing
+  // else: readable values with a space or other text stay as-is.
+  if (!/^[A-Za-z0-9._-]+$/.test(value)) return { label: n, idLike: false };
+  return { label: axis.charAt(0).toUpperCase() + axis.slice(1), idLike: true };
+}
+
 // _placementAxisOrder orders axes canonically (compute, peer, backend, lane,
 // role, project, then custom axes alphabetically).
 function _placementAxisOrder(names) {
@@ -55987,7 +56011,12 @@ function _sessionTagChipList(sess) {
   const tip = _tagT('tag_inherited_tip', 'Inherited from the Automaton; change it there');
   const inheritedChips = inherited.map(tg => {
     const c = tg.color || 'var(--accent2,#60a5fa)';
-    return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(tip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(tg.name)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
+    // A bare-id system tag inherits the axis-word rule too; the tooltip then
+    // carries the full tag instead of the inherited hint (the chip still says
+    // "inherited").
+    const parts = _placementChipParts(tg.name);
+    const chipTip = parts.idLike ? tg.name : tip;
+    return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(chipTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(parts.label)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
   });
   // Placement (system) tags: machine-derived axis tags, skipped when already
   // rendered via the own/inherited rows (same name).
@@ -55995,7 +56024,12 @@ function _sessionTagChipList(sess) {
   const systemNames = (Array.isArray(sess.system_tags) ? sess.system_tags : []).map(_placementTagName).filter(n => n && !shownNames.has(n));
   const sysTip = _tagT('placement_tag_tip', 'Placement tag — set by the machine');
   const systemChips = systemNames.map(n => {
-    return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(sysTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(n)}</span>`;
+    // A bare-id axis tag (automaton:1d440001, stage:ab12, task:3) reads as
+    // the axis word only; the full tag lives in the tooltip. Readable values
+    // (lane:gpu, kind:research, role:reviewer, ...) are unchanged.
+    const parts = _placementChipParts(n);
+    const chipTip = parts.idLike ? n : sysTip;
+    return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(chipTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(parts.label)}</span>`;
   });
   return own.map(_tagChipHTML).concat(inheritedChips, systemChips);
 }
