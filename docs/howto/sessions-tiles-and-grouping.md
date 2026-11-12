@@ -128,14 +128,50 @@ often than search:
 - **Views** — your saved views: save the current cut under a name, apply,
   rename or delete one (see [Saved views](#saved-views)).
 - **Status chips** — the full set of state chips (running, waiting_input,
-  rate_limited, complete, failed, killed), so you can pick a state even when
-  the one-line count above the list does not show it. The same section
+  rate_limited, complete, failed, killed). The same section
   also holds the **watched only** toggle, the **Backend** chips and, when
-  you use tags, the **Tags** filter.
+  you use tags, the **Tags** filter (described next).
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
 separate save.
+
+#### The Tags filter
+
+A busy daemon carries hundreds of tags — one per Automaton, stage and task —
+so the Tags section does not draw one chip per tag. It is built like this:
+
+- **Search tags** — a box at the top narrows the chips as you type (case
+  insensitive; it matches the tag's value, its axis, your tag's name and the
+  full tag name). Typing keeps the cursor in the box. While you search every
+  matching group is open and shows all of its matches.
+- **Groups** — chips sit under collapsible headers in a fixed order: **Kind**,
+  **Role**, **Lane**, **Compute node**, **Project**, **Your tags**, **Other**.
+  Each header shows how many tags it holds for the current list (the
+  per-axis count); tap it to fold or unfold the
+  group. Each group shows its first six chips (the busiest first) and a
+  **Show all (N)** control; **Show fewer** folds it back. A selected chip is
+  always shown, even beyond the first six.
+- **Counts** — the number on a chip is how many sessions in the list you are
+  looking at carry that tag (own, inherited and placement tags together), not
+  the daemon-wide inventory count. A tag no listed session carries is left
+  out unless you have it selected, so you can always deselect it.
+- **No chips for Automatons, stages and tasks** — the per-Automaton,
+  per-stage and per-task system tags (`automaton:`, `stage:`, `task:`,
+  `story:`) never get a chip. Reach one Automaton through the **Automaton**
+  picker under the chips instead: type in **Find an Automaton** to narrow by
+  title or id, then tap a row. Rows show the title first and the id small
+  beside it; selected rows come first, and about eight rows show until you
+  narrow the search. For stages and tasks use [Grouping](#grouping).
+- **Any / all and Clear** — the match mode and the clear action sit below the
+  picker and work as before.
+
+With the sheet closed, the selected tags show as a compact row of small
+chips above the session list, each with a **✕** to remove just that tag (an
+Automaton shows its title, not its id) and a **Clear all** control. The row
+is absent when no tag is selected, and a stored selection or an active tag
+filter is not changed by any of this: it is how the Tags section is drawn,
+with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ## View modes
 
@@ -177,22 +213,44 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   viewport width. In **list** mode the sessions stay a row list: the one
   card per row layout, one session per row.
 
+The mode changes how sessions are drawn **with or without a grouping**: with
+**Group by** set to none the whole list is drawn in the chosen mode, and with
+an axis selected each group body is drawn in it. Tiles and Compact are the
+same grid at two sizes; List is the row layout.
+
 Two details worth knowing:
 
-- The choice is **per device**. It is stored in this browser's local
+- The choice is **per device** (per browser). It is stored in this browser's local
   storage (`cs_sessions_view_mode`) and does not travel with federation
   peers or other devices. Each of your devices keeps its own mode.
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
 
-### The status counts
+### View mode with no grouping, and the Tree toggle
 
-Above the list, one line of status counts shows one chip per state present,
-with its count, and the total session count at the end (e.g.
-`● running 4   ● waiting_input 2   sessions 21`). It takes a single line
-instead of a block of buttons, and the counts still filter: clicking a state
-chip **filters the page to that state**, and clicking it again (or choosing
-**All** in the Filters sheet's status chips) clears the selection. The chip
+With **Group by** set to none, **List**, **Tiles** and **Compact** always draw
+three different layouts: list rows, a tile grid, and a smaller tile grid.
+The **Tree** button (which groups sessions under their parent by lineage) is a
+variant of **List** only. Earlier builds kept a saved Tree choice (stored as
+`cs_session_tree_view` in this browser) over the mode toggle, and the Tree
+button is hidden while the toolbar is collapsed, so a stale Tree choice could
+make Tiles and Compact look identical to List with nothing visible to switch
+off. That is fixed in two ways:
+
+- A saved Tree choice no longer overrides Tiles or Compact; the tree shows
+  only while the mode is **List**.
+- Clicking any mode button (List, Tiles or Compact) switches the Tree choice
+  off, so the mode you click is the layout you get. To see the lineage tree
+  again, choose **List** and press **Tree**.
+
+This is a browser-side change only: no setting, endpoint, MCP tool, CLI
+command or chat verb changed, and the stored `cs_sessions_view_mode` value is
+read as before.
+
+### The state filter
+
+The page has no count line above the list. The status chips in the Filters sheet
+**filter the page to that state**, and choosing **All** clears the selection. The chip
 choice is remembered per device (`cs_session_state_chip`). Picking a
 historical state (complete, failed, killed, …) also auto-enables the History
 toggle so those sessions actually become visible instead of silently
@@ -357,7 +415,8 @@ same groups, the same counts and state mixes, wherever you read them:
 
 The Sessions page controls above: the one toolbar row (search, Filters with
 its badge, server chips, mode toggle), the Filters sheet (Group by with the
-tag-prefix entries, Views, status chips), the one-line status counts, Show
+tag-prefix entries, Views, status chips, and the grouped, searchable Tags
+filter with the Automaton picker and the selected-filter row), Show
 more paging, collapsible group headers with the fold-all control and the
 **+N** tag chip on phones. All of it is localised in the five locales — the
 labels you see are the translated ones in your PWA language.
@@ -538,11 +597,11 @@ in your tag registry.
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
-| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize |
+| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
-| One-line status counts + state filter | PWA, above the list | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
+| State filter | PWA, Filters sheet | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
 | Saved views (mode + axis + prefix + filter) | PWA Filters sheet | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
 | Tile ⋯ menu actions | PWA, per tile | no | Stop / Commands (waiting_input) / Restart / Delete / Summary (if summarizer on) / Watch / Mute |
 | Progress on tiles; done/total on automaton blocks | PWA tile bar; grouped read (CLI, comm) | no | tile bar is lifecycle-based; automaton blocks carry their done/total terminal-session tally |
@@ -555,6 +614,12 @@ in your tag registry.
   Automaton carries that Automaton's tags as inherited, read-only tags, and
   those count for placement. (On the automaton axis the same group is
   labelled "Not part of an Automaton".)
+- **The mode buttons seem to do nothing with no grouping.** Fixed: a saved
+  Tree choice used to override Tiles and Compact. Reload the PWA on a current
+  build and click the mode you want; the click also clears the Tree choice
+  (see [View mode with no grouping, and the Tree toggle](#view-mode-with-no-grouping-and-the-tree-toggle)).
+  If you still see list rows in Tiles or Compact, confirm the PWA is the
+  current build (hard reload) before looking at storage.
 - **I see a tile, not a row, and I want rows back.** Switch the mode toggle
   to **List** — the choice sticks on that device. On phones the default is
   already List.

@@ -219,21 +219,6 @@ test('the summary counts group by state in a fixed order and keep unknown states
   assert.deepEqual(plain(sb._sessionsSummaryCounts([])), []);
 });
 
-test('the summary bar renders one chip per present state with the live counts and the total', () => {
-  const sb = loadApp();
-  const sessions = makeSessions(300);
-  const html = sb.renderSessionsSummaryBar(sessions);
-  assert.match(html, /sessions-summary-bar/);
-  for (const name of ['running', 'waiting_input', 'complete', 'failed', 'killed']) {
-    assert.ok(html.includes("setSessionStateChip('" + name + "')"), name + ' chip switches to its state filter');
-    assert.match(html, new RegExp(`${name}[\\s\\S]*<span class="sessions-summary-count">60</span>`), `${name} chip carries its count`);
-  }
-  assert.equal((html.match(/sessions-summary-chip/g) || []).length, 5, 'only states that exist get a chip');
-  assert.match(html, /sessions-summary-total/);
-  assert.match(html, />sessions 300</);
-  assert.equal(sb.renderSessionsSummaryBar([]), '', 'no sessions, no bar');
-});
-
 // ── mode toggle ─────────────────────────────────────────────────────────────
 
 test('the toggle offers all three modes with the current one active', () => {
@@ -392,7 +377,7 @@ test('list, tiles and compact all draw the same filtered page of the 300-session
   assert.equal(countTiles(html), 60, 'page one renders 60 tiles');
   assert.match(html, />Show more \(60\/300\)/);
   assert.match(html, /sessions-mode-toggle/);
-  assert.match(html, /sessions-summary-bar/);
+  assert.ok(!html.includes('sessions-summary'), 'no state count line above the tiles');
 
   // Show-more grows the page until the whole pool fits; paging is per-filter-state.
   vm.runInContext('state._sessionsPageLimit = 120;', sb);
@@ -472,9 +457,7 @@ test('a 300-session view stays one paint per page in every mode', () => {
   assert.equal((html.match(/class="session-card /g) || []).length, 60);
   assert.equal(countTiles(html), 0, 'list mode keeps zero tiles');
   assert.match(html, />Show more \(60\/300\)/);
-  // The per-state summary chips reflect the pool behind the page.
-  assert.match(html, /sessions-summary-bar/);
-  assert.match(html, /running[\s\S]*<span class="sessions-summary-count">60<\/span>/);
+  assert.ok(!html.includes('sessions-summary'), 'no state count line above the list');
   vm.runInContext('state.sessionsViewMode = "compact"; state._sessionsPageKey = null; state._sessionsPageLimit = 60;', sb);
   sb.renderSessionsView();
   html = viewEl.capture;

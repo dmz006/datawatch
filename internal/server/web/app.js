@@ -4433,39 +4433,290 @@ function _sessionTagInventoryRefresh() {
   return p;
 }
 
-// _sessionTagFilterPanelHTML draws the toolbar tag filter: chips grouped by
-// axis (canonical order, custom axes after, tags with no axis under Other),
-// each chip its value with the session count, plus the any/all mode and a
-// clear action. The selection lives in _tagBrowse.session, so the same
+// ── Sessions Filters sheet: grouped, searchable tag filter ──────────────────
+// Per-Automaton, per-stage and per-task system tags number in the hundreds,
+// so they never get a chip of their own: Automatons are reached through a
+// separate searchable picker, the rest only through the session grouping.
+// The remaining tags are grouped by axis under collapsible headers, show a
+// short preview per axis, and carry the count of sessions in the CURRENT
+// session list (state.sessions), not the server inventory count.
+
+// How many tags one axis shows before its Show all control.
+const SESSION_TAG_AXIS_PREVIEW = 6;
+// How many Automaton picker rows show before the operator narrows the search.
+const SESSION_TAG_PICKER_LIMIT = 8;
+// Axes whose tags are one-per-record system tags; they get no chip.
+const _SESSION_TAG_SYSTEM_AXES = ['automaton', 'stage', 'task', 'story'];
+// Chip groups in display order. 'other' holds every axis not listed here.
+const _SESSION_TAG_GROUPS = ['kind', 'role', 'lane', 'compute', 'project', 'user', 'other'];
+
+function _sessionTagUI() {
+  if (!state._sessionTagUI) state._sessionTagUI = { q: '', autoQ: '', collapsed: {}, expanded: {} };
+  return state._sessionTagUI;
+}
+
+// _sessionTagAxisOf returns an entry's axis, read from the "axis:value" tag
+// name when the inventory gave none.
+function _sessionTagAxisOf(entry) {
+  if (!entry) return '';
+  if (entry.axis) return String(entry.axis);
+  const tag = String(entry.tag || '');
+  const i = tag.indexOf(':');
+  return i > 0 ? tag.slice(0, i) : '';
+}
+
+// _sessionTagIsSystemScoped is true for the per-Automaton, per-stage and
+// per-task system tags (axes automaton, stage, task, story and their
+// "axis:id" tag names). They never render as individual chips.
+function _sessionTagIsSystemScoped(entry) {
+  if (!entry || !entry.tag) return false;
+  return _SESSION_TAG_SYSTEM_AXES.indexOf(_sessionTagAxisOf(entry)) >= 0;
+}
+
+// _sessionTagGroupOf maps an entry to one of the _SESSION_TAG_GROUPS keys.
+function _sessionTagGroupOf(entry) {
+  if (!entry.axis) {
+    // Operator tags carry a registry id; a bare "axis:value" name is a system tag.
+    return String(entry.tag).indexOf(':') > 0 ? (_SESSION_TAG_GROUPS.indexOf(_sessionTagAxisOf(entry)) >= 0 ? _sessionTagAxisOf(entry) : 'other') : 'user';
+  }
+  return _SESSION_TAG_GROUPS.indexOf(entry.axis) >= 0 && entry.axis !== 'user' ? entry.axis : 'other';
+}
+
+// _sessionTagCurrentCounts counts, per tag name, the sessions in
+// state.sessions that carry it (own, inherited and placement tags).
+function _sessionTagCurrentCounts() {
+  const counts = {};
+  (state.sessions || []).forEach(s => {
+    if (!s) return;
+    const set = new Set();
+    (Array.isArray(s.tags) ? s.tags : []).forEach(x => set.add(String(x)));
+    (Array.isArray(s.inherited_tags) ? s.inherited_tags : []).forEach(x => set.add(String(x)));
+    try { _sessionPlacementTags(s).forEach(x => set.add(String(x))); } catch (_) { /* no placement tags */ }
+    set.forEach(x => { counts[x] = (counts[x] || 0) + 1; });
+  });
+  return counts;
+}
+
+function _sessionTagSelection() {
+  return (typeof _tagBrowse !== 'undefined' && _tagBrowse.session && Array.isArray(_tagBrowse.session.sel)) ? _tagBrowse.session.sel : [];
+}
+
+function _sessionTagRegistryName(entry) {
+  const reg = (typeof _tagsState !== 'undefined' && _tagsState.byId) ? _tagsState.byId[entry.tag] : null;
+  return (reg && reg.name) ? String(reg.name) : '';
+}
+
+// _sessionTagEntryLabel is the chip text: the value for a placement tag, the
+// registry name (else the id) for an operator tag.
+function _sessionTagEntryLabel(entry) {
+  if (entry.axis) return String(entry.value || entry.tag);
+  return _sessionTagRegistryName(entry) || String(entry.tag);
+}
+
+// _sessionTagMatchesQuery: case-insensitive substring over value, axis,
+// registry name and the tag name.
+function _sessionTagMatchesQuery(entry, q) {
+  if (!q) return true;
+  const hay = [entry.value, _sessionTagAxisOf(entry), _sessionTagRegistryName(entry), entry.tag].map(x => String(x || '').toLowerCase());
+  return hay.some(h => h.indexOf(q) >= 0);
+}
+
+// _sessionTagVisibleGroups returns the chip groups for the current search:
+// [{ key, entries: [{ entry, count }] }], tags sorted by count then label,
+// tags with no session in the current list dropped unless selected.
+function _sessionTagVisibleGroups() {
+  const inv = state._sessionTagInventory;
+  const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
+  const counts = _sessionTagCurrentCounts();
+  const sel = _sessionTagSelection();
+  const q = String(_sessionTagUI().q || '').trim().toLowerCase();
+  const groups = {};
+  const seen = new Set();
+  entries.forEach(e => {
+    if (!e || !e.tag || seen.has(e.tag) || _sessionTagIsSystemScoped(e)) return;
+    seen.add(e.tag);
+    const n = counts[e.tag] || 0;
+    if (n === 0 && sel.indexOf(e.tag) < 0) return;
+    if (!_sessionTagMatchesQuery(e, q)) return;
+    (groups[_sessionTagGroupOf(e)] = groups[_sessionTagGroupOf(e)] || []).push({ entry: e, count: n });
+  });
+  return _SESSION_TAG_GROUPS.filter(k => groups[k] && groups[k].length).map(k => ({
+    key: k,
+    entries: groups[k].sort((a, b) => (b.count - a.count) || _sessionTagEntryLabel(a.entry).localeCompare(_sessionTagEntryLabel(b.entry))),
+  }));
+}
+
+const _SESSION_TAG_GROUP_LABELS = {
+  kind: ['sessions_filters_tag_axis_kind', 'Kind'],
+  role: ['sessions_filters_tag_axis_role', 'Role'],
+  lane: ['sessions_filters_tag_axis_lane', 'Lane'],
+  compute: ['sessions_filters_tag_axis_compute', 'Compute node'],
+  project: ['sessions_filters_tag_axis_project', 'Project'],
+  user: ['sessions_filters_tag_axis_user', 'Your tags'],
+  other: ['sessions_filters_tag_axis_other', 'Other'],
+};
+
+function _sessionTagChipHTML(item) {
+  const e = item.entry;
+  const on = _sessionTagSelection().indexOf(e.tag) >= 0;
+  return `<button type="button" class="backend-filter-badge sessions-tag-chip ${on ? 'active' : ''}" aria-pressed="${on ? 'true' : 'false'}" title="${escHtml(t('session_tag_chip_tip', [e.tag, item.count]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${escHtml(_sessionTagEntryLabel(e))}<span class="badge-count">${item.count}</span></button>`;
+}
+
+// _sessionTagResultsHTML draws only the part that changes while typing: the
+// axis groups. The search inputs stay outside it so they keep focus.
+function _sessionTagResultsHTML() {
+  const ui = _sessionTagUI();
+  const searching = !!String(ui.q || '').trim();
+  const groups = _sessionTagVisibleGroups();
+  if (!groups.length) {
+    return `<div class="sessions-tag-empty">${escHtml(searching ? _stx('sessions_filters_tag_none', 'No tags match your search') : _stx('sessions_filters_tag_empty', 'No tags to filter by'))}</div>`;
+  }
+  return groups.map(g => {
+    const open = searching || !ui.collapsed[g.key];
+    const all = searching || !!ui.expanded[g.key];
+    const sel = _sessionTagSelection();
+    const shown = all ? g.entries : g.entries.filter((x, i) => i < SESSION_TAG_AXIS_PREVIEW || sel.indexOf(x.entry.tag) >= 0);
+    const label = _stx(_SESSION_TAG_GROUP_LABELS[g.key][0], _SESSION_TAG_GROUP_LABELS[g.key][1]);
+    const tip = _stx(open ? 'sessions_tags_collapse_tip' : 'sessions_tags_expand_tip', open ? 'Collapse' : 'Expand');
+    const head = `<button type="button" class="sessions-tag-axis-head" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" onclick="sessionTagAxisToggle('${g.key}')"><span class="sessions-tag-caret" aria-hidden="true">${open ? '&#9662;' : '&#9656;'}</span><span class="sessions-tag-axis-name">${escHtml(label)}</span><span class="badge-count">${g.entries.length}</span></button>`;
+    if (!open) return `<div class="sessions-tag-axis" data-axis="${g.key}">${head}</div>`;
+    const more = (!searching && g.entries.length > SESSION_TAG_AXIS_PREVIEW)
+      ? `<button type="button" class="sessions-tag-more" onclick="sessionTagAxisShowAll('${g.key}')">${escHtml(ui.expanded[g.key] ? _stx('sessions_filters_tag_show_fewer', 'Show fewer') : _stx('sessions_filters_tag_show_all', 'Show all (%1$s)').replace('%1$s', String(g.entries.length)))}</button>`
+      : '';
+    return `<div class="sessions-tag-axis" data-axis="${g.key}">${head}<div class="sessions-tag-chips">${shown.map(_sessionTagChipHTML).join('')}${more}</div></div>`;
+  }).join('');
+}
+
+// _sessionTagAutomatonRows lists the Automatons that carry sessions, as
+// { id, tag, title }, selected ones first, filtered by the picker query on
+// title or id. Titles come from the cached group titles (the same source
+// grouping uses).
+function _sessionTagAutomatonRows() {
+  const inv = state._sessionTagInventory;
+  const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
+  const sel = _sessionTagSelection();
+  const q = String(_sessionTagUI().autoQ || '').trim().toLowerCase();
+  const by = { axis: 'automaton' };
+  const rows = [];
+  const seen = new Set();
+  const add = tag => {
+    if (!tag || seen.has(tag) || String(tag).indexOf('automaton:') !== 0) return;
+    seen.add(tag);
+    const id = String(tag).slice('automaton:'.length);
+    const sessions = (state.sessions || []).filter(s => s && (String(s.prd_id || s.automaton_id || '') === id));
+    const info = _sessionsGroupTitleInfo(id, by, sessions);
+    rows.push({ id, tag, title: info.title || '' });
+  };
+  sel.forEach(add);
+  entries.forEach(e => { if (e && e.tag && _sessionTagAxisOf(e) === 'automaton') add(e.tag); });
+  const hit = r => !q || r.title.toLowerCase().indexOf(q) >= 0 || r.id.toLowerCase().indexOf(q) >= 0;
+  const picked = rows.filter(r => sel.indexOf(r.tag) >= 0).filter(hit);
+  const rest = rows.filter(r => sel.indexOf(r.tag) < 0).filter(hit).sort((a, b) => ((a.title ? 0 : 1) - (b.title ? 0 : 1)) || (a.title || a.id).localeCompare(b.title || b.id));
+  return picked.concat(rest);
+}
+
+// _sessionTagAutomatonResultsHTML draws the picker rows (not chips): title
+// as the primary text, the id as small secondary text.
+function _sessionTagAutomatonResultsHTML() {
+  const rows = _sessionTagAutomatonRows();
+  if (!rows.length) return `<div class="sessions-tag-empty">${escHtml(_stx('sessions_filters_tag_automaton_none', 'No Automaton matches'))}</div>`;
+  const sel = _sessionTagSelection();
+  return rows.slice(0, Math.max(SESSION_TAG_PICKER_LIMIT, rows.filter(r => sel.indexOf(r.tag) >= 0).length)).map(r => {
+    const on = sel.indexOf(r.tag) >= 0;
+    return `<button type="button" class="sessions-tag-pick ${on ? 'active' : ''}" role="option" aria-selected="${on ? 'true' : 'false'}" onclick="sessionTagChipToggle('${escJsAttr(r.tag)}')"><span class="sessions-tag-pick-title">${escHtml(r.title || r.id)}</span>${r.title ? `<span class="sessions-tag-pick-id">${escHtml(r.id)}</span>` : ''}</button>`;
+  }).join('');
+}
+
+// _sessionTagFilterPanelHTML draws the Filters-sheet tag section: a tag
+// search, the grouped chips, the Automaton picker and the any/all mode with
+// a clear action. The selection lives in _tagBrowse.session, so the same
 // server-side tag query, client-side _sessionTagFilter and header Tags menu
-// all apply it. Empty before the inventory loads — the button is hidden
-// anyway until it arrives.
+// all apply it. Empty before the inventory loads.
 function _sessionTagFilterPanelHTML() {
   const inv = state._sessionTagInventory;
   const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
   if (!entries.length) return '';
-  const groups = {};
-  entries.forEach(e => { if (e && e.tag) (groups[e.axis || ''] = groups[e.axis || ''] || []).push(e); });
-  const axes = _SESSION_TAG_AXIS_ORDER.filter(a => (groups[a] || []).length);
-  axes.push(...Object.keys(groups).filter(a => a && !axes.includes(a)).sort((a, b) => a.localeCompare(b)));
-  const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
-  const label = e => {
-    if (e.axis) return escHtml(e.value);
-    const reg = (typeof _tagsState !== 'undefined' && _tagsState.byId) ? _tagsState.byId[e.tag] : null;
-    return escHtml((reg && reg.name) ? reg.name : e.tag);
-  };
-  const chip = e => {
-    const on = sel.indexOf(e.tag) >= 0;
-    return `<button type="button" class="backend-filter-badge ${on ? 'active' : ''}" title="${escHtml(t('session_tag_chip_tip', [e.tag, e.count || 0]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${label(e)}<span class="badge-count">${e.count || 0}</span></button>`;
-  };
-  const head = ax => `<span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text2);margin-left:6px;">${escHtml(ax)}</span>`;
-  const body = axes.map(a => head(a) + groups[a].map(chip).join('')).join('');
-  const other = groups[''] ? head(t('tag_filter_group_other')) + groups[''].map(chip).join('') : '';
+  const ui = _sessionTagUI();
+  const sel = _sessionTagSelection();
+  const phTags = _stx('sessions_filters_tag_search_ph', 'Search tags');
+  const phAuto = _stx('sessions_filters_tag_automaton_ph', 'Find an Automaton');
+  const hasAutomatons = entries.some(e => e && e.tag && _sessionTagAxisOf(e) === 'automaton');
+  const picker = hasAutomatons
+    ? `<div class="sessions-tag-sub">${escHtml(_stx('sessions_filters_tag_automaton', 'Automaton'))}</div>
+       <input type="search" class="sessions-tag-search" id="sessionTagAutoSearch" value="${escHtml(ui.autoQ || '')}" placeholder="${escHtml(phAuto)}" aria-label="${escHtml(phAuto)}" autocomplete="off" oninput="sessionTagAutomatonSearch(this.value)">
+       <div class="sessions-tag-picker" id="sessionTagAutoResults" role="listbox">${_sessionTagAutomatonResultsHTML()}</div>`
+    : '';
   const mode = (typeof _tagBrowseMode === 'function') ? _tagBrowseMode('session') : 'any';
   const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
   const actions = `<button type="button" class="backend-filter-badge ${mode === 'all' ? 'active' : ''}" title="${escHtml(t('tag_browse_mode_title'))}" aria-pressed="${mode === 'all'}" onclick="tagBrowseToggleMode('session')">${escHtml(modeLabel)}</button>` +
     (sel.length ? `<button type="button" class="backend-filter-badge" title="${escHtml(t('session_tag_clear_tip'))}" onclick="tagBrowseClear('session')">${escHtml(t('tags_menu_clear'))}</button>` : '');
-  return body + other + `<span style="flex-basis:100%;display:flex;gap:4px;align-items:center;">${actions}</span>`;
+  return `<div class="sessions-tag-panel">
+    <input type="search" class="sessions-tag-search" id="sessionTagSearch" value="${escHtml(ui.q || '')}" placeholder="${escHtml(phTags)}" aria-label="${escHtml(phTags)}" autocomplete="off" oninput="sessionTagSearchInput(this.value)">
+    <div class="sessions-tag-scroll" id="sessionTagResults">${_sessionTagResultsHTML()}</div>
+    ${picker}
+    <div class="sessions-tag-actions">${actions}</div>
+  </div>`;
+}
+
+// _sessionTagPanelRepaint rewrites only the result containers, never the
+// search inputs, so typing keeps focus and caret. Falls back to a full
+// render when the containers are not on the page.
+function _sessionTagPanelRepaint() {
+  const res = document.getElementById('sessionTagResults');
+  const pick = document.getElementById('sessionTagAutoResults');
+  if (res) res.innerHTML = _sessionTagResultsHTML();
+  if (pick) pick.innerHTML = _sessionTagAutomatonResultsHTML();
+  if (!res && !pick && state._sessionsSheetOpen && state.activeView === 'sessions') renderSessionsView();
+}
+
+window.sessionTagSearchInput = function(v) {
+  _sessionTagUI().q = String(v || '');
+  _sessionTagPanelRepaint();
+};
+window.sessionTagAutomatonSearch = function(v) {
+  _sessionTagUI().autoQ = String(v || '');
+  _sessionTagPanelRepaint();
+};
+window.sessionTagAxisToggle = function(key) {
+  const ui = _sessionTagUI();
+  ui.collapsed[key] = !ui.collapsed[key];
+  _sessionTagPanelRepaint();
+};
+window.sessionTagAxisShowAll = function(key) {
+  const ui = _sessionTagUI();
+  ui.expanded[key] = !ui.expanded[key];
+  _sessionTagPanelRepaint();
+};
+
+// _sessionTagSelectedLabel is the summary-chip text for a selected tag: an
+// Automaton shows its title, anything else its value or registry name.
+function _sessionTagSelectedLabel(tag) {
+  tag = String(tag);
+  if (tag.indexOf('automaton:') === 0) {
+    const id = tag.slice('automaton:'.length);
+    const info = _sessionsGroupTitleInfo(id, { axis: 'automaton' }, (state.sessions || []).filter(s => s && String(s.prd_id || s.automaton_id || '') === id));
+    return info.title || id;
+  }
+  const inv = state._sessionTagInventory;
+  const e = ((inv && inv.entries) || []).find(x => x && x.tag === tag) || { tag };
+  if (e.axis) return String(e.value || tag);
+  const i = tag.indexOf(':');
+  return _sessionTagRegistryName(e) || (i > 0 ? tag.slice(i + 1) : tag);
+}
+
+// _sessionTagSelectedSummaryHTML is the compact row above the session list:
+// one small removable chip per selected tag plus a clear-all. Empty when
+// nothing is selected.
+function _sessionTagSelectedSummaryHTML() {
+  const sel = _sessionTagSelection();
+  if (!sel.length) return '';
+  const chips = sel.map(tag => {
+    const label = _sessionTagSelectedLabel(tag);
+    const rm = _stx('sessions_filters_tag_remove', 'Remove %1$s').replace('%1$s', label);
+    return `<span class="sessions-tag-sel-chip"><span class="sessions-tag-sel-text">${escHtml(label)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
+  }).join('');
+  const clear = _stx('sessions_filters_tag_clear_all', 'Clear all');
+  return `<div class="sessions-tag-selected" role="group" aria-label="${escHtml(_stx('sessions_filters_tag_selected', 'Selected filters'))}">${chips}<button type="button" class="sessions-tag-sel-clear" onclick="tagBrowseClear('session')">${escHtml(clear)}</button></div>`;
 }
 
 // sessionTagChipToggle flips one inventory tag in the session tag selection.
@@ -4636,7 +4887,8 @@ function renderSessionsView() {
   let tagHelpLink = '', tagFilterPanelHtml = '';
   if (tagInvLoaded && tagInvEntries.length > 0) {
     tagHelpLink = `<a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
-    tagFilterPanelHtml = `<div class="tag-filter-chips" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
+    tagFilterPanelHtml = `<div class="tag-filter-chips sessions-tag-wrap">${_sessionTagFilterPanelHTML()}</div>`;
+    if (state._sessionsSheetOpen) _sessionsGroupTitlesEnsure({ axis: 'automaton' });
   }
 
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
@@ -4728,6 +4980,7 @@ function renderSessionsView() {
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
         ${disconnectedBannerHtml}
         ${history.length > 0 ? toggleBtn : ''}
+        ${_sessionTagSelectedSummaryHTML()}
         <div class="empty-state">
           <span class="empty-state-icon">💬</span>
           <h3>${t('sessions_no_active')||'No active sessions'}</h3>
@@ -4759,7 +5012,11 @@ function renderSessionsView() {
     ? (groupBy.axis === 'automaton'
         ? renderSessionsAutomaton(visible, now, viewMode)
         : renderSessionsGrouped(visible, groupBy, now, viewMode))
-    : (state.sessionTreeView
+    : ((state.sessionTreeView && viewMode === 'list')
+        // Invariant: Tiles / Compact / List always render three distinct layouts
+        // with no grouping. The lineage tree is a variant of List only; a
+        // persisted tree flag (its toggle is hidden while filters are collapsed)
+        // must never override a Tiles or Compact choice.
         ? renderSessionsAsTree(visible)
         : (groupAxis
             ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
@@ -4772,7 +5029,8 @@ function renderSessionsView() {
     ${disconnectedBannerHtml}
     <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
-    ${renderSessionsSummaryBar(visible)}${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
+    ${_sessionTagSelectedSummaryHTML()}
+    ${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
 
   // Restore filter input focus and cursor position
@@ -5050,6 +5308,12 @@ function _sessionsSetViewMode(mode) {
   if (!m) return;
   state.sessionsViewMode = m;
   _sessionsStoreMode(m);
+  // An explicit mode click is the layout choice: drop the lineage-tree flag so
+  // it cannot keep an invisible override over the chosen mode.
+  if (state.sessionTreeView) {
+    state.sessionTreeView = false;
+    try { localStorage.setItem('cs_session_tree_view', '0'); } catch (_) { /* storage blocked */ }
+  }
   state._sessionsPageLimit = _sessionsPageSize();
   state.selectedSessions.clear();
   if (state.activeView === 'sessions') renderSessionsView();
@@ -5870,24 +6134,6 @@ function renderSessionsModeToggle(mode) {
   return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
 }
 
-function _sessionsSummaryLabel(st) {
-  const k = { waiting_input: 'waiting', rate_limited: 'rate_limited' }[st] || st;
-  const fb = String(k).replace(/_/g, ' ');
-  return _stx('session_chip_' + k, fb);
-}
-
-function renderSessionsSummaryBar(sessions) {
-  const rows = _sessionsSummaryCounts(sessions);
-  if (!rows.length) return '';
-  const items = rows.map(r => {
-    const cur = r.state === state.sessionStateChip;
-    const next = cur ? 'all' : r.state;
-    const tip = r.state + ': ' + r.count + (cur ? ' — ' + _stx('sessions_summary_clear_tip', 'clear the state filter') : ' — ' + _stx('sessions_summary_filter_tip', 'filter to this state'));
-    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(next)}')" title="${escHtml(tip)}" aria-pressed="${cur ? 'true' : 'false'}" data-state="${escHtml(r.state)}">${escHtml(_sessionsSummaryLabel(r.state))} <span class="sessions-summary-count">${r.count}</span></button>`;
-  }).join('<span class="sessions-summary-sep" aria-hidden="true">·</span>');
-  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
-}
-
 // ── Filters sheet ───────────────────────────────────────────────────────
 // Open state lives in state._sessionsSheetOpen so every re-render redraws the
 // sheet in place. The Escape listener exists only while the sheet is open.
@@ -5981,7 +6227,6 @@ window.sessionsFiltersOpen = sessionsFiltersOpen;
 window.sessionsFiltersClose = sessionsFiltersClose;
 window.sessionsFiltersBackdrop = sessionsFiltersBackdrop;
 window.sessionsFiltersBadgeCount = _sessionsActiveFilterCount;
-window.renderSessionsSummaryBar = renderSessionsSummaryBar;
 
 // Sessions carry no task counts, so progress is lifecycle based: a finished
 // session fills the bar, a failed or stopped one shows how far it got (empty),

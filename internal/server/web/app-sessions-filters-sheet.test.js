@@ -38,12 +38,3 @@ test('open and close flip the state and the Escape listener only lives while ope
   sb.sessionsFiltersClose();
   assert.equal(removed, 1, 'no listener left to remove');
 });
-
-test('summary line is one row with tappable chips that set or clear the state filter', () => {
-  const sb = loadApp();
-  vm.runInContext(`state.sessionStateChip = 'running';`, sb);
-  const html = sb.renderSessionsSummaryBar([{ state: 'running' }, { state: 'running' }, { state: 'waiting_input' }]);
-  assert.match(html, /setSessionStateChip\('all'\)/);
-  assert.match(html, /setSessionStateChip\('waiting_input'\)/);
-  assert.match(html, />sessions 3</);
-});

@@ -4371,7 +4371,7 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
-The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`): no daemon setting. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, and the lineage-tree flag `cs_session_tree_view`): no daemon setting. With no grouping, a saved tree flag applies to **List** only and any mode click clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
 
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
@@ -4423,15 +4423,20 @@ the follower stale. See [howto/automata-tag-registry.md](howto/automata-tag-regi
 for the operator steps and [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md)
 for the sync paths.
 
-**Sessions header Tags menu (display-only).** The PWA's Sessions header Tags
-menu lists every tag exactly once: the placement (system) tags appear only in
-the **Placement tags (system)** section, under their own axis heading, and the
-Tags section beneath it carries the remaining system tags (padlock-marked) and
-the operator tags, exactly as before. This is a display-only change: it reads
-no `autonomous.tags` key, changes no tag, stored selection or filter result, and
-needs no migration or restart — a refreshed PWA shows the corrected menu. The
-tag filter rows elsewhere are unchanged. See
-[howto/automata-tags.md](howto/automata-tags.md) for the operator view.
+**Sessions Tags filter (display-only).** The PWA's Sessions page keeps its tag
+filter in the **Filters** sheet. Each tag is one chip under its axis group
+(Kind, Role, Lane, Compute node, Project, Your tags, Other), with a search box
+and a **Show all** control; the per-Automaton, per-stage and per-task tags
+have no chip (an Automaton is picked from the **Find an Automaton** picker),
+and the selected tags also show as removable chips above the list. Chip counts
+are the sessions in the list currently loaded in the browser, not the
+`/api/sessions/tags` inventory counts, so a tag can show a smaller number than
+the inventory. This is a display-only change: it reads no `autonomous.tags`
+key, changes no tag, stored selection or filter result, and needs no migration
+or restart — a refreshed PWA shows the new filter. The tag filter rows
+elsewhere are unchanged. See
+[howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-tags-filter)
+and [howto/automata-tags.md](howto/automata-tags.md) for the operator view.
 
 **Placement tags on every session start (operator check).** A session
 started through `POST /api/sessions/start` (REST, the MCP `start_session`
