@@ -15,7 +15,7 @@ import (
 func TestRulesReviewToolDescriptionsCarryNewWording(t *testing.T) {
 	s := &Server{}
 	add := s.toolAutonomousPRDAddTask()
-	if d := add.Description; !strings.Contains(d, "needs_review, revisions_asked and cancelled") || !strings.Contains(d, "parked in needs_review") {
+	if d := add.Description; !strings.Contains(d, "needs_review, revisions_asked, cancelled and failed") || !strings.Contains(d, "parked in needs_review") {
 		t.Fatalf("add_task description lacks new wording: %q", d)
 	}
 	story := s.toolAutonomousPRDAddStory()
