@@ -3180,6 +3180,42 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   margin-bottom: 10px;
 }
 
+/* Alert card + session-header clipping fix: at 320–390 px viewports a
+   single-line flex row with a long session id (60+ chars, no spaces)
+   clipped ("la 12"). Headers wrap, and every text child may break long
+   unbreakable tokens so nothing runs under the card edge. */
+.alert-card {
+  min-width: 0;
+}
+.card.alert-card {
+  overflow: hidden;
+}
+.alert-session-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.alert-session-head > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.alert-session-label,
+.alert-row-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+.alert-row-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .session-card:active {
   background: var(--bg3);
 }
@@ -7289,10 +7325,6 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   /* Touch: a link inside the metaExtra row keeps a >=40x40px tap target
      (mobile-fit TAP_MIN=40), same form as the #statsPanel link rule. */
   .list-state-meta-row a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
-  /* The alerts help link ("?") rides the alerts loader's metaExtra row; the
-     class is what guarantees the 40px tap target even if the row markup
-     changes. */
-  a.alerts-help-link { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
 }
 .list-state-cached {
   display: inline-block; padding: 0 6px; border-radius: 999px;

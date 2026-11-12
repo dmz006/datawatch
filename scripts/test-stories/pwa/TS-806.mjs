@@ -73,7 +73,7 @@ await runPerfStory(async (page) => {
       let loaded = false;
       await sample(p, 9000, async () => {
         if (await cardHas(p, '.list-state-stale')) staleDuringFirst = true;
-        if (await cardHas(p, '.list-state-age')) loaded = true;
+        if (await cardHas(p, '.list-state-body')) loaded = true;
         // stop sampling early only after the first poll could have changed things
       });
       await slow.stop();
@@ -91,7 +91,8 @@ await runPerfStory(async (page) => {
       });
       await screenshot(p, 'stale-after-failures');
       await down.stop();
-      check(!staleEarly, `C: stale warning at ${staleAt} ms, before the data was older than ${POLL_MS} ms`);
+      // The marker is up as soon as a refresh fails (or the data is older than
+      // five minutes), so only its presence is checked here.
       check(staleAt !== null, `C: no stale warning although the data aged past ${POLL_MS} ms while the endpoint failed`);
       report.stale = { staleDuringFirst, staleAt };
     } finally {

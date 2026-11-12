@@ -2786,21 +2786,45 @@ suppressed after the channel connects (`channel_ready: true`). This eliminates t
 rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
 terminal. See `docs/claude-channel.md` for details.
 
-### Alerts tab header (help link)
+### Alerts tab (help link, state row, refresh)
 
-The round `?` help link on the PWA's Alerts tab no longer takes its own
-top-right row above the list — that separate row mis-rendered on narrow
-touch viewports (operator report with a screenshot from Chrome on
-Android). It now sits at the right edge of the list loader's meta row,
-beside the list's status text (`Cached` / `Last updated N s ago`), on
-the same row. Destination, tooltip and accessible name are unchanged:
-it opens `docs/howto/alerts-and-notifications.md` in a new tab. On
-touch devices the link gets a 40 × 40 px minimum tap target. There is no
-config and no migration: because the PWA is embedded in the daemon
-binary, rebuild and restart the daemon and hard-refresh the PWA tab to
-serve the new layout. The layout is pinned by the story
-`scripts/test-stories/alerts-header-row.sh` (one row, link right of the
-age text, no horizontal overflow at a 390 px viewport).
+The PWA's Alerts tab was tidied for a narrow phone viewport (operator
+report with a screenshot from Chrome on Android, 2026-11-12). The
+post-change state:
+
+- **Help link.** The `?` help link no longer lives in the Alerts tab
+  itself — the standalone row at the top-right first, then the list's
+  meta row, both mis-rendered on narrow touch viewports. It is now the
+  shared header's `?` (next to the search icon), like every other view:
+  on the Alerts tab it points at
+  [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md)
+  (opened in a new tab) with the tooltip "Open the Alerts howto —
+  explains alert rules, quick replies, and notifications"; on other
+  views it keeps the generic "Open documentation for this view"
+  destination. There is no second `?` inside the Alerts content.
+- **State row.** The list's meta row now appears only when it has
+  something to say: `Cached`, a small `Loading…` while a refresh runs,
+  or the `Data may be out of date` marker. The ticking "Last updated N
+  s ago" counter and its one-second timer are gone. On the Alerts list
+  the stale marker shows when the last refresh failed or the data is
+  older than a fixed 2 minutes (Alerts polls every 30 s; other list
+  cards keep the 5-minute rule).
+- **Tab labels and heading counts.** The sub-tabs are labelled
+  **Active sessions**, **Historical sessions**, and **System alerts**;
+  the button numbers count sessions (or system alerts) while the
+  heading counts alerts in the selected tab (e.g. "5 alerts in 3
+  active sessions") and matches the `all` chip.
+- **Row layout.** Alert cards and session headers wrap (flex-wrap +
+  overflow-wrap), so long messages and session names break within the
+  card instead of clipping on a phone.
+- **Refresh.** `↻` triggers one immediate refetch through the Alerts
+  list loader; the card repaints in place (cached rows stay, the fetch
+  runs behind them) instead of rebuilding the whole view. No new
+  endpoint and no new setting.
+
+There is no config and no migration: because the PWA is embedded in
+the daemon binary, rebuild and restart the daemon and hard-refresh the
+PWA tab to serve the new layout.
 
 ### Suppress Toasts for Active Session
 

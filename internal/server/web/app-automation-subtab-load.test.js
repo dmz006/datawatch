@@ -199,23 +199,25 @@ test('the progress card loads with the Progress sub-tab only', async () => {
   assert.ok(count(calls, PROGRESS) >= 1, 'selecting Progress requests the progress card');
 });
 
-test('leaving the Automation sub-tab clears every interval it started', async () => {
+test('leaving the Automation sub-tab stops its loaders and starts no 1-second tick', async () => {
   const { sb, els } = load();
-  const started = [];
-  const cleared = [];
-  sb.setInterval = (fn, ms) => { const id = started.length + 1; started.push(id); return id; };
-  sb.clearInterval = id => { cleared.push(id); };
-  sb.renderAutonomousView(); // the default sub-tab is Automation
+  const intervals = [];
+  sb.setInterval = (fn, ms) => { intervals.push(ms); return intervals.length; };
+  sb.clearInterval = () => {};
+  sb.renderAutonomousView(); // the default sub-tab is Inbox
   await flushAsync(30);
-  const fromMount = started.slice();
-  assert.ok(fromMount.length >= 1, 'the Automation sub-tab runs its own intervals');
-  sb.switchAutomataTab('automata');
+  // The list cards poll on a setTimeout chain, not a ticking interval: none
+  // of the intervals the sub-tab started is the per-second "last updated" tick.
+  assert.ok(intervals.every(ms => ms !== 1000), 'no 1 s tick interval started: ' + JSON.stringify(intervals));
+  // The Inbox loaders exist and are meant to poll while the tab is shown.
+  assert.ok(run(sb, 'window._listLoaders.automation_triage'), 'the Inbox triage loader starts with its sub-tab');
+  assert.equal(run(sb, 'window._listLoaders.automation_triage.state.stopped'), false, 'the loader is active while its tab shows');
+  sb.switchAutomataTab('automata'); // leaving the Automation tab ends its polling
   await flushAsync(30);
+  assert.equal(run(sb, 'window._listLoaders.automation_triage.state.stopped'), true, 'leaving the tab stops the loader');
   sb.switchAutomataTab('templates');
   await flushAsync(30);
-  for (const id of fromMount) {
-    assert.ok(cleared.includes(id), 'an interval started by the Automation sub-tab (id ' + id + ') is still running');
-  }
+  assert.equal(run(sb, 'window._listLoaders.automation_triage.state.stopped'), true, 'the loader stays stopped off the tab');
   assert.doesNotMatch(els.view.innerHTML, /id="progressCard"/, 'no progress slot off the Automation sub-tab');
   assert.doesNotMatch(els.view.innerHTML, /id="automationCapacityCard"/, 'no capacity slot off the Automation sub-tab');
 });
