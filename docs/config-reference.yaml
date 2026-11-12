@@ -512,7 +512,16 @@ mcp:
   # (tools that write secrets, credentials or other sensitive state).
   # Absent = ENABLED (the default keeps today's behaviour: sensitive tools
   # allowed; the key is never added by a migration). An explicit `false`
-  # disables the class.
+  # refuses the class for SESSION and PEER callers only; the operator's own
+  # Web UI / REST / CLI / admin calls are unaffected. The class: secret_set,
+  # secret_delete, secret_get, the identity writers (set_identity,
+  # update_identity, configure_identity, restore_identity, reset_identity),
+  # restart_daemon, reload, plugin_install, plugin_run_subcommand,
+  # send_input, start_session, tailscale_acl_push, tailscale_auth_key and
+  # acme_renew. Independent of allow_self_config. Calls are audited in the
+  # self-config audit trail with class "sensitive" (argument names only,
+  # never values). YAML-only today (no CLI / PWA / PUT /api/config path);
+  # restart after editing. See docs/howto/self-config-capability.md.
   allow_sensitive_writes: true
   # Where the self-config audit file (JSONL) is written: one record per
   # configuration-write attempt from every session-facing surface

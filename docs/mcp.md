@@ -1344,6 +1344,8 @@ audit_access_query(action="auth_failure", since="2026-10-08T00:00:00Z")
 
 Query the **self-config audit log**. One record per attempt to change the daemon's own non-secret settings through an agent surface: a config-write MCP tool (`surface: "mcp"`, e.g. `config_set`, `autonomous_config_set`), a session- or peer-origin REST config PUT (`"rest"`), or a comm `configure` command (`"comm"`). Allowed attempts are logged; denied attempts too — with the refusal reason — unless `mcp.self_config_audit_denied` is explicitly `false`. Secret values are redacted (`"<redacted>"`); the changed key(s) with their new values, the tool/route, and the caller are kept (a denied attempt may have no `keys`). Newest-first. Read-only: it reads the JSONL file (`mcp.self_config_audit_path`, default `<data dir>/audit/config-self-modify.jsonl`) and never writes or changes anything. The group settings themselves — `mcp.allow_self_config`, `mcp.self_config_audit_path`, `mcp.self_config_audit_denied` — are read with `get_config` and changed with `config_set` (which stays bootstrap-protected for `mcp.allow_self_config` itself).
 
+MCP records also carry a `class` field: `config` for a configuration-write tool and `sensitive` for a sensitive write tool (`secret_set`, `secret_get`, `restart_daemon`, `start_session` and the rest of the class described in [operations.md](operations.md#sensitive-writes-what-sessions-and-peers-may-not-do)). A `sensitive` record lists the argument names in `keys` and never any values. While `mcp.allow_sensitive_writes` is `false`, a session or peer call to a sensitive tool is refused and the refusal appears here.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
