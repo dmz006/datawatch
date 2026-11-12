@@ -54,6 +54,11 @@ type Backoff struct {
 
 	mu      sync.Mutex
 	entries map[string]Entry
+
+	// persistPath, when set (see backoff_persist.go), is the JSON file every
+	// mutation is written to; saveErr is the last write error.
+	persistPath string
+	saveErr     error
 }
 
 // NewBackoff returns an empty registry using the wall clock.
@@ -99,6 +104,7 @@ func (b *Backoff) SetWithRung(backend string, until time.Time, reason string, so
 		b.entries = map[string]Entry{}
 	}
 	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown, Rung: rung}
+	b.saveLocked()
 }
 
 // Clear removes the flag for backend and reports whether one existed.
@@ -107,6 +113,9 @@ func (b *Backoff) Clear(backend string) bool {
 	defer b.mu.Unlock()
 	_, ok := b.entries[backend]
 	delete(b.entries, backend)
+	if ok {
+		b.saveLocked()
+	}
 	return ok
 }
 
@@ -116,6 +125,7 @@ func (b *Backoff) ClearAll() int {
 	defer b.mu.Unlock()
 	n := len(b.entries)
 	b.entries = map[string]Entry{}
+	b.saveLocked()
 	return n
 }
 
@@ -161,6 +171,9 @@ func (b *Backoff) SweepExpired(now time.Time) []Entry {
 		}
 	}
 	sort.Slice(cleared, func(i, j int) bool { return cleared[i].Backend < cleared[j].Backend })
+	if len(cleared) > 0 {
+		b.saveLocked()
+	}
 	return cleared
 }
 
