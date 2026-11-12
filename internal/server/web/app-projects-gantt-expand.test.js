@@ -55,8 +55,9 @@ test('pure helpers: range from rows, presets and default', () => {
   const { sb } = load(standard);
   const rows = [arcRow('a', 30, 2), arcRow('b', 10, null, { running: true }), arcRow('c', null, null)];
   const r = sb._projectsGanttRangeFromRows(rows, NOW);
-  assert.equal(r.start, Date.parse(ago(30)));
-  assert.equal(r.end, NOW, 'running work counts to now');
+  const m = (NOW - Date.parse(ago(30))) * 0.02;
+  assert.equal(r.start, Date.parse(ago(30)) - m, 'tightest span minus a 2 percent margin');
+  assert.equal(r.end, NOW + m, 'running work counts to now, plus the margin');
   assert.equal(sb._projectsGanttRangeFromRows([arcRow('c', null, null)], NOW), null);
   const all = sb._projectsGanttPresetRange('all', rows, NOW);
   assert.equal(all.start, r.start);

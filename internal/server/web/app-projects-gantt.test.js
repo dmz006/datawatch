@@ -110,3 +110,21 @@ test('the old window selector is gone', () => {
   const src = fs.readFileSync(APP, 'utf8');
   assert.doesNotMatch(src, /_PROJECTS_GANTT_WINDOWS|projectsGanttWindow|projectGanttWindow/);
 });
+
+test('span uses start/end, sort helper orders completed, running, then dependencies', () => {
+  const { sb } = load(() => ({ rows: [] }));
+  const NOW2 = Date.now();
+  const iso2 = ms => new Date(ms).toISOString();
+  const sp = sb._projectsGanttSpan({ start: iso2(NOW2 - 5000), end: null, status: 'running' }, NOW2);
+  assert.equal(sp.b, NOW2);
+  assert.equal(sp.running, true);
+  const rows = [
+    { id: 'r', status: 'running', start: iso2(NOW2 - 1000), end: null },
+    { id: 'c2', status: 'completed', start: iso2(NOW2 - 9000), end: iso2(NOW2 - 4000) },
+    { id: 'c1', status: 'completed', start: iso2(NOW2 - 9500), end: iso2(NOW2 - 6000) },
+    { id: 'w', status: 'waiting', start: iso2(NOW2 - 2000), end: null, depends_on: ['r'] },
+  ];
+  assert.equal(sb._projectsGanttSortChildren(rows, []).map(x => x.id).join(','), 'c1,c2,r,w');
+  assert.equal(sb._projectsGanttSortChildren(rows, [{ from: 'w', to: 'c1' }]).map(x => x.id).join(','), 'r,w,c1,c2', 'an edge puts a row after what it follows');
+  assert.equal(rows[0].id, 'r', 'input is not changed');
+});
