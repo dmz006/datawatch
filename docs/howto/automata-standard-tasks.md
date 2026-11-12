@@ -176,7 +176,7 @@ project argument.
 |---|---|
 | **YAML** | Edit `~/.datawatch/config.yaml` → `autonomous.task_templates` (the `enabled` switch and the `projects` overrides) |
 | **CLI** | `datawatch autonomous standard-tasks [--project <dir-or-alias>] [--json]`. A table of `ID TITLE KIND ENABLED MODE RUNNER`; `--json` prints the raw body |
-| **Web UI** | Automata page → the **Templates** tab (labelled **Automaton templates** in the current UI) → **Standard tasks** sub-tab. A read-only table; your sub-tab choice is remembered |
+| **Web UI** | Automata page → the **Templates** tab → **Standard tasks** sub-tab. A read-only table; your sub-tab choice is remembered |
 | **REST API** | `GET /api/autonomous/standard-tasks` with an optional `?project=<dir-or-alias>`. The body is `{enabled, tasks[]}`, and each row carries `mode` and `runner`. Any other method returns 405. The config itself is read and written through `GET` and `PUT /api/config` |
 | **MCP** | The `autonomous_standard_tasks` tool, with an optional `project` argument. Each row carries `mode` and `runner`. The switches are read and written with `autonomous_config_get` and `autonomous_config_set` |
 | **Comm channel** | `standard tasks` (or `autonomous standard-tasks`): one line per task, `id \| title \| on\|off \| mode \| runner`, for the global setting only (no project argument). An empty list replies "no standard tasks are defined." |
@@ -207,9 +207,9 @@ its own mode).
   [Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width)).
   Each table row stacks into its labelled cells (title, kind, summary, when, on/off,
   mode) and the body keeps a side gutter, so the page itself never scrolls sideways.
-- **Choice persisted.** The sub-tab you leave it on (Automaton templates or
+- **Choice persisted.** The sub-tab you leave it on (Templates or
   Standard tasks) is the one it opens on next time; a fresh install with no stored
-  choice opens **Automaton templates**.
+  choice opens **Templates**.
 
 ## How a standard task differs from an Automaton template
 
@@ -220,7 +220,7 @@ page's **Templates** tab. They do different jobs.
 |---|---|---|
 | What it is | A built-in task definition the decomposer appends to a story | A reusable Automaton definition: a complete spec (type, stories, tasks, backend, effort, model, skills) stored in the template store |
 | Where it lives | The built-in pack, plus your overlay in `autonomous.task_templates` | The template store |
-| Where it shows up | Automata → **Templates** → **Standard tasks** sub-tab | Automata → **Templates** → **Automaton templates** sub-tab |
+| Where it shows up | Automata → **Templates** → **Standard tasks** sub-tab | Automata → **Templates** → first sub-tab |
 | What uses it | The decomposer, while it decomposes a story | An operator, who starts a new Automaton from it |
 | Creates | One task inside a story | A whole Automaton |
 | Switched by | `autonomous.task_templates.enabled` and `autonomous.task_templates.projects` | Nothing to switch. You create, edit or delete it |
@@ -232,7 +232,7 @@ A simple test: if it is added to a story by the decomposer, it is a standard tas
 is a complete Automaton you start from, it is an Automaton template.
 
 For Automaton templates, open the Automata tab's **Templates** tab and its
-**Automaton templates** sub-tab. The **Start from template** strip on the Automaton create form and the **Clone to Template**
+**Templates** sub-tab (the first one). The **Start from template** strip on the Automaton create form and the **Clone to Template**
 action both use it.
 
 ## Worked example: turning one standard task off
@@ -289,7 +289,7 @@ yet:
   that the project's override does not turn it off. Read the list with `--project` to see
   the resolved state. Check the decompose-lint mode too: with `off`, nothing is applied.
 - **You want a template to start a new Automaton.** That is an Automaton template. Open
-  Automata → **Templates** → **Automaton templates**, not the **Standard tasks** sub-tab.
+  Automata → **Templates** (the first sub-tab), not the **Standard tasks** sub-tab.
 - **You want to change how a standard task runs.** Set its mode with
   `autonomous.task_templates.mode.<id>` (see [Mode: who runs each task](#mode-who-runs-each-task)).
   Read `runner` afterwards to confirm what carries it out.

@@ -7578,7 +7578,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-row-nowrap > button { max-width: 100%; }
 }
 
-/* Templates tab sub-tab bar (Automaton templates | Standard tasks). It wraps
+/* Templates tab sub-tab bar (Templates | Standard tasks). It wraps
    inside its own container, so a long sub-tab list never widens the page. */
 .automata-templates-subtabs {
   max-width: 100%;

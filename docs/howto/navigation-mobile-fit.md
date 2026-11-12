@@ -132,7 +132,7 @@ Several screens have a row of tabs under the header. At phone width every such r
 | Automata sub-tab bar (Projects, Automation, Automata, Events, Templates) and its action buttons | Automata view |
 | Automation second row (Inbox, Automations, Resources and the rest) | Automata → Automation |
 | Projects tab bar | Automata → Projects |
-| Templates sub-tabs (Automaton templates, Standard tasks) | Automata → Templates |
+| Templates sub-tabs (Templates, Standard tasks) | Automata → Templates |
 | Automaton detail tabs | An Automaton's page |
 | Session detail tabs (Tmux or Chat, Channel, Status) and their controls | A session's page |
 | Settings tabs | Settings |
