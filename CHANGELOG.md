@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.146.4 — One Trivy version, pinned helm install, retire the installer-drift watch
+
+### Changed
+
+- **One Trivy pin for every workflow.** The release, container build and image-refresh workflows now read the Trivy tag from `scripts/trivy-version.txt` (`v0.73.0`) and hand it to `scripts/ci-install-trivy.sh`; no workflow carries its own tag any more. `scripts/check-trivy-version-single.sh` guards the pin and runs in CI. The container build's Trivy moves from `v0.70.0` to `v0.73.0`, so its scan can report different findings than before.
+- **The upstream-watch job reads the pin from the version file.** The scanner-pin check compares `scripts/trivy-version.txt` with the latest `aquasecurity/trivy` release, and the installer-drift check is retired because the installer is no longer fetched from `main`. Docs: `docs/howto/container-image-refresh.md`, `docs/operations.md`, and the Trivy and Helm version pin entries in `docs/datawatch-definitions.md`.
+- **Migration:** none for operators. **For the operator to review:** the helm archive checksum is not verified, and the version guard does not cover the helm pin.
+
+### Fixed
+
+- **The kind smoke workflow installs helm from a pinned, retried download instead of a pipe-to-shell.** `scripts/ci-install-helm.sh` fetches the archive for the tag in `scripts/helm-version.txt` (`v3.17.3`) from `get.helm.sh`, retries five times and fails loudly, so a transient download error no longer breaks the smoke run silently or pulls whatever helm is newest.
+
 ## v9.146.3 — Five open code scanner alerts addressed with inline path guards and a tick bound
 
 ### Security
