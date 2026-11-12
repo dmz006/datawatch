@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.141.0 (2026-11-11).** When no node serves a worker's model, the placement policy (compute_placement.missing_model) asks the operator, loads the model on a node with room, or refuses with a reason, and every decision is audited. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.142.0 (2026-11-11).** The Sessions page can be drawn as a list, tiles or compact cards, grouped by tag, state, node, project or Automaton with sessions nested under their Automaton and story, and saved as per-device views; the same grouped read is on REST, MCP, the CLI and chat. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

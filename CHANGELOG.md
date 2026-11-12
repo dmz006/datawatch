@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.142.0 — Sessions list tile mode, grouping and nesting
+
+### Added
+
+- **The Sessions page can be drawn as a List, as Tiles or as Compact cards.** A mode toggle sits at the top of the list. Tiles are the same work tiles the Automata and Automation lists use: the session name (or its task, or its short id), a state chip, backend and model, the node or peer, its tags, the last activity and a progress bar, with every action in a menu on the tile. Compact is a denser two-row grid that keeps its density when the window is resized. Until a button is pressed the mode follows the width (List below 600 px, Tiles above). The choice is a per-device setting kept in the browser.
+- **A state summary bar and Show more.** One chip per state present, each with its count and a total; a click on a chip filters the list to that state. The flat list and every group show 60 rows at a time with a shown and total counter and a Show more button, so a fleet of several hundred sessions stays responsive.
+- **Group by.** A picker groups the Sessions page by tag, tag prefix, state, node, project or Automaton. On the tag axis a session carrying several matching tags sits under one of them and keeps the rest as chips; a session with no match goes to an Ungrouped group. Group headers carry a collapse toggle, a count and a state mix, and the collapsed groups are remembered per device. The existing placement tag dropdown keeps working beside it.
+- **Sessions nest under their Automaton.** On the Automaton axis each Automaton is a block with its done and total session count, its sessions grouped under their story (the root block is labelled Story), and sessions that belong to no Automaton collect in their own block.
+- **Saved views.** A named capture of the view mode, the group axis (with prefix) and the session filter, kept per device, with Apply, Rename and Delete.
+- **The same grouped read on every surface.** `GET /api/sessions` accepts `group_by=tag|state|node|project|automaton` with an optional `tag_prefix=…` (for example `automation:`). It returns one group per key with its count, per-state mix and sessions, plus the per-state totals of the whole; `group_by=automaton` also carries each Automaton's stories and a done and total tally. An unknown axis is a 400, and without `group_by` the response is the unchanged JSON array. The session rows now carry the owning Automaton, story and task ids. The MCP `list_sessions` tool takes `group_by` and `tag_prefix`, `datawatch session list` takes `--group-by` and `--tag-prefix`, and the chat channels have the `sessions groups [axis] [tag-prefix]` verb.
+- **Thirty new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** the `sessions_view_*`, `sessions_group_*`, `sessions_auto_*` and `sessions_tile_*` keys for the mode buttons, the Group by picker, the group headers, the Automaton blocks, Saved views and the tile menu.
+- **Operator documentation.** A new how-to, [Sessions: tiles, grouping and saved views](docs/howto/sessions-tiles-and-grouping.md), covers the three modes, every group axis, the Automaton nesting, saved views and each surface. No new setting; no migration.
+
 ## v9.141.0 — Load a missing model on a node with resources, or refuse with a reason
 
 ### Added
