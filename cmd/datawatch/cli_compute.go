@@ -11,6 +11,11 @@
 //	datawatch compute node undrain <name>
 //	datawatch compute pin config-get
 //	datawatch compute pin config-set --seconds N   (pin keeper interval; 0 = off)
+//	datawatch compute placements list
+//	datawatch compute placements approve <ask-id>
+//	datawatch compute placements deny <ask-id>
+//	datawatch compute placements config-get
+//	datawatch compute placements config-set [--missing-model ask] [--mem-headroom-pct N] [--disk-headroom-gb N] [--ask-timeout-minutes N] [--assume-model-size-gb N]
 
 package main
 
@@ -19,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -37,6 +43,7 @@ ordered failover. See docs/plans/2026-05-08-v7.0.0-plan.md § 5.`,
 	cmd.AddCommand(newComputeNodeCmd())
 	cmd.AddCommand(newComputeMigrateCmd())
 	cmd.AddCommand(newComputePinCmd())
+	cmd.AddCommand(newComputePlacementCmd())
 	return cmd
 }
 
@@ -75,6 +82,113 @@ func newComputePinConfigSetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&seconds, "seconds", 0, "seconds between pin keeper checks (0 = off, default 300)")
+	return cmd
+}
+
+// newComputePlacementCmd exposes the compute_placement policy block and the
+// pending placement ask queue.
+//
+// A missing-model placement ask is raised when a model is not present on the
+// best-fit compute node and compute_placement.missing_model is "ask"; the
+// operator answers it once (approve pulls and loads the model, deny refuses
+// the placement), and an unanswered ask expires after
+// compute_placement.ask_timeout_minutes.
+func newComputePlacementCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "placements",
+		Short: "Compute placement asks and compute_placement policy settings",
+	}
+	cmd.AddCommand(
+		newComputePlacementListCmd(),
+		newComputePlacementDecisionCmd("approve"),
+		newComputePlacementDecisionCmd("deny"),
+		newComputePlacementConfigGetCmd(),
+		newComputePlacementConfigSetCmd(),
+	)
+	return cmd
+}
+
+func newComputePlacementListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List pending placement asks (models that need loading on a compute node)",
+		Args:  cobra.NoArgs,
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/compute/placements") },
+	}
+}
+
+// newComputePlacementDecisionCmd builds the approve/deny verb for one ask.
+func newComputePlacementDecisionCmd(decision string) *cobra.Command {
+	short := map[string]string{
+		"approve": "Approve a pending placement ask (pull and load the model on the target node)",
+		"deny":    "Deny a pending placement ask (refuse the placement)",
+	}[decision]
+	return &cobra.Command{
+		Use:   decision + " <ask-id>",
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/compute/placements/"+url.PathEscape(args[0])+"/"+decision, nil)
+		},
+	}
+}
+
+func newComputePlacementConfigGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "config-get",
+		Short: "Show the compute_placement policy block (live values, defaults read through)",
+		Args:  cobra.NoArgs,
+		RunE:  func(*cobra.Command, []string) error { return daemonGetSection("/api/config", "compute_placement") },
+	}
+}
+
+func newComputePlacementConfigSetCmd() *cobra.Command {
+	var missingModel string
+	var memHeadroomPct, diskHeadroomGB, askTimeoutMinutes, assumeModelSizeGB int
+	cmd := &cobra.Command{
+		Use:   "config-set",
+		Short: "Set compute_placement policy keys (applied live, no restart)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			patch := map[string]any{}
+			if cmd.Flags().Changed("missing-model") {
+				patch["compute_placement.missing_model"] = missingModel
+			}
+			if cmd.Flags().Changed("mem-headroom-pct") {
+				if memHeadroomPct < 0 || memHeadroomPct > 100 {
+					return fmt.Errorf("--mem-headroom-pct must be a whole number from 0 to 100")
+				}
+				patch["compute_placement.mem_headroom_pct"] = memHeadroomPct
+			}
+			if cmd.Flags().Changed("disk-headroom-gb") {
+				if diskHeadroomGB < 0 {
+					return fmt.Errorf("--disk-headroom-gb must be a whole number >= 0")
+				}
+				patch["compute_placement.disk_headroom_gb"] = diskHeadroomGB
+			}
+			if cmd.Flags().Changed("ask-timeout-minutes") {
+				if askTimeoutMinutes < 0 {
+					return fmt.Errorf("--ask-timeout-minutes must be a whole number >= 0")
+				}
+				patch["compute_placement.ask_timeout_minutes"] = askTimeoutMinutes
+			}
+			if cmd.Flags().Changed("assume-model-size-gb") {
+				if assumeModelSizeGB < 0 {
+					return fmt.Errorf("--assume-model-size-gb must be a whole number >= 0")
+				}
+				patch["compute_placement.assume_model_size_gb"] = assumeModelSizeGB
+			}
+			if len(patch) == 0 {
+				return fmt.Errorf("set at least one key: --missing-model, --mem-headroom-pct, --disk-headroom-gb, --ask-timeout-minutes, --assume-model-size-gb")
+			}
+			return daemonJSON(http.MethodPut, "/api/config", patch)
+		},
+	}
+	cmd.Flags().StringVar(&missingModel, "missing-model", "", "missing_model policy: ask, auto_load or refuse (default ask)")
+	cmd.Flags().IntVar(&memHeadroomPct, "mem-headroom-pct", 0, "free-RAM headroom percent to require for a placement (0-100, default 10)")
+	cmd.Flags().IntVar(&diskHeadroomGB, "disk-headroom-gb", 0, "free-disk headroom in GB to require for a placement (default 5)")
+	cmd.Flags().IntVar(&askTimeoutMinutes, "ask-timeout-minutes", 0, "minutes before an unanswered placement ask expires (default 30)")
+	cmd.Flags().IntVar(&assumeModelSizeGB, "assume-model-size-gb", 0, "GB to assume for models with an unknown size (0 = size unknown)")
 	return cmd
 }
 

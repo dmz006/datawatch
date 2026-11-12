@@ -118,9 +118,11 @@ type SpawnRequest struct {
 	// ComputeNode — the compute node this task's worker lease was granted on
 	// (capacity.Lease.Node, read after admit succeeds). The local-session
 	// SpawnFn forwards it as compute_node with the backend, so the session
-	// runs on the node the ledger placed the task on. Empty when capacity is
-	// off or the lease names no node; the session then resolves its node as
-	// it always has.
+	// runs on the node the ledger placed the task on. With a placement advisor
+	// the gate in admitPreferring chose this node and loaded the model before
+	// the lease, so the session always starts on a node that placement
+	// approved. Empty when capacity is off or the lease names no node; the
+	// session then resolves its node as it always has.
 	ComputeNode string
 }
 

@@ -26,6 +26,7 @@ CURATED=(
     automaton-held-state-questions automaton-decompose-lint
     automaton-daemon-task-modes
     imap-mcp-service
+    compute-placement-ask
 )
 
 ERRORS=0

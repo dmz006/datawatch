@@ -5363,6 +5363,64 @@ Restart the daemon after changing it.
   alert means something on the node keeps loading other models. Pin the
   caller's model explicitly, or find the caller.
 
+## Model placement (when the routed node does not have the model)
+
+Pinning keeps the model you want on a node; placement decides what happens
+when the routed node does not have the model you *want routed to it*. The
+planner looks at the node's free memory and free disk (each reduced by the
+headroom keys below), the model's size in GB, and node-level conditions —
+a node that is disabled, in a maintenance window, or pinned to another
+model is never picked, and the planner never writes to the node, loads a
+model or sends a message. It only names the node.
+
+Keys live under `compute_placement.` (flat block at the top level of the
+config object, beside `compute_nodes`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `missing_model` | `ask` | `ask` records a one-shot placement ask and waits for the operator to approve (pull + load) or deny; `auto_load` pulls and loads without asking; `refuse` never loads (the refusal is audited). |
+| `mem_headroom_pct` | `10` | Whole percent (0–100) of free memory kept out of reach: the model must fit, and this much free memory must be left over. |
+| `disk_headroom_gb` | `5` | Whole GB of free disk kept out of reach: the model must fit, and this much free disk must be left over. |
+| `ask_timeout_minutes` | `30` | How long an ask may wait for an answer before it expires (a refusal, not an approval). `0` = no timeout. |
+| `assume_model_size_gb` | `0` | GB assumed for a model the node carries but the daemon is not told the size of (`0` = unknown). Affects the estimate only. |
+
+All five are read at decision time: a change from any surface applies at
+the next placement decision, no restart needed.
+
+The ask itself is one-shot and pending-only everywhere it is listed:
+
+- The queue (`GET /api/compute/placements` → `{asks:[…], pending:N}`,
+  MCP `compute_placement_list`, `datawatch compute placements list`,
+  comm `compute placement list`, PWA Settings → General →
+  **Compute placements**) shows only asks that still need an answer.
+- An answer is approve or deny — `POST /api/compute/placements/{id}/approve`
+  or `/deny` (needs `compute:write`; the list needs `compute:list`), MCP
+  `compute_placement_answer` with `decision: approve|deny`,
+  `datawatch compute placements approve|deny <id>`, comm
+  `compute placement approve|deny <id>`, or the PWA Approve / Deny buttons.
+- An ask that gets an answer leaves the queue immediately (it stays
+  readable on the daemon for the history). Approve starts the pull and
+  load; deny refuses the placement. An ask that is never answered passes
+  `ask_timeout_minutes` and expires — a refusal with `decided_by: timeout`,
+  never an approval. A closed ask (approved, denied or expired) cannot be
+  re-decided: a second answer attempt is refused (HTTP 409).
+- Every step is audited: `placement_asked` (CEF 88), `placement_approved`
+  (89), `placement_denied` (90), `placement_loaded` (91) and
+  `placement_refused` (92). See [howto/audit-logging.md](howto/audit-logging.md).
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `compute_placement.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch compute placements list\|approve \<id\>\|deny \<id\>`; `datawatch compute placements config-get\|config-set --missing-model X --mem-headroom-pct N --disk-headroom-gb N --ask-timeout-minutes N --assume-model-size-gb N` |
+| **Web UI** | Settings → General → **Compute placements** card: the policy select, the four number fields, and the pending queue with Approve / Deny |
+| **REST API** | `GET /api/compute/placements`; `POST /api/compute/placements/{id}/approve` and `/deny`; `PUT /api/config` with `{"compute_placement.missing_model": "ask"}` etc.; the block reads back on `GET /api/config` |
+| **MCP** | `compute_placement_list`, `compute_placement_answer` (`id`, `decision`); `get_config` / `config_set` with key `compute_placement.<key>` |
+| **Comm channel** | `compute placement list\|approve \<id\>\|deny \<id\>`; `configure compute_placement.<key>=<value>`; the alert names the ask id so a reply like `compute placement approve ask-<id>` settles it |
+
+See [howto/compute-placement-ask.md](howto/compute-placement-ask.md) for the
+glossary entries (model placement, placement policy, pending placement ask,
+placement refusal) and the worked walkthrough.
+
 ## Per-LLM concurrency limits and plan tiers
 
 Each LLM registry entry carries a concurrency cap for its `llm:<name>`

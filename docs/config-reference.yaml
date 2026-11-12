@@ -4509,6 +4509,32 @@ orchestrator:
 # Default 300.
 pin_check_seconds: 300
 
+# ─── Model placement: what happens when the routed node does not have the model ───
+# All five keys are read at decision time, so a change made from any surface
+# (YAML, CLI, PWA, REST, comm channel, MCP) applies at the next placement
+# decision — no restart needed.
+compute_placement:
+  # What to do when the requested model is not resident on the routed node.
+  # ask = record a one-shot placement ask and wait for the operator to approve
+  # (the model is then pulled, if the node does not have it, and loaded) or
+  # deny; an unanswered ask expires after ask_timeout_minutes, which is a
+  # refusal, not an approval. auto_load = pull + load without asking.
+  # refuse = never load; the refusal is audited (placement_refused). Def: ask.
+  missing_model: ask
+  # Whole percent (0–100) of free memory kept out of reach when a node is
+  # considered: the model must fit, and this much free memory must be left
+  # over. Def: 10.
+  mem_headroom_pct: 10
+  # Whole GB of free disk kept out of reach when a node is considered: the
+  # model must fit, and this much free disk must be left over. Def: 5.
+  disk_headroom_gb: 5
+  # Minutes a placement ask may wait unanswered before it expires (a refusal).
+  # 0 means the ask never times out. Def: 30.
+  ask_timeout_minutes: 30
+  # Whole GB to assume for a model the node carries but the daemon is not told
+  # the size of; 0 = unknown. Affects the free-space estimate only. Def: 0.
+  assume_model_size_gb: 0
+
 # ── Observer (BL171 — v4.1.0) ──
 # Unified stats + process-tree + sub-process monitoring subsystem.
 # Shape A (in-process plugin) is the default; Shape B (standalone

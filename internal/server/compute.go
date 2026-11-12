@@ -770,16 +770,34 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 	if kind == "" {
 		kind = "ollama"
 	}
-	addr := n.Address
-	if addr == "" {
-		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "node has no address"})
+	models, note, perr := ProbeNodeModels(r.Context(), n, kind)
+	if perr != nil {
+		http.Error(w, perr.Error(), http.StatusBadGateway)
 		return
 	}
-	client := &http.Client{
-		Timeout: 8 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-declared node URL, often self-signed
-		},
+	if note != "" {
+		writeJSONOK(w, map[string]any{"models": models, "kind": kind, "note": note})
+		return
+	}
+	writeJSONOK(w, map[string]any{"models": models, "kind": kind, "node": name})
+}
+
+// ProbeNodeModels lists the models a compute node serves for an LLM kind. It
+// is the one source of a node's served models: the node-models endpoint
+// returns it, and model placement reads it to learn which node already serves
+// a model. kind "ollama" and "opencode" read GET /api/tags and "openwebui"
+// reads /api/v1/models; other kinds have no model endpoint.
+//
+// An empty list with a note means the probe has nothing to list (the node has
+// no address, the kind has no probe, or the reply did not parse). A non-nil
+// error means the probe itself failed (node unreachable, non-200 reply).
+func ProbeNodeModels(ctx context.Context, n *compute.Node, kind string) (models []string, note string, err error) {
+	if kind == "" {
+		kind = "ollama"
+	}
+	addr := n.Address
+	if addr == "" {
+		return []string{}, "node has no address", nil
 	}
 	var probeURL string
 	var parser func([]byte) []string
@@ -797,26 +815,32 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 		// shell, opencode-acp, opencode-prompt) don't expose a model
 		// list endpoint — model is the binary's own choice. Return
 		// empty so the PWA falls back to free text.
-		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "kind has no model probe"})
-		return
+		return []string{}, "kind has no model probe", nil
 	}
-	resp, perr := client.Get(probeURL)
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-declared node URL, often self-signed
+		},
+	}
+	req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
+	if rerr != nil {
+		return nil, "", fmt.Errorf("probe %s failed: %v", probeURL, rerr)
+	}
+	resp, perr := client.Do(req)
 	if perr != nil {
-		http.Error(w, fmt.Sprintf("probe %s failed: %v", probeURL, perr), http.StatusBadGateway)
-		return
+		return nil, "", fmt.Errorf("probe %s failed: %v", probeURL, perr)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
-		http.Error(w, fmt.Sprintf("probe %s returned HTTP %d", probeURL, resp.StatusCode), http.StatusBadGateway)
-		return
+		return nil, "", fmt.Errorf("probe %s returned HTTP %d", probeURL, resp.StatusCode)
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	models := parser(body)
+	models = parser(body)
 	if models == nil {
-		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "could not parse probe response"})
-		return
+		return []string{}, "could not parse probe response", nil
 	}
-	writeJSONOK(w, map[string]any{"models": models, "kind": kind, "node": name})
+	return models, "", nil
 }
 
 func (s *Server) auditCompute(name, action string) {

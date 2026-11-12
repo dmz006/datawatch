@@ -984,6 +984,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodePullModel(), tracked(s.handleComputeNodePullModelMCP))
 	mcpSrv.AddTool(s.toolComputeNodeRemoveModel(), tracked(s.handleComputeNodeRemoveModelMCP))
 	mcpSrv.AddTool(s.toolMarketplacePullTask(), tracked(s.handleMarketplacePullTaskMCP))
+	// Missing-model placement asks (policy "ask"): list pending + approve/deny.
+	mcpSrv.AddTool(s.toolComputePlacementList(), tracked(s.handleComputePlacementListMCP))
+	mcpSrv.AddTool(s.toolComputePlacementAnswer(), tracked(s.handleComputePlacementAnswerMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
 	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))

@@ -10139,6 +10139,14 @@ const DOCS_LINKS_BY_KEY = {
   llms: DOCS_DEFINITIONS + '#llm-registry',
   llm_config: DOCS_DEFINITIONS + '#llm-configuration-legacy',
   compute_nodes: DOCS_DEFINITIONS + '#compute-nodes',
+  // Settings → General → Compute placements (placement-ask policy: the
+  // missing-model action, headroom thresholds, ask expiry, and the
+  // pending ask queue with the per-node refusal lines)
+  gc_compute_placement: 'howto/compute-placement-ask.md',
+  compute_placement: 'howto/compute-placement-ask.md',
+  settings_compute_placement_missing_model: 'howto/compute-placement-ask.md',
+  placement_btn_approve: 'howto/compute-placement-ask.md',
+  placement_btn_deny: 'howto/compute-placement-ask.md',
   costrates: DOCS_DEFINITIONS + '#cost-rates-usd-1k-tokens',
   gc_clusterprofiles: DOCS_DEFINITIONS + '#cluster-profiles',
   lc_memory: 'memory.md#configuration',
@@ -19080,6 +19088,21 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'compute_pin', section: 'Compute pin keeper', fields: [
     { key: 'pin_check_seconds', label: 'Pin check interval (sec, 0 = keeper off)', labelKey: 'settings_pin_check_seconds', type: 'number', min: 0, placeholder: '300' },
   ]},
+  // Compute placements — placement-ask policy. When a request names a
+  // model no node hosts, missing_model decides the fate of the request:
+  // ask = each one lands in the queue below for operator approval,
+  // auto_load = load onto a node with room, refuse = deny it. The
+  // headroom thresholds are the free memory/disk a node must still keep
+  // before a model is loaded. Fields save through saveGeneralField into
+  // the compute_placement block of /api/config (daemon defaults: ask,
+  // 10%, 5 GB, 30 min). The live ask queue + per-node refusal reasons
+  // render from GET /api/compute/placements (loadComputePlacementAsks).
+  { id: 'compute_placement', section: 'Compute placements', sectionKey: 'settings_compute_placement_section', docs: 'howto/compute-placement-ask.md', fields: [
+    { key: 'compute_placement.missing_model', label: 'Model not hosted: policy', labelKey: 'settings_compute_placement_missing_model', hintKey: 'settings_compute_placement_missing_model_hint', docsKey: 'gc_compute_placement', type: 'select', options: ['ask', 'auto_load', 'refuse'], optionLabelKeys: { ask: 'options_compute_placement_ask', auto_load: 'options_compute_placement_auto_load', refuse: 'options_compute_placement_refuse' } },
+    { key: 'compute_placement.mem_headroom_pct', label: 'Memory headroom to keep free (%)', labelKey: 'settings_compute_placement_mem_headroom_pct', type: 'number', min: 0, placeholder: '10' },
+    { key: 'compute_placement.disk_headroom_gb', label: 'Disk headroom to keep free (GiB)', labelKey: 'settings_compute_placement_disk_headroom_gb', type: 'number', min: 0, placeholder: '5' },
+    { key: 'compute_placement.ask_timeout_minutes', label: 'Ask expires after (min)', labelKey: 'settings_compute_placement_ask_timeout_minutes', type: 'number', min: 1, placeholder: '30' },
+  ]},
   // Usage calculator — the weekly-allowance advice. Variant picks how the advice
   // is drawn, policy picks the target it aims at; the rest feed the model.
   // optionLabelKeys shows a locale label for an option whose id is not for people.
@@ -21081,6 +21104,17 @@ function loadGeneralConfig() {
             <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('settings.self_config_recent_loading') || 'Loading…')}</div>
           </div>`;
         }
+        // Compute placements: the policy fields above save through
+        // saveGeneralField; the ask queue that follows is live engine
+        // state, so it renders from /api/compute/placements below and
+        // re-loads after each approve/deny decision.
+        if (sec.id === 'compute_placement') {
+          const _paTitle = t('settings_compute_placement_asks_title');
+          html += `<div id="place_asks" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+            <div style="font-weight:700;font-size:12px;color:var(--text);margin-bottom:4px;">${escHtml(_paTitle !== 'settings_compute_placement_asks_title' ? _paTitle : 'Pending placement decisions')}${defsLink('placement_btn_approve')}</div>
+            <div id="place_asks_body" style="font-size:11px;color:var(--text2);">…</div>
+          </div>`;
+        }
         el.innerHTML = html;
         if (sec.id === 'selfconfig' && typeof el.querySelector === 'function') {
           try { window.renderSelfConfigAuditRecent(el); } catch (_) { /* decorative; never block later sections */ }
@@ -21096,6 +21130,9 @@ function loadGeneralConfig() {
         window.refreshUsageAutoLanesStatus();
         window._usageAutoLanesStatusInterval = setInterval(window.refreshUsageAutoLanesStatus, 60 * 1000);
       }
+      // The ask queue changes as asks expire or get decided — load it
+      // now that the card is in the DOM (no-op elsewhere).
+      if (document.getElementById('place_asks_body')) loadComputePlacementAsks();
     })
     .catch(e => {
       const msg = _fedMsg(e, null);
@@ -21694,6 +21731,83 @@ function _taskReviewPanelHTML(prd, task) {
     : '';
   return actions + window.infraRetryHeldCauseHtml(task) + _taskAttemptsHTML(task) + _failureEscalationEditorHTML(prd.id, task.id, task.failure_escalation);
 }
+
+// ── Compute placements (placement-ask queue) ──────────────────────────────
+// The Settings → General → Compute placements card holds the policy fields
+// (GENERAL_CONFIG_FIELDS, saved via saveGeneralField) plus this live queue:
+// every ask the engine has opened for a model no node hosts, each with the
+// per-node refusal reasons the planner recorded when it rejected nodes.
+// Approve/deny POST to /api/compute/placements/<id>/approve|deny and the
+// queue re-loads, so a decision shows without a page refresh.
+// _tOr — t()'s last resort is the key itself, so (t(k) || fallback) never
+// fires on a missing bundle; compare against the key instead.
+function _tOr(key, fallback) {
+  const s = t(key);
+  return (s && s !== key) ? s : fallback;
+}
+
+// placementAskRow renders one ask: the candidate node, the model it would
+// load (with its assumed size), the engine's per-node refusal lines (the
+// reason text carries one line per checked node, node name first), when
+// the ask expires, and the Approve/Deny buttons (decidePlacement).
+function placementAskRow(ask) {
+  const size = (ask.model_size_gb > 0) ? ` · ${ask.model_size_gb} GiB` : '';
+  const expires = ask.expires_at ? ` · expires ${escHtml(String(ask.expires_at))}` : '';
+  const buttons = (ask.decision === 'pending')
+    ? `<button class="btn-primary" style="font-size:11px;padding:2px 10px;" onclick="decidePlacement('${escHtml(ask.id)}','approve')">${escHtml(_tOr('placement_btn_approve', 'Approve'))}</button>
+       <button class="btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="decidePlacement('${escHtml(ask.id)}','deny')">${escHtml(_tOr('placement_btn_deny', 'Deny'))}</button>`
+    : `<span style="font-size:10px;color:var(--text2);">${escHtml(ask.decision || '')}${(ask.decided_at || ask.decided_by) ? ' · ' + escHtml(ask.decided_by || '') + escHtml(ask.decided_at ? ' ' + String(ask.decided_at) : '') : ''}</span>`;
+  return `<div style="padding:6px 0;border-bottom:1px solid var(--border);">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div><b>${escHtml(ask.node || '?')}</b> ← ${escHtml(ask.model || '?')}${size}${expires}</div>
+      <div style="display:flex;gap:6px;align-items:center;">${buttons}</div>
+    </div>
+    ${ask.reason ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;white-space:pre-line;">${escHtml(ask.reason)}</div>` : ''}
+  </div>`;
+}
+
+// loadComputePlacementAsks — fetch the open asks and render them into
+// #place_asks_body (the queue slot appended to the Compute placements
+// card by loadGeneralConfig). The server lists only pending asks (stale
+// ones are expired first), oldest first, so the queue shrinks as each
+// is decided. Renders the empty state when nothing is pending so the
+// operator can tell the queue is polled and merely quiet, not broken.
+function loadComputePlacementAsks() {
+  return apiFetch('/api/compute/placements').then(d => {
+    const body = document.getElementById('place_asks_body');
+    if (!body) return;
+    const asks = (d && Array.isArray(d.asks)) ? d.asks : [];
+    let html = '';
+    if (asks.length === 0) {
+      html += `<div>${escHtml(_tOr('settings_compute_placement_no_pending', 'No placement asks pending.'))}</div>`;
+    } else {
+      asks.forEach(a => { html += placementAskRow(a); });
+    }
+    body.innerHTML = html;
+  }).catch(() => {
+    const body = document.getElementById('place_asks_body');
+    if (!body) return;
+    body.innerHTML = `<span style="color:var(--error);">${escHtml(_tOr('settings_compute_placement_load_failed', 'Could not load placement asks.'))}</span>`;
+  });
+}
+window.loadComputePlacementAsks = loadComputePlacementAsks;
+
+// decidePlacement(id, mode) — record an operator decision (mode 'approve'
+// or 'deny') on an open ask. The daemon returns the updated ask; a 409
+// means it was already decided or expired since we loaded it. On every
+// outcome the queue re-renders so state stays honest.
+function decidePlacement(id, mode) {
+  apiFetch('/api/compute/placements/' + encodeURIComponent(id) + '/' + mode, { method: 'POST' })
+    .then(() => {
+      showToast(_tOr('settings_compute_placement_decided', 'Decision recorded'), 'success', 2500);
+      loadComputePlacementAsks();
+    })
+    .catch(e => {
+      showToast(_tOr('settings_compute_placement_decision_failed', 'Deciding the placement ask failed') + ': ' + (e && e.message ? e.message : String(e)), 'error', 5000);
+      loadComputePlacementAsks();
+    });
+}
+window.decidePlacement = decidePlacement;
 
 function saveGeneralConfigPut(key, value) {
   // Proxy-aware (version-skew audit): _apiPath routes the PUT to the

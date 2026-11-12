@@ -12,6 +12,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 // MarketplaceCatalogEntry — one model in the embedded curated catalog.
@@ -343,8 +345,10 @@ func (s *Server) handleComputeNodeModelDelete(w http.ResponseWriter, r *http.Req
 	writeJSONOK(w, map[string]any{"name": name, "model": model, "ok": true})
 }
 
-// runOllamaPull — background pull worker. Streams Ollama's /api/pull
-// (which returns line-delimited JSON progress) and updates the task.
+// runOllamaPull — background pull worker. Delegates the stream loop to
+// inference.PullModel (the one implementation of the Ollama /api/pull
+// contract) and translates its progress reports into PullTask state, which
+// keeps the same status values: pending | in_progress | done | failed.
 // It is a *Server method so it re-checks the model-pull consent gate
 // before touching the network: a pull started before the last consent
 // write still honors the consent in force when it actually runs. The
@@ -362,70 +366,29 @@ func (s *Server) runOllamaPull(taskID, addr, model string) {
 		return
 	}
 	globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "in_progress" })
-	body, _ := json.Marshal(map[string]any{"name": model, "stream": true})
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(addr, "/")+"/api/pull", strings.NewReader(string(body)))
-	if err != nil {
-		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{
 		Timeout:   0,                                                                       // pulls can be very long
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, // #nosec G402
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
-		return
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+	err := inference.PullModel(context.Background(), client, addr, model, func(p inference.PullProgress) {
 		globalPullTasks.update(taskID, func(t *PullTask) {
-			t.Status = "failed"
-			t.Error = fmt.Sprintf("ollama returned %d: %s", resp.StatusCode, string(b))
-		})
-		return
-	}
-	dec := json.NewDecoder(resp.Body)
-	for {
-		var msg struct {
-			Status    string `json:"status"`
-			Digest    string `json:"digest,omitempty"`
-			Total     int64  `json:"total,omitempty"`
-			Completed int64  `json:"completed,omitempty"`
-			Error     string `json:"error,omitempty"`
-		}
-		if err := dec.Decode(&msg); err != nil {
-			if err == io.EOF {
-				break
+			if p.BytesTotal > 0 {
+				t.BytesTotal = p.BytesTotal
+				t.BytesDone = p.BytesDone
+				t.Progress = p.Percent
 			}
-			globalPullTasks.update(taskID, func(t *PullTask) {
-				t.Status = "failed"
-				t.Error = "decode error: " + err.Error()
-			})
-			return
-		}
-		if msg.Error != "" {
-			globalPullTasks.update(taskID, func(t *PullTask) {
-				t.Status = "failed"
-				t.Error = msg.Error
-			})
-			return
-		}
-		globalPullTasks.update(taskID, func(t *PullTask) {
-			if msg.Total > 0 {
-				t.BytesTotal = msg.Total
-				t.BytesDone = msg.Completed
-				t.Progress = float64(msg.Completed) / float64(msg.Total)
-			}
-			if strings.Contains(strings.ToLower(msg.Status), "success") || msg.Status == "success" {
+			if p.Success {
 				t.Status = "done"
 				t.Progress = 1.0
 			}
 		})
+	})
+	if err != nil {
+		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
+		return
 	}
-	// If we exited the loop without an explicit success, mark done if no error.
+	// If we finished without an explicit success line, the pull ran to its
+	// end: mark it done.
 	globalPullTasks.update(taskID, func(t *PullTask) {
 		if t.Status == "in_progress" && t.Error == "" {
 			t.Status = "done"

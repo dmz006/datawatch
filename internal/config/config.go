@@ -842,6 +842,10 @@ type Config struct {
 	// survives a save/load round trip.
 	PinCheckSeconds int `yaml:"pin_check_seconds" json:"pin_check_seconds"`
 
+	// ComputePlacement holds the compute_placement placement-policy block.
+	// An unset key reads its default; see ComputePlacementConfig.
+	ComputePlacement ComputePlacementConfig `yaml:"compute_placement,omitempty" json:"compute_placement,omitempty"`
+
 	// WebSearch (BL372) — web search MCP injection for opencode and goose sessions.
 	// When enabled, auto-injects `datawatch mcp-search` as an MCP server so agents
 	// have a `web_search` tool backed by the configured SearXNG instance.
@@ -1112,6 +1116,126 @@ type ComputeNodeYAML struct {
 	// verifier request needs on this node. 0 = unknown, so no suggestion
 	// is shown. Must not be negative.
 	VerifierContextMB int `yaml:"verifier_context_mb,omitempty" json:"verifier_context_mb,omitempty"`
+}
+
+// ComputePlacement — placement policy: what compute placement does when
+// the model it is placing is missing on a candidate node, how much headroom
+// to leave in the node's memory and disk, and how long an ask may sit
+// unanswered before it resolves on its own.
+//
+// Placement reads the live block on every placement decision, so a runtime
+// write (PUT /api/config, `configure compute_placement.<key>=<value>` or
+// `datawatch config set compute_placement.<key> <value>`) applies with no
+// daemon restart. Except where a comment says otherwise, an unset key reads
+// its default.
+type ComputePlacementConfig struct {
+	// MissingModel decides what placement does when the requested model is
+	// not resident on the candidate node:
+	//
+	//	ask        ask the operator what to do before proceeding
+	//	auto_load  load the model onto the node without asking
+	//	refuse     skip the node without loading the model
+	//
+	// Unset reads "ask" (the default) via EffectiveMissingModel.
+	MissingModel string `yaml:"missing_model,omitempty" json:"missing_model,omitempty"`
+
+	// MemHeadroomPct is the percentage of the node's total memory (0-100)
+	// that placement keeps free for everything that is not a model it is
+	// placing. Unset reads 10 (the default).
+	MemHeadroomPct int `yaml:"mem_headroom_pct,omitempty" json:"mem_headroom_pct,omitempty"`
+
+	// DiskHeadroomGB is the gigabytes of disk space placement keeps free
+	// on the node. Unset reads 5 (the default).
+	DiskHeadroomGB int `yaml:"disk_headroom_gb,omitempty" json:"disk_headroom_gb,omitempty"`
+
+	// AskTimeoutMinutes is how many minutes an unanswered ask stays pending
+	// before it resolves on its own. Unset reads 30 (the default).
+	AskTimeoutMinutes int `yaml:"ask_timeout_minutes,omitempty" json:"ask_timeout_minutes,omitempty"`
+
+	// AssumeModelSizeGB is the gigabyte size of a model that is already on
+	// the node but whose resident model datawatch is not told about.
+	// 0 means the size is unknown — that is the default, so an explicit 0
+	// must survive a save/load round trip and applyDefaults never fills it.
+	AssumeModelSizeGB int `yaml:"assume_model_size_gb,omitempty" json:"assume_model_size_gb,omitempty"`
+}
+
+// Compute placement defaults and the missing_model policy vocabulary. A
+// changed decision is a deliberate edit of this const block and of the
+// tests that pin it.
+const (
+	// The compute_placement.missing_model policy values.
+	ComputePlacementAsk      = "ask"
+	ComputePlacementAutoLoad = "auto_load"
+	ComputePlacementRefuse   = "refuse"
+
+	ComputePlacementDefaultMissingModel      = "ask"
+	ComputePlacementDefaultMemHeadroomPct    = 10
+	ComputePlacementDefaultDiskHeadroomGB    = 5
+	ComputePlacementDefaultAskTimeoutMinutes = 30
+	// assume_model_size_gb defaults to 0 = size unknown, so applyDefaults
+	// deliberately leaves the field untouched.
+	ComputePlacementDefaultAssumeModelSizeGB = 0
+)
+
+// ComputePlacementMissingModels lists the valid compute_placement
+// .missing_model values in canonical order.
+func ComputePlacementMissingModels() []string {
+	return []string{ComputePlacementAsk, ComputePlacementAutoLoad, ComputePlacementRefuse}
+}
+
+// ComputePlacementValidMissingModel reports whether v is a usable
+// missing_model value. The empty string is accepted too: unset reads the
+// "ask" default.
+func ComputePlacementValidMissingModel(v string) bool {
+	if v == "" {
+		return true
+	}
+	for _, m := range ComputePlacementMissingModels() {
+		if v == m {
+			return true
+		}
+	}
+	return false
+}
+
+// EffectiveMissingModel returns the missing_model policy in effect: "ask"
+// when unset.
+func (c *ComputePlacementConfig) EffectiveMissingModel() string {
+	if c == nil || c.MissingModel == "" {
+		return ComputePlacementDefaultMissingModel
+	}
+	return c.MissingModel
+}
+
+// Validate rejects the bad compute_placement values: an unknown
+// missing_model, a memory headroom outside 0-100, or a negative disk or
+// ask-timeout or assumed size. The error names the key and the allowed
+// values.
+func (c *ComputePlacementConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if !ComputePlacementValidMissingModel(c.MissingModel) {
+		return fmt.Errorf("compute_placement.missing_model: %q is invalid; valid values: %s (unset reads %q)",
+			c.MissingModel, strings.Join(ComputePlacementMissingModels(), ", "), ComputePlacementDefaultMissingModel)
+	}
+	if c.MemHeadroomPct < 0 || c.MemHeadroomPct > 100 {
+		return fmt.Errorf("compute_placement.mem_headroom_pct: %d is invalid; use a whole number from 0 to 100 (the default is %d)",
+			c.MemHeadroomPct, ComputePlacementDefaultMemHeadroomPct)
+	}
+	if c.DiskHeadroomGB < 0 {
+		return fmt.Errorf("compute_placement.disk_headroom_gb: %d is invalid; use a whole number of 0 or more (the default is %d)",
+			c.DiskHeadroomGB, ComputePlacementDefaultDiskHeadroomGB)
+	}
+	if c.AskTimeoutMinutes < 0 {
+		return fmt.Errorf("compute_placement.ask_timeout_minutes: %d is invalid; use a whole number of 0 or more (the default is %d)",
+			c.AskTimeoutMinutes, ComputePlacementDefaultAskTimeoutMinutes)
+	}
+	if c.AssumeModelSizeGB < 0 {
+		return fmt.Errorf("compute_placement.assume_model_size_gb: %d is invalid; use a whole number of 0 or more (0 = size unknown)",
+			c.AssumeModelSizeGB)
+	}
+	return nil
 }
 
 // CouncilPersonaOverride allows operators to customize a persona's
@@ -7887,6 +8011,21 @@ func applyDefaults(cfg *Config) {
 		selfConfigMigrationLogf(
 			"mcp.allow_self_config: key absent — applying new default (enabled), the alias for the builtin \"self-config\" capability group; set allow_self_config: false to disable")
 	}
+	// compute_placement: every unset key reads its default once. The 0 of
+	// assume_model_size_gb means the size is unknown (the default), so it is
+	// deliberately left untouched — an explicit 0 survives the round trip.
+	if cfg.ComputePlacement.MissingModel == "" {
+		cfg.ComputePlacement.MissingModel = ComputePlacementDefaultMissingModel
+	}
+	if cfg.ComputePlacement.MemHeadroomPct == 0 {
+		cfg.ComputePlacement.MemHeadroomPct = ComputePlacementDefaultMemHeadroomPct
+	}
+	if cfg.ComputePlacement.DiskHeadroomGB == 0 {
+		cfg.ComputePlacement.DiskHeadroomGB = ComputePlacementDefaultDiskHeadroomGB
+	}
+	if cfg.ComputePlacement.AskTimeoutMinutes == 0 {
+		cfg.ComputePlacement.AskTimeoutMinutes = ComputePlacementDefaultAskTimeoutMinutes
+	}
 	if cfg.Session.LogLevel == "" {
 		cfg.Session.LogLevel = "info"
 	}
@@ -8039,6 +8178,9 @@ const (
 func validateLoaded(cfg *Config) error {
 	if n := cfg.Secrets.Vault.UnreachableAlertAfterSeconds; n != nil && *n < 0 {
 		return fmt.Errorf("secrets.vault.unreachable_alert_after_seconds: %d must be >= 0 (0 = off, default %d)", *n, DefaultVaultUnreachableAlertAfterSeconds)
+	}
+	if err := cfg.ComputePlacement.Validate(); err != nil {
+		return err
 	}
 	for k, v := range map[string]int{
 		"capacity_rate_requests":       cfg.Autonomous.CapacityRateRequests,

@@ -1660,6 +1660,10 @@ type Manager struct {
 	// until SetNodeLoad wires them (single-node entries never use them).
 	nodeLoad   NodeLoader
 	nodeAlerts NodeLoadAlerts
+	// placementAdvisor supplies the placement planner's verdict and the live
+	// missing_model policy, applied by the load gate before a worker's model
+	// is loaded (nil = gate skipped; see placement_admission.go).
+	placementAdvisor PlacementAdvisor
 	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
 	// none is active); waitClock is the time source for the spawn-wait loop
 	// (nil = wall clock). Both are set via capacity.go.

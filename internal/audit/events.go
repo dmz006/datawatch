@@ -380,4 +380,31 @@ const (
 	// the JSONL record and never reach the CEF line — the CEF line carries
 	// keys and reason only).
 	ActionConfigWrite = "config_write"
+
+	// Model placement decisions — the lifecycle of one decision about loading
+	// a model onto a compute node. Every entry names the node, the model,
+	// the placement policy in force (ask, auto_load or refuse) and the
+	// reason text; a decision under the refuse policy has no operator step.
+
+	// ActionPlacementAsked — a placement under the ask policy was posed to
+	// the operator, awaiting an answer. Details: node, model, policy, reason.
+	ActionPlacementAsked = "placement_asked"
+	// ActionPlacementApproved — the operator approved a placement posed
+	// under the ask policy, so the model may be loaded onto the node.
+	// Details: node, model, policy, reason.
+	ActionPlacementApproved = "placement_approved"
+	// ActionPlacementDenied — the operator denied a placement posed under
+	// the ask policy, so the model is not loaded onto the node.
+	// Details: node, model, policy, reason.
+	ActionPlacementDenied = "placement_denied"
+	// ActionPlacementLoaded — a model was loaded onto a node, under auto_load
+	// (no ask) or after an approval under ask. Details: node, model, policy,
+	// reason ("" when the reason carried no text).
+	ActionPlacementLoaded = "placement_loaded"
+	// ActionPlacementRefused — a placement was refused: under the refuse
+	// policy (no load attempted, no question posed), or because a load that
+	// was allowed failed every node it was offered to. A refusal is a safety
+	// event: the policy or the node state worked. Details: node, model,
+	// policy, reason.
+	ActionPlacementRefused = "placement_refused"
 )

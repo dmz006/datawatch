@@ -390,6 +390,52 @@ func (s *Server) handleMarketplacePullTaskMCP(_ context.Context, req mcpsdk.Call
 	return textOK(string(out)), nil
 }
 
+// Missing-model placement asks (policy `ask`). The placement engine
+// records an ask when a model is present on no eligible node; the
+// operator lists them (compute_placement_list) and approves or denies
+// one (compute_placement_answer). Decisions are one-shot.
+
+func (s *Server) toolComputePlacementList() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_placement_list",
+		mcpsdk.WithDescription("List pending placement asks: requests whose model is present on no eligible ComputeNode, queued for approval because compute_placement.missing_model=ask. Read-only."),
+	)
+}
+
+func (s *Server) handleComputePlacementListMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/compute/placements", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputePlacementAnswer() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_placement_answer",
+		mcpsdk.WithDescription("Approve or deny a pending placement ask (one-shot: a denied, approved, or expired ask cannot be re-decided). decision = approve|deny."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("ask ID from compute_placement_list (e.g. ask-1)")),
+		mcpsdk.WithString("decision", mcpsdk.Required(), mcpsdk.Description("approve | deny")),
+	)
+}
+
+func (s *Server) handleComputePlacementAnswerMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(mustString(req, "id"))
+	if id == "" {
+		return toolError("compute_placement_answer", errors.New("id is required")), nil
+	}
+	decision := strings.ToLower(strings.TrimSpace(req.GetString("decision", "")))
+	if decision != "approve" && decision != "deny" {
+		return toolError("compute_placement_answer", errors.New("decision must be 'approve' or 'deny'")), nil
+	}
+	if deny := mcpFedCap(ctx, federation.CapComputeWrite); deny != nil {
+		return deny, nil
+	}
+	out, err := s.proxyJSON("POST", "/api/compute/placements/"+strings.Trim(id, "/")+"/"+decision, nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // computeBodyFromReq translates the loosely-typed MCP string params
 // into a compute.Node JSON body. Numeric fields fall back to 0 on
 // parse failure; the REST validator rejects negatives.
