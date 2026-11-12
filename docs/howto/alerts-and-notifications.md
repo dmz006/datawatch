@@ -115,25 +115,41 @@ datawatch alerts --mark-all-read
 
 4. **Alerts tab.** Navigate to the **Alerts** page from the sidebar.
    This is the full-screen alert manager:
-   - A meta row above the list: the list's state text on the left
-     (`Cached` badge when the list came from this browser's storage,
-     a small `Loading…` while a refresh runs, and the `Out of date`
-     marker when the data is stale) and, at the right edge of the
-     **same row**, the round `?` help
-     link. It opens this howto in a new tab — same destination, tooltip
-     and accessible name (`Help`) as before — and gets a 40 × 40 px
-     minimum tap target on touch devices. It no longer sits in its own
-     top-right row above the list; that separate row mis-rendered on
-     narrow touch viewports (reported with a screenshot from Chrome on
-     Android), which is why the link moved onto the meta row.
-   - Three tabs: **Active**, **Historical**, **System**
+   - **Help** — the shared header's `?` link (next to the search
+     icon), like every other view. On the Alerts tab it points at this
+     howto and opens it in a new tab, with the tooltip "Open the
+     Alerts howto — explains alert rules, quick replies, and
+     notifications"; on other views it keeps its generic "Open
+     documentation for this view" destination. The tab no longer
+     carries a `?` of its own — the standalone row at the top-right
+     first, then the list's meta row, both mis-rendered on a narrow
+     phone viewport (reported with a screenshot from Chrome on Android),
+     so the link now lives with the rest of the view's controls.
+   - A **state row** above the list, shown only when it has something
+     to say: a `Cached` badge when the list came from this browser's
+     storage, a small `Loading…` while a refresh runs, and the
+     `Data may be out of date` marker when the last refresh failed or
+     the data is older than 2 minutes (Alerts polls every 30 s, so it
+     uses a short fixed 2-minute window — other list cards use
+     5 minutes). There is no "Last updated N s ago" counter.
+   - Three tabs labelled by what their number counts: **Active
+     sessions** (N), **Historical sessions** (N), and **System
+     alerts** (N). The heading above the list counts the alerts in
+     the selected tab (e.g. "5 alerts in 3 active sessions"), and it
+     matches the `all` filter chip because both read the same total.
    - Filter chips: all / prompts / errors / warn / info
    - Search bar (searches title + body)
    - Sort toggle: by-session (sessions waiting for input shown first)
      or chronological (newest-first flat list)
+   - Rows wrap on narrow viewports: long session names, titles and
+     messages break within the card instead of clipping past the
+     phone screen
    - Sessions sorted: `waiting_input` → `running` → `completed`
    - Prompt alerts include a **Quick reply** dropdown for saved commands
-   - `✕ all` dismisses everything; `🔕` mutes for the session; `↻` refreshes
+   - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
+     triggers one immediate refetch through the Alerts list loader —
+     the card repaints in place (cached rows stay, the fetch runs
+     behind them) instead of rebuilding the whole page
 
 5. **Mute and un-mute.** Click `🔕` to suppress all incoming alerts
    for the current browser tab. The badge shifts to `🔕 muted` style.
@@ -147,8 +163,9 @@ datawatch alerts --mark-all-read
 
 The datawatch mobile app (Android / Wear OS) receives push
 notifications for `waiting_input` and `error`-level alerts via the
-push-token registry. The Alerts screen on mobile mirrors the Active +
-Historical + System tabs. Wear OS support is a separate planned effort
+push-token registry. The Alerts screen on mobile mirrors the Active
+sessions + Historical sessions + System alerts tabs. Wear OS support is a
+separate planned effort
 — see the datawatch-app issue tracker.
 
 ### 5b. REST
@@ -424,18 +441,14 @@ tool, and Settings > Detection timing in the PWA.
   Settings → Devices. Push only fires for `waiting_input` and `error`
   level events; `info` and `warn` are not pushed to mobile by default.
 
-- **The `?` help link still shows in its own top-right row above the
-  list, or mis-renders on a phone.** That is the pre-fix layout. The
-  PWA is embedded in the daemon binary, so a rebuilt daemon is needed
-  devices.
-
-- **The `?` help link still shows in its own top-right row above the
-  list, or mis-renders on a phone.** That is the pre-fix layout. The
-  PWA is embedded in the daemon binary, so a rebuilt daemon is needed
-  for the new layout to be served: `go build -o bin/datawatch
-  ./cmd/datawatch/`, restart, then hard-refresh the PWA tab. After the
-  fix the link sits at the right edge of the list's meta row and has a
-  40 × 40 px tap target on touch devices.
+- **The `?` help link still appears in its own top-right row or in
+  the list's meta row, or the state row shows a ticking "Last updated
+  N s ago" text.** That is the pre-fix layout. The PWA is embedded in
+  the daemon binary, so a rebuilt daemon is needed for the new layout
+  to be served: `go build -o bin/datawatch ./cmd/datawatch/`, restart,
+  then hard-refresh the PWA tab. After the fix the help link is the
+  shared header's `?` (next to the search icon) and the state row
+  shows only `Cached`, `Loading…`, and `Data may be out of date`.
 
 ## Linked references
 
@@ -459,9 +472,9 @@ tool, and Settings > Detection timing in the PWA.
 
 - [ ] Header badge in global nav bar: count = 0 (dimmed), count = 3 (full-color), muted state
 - [ ] Dock panel open with mixed error/warn/info cards (expanded, showing ×N coalesce and ▸ more toggle)
-- [ ] Alerts tab — Active sub-tab with prompt card highlighted yellow and quick-reply dropdown
-- [ ] Alerts tab — System sub-tab with pipeline failure alert
-- [ ] Alerts tab — header meta row at a 390 px phone viewport: the state text and the round `?` help link on one row, link to the right of the state text, no horizontal overflow (covered by the story `scripts/test-stories/alerts-header-row.sh`; add a screenshot of the post-fix row)
+- [ ] Alerts tab — Active sessions sub-tab with prompt card highlighted yellow and quick-reply dropdown
+- [ ] Alerts tab — System alerts sub-tab with pipeline failure alert
+- [ ] Alerts tab at a 390 px phone viewport: header `?` help link present (no help link inside the list), state row a single line when shown, long session names and alert messages wrapping inside their cards with no horizontal overflow (add a screenshot of the post-tidy view)
 - [ ] Mobile app Alerts screen (Android) — Active tab with waiting_input push badge
 
 ---
